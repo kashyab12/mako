@@ -170,12 +170,22 @@ pub mod space {
 pub fn apply_to_components(theme: &Theme, cx: &mut gpui::App) {
     use gpui_component::{Theme as ComponentTheme, ThemeMode};
 
-    let ui = ComponentTheme::global_mut(cx);
-    ui.mode = if theme.is_dark {
+    // Load the library's *whole* palette for this mode before touching
+    // anything. `gpui_component::init` seeds every colour from the system
+    // appearance, and Mako only has an opinion about a couple of dozen fields —
+    // so on a Mac set to Light, every field this function does not name kept a
+    // light value, and the inspector's tab bar rendered white inside a black
+    // window. Setting `mode` alone does not fix that: it is a flag the library
+    // reads, not a switch that reloads the palette.
+    let mode = if theme.is_dark {
         ThemeMode::Dark
     } else {
         ThemeMode::Light
     };
+    ComponentTheme::change(mode, None, cx);
+
+    let ui = ComponentTheme::global_mut(cx);
+    ui.mode = mode;
 
     ui.background = theme.background;
     ui.foreground = theme.foreground;

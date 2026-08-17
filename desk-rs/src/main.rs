@@ -62,6 +62,8 @@ actions!(
         OpenPalette,
         OpenSettings,
         QueueAfter,
+        PreviousTurn,
+        NextTurn,
         Dismiss,
         Up,
         Down
@@ -153,6 +155,11 @@ struct Desk {
     scroll: ScrollHandle,
     /// True while the reader is at the bottom, so the stream may follow.
     pinned: bool,
+    /// The turn nearest the top of the view, for the navigator and ⌘↑/⌘↓.
+    active_turn: usize,
+    /// The transcript pane's width, measured rather than assumed — it changes
+    /// when either side panel opens, not only when the window resizes.
+    pane_width: gpui::Pixels,
     /// Which tool calls have their output open, as (exchange, tool).
     ///
     /// Collapsed is the default because a transcript is read for the answer,
@@ -343,6 +350,8 @@ impl Desk {
             focus: cx.focus_handle(),
             scroll: ScrollHandle::new(),
             pinned: true,
+            active_turn: 0,
+            pane_width: px(0.0),
             opened_tools: std::collections::HashSet::new(),
         }
     }
@@ -673,6 +682,8 @@ impl Render for Desk {
             .track_focus(&self.focus)
             .on_action(cx.listener(Self::send))
             .on_action(cx.listener(Self::queue_after))
+            .on_action(cx.listener(|desk, _: &PreviousTurn, _w, cx| desk.step_turn(-1, cx)))
+            .on_action(cx.listener(|desk, _: &NextTurn, _w, cx| desk.step_turn(1, cx)))
             .on_action(cx.listener(Self::stop))
             .on_action(cx.listener(Self::cycle_thinking))
             .on_action(cx.listener(Self::toggle_rail))
@@ -884,36 +895,84 @@ impl Desk {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let mut column = div()
+        let count = self.state.exchanges.len();
+        // Below three turns there is nothing to navigate, and on a narrow pane
+        // the gutter would be sitting on the prose rather than beside it — a
+        // navigation aid that covers the thing being navigated is worse than
+        // none. The pane's width changes when either side panel opens, not only
+        // when the window does, so it is measured rather than assumed.
+        let navigator = count >= 3 && self.pane_width >= px(620.0);
+        let gutter = if navigator { px(26.0) } else { px(0.0) };
+
+        // Exchanges are *direct* children of the scroller, not nested inside a
+        // centring wrapper. That is what makes `logical_scroll_top` return a
+        // turn index rather than always zero, which is what the navigator and
+        // ⌘↑/⌘↓ both read.
+        let mut scroller = div()
+            .id("transcript")
+            .track_scroll(&self.scroll)
+            .size_full()
+            .overflow_y_scroll()
             .flex()
             .flex_col()
-            .gap(px(28.0))
-            .w_full()
-            .max_w(space::COLUMN)
-            .px(px(28.0))
-            .py(px(26.0));
+            .items_center()
+            .pr(gutter)
+            .on_scroll_wheel(cx.listener(|desk, _event, _window, cx| {
+                // Re-derive the pin from the offset rather than from the
+                // wheel's direction: a fling that lands back at the bottom
+                // should resume following. GPUI's scroll offset runs negative
+                // as content moves up, so "at the bottom" is the offset having
+                // reached its maximum extent.
+                let offset = desk.scroll.offset().y;
+                let max = desk.scroll.max_offset().height;
+                let pinned = (offset.abs() - max.abs()).abs() < px(NEAR_BOTTOM);
+                let turn = desk.scroll.logical_scroll_top().0;
+                if desk.pinned != pinned || desk.active_turn != turn {
+                    desk.pinned = pinned;
+                    desk.active_turn = turn;
+                    cx.notify();
+                }
+            }));
 
-        if self.state.exchanges.is_empty() {
-            // Pushed down toward the composer rather than pinned to the top of
-            // an otherwise empty panel: the thing being introduced is the field
-            // you are about to type in, so the introduction should sit near it.
-            column = column.child(div().h(px(140.0)).flex_none()).child(self.empty_state(theme));
+        if count == 0 {
+            scroller = scroller.child(self.empty_state(theme, cx));
         }
 
         for (index, exchange) in self.state.exchanges.iter().enumerate() {
-            column = column.child(self.exchange(theme, exchange, index, window, cx));
+            scroller = scroller.child(
+                div()
+                    .w_full()
+                    .max_w(space::COLUMN)
+                    .px(px(28.0))
+                    .when(index == 0, |first| first.pt(px(24.0)))
+                    .pb(px(28.0))
+                    .child(self.exchange(theme, exchange, index, window, cx)),
+            );
         }
 
         if let Some(fault) = &self.state.fault {
-            column = column.child(
+            scroller = scroller.child(
                 div()
-                    .rounded(space::RADIUS)
-                    .bg(theme.removed.opacity(0.10))
-                    .px(px(12.0))
-                    .py(px(9.0))
-                    .text_size(text::META)
-                    .text_color(theme.removed)
-                    .child(SharedString::from(fault.clone())),
+                    .w_full()
+                    .max_w(space::COLUMN)
+                    .px(px(28.0))
+                    .pb(px(20.0))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
+                            .rounded(space::RADIUS)
+                            .bg(theme.removed.opacity(0.10))
+                            .border_1()
+                            .border_color(theme.removed.opacity(0.30))
+                            .px(px(12.0))
+                            .py(px(9.0))
+                            .text_size(text::META)
+                            .text_color(theme.removed)
+                            .child(Icon::new(IconName::TriangleAlert).size(px(12.0)))
+                            .child(SharedString::from(fault.clone())),
+                    ),
             );
         }
 
@@ -921,33 +980,135 @@ impl Desk {
             .relative()
             .flex_1()
             .min_h_0()
+            // Measured every frame so the navigator can withdraw the moment the
+            // inspector opens and takes the width back.
             .child(
-                div()
-                    .id("transcript")
-                    .track_scroll(&self.scroll)
-                    .size_full()
-                    .overflow_y_scroll()
-                    .on_scroll_wheel(cx.listener(|desk, _event, _window, _cx| {
-                        // Re-derive the pin from the offset rather than from
-                        // the wheel's direction: a fling that lands back at the
-                        // bottom should resume following. GPUI's scroll offset
-                        // runs negative as content moves up, so "at the bottom"
-                        // is the offset having reached its maximum extent.
-                        let offset = desk.scroll.offset().y;
-                        let max = desk.scroll.max_offset().height;
-                        desk.pinned = (offset.abs() - max.abs()).abs() < px(NEAR_BOTTOM);
-                    }))
-                    .child(div().flex().justify_center().child(column)),
+                gpui::canvas(
+                    {
+                        let desk = cx.entity();
+                        move |bounds: gpui::Bounds<gpui::Pixels>, _window, cx: &mut App| {
+                            desk.update(cx, |desk, cx| {
+                                if desk.pane_width != bounds.size.width {
+                                    desk.pane_width = bounds.size.width;
+                                    cx.notify();
+                                }
+                            });
+                        }
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
             )
+            .child(scroller)
+            .when(navigator, |pane| {
+                pane.child(self.turn_navigator(theme, count, cx))
+            })
+            // Offered rather than forced: once you have scrolled up to read
+            // something, the view must not move under you, but getting back to
+            // the live end should be one click and not a drag.
+            .when(!self.pinned && count > 0, |pane| {
+                pane.child(
+                    div()
+                        .absolute()
+                        .bottom(px(10.0))
+                        .left(px(0.0))
+                        .right(gutter)
+                        .flex()
+                        .justify_center()
+                        .child(
+                            Button::new("jump-latest")
+                                .xsmall()
+                                .rounded(gpui_component::button::ButtonRounded::Large)
+                                .icon(IconName::ArrowDown)
+                                .label("Jump to latest")
+                                .on_click(cx.listener(|desk, _event, _window, cx| {
+                                    desk.pinned = true;
+                                    desk.scroll.scroll_to_bottom();
+                                    cx.notify();
+                                })),
+                        ),
+                )
+            })
             .child(
                 div()
                     .absolute()
                     .top_0()
-                    .right_0()
+                    .right(gutter)
                     .bottom_0()
                     .w(px(10.0))
                     .child(Scrollbar::vertical(&self.scroll)),
             )
+    }
+
+    /// A tick per question, in a gutter the scroller reserves for it.
+    ///
+    /// The fastest way to answer "where did I ask about X" in a long session:
+    /// the whole conversation is legible as a shape, and clicking jumps to it.
+    /// Width is the only channel doing work — length reads as position without
+    /// adding another colour to the window.
+    fn turn_navigator(
+        &self,
+        theme: &Theme,
+        count: usize,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let active = self.active_turn.min(count.saturating_sub(1));
+
+        div()
+            .absolute()
+            .top_0()
+            .right_0()
+            .bottom_0()
+            .w(px(26.0))
+            .flex()
+            .flex_col()
+            .items_end()
+            .justify_center()
+            .gap(px(3.0))
+            .pr(px(10.0))
+            .children((0..count).map(|index| {
+                div()
+                    .id(("turn-tick", index))
+                    .h(px(7.0))
+                    .flex()
+                    .items_center()
+                    .justify_end()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |desk, _event, _window, cx| {
+                            desk.active_turn = index;
+                            desk.pinned = false;
+                            desk.scroll.scroll_to_top_of_item(index);
+                            cx.notify();
+                        }),
+                    )
+                    .child(
+                        div()
+                            .h(px(2.0))
+                            .rounded_full()
+                            .when(index == active, |tick| {
+                                tick.w(px(14.0)).bg(theme.foreground.opacity(0.8))
+                            })
+                            .when(index != active, |tick| {
+                                tick.w(px(6.0)).bg(theme.foreground.opacity(0.18))
+                            }),
+                    )
+            }))
+    }
+
+    /// Step between questions without reaching for the pointer.
+    fn step_turn(&mut self, delta: isize, cx: &mut Context<Self>) {
+        let count = self.state.exchanges.len();
+        if count == 0 {
+            return;
+        }
+        let from = self.active_turn.min(count - 1) as isize;
+        let next = (from + delta).clamp(0, count as isize - 1) as usize;
+        self.active_turn = next;
+        self.pinned = next + 1 == count;
+        self.scroll.scroll_to_top_of_item(next);
+        cx.notify();
     }
 
     /// The resting state: what this is, where it is pointed, and what to do.
@@ -956,7 +1117,16 @@ impl Desk {
     /// new session opens to — so it is worth more than a heading. Naming the
     /// working directory matters most: the agent can edit files here, and the
     /// one thing worth being certain of before typing is *which* files.
-    fn empty_state(&self, theme: &Theme) -> impl IntoElement {
+    ///
+    /// The openers fill the composer rather than sending, so the first message
+    /// is still the user's.
+    fn empty_state(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        const OPENERS: [(&str, IconName); 3] = [
+            ("Explain how this project is structured", IconName::Map),
+            ("Review my uncommitted changes", IconName::GitHub),
+            ("Find and fix the failing test", IconName::CircleCheck),
+        ];
+
         let model = if self.state.model.name.is_empty() {
             "no model selected yet".to_string()
         } else {
@@ -965,43 +1135,88 @@ impl Desk {
 
         div()
             .flex()
+            .flex_1()
+            .w_full()
+            .max_w(space::COLUMN)
             .flex_col()
-            .gap(px(14.0))
-            .py(px(24.0))
-            .child(fin(theme, px(26.0)))
+            .justify_center()
+            .px(px(28.0))
+            .pb(px(40.0))
             .child(
                 div()
                     .flex()
-                    .flex_col()
-                    .gap(px(5.0))
-                    .child(
-                        div()
-                            .text_size(text::TITLE)
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .text_color(theme.foreground)
-                            .child("Ask Pi something"),
-                    )
+                    .items_center()
+                    .gap(px(10.0))
+                    .child(fin(theme, px(22.0)))
                     .child(
                         div()
                             .flex()
-                            .items_center()
-                            .gap(px(6.0))
-                            .text_size(text::META)
-                            .text_color(theme.faint)
-                            .child(Icon::new(IconName::Folder).size(px(11.0)))
-                            .child(SharedString::from(clip(&self.state.cwd, 72))),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(6.0))
-                            .text_size(text::META)
-                            .text_color(theme.faint)
-                            .child(Icon::new(IconName::Bot).size(px(11.0)))
-                            .child(SharedString::from(model)),
+                            .flex_col()
+                            .gap(px(2.0))
+                            .child(
+                                div()
+                                    .text_size(text::TITLE)
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(theme.foreground)
+                                    .child("Ask Pi something"),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(6.0))
+                                    .text_size(text::META)
+                                    .text_color(theme.faint)
+                                    .child(Icon::new(IconName::Folder).size(px(11.0)))
+                                    .child(SharedString::from(clip(&self.state.cwd, 64)))
+                                    .child(dot_separator(theme))
+                                    .child(SharedString::from(model)),
+                            ),
                     ),
             )
+            .child(
+                div()
+                    .mt(px(18.0))
+                    .flex()
+                    .flex_col()
+                    .children(OPENERS.iter().enumerate().map(|(index, (text_, icon))| {
+                        let theme = theme.clone();
+                        div()
+                            .id(("opener", index))
+                            .flex()
+                            .items_center()
+                            .gap(px(9.0))
+                            .rounded(space::RADIUS)
+                            .px(px(9.0))
+                            .py(px(8.0))
+                            .when(index > 0, |row| {
+                                row.border_t_1().border_color(theme.hairline)
+                            })
+                            .text_size(text::UI)
+                            .text_color(theme.muted)
+                            .hover(|style| style.bg(theme.hover()))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |desk, _event, window, cx| {
+                                    desk.compose(OPENERS[index].0, window, cx);
+                                }),
+                            )
+                            .child(Icon::new(icon.clone()).size(px(12.0)).text_color(theme.faint))
+                            .child(*text_)
+                    })),
+            )
+    }
+
+    /// Put text in the composer and focus it, without sending.
+    fn compose(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let text = text.to_string();
+        self.composer.update(cx, |composer, cx| {
+            composer.input.update(cx, |state, cx| {
+                state.set_value(text, window, cx);
+                state.focus(window, cx);
+            });
+        });
+        cx.notify();
     }
 
     fn exchange(
@@ -1015,23 +1230,51 @@ impl Desk {
         let mut block = div().flex().flex_col().gap(px(11.0));
 
         if !exchange.prompt.is_empty() {
+            let prompt = exchange.prompt.clone();
             // The prompt gets its own lit surface, so whose words these are is
             // never in question.
             block = block.child(
                 div()
-                    .rounded(space::RADIUS_XL)
-                    .bg(theme.raised)
-                    .border_1()
-                    .border_color(theme.hairline)
-                    .overflow_hidden()
-                    .child(lit_top(theme))
+                    .group("prompt")
                     .child(
                         div()
-                            .px(px(15.0))
-                            .py(px(11.0))
-                            .text_size(text::BODY)
-                            .line_height(px(21.0))
-                            .child(SharedString::from(exchange.prompt.clone())),
+                            .rounded(space::RADIUS_XL)
+                            .bg(theme.raised)
+                            .border_1()
+                            .border_color(theme.hairline)
+                            .overflow_hidden()
+                            .child(lit_top(theme))
+                            .child(
+                                div()
+                                    .px(px(15.0))
+                                    .py(px(11.0))
+                                    .text_size(text::BODY)
+                                    .line_height(px(21.0))
+                                    .child(SharedString::from(prompt.clone())),
+                            ),
+                    )
+                    // Revealed on hover, because it is an occasional action on
+                    // a row that repeats down the whole transcript — a visible
+                    // button per turn would out-shout the conversation.
+                    .child(
+                        div()
+                            .h(px(18.0))
+                            .mt(px(2.0))
+                            .flex()
+                            .items_center()
+                            .opacity(0.0)
+                            .group_hover("prompt", |row| row.opacity(1.0))
+                            .child(
+                                Button::new(("reuse", id))
+                                    .ghost()
+                                    .xsmall()
+                                    .icon(IconName::Undo2)
+                                    .label("Reuse")
+                                    .tooltip("Put this prompt back in the composer")
+                                    .on_click(cx.listener(move |desk, _event, window, cx| {
+                                        desk.compose(&prompt, window, cx);
+                                    })),
+                            ),
                     ),
             );
         }
@@ -1488,6 +1731,8 @@ fn main() {
         cx.bind_keys([
             KeyBinding::new("cmd-escape", Stop, Some("Desk")),
             KeyBinding::new("cmd-enter", QueueAfter, Some("Desk")),
+            KeyBinding::new("cmd-up", PreviousTurn, Some("Desk")),
+            KeyBinding::new("cmd-down", NextTurn, Some("Desk")),
             KeyBinding::new("cmd-.", CycleThinking, Some("Desk")),
             KeyBinding::new("cmd-b", ToggleRail, Some("Desk")),
             KeyBinding::new("cmd-i", ToggleInspector, Some("Desk")),
@@ -1517,6 +1762,16 @@ fn main() {
 
         let window = cx
             .open_window(options, |window, cx| {
+                // The system can flip to light while the app is running, and
+                // the library re-derives its palette when it does. Re-assert
+                // Mako's on every change, or half the window silently turns
+                // light at sunrise.
+                window
+                    .observe_window_appearance(|_window, cx| {
+                        theme::apply_to_components(&Theme::dark(), cx);
+                    })
+                    .detach();
+
                 let desk = cx.new(|cx| Desk::new(window, cx));
                 // Focus the composer on open: the first thing anyone does here
                 // is type.
