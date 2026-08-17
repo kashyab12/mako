@@ -1,0 +1,736 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ------------------------------------------------------------------ *
+ * Tokens
+ *
+ * One achromatic ramp, a light accent, and three semantic hues that only
+ * appear where they carry meaning. Elevation is expressed as steps on the
+ * ramp, never as shadow — that is what keeps the surface quiet at this
+ * density.
+ * ------------------------------------------------------------------ */
+
+@theme inline {
+  /*
+   * Geist for the interface, the platform's own monospace for code. Shipping
+   * a webfont for code is a mistake on a desktop app: SF Mono is already
+   * installed, already hinted for this display, and is what every other
+   * native tool renders code in.
+   */
+  --font-sans:
+    "Geist Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text", ui-sans-serif, system-ui,
+    sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Product tokens */
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-hairline: var(--hairline);
+  --color-faint: var(--faint);
+  --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --color-caution: var(--caution);
+  --color-added: var(--added);
+  --color-removed: var(--removed);
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 11px;
+  --radius-2xl: 14px;
+  --radius-3xl: 18px;
+
+  /* Motion. The built-in CSS curves are too weak to read as intentional. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --duration-press: 120ms;
+  --duration-tooltip: 140ms;
+  --duration-menu: 180ms;
+  --duration-panel: 240ms;
+}
+
+:root {
+  color-scheme: dark;
+
+  /*
+   * A strictly achromatic ramp. Every attempt to give a tool like this a
+   * "brand hue" makes it look like a landing page; the interface reads as an
+   * instrument when the only colour in it is the colour that means something.
+   *
+   * The ramp is also wider than it looks like it needs to be: at this
+   * darkness a 0.03 lightness step reads as noise rather than as structure,
+   * and the rail, the transcript, and the inspector have to sit on visibly
+   * different planes or the window collapses into one flat sheet.
+   */
+  --background: oklch(0.1450 0 0);
+  --surface: oklch(0.1900 0 0);
+  --raised: oklch(0.2380 0 0);
+  --foreground: oklch(0.9350 0 0);
+  --muted-foreground: oklch(0.6850 0 0);
+  --faint: oklch(0.5300 0 0);
+
+  --card: var(--surface);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.2050 0 0);
+  --popover-foreground: var(--foreground);
+
+  --primary: oklch(0.9350 0 0);
+  --primary-foreground: oklch(0.1450 0 0);
+  --secondary: var(--raised);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.2200 0 0);
+  --accent: oklch(0.2600 0 0);
+  --accent-foreground: var(--foreground);
+
+  --hairline: oklch(1 0 0 / 10%);
+  --border: oklch(1 0 0 / 13%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(1 0 0 / 32%);
+
+  /*
+   * The accent is light, not coloured. Selection, focus, and the live
+   * indicator all read as "brighter", which is legible against a neutral
+   * ramp without spending the one thing colour is reserved for.
+   */
+  --brand: oklch(0.9350 0 0);
+  --brand-soft: oklch(1 0 0 / 9%);
+
+  /* Hue appears only where it carries meaning. Kept desaturated so a diff
+   * reads as information rather than as decoration. */
+  --positive: oklch(0.7350 0.1050 152);
+  --negative: oklch(0.6900 0.1450 22);
+  --destructive: var(--negative);
+  --caution: oklch(0.7900 0.0850 85);
+  --added: oklch(0.7350 0.1050 152);
+  --removed: oklch(0.6900 0.1450 22);
+
+  --rail-width: 264px;
+  --inspector-width: 400px;
+  --titlebar-height: 38px;
+}
+
+.light {
+  color-scheme: light;
+
+  --background: oklch(0.9740 0 0);
+  --surface: oklch(1 0 0);
+  --raised: oklch(0.9480 0 0);
+  --foreground: oklch(0.2050 0 0);
+  --muted-foreground: oklch(0.4750 0 0);
+  --faint: oklch(0.6200 0 0);
+
+  --card: var(--surface);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--foreground);
+
+  --primary: oklch(0.2050 0 0);
+  --primary-foreground: oklch(0.9880 0 0);
+  --secondary: var(--raised);
+  --muted: oklch(0.9550 0 0);
+  --accent: oklch(0.9300 0 0);
+
+  --hairline: oklch(0 0 0 / 9%);
+  --border: oklch(0 0 0 / 12%);
+  --input: oklch(0 0 0 / 15%);
+  --ring: oklch(0 0 0 / 32%);
+
+  --brand: oklch(0.2050 0 0);
+  --brand-soft: oklch(0 0 0 / 7%);
+
+  --positive: oklch(0.5350 0.1000 152);
+  --negative: oklch(0.5400 0.1550 25);
+  --caution: oklch(0.5900 0.0850 75);
+  --added: oklch(0.5350 0.1000 152);
+  --removed: oklch(0.5400 0.1550 25);
+}
+
+/* ------------------------------------------------------------------ *
+ * Base
+ * ------------------------------------------------------------------ */
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.5;
+    /* Geist's disambiguated forms; keeps 1/l/I apart at 11px in the rail. */
+    font-feature-settings: "ss01", "ss03";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior: none;
+  }
+
+  ::selection {
+    background: var(--brand-soft);
+  }
+
+  /* Thin, self-effacing scrollbars — visible only while scrolling matters. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--foreground) 18%, transparent) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklch, var(--foreground) 14%, transparent);
+    border: 2px solid transparent;
+    background-clip: content-box;
+    border-radius: 99px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklch, var(--foreground) 26%, transparent);
+    background-clip: content-box;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+}
+
+@layer utilities {
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Long transcripts: let the engine skip offscreen turns entirely. */
+  .contain-turn {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 120px;
+  }
+
+  /*
+   * Press feedback. Every pressable surface scales a hair so the interface
+   * reads as physically responsive; the transform is GPU-only so it never
+   * costs a layout.
+   */
+  .pressable {
+    transition: transform var(--duration-press) var(--ease-out);
+  }
+
+  .pressable:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  /* Hover states only where a real pointer exists — touch fakes hover on tap. */
+  @media (hover: hover) and (pointer: fine) {
+    .hover-lift:hover {
+      background-color: var(--raised);
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Depth
+ *
+ * The previous pass was too timid to read as anything. The difference between
+ * "translucent" and "glass" is not opacity — it is the three things a real
+ * pane does to light:
+ *
+ *   1. It refracts, so the surface is never one flat fill. Every glass
+ *      surface carries a gradient across it.
+ *   2. It catches a specular highlight on the edge facing the light, and
+ *      only that edge.
+ *   3. It casts and receives shadow, so it sits *above* rather than *in*.
+ *
+ * All three are drawn rather than filtered, which is also what keeps them
+ * cheap: `backdrop-filter` stays confined to small floating surfaces, while
+ * the gradients and edges are static paint on an already-promoted layer and
+ * cost nothing per frame.
+ * ------------------------------------------------------------------ */
+
+/* A floating pane: menus, palette, settings, dialogs. */
+.glass-panel {
+  position: relative;
+  background-image:
+    linear-gradient(160deg, color-mix(in oklch, var(--foreground) 7%, transparent) 0%, transparent 38%),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--popover) 92%, transparent),
+      color-mix(in oklch, var(--popover) 78%, transparent)
+    );
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 24px 64px -16px oklch(0 0 0 / 65%),
+    0 4px 16px -8px oklch(0 0 0 / 45%),
+    inset 0 1px 0 oklch(1 0 0 / 10%),
+    inset 0 -1px 0 oklch(0 0 0 / 20%);
+}
+
+.light .glass-panel {
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 24px 56px -18px oklch(0 0 0 / 22%),
+    inset 0 1px 0 oklch(1 0 0 / 80%);
+}
+
+/*
+ * The window's ambient light. Two sources at very low chroma — a cool key from
+ * above, a warm bounce from below — which is what keeps a large dark field
+ * from reading as flat black.
+ */
+[data-glass="on"] .app-wash::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(90% 55% at 50% -12%, oklch(0.72 0.05 250 / 9%), transparent 62%),
+    radial-gradient(70% 45% at 12% 108%, oklch(0.7 0.05 60 / 5.5%), transparent 68%);
+}
+
+.light [data-glass="on"] .app-wash::before,
+[data-glass="on"] .light .app-wash::before {
+  background:
+    radial-gradient(90% 55% at 50% -12%, oklch(0.55 0.06 250 / 7%), transparent 62%),
+    radial-gradient(70% 45% at 12% 108%, oklch(0.6 0.05 60 / 4%), transparent 68%);
+}
+
+/* Rails and the inspector, lit from the transcript's side. */
+[data-glass="on"] .panel-glass {
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in oklch, var(--foreground) 3%, var(--surface)),
+    var(--surface) 44%
+  );
+}
+
+/* The composer floats over the transcript and is the brightest chrome. */
+[data-glass="on"] .surface-glass {
+  background-image:
+    linear-gradient(150deg, color-mix(in oklch, var(--foreground) 8%, transparent) 0%, transparent 42%),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--surface) 86%, transparent),
+      color-mix(in oklch, var(--surface) 96%, transparent)
+    );
+  backdrop-filter: blur(20px) saturate(170%);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  box-shadow:
+    0 8px 28px -12px oklch(0 0 0 / 55%),
+    inset 0 1px 0 oklch(1 0 0 / 9%);
+}
+
+[data-glass="on"] [data-slot="popover-content"] {
+  background-image:
+    linear-gradient(160deg, color-mix(in oklch, var(--foreground) 7%, transparent) 0%, transparent 40%),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--popover) 93%, transparent),
+      color-mix(in oklch, var(--popover) 80%, transparent)
+    );
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow:
+    0 18px 48px -14px oklch(0 0 0 / 60%),
+    inset 0 1px 0 oklch(1 0 0 / 9%);
+}
+
+/*
+ * The transcript's own field. A very slight vertical lift keeps a long dark
+ * column from reading as a void, and the composer's shadow has something to
+ * fall onto.
+ */
+[data-glass="on"] .transcript-field {
+  background-image:
+    radial-gradient(120% 60% at 50% 0%, color-mix(in oklch, var(--foreground) 3.5%, transparent), transparent 70%),
+    linear-gradient(to bottom, transparent 60%, color-mix(in oklch, var(--foreground) 2%, transparent));
+}
+
+/* A card that should read as sitting on the surface rather than cut into it. */
+[data-glass="on"] .raised-card {
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in oklch, var(--foreground) 7%, transparent),
+    color-mix(in oklch, var(--foreground) 3.5%, transparent)
+  );
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 7%),
+    0 1px 2px oklch(0 0 0 / 25%);
+}
+
+/* The user's own words, distinguished by light rather than by a border. */
+[data-glass="on"] .prompt-card {
+  background-image: linear-gradient(
+    150deg,
+    color-mix(in oklch, var(--foreground) 9%, transparent),
+    color-mix(in oklch, var(--foreground) 4%, transparent) 55%
+  );
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 8%),
+    0 2px 6px -2px oklch(0 0 0 / 30%);
+}
+
+/* A hairline that catches the light along the top of a raised row. */
+.lit-edge {
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 6%);
+}
+
+/*
+ * The one place a gradient is allowed to be obvious: the primary action. A
+ * flat fill on a send button reads as a placeholder; a lit one reads as the
+ * thing you are meant to press.
+ */
+.action-primary {
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in oklch, var(--foreground) 100%, transparent),
+    color-mix(in oklch, var(--foreground) 86%, transparent)
+  );
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 45%),
+    0 1px 2px oklch(0 0 0 / 35%);
+}
+
+/* ------------------------------------------------------------------ *
+ * Motion
+ *
+ * Three rules hold everywhere in this app:
+ *   1. Entrances are ease-out and under 250ms — the user is watching the
+ *      first frame most closely, so movement must start immediately.
+ *   2. Nothing animates from scale(0). Things that appear from nothing
+ *      read as broken; 0.96 reads as arriving.
+ *   3. Anything the user triggers by keyboard many times a day does not
+ *      animate at all. See the palette.
+ * ------------------------------------------------------------------ */
+
+@keyframes pi-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pi-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/*
+ * Loading placeholders.
+ *
+ * A pulsing grey block is a shrug: it says "something is coming" and nothing
+ * about what. These mirror the shape of the row they stand in for — a title
+ * line and a shorter meta line — and sweep a highlight across rather than
+ * blinking, which reads as progress instead of as a stutter. The sweep is a
+ * background-position animation on a promoted layer, so it composites without
+ * touching layout.
+ */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--foreground) 7%, transparent);
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklch, var(--foreground) 9%, transparent) 45%,
+    transparent
+  );
+  transform: translateX(-100%);
+  animation: pi-skeleton 1.6s var(--ease-in-out) infinite;
+}
+
+@keyframes pi-skeleton {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes pi-sweep {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.animate-enter {
+  animation: pi-enter var(--duration-menu) var(--ease-out) both;
+}
+
+.animate-live {
+  animation: pi-pulse 1.5s var(--ease-in-out) infinite;
+}
+
+/*
+ * Overlays scale out of their trigger rather than their own center — Radix
+ * publishes the trigger-relative origin, and honouring it is what makes a
+ * menu feel attached to the button that opened it.
+ */
+[data-slot="popover-content"],
+[data-slot="dropdown-menu-content"] {
+  transform-origin: var(--radix-popover-content-transform-origin, var(--radix-dropdown-menu-content-transform-origin));
+  transition:
+    opacity var(--duration-menu) var(--ease-out),
+    transform var(--duration-menu) var(--ease-out);
+}
+
+[data-slot="tooltip-content"] {
+  transition:
+    opacity var(--duration-tooltip) var(--ease-out),
+    transform var(--duration-tooltip) var(--ease-out);
+}
+
+.shimmer {
+  background: linear-gradient(90deg, var(--faint) 0%, var(--foreground) 45%, var(--faint) 90%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: pi-sweep 2.2s linear infinite;
+}
+
+/*
+ * Reduced motion means less movement, not less feedback: opacity and colour
+ * transitions still carry meaning, so only the transforms are dropped.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-property: opacity, color, background-color, border-color !important;
+    transition-duration: 120ms !important;
+  }
+
+  .pressable:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Prose — the transcript's own typography, not a plugin's defaults.
+ * ------------------------------------------------------------------ */
+
+.pi-prose {
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+.pi-prose > * + * {
+  margin-top: 0.75em;
+}
+
+.pi-prose h1,
+.pi-prose h2,
+.pi-prose h3,
+.pi-prose h4 {
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  margin-top: 1.4em;
+}
+
+.pi-prose h1 {
+  font-size: 1.3em;
+}
+.pi-prose h2 {
+  font-size: 1.15em;
+}
+.pi-prose h3 {
+  font-size: 1.02em;
+}
+.pi-prose h4 {
+  font-size: 1em;
+  color: var(--muted-foreground);
+}
+
+.pi-prose ul,
+.pi-prose ol {
+  padding-inline-start: 1.35em;
+}
+
+.pi-prose ul {
+  list-style: disc;
+}
+.pi-prose ol {
+  list-style: decimal;
+}
+
+.pi-prose li::marker {
+  color: var(--faint);
+}
+
+.pi-prose li + li {
+  margin-top: 0.28em;
+}
+
+.pi-prose a {
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in oklch, var(--brand) 45%, transparent);
+}
+
+.pi-prose strong {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.pi-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 0.08em 0.34em;
+}
+
+/*
+ * Code blocks are a two-part structure: a header strip carrying the language
+ * and the copy action, and the code beneath it. The wrapper owns the frame so
+ * the <pre> itself carries no border or radius and cannot fight the header.
+ */
+.pi-code {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in oklch, var(--foreground) 4%, var(--raised)),
+    var(--raised) 40%
+  );
+}
+
+.pi-code-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding-inline: 10px;
+  border-bottom: 1px solid var(--hairline);
+  background: color-mix(in oklch, var(--foreground) 3%, transparent);
+}
+
+.pi-prose pre {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 9px 12px 11px;
+  margin: 0;
+  overflow-x: auto;
+}
+
+.pi-prose pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.pi-prose blockquote {
+  border-inline-start: 2px solid var(--border);
+  padding-inline-start: 0.9em;
+  color: var(--muted-foreground);
+}
+
+.pi-prose hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1.4em 0;
+}
+
+.pi-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.pi-prose th,
+.pi-prose td {
+  border: 1px solid var(--border);
+  padding: 5px 9px;
+  text-align: start;
+}
+
+.pi-prose th {
+  background: var(--raised);
+  font-weight: 550;
+}
+
+.pi-prose img {
+  border-radius: var(--radius-lg);
+  max-width: 100%;
+}
