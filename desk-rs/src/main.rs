@@ -14,8 +14,10 @@ use composer::{Composer, Submit};
 use gpui::prelude::*;
 use gpui::{
     actions, div, px, App, Application, Bounds, Context, Entity, FocusHandle, Focusable,
-    KeyBinding, SharedString, Window, WindowBackgroundAppearance, WindowBounds, WindowOptions,
+    KeyBinding, ScrollHandle, SharedString, Window, WindowBackgroundAppearance, WindowBounds,
+    WindowOptions,
 };
+use gpui_component::scroll::Scrollbar;
 use gpui_component::text::TextView;
 use gpui_component::Root;
 use rpc::{Incoming, PiRpc};
@@ -26,6 +28,9 @@ use ui::{clip, eyebrow, fin, format_cost, format_tokens, lit_top, panel, workspa
 
 actions!(desk, [Send, Stop, CycleThinking, ToggleRail]);
 
+/// How close to the end still counts as "following the stream".
+const NEAR_BOTTOM: f32 = 96.0;
+
 struct Desk {
     theme: Theme,
     state: SessionState,
@@ -33,6 +38,10 @@ struct Desk {
     composer: Entity<Composer>,
     rail_open: bool,
     focus: FocusHandle,
+    /// Owns the transcript's scroll offset across renders.
+    scroll: ScrollHandle,
+    /// True while the reader is at the bottom, so the stream may follow.
+    pinned: bool,
 }
 
 impl Desk {
@@ -93,6 +102,7 @@ impl Desk {
                     }
                 }
                 if dirty {
+                    desk.follow_stream();
                     cx.notify();
                 }
             });
@@ -115,6 +125,17 @@ impl Desk {
             composer,
             rail_open: true,
             focus: cx.focus_handle(),
+            scroll: ScrollHandle::new(),
+            pinned: true,
+        }
+    }
+
+    /// Follow the stream only while the reader is already at the bottom. The
+    /// moment they scroll up to read something, the view stops moving under
+    /// them — the same rule the web build follows.
+    fn follow_stream(&mut self) {
+        if self.pinned {
+            self.scroll.scroll_to_bottom();
         }
     }
 
@@ -129,6 +150,8 @@ impl Desk {
             let _ = rpc.prompt(&text);
         }
         self.state.push_prompt(text);
+        self.pinned = true;
+        self.follow_stream();
         cx.notify();
     }
 
@@ -282,7 +305,12 @@ impl Desk {
             )
     }
 
-    fn transcript(&self, theme: &Theme, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn transcript(
+        &self,
+        theme: &Theme,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let mut column = div()
             .flex()
             .flex_col()
@@ -314,12 +342,36 @@ impl Desk {
         }
 
         div()
+            .relative()
             .flex_1()
             .min_h_0()
-            .overflow_hidden()
-            .flex()
-            .justify_center()
-            .child(column)
+            .child(
+                div()
+                    .id("transcript")
+                    .track_scroll(&self.scroll)
+                    .size_full()
+                    .overflow_y_scroll()
+                    .on_scroll_wheel(cx.listener(|desk, _event, _window, _cx| {
+                        // Re-derive the pin from the offset rather than from
+                        // the wheel's direction: a fling that lands back at the
+                        // bottom should resume following. GPUI's scroll offset
+                        // runs negative as content moves up, so "at the bottom"
+                        // is the offset having reached its maximum extent.
+                        let offset = desk.scroll.offset().y;
+                        let max = desk.scroll.max_offset().height;
+                        desk.pinned = (offset.abs() - max.abs()).abs() < px(NEAR_BOTTOM);
+                    }))
+                    .child(div().flex().justify_center().child(column)),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .right_0()
+                    .bottom_0()
+                    .w(px(10.0))
+                    .child(Scrollbar::vertical(&self.scroll)),
+            )
     }
 
     fn empty_state(&self, theme: &Theme) -> impl IntoElement {
@@ -566,6 +618,7 @@ fn main() {
         // Brings the component library's own key bindings, theme, and the
         // hosts that dialogs, popovers, and notifications render into.
         gpui_component::init(cx);
+        theme::apply_to_components(&Theme::dark(), cx);
 
         cx.bind_keys([
             KeyBinding::new("cmd-escape", Stop, Some("Desk")),
