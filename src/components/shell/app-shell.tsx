@@ -12,6 +12,7 @@ import { TabStrip } from "@/components/shell/tab-strip"
 import { Divider } from "@/components/shell/divider"
 import { Transcript } from "@/components/transcript/transcript"
 import { FileViewer } from "@/components/viewer/file-viewer"
+import { SearchView } from "@/components/search/search-view"
 import { Action, Blank } from "@/components/ui/kit"
 import { useDeskCommands } from "@/desk/use-desk-commands"
 import { actions, store, useSession } from "@/state/session"
@@ -114,6 +115,7 @@ export function AppShell() {
                 {/* Over the conversation column only. The rail stays reachable,
                     so you can walk the tree with a file already open. */}
                 <FileViewer />
+                <SearchView />
               </>
             )}
           </main>

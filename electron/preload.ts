@@ -8,6 +8,8 @@ import type {
   GitStatus,
   HostEvent,
   ModelInfo,
+  SearchOptions,
+  SearchResults,
   SessionState,
   SessionSummary,
   StagedFile,
@@ -62,6 +64,8 @@ const api = {
 
   listFiles: () => invoke<WorkspaceFile[]>("pi:list-files"),
   readFile: (path: string) => invoke<FileContents>("pi:read-file", path),
+  search: (query: string, options?: SearchOptions) =>
+    invoke<SearchResults>("pi:search", query, options),
 
   gitStatus: () => invoke<GitStatus>("pi:git-status"),
   gitDiff: (path: string) => invoke<GitDiff>("pi:git-diff", path),

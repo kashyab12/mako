@@ -6,12 +6,14 @@ import { actions, useSession } from "@/state/session"
 import { togglePref, usePrefs } from "@/state/prefs"
 import { MakoMark } from "@/components/ui/mako-mark"
 import { workspaceName } from "@/lib/format"
+import { search } from "@/state/search"
 import { cn } from "@/lib/utils"
 import {
   ChevronsUpDownIcon,
   FolderIcon,
   PanelLeftIcon,
   PanelRightIcon,
+  CommandIcon,
   PlusIcon,
   SearchIcon,
   SettingsIcon,
@@ -101,12 +103,21 @@ export function TitleBar() {
             <SquareIcon />
           </IconAction>
         ) : null}
+        {/* A magnifier searches; it does not list commands. Once there was a
+            real search these two had to stop sharing an icon. */}
+        <IconAction
+          label="Search this project"
+          keys={formatChord("mod+shift+f")}
+          onClick={() => search.open()}
+        >
+          <SearchIcon />
+        </IconAction>
         <IconAction
           label="Command palette"
           keys={formatChord("mod+k")}
           onClick={() => window.dispatchEvent(new CustomEvent("pi:palette"))}
         >
-          <SearchIcon />
+          <CommandIcon />
         </IconAction>
         <IconAction
           label="Settings"

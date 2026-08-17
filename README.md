@@ -36,6 +36,10 @@ transcript with syntax highlighting, and re-reads itself when the agent edits
 it, so what you are looking at is never a stale copy. ⌘↩ in the file finder
 puts an `@` reference in the composer instead of opening it.
 
+**Search** — ⌘⇧F searches file contents *and* every conversation about this
+project in one query. Case, whole-word and regex switches; a hit in a file
+opens it at that line, a hit in a conversation opens that thread.
+
 **Composer** — model picker with context window, price, and whether a model
 reasons or takes images. Reasoning effort offers only the levels the selected
 model supports. `@` references files, `$` skills, `/` commands. While a turn is
@@ -53,7 +57,7 @@ your turns as rewind points.
 date or project. Search reaches project names, so typing a repo name finds
 sessions inside it.
 
-⌘K reaches every command, model, and session.
+⌘K reaches every command, model, and session. ⌘P opens a file by name.
 
 ## Performance
 

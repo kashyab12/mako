@@ -254,6 +254,59 @@ export interface WorkspaceFile {
   changed?: boolean
 }
 
+/* ------------------------------------------------------------------ */
+/* search                                                              */
+/* ------------------------------------------------------------------ */
+
+export interface SearchOptions {
+  /** Treat the query as a regular expression rather than literal text. */
+  regex?: boolean
+  caseSensitive?: boolean
+  /** Whole-word matching, as `\bfoo\b` would. */
+  wholeWord?: boolean
+  /** Search past conversations too, not only the working tree. */
+  threads?: boolean
+  /** Reach every project, or only this one. Threads only; files are per-workspace. */
+  scope?: "workspace" | "all"
+}
+
+export interface SearchLine {
+  line: number
+  text: string
+}
+
+export interface FileMatches {
+  /** Workspace-relative. */
+  path: string
+  lines: SearchLine[]
+  /** Matches beyond the ones listed, so the UI can say so rather than lie. */
+  more: number
+}
+
+export interface ThreadMatches {
+  /** The session file, which is what `openSession` takes. */
+  path: string
+  title: string
+  cwd: string
+  modified: string
+  lines: Array<{ role: ChatRole; text: string }>
+  more: number
+}
+
+export interface SearchResults {
+  query: string
+  files: FileMatches[]
+  threads: ThreadMatches[]
+  /** Total matching lines found, including any not returned. */
+  total: number
+  /** True when the sweep hit a ceiling — the result set is not the whole truth. */
+  truncated: boolean
+  /** How long it took, in milliseconds. */
+  elapsed: number
+  /** Set when the query itself was the problem, e.g. an invalid regex. */
+  error?: string
+}
+
 /** One workspace file, opened for reading. */
 export interface FileContents {
   /** Workspace-relative, as it was asked for. */

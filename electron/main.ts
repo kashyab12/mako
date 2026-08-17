@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import { COMMIT_PROMPT, type AgentHost } from "./host.js"
 import { HostPool } from "./pool.js"
 import { listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
-import type { BootPayload, HostEvent, ThinkingLevel } from "./shared.js"
+import type { BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const isDev = !app.isPackaged && !process.env.MAKO_PROD
@@ -219,6 +219,9 @@ function bindIpc() {
 
   ipcMain.handle("pi:list-files", () => withHost((h) => h.listFiles()))
   ipcMain.handle("pi:read-file", (_e, path: string) => withHost((h) => h.readWorkspaceFile(path)))
+  ipcMain.handle("pi:search", (_e, query: string, options?: SearchOptions) =>
+    withHost((h) => h.search(query, options))
+  )
 
   ipcMain.handle("pi:git-status", () => withHost((h) => h.gitStatus()))
   ipcMain.handle("pi:git-diff", (_e, path: string) => withHost((h) => h.gitDiff(path)))

@@ -11,6 +11,7 @@ import { actions, store } from "@/state/session"
 import { getPi } from "@/lib/bridge"
 import { prefsStore, setPref, togglePref } from "@/state/prefs"
 import { tabsStore } from "@/state/tabs"
+import { search } from "@/state/search"
 import type { ThinkingLevel } from "@/lib/types"
 
 const openPalette = () => {
@@ -187,6 +188,14 @@ const DESK_COMMANDS: DeskCommand[] = [
     section: "View",
     keys: "mod+b",
     run: () => togglePref("railOpen"),
+  },
+  {
+    id: "view.search",
+    title: "Search everything…",
+    section: "View",
+    keys: "mod+shift+f",
+    hint: "File contents and every conversation, in one query",
+    run: () => search.open(),
   },
   {
     id: "view.quick-open",

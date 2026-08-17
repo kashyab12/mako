@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react"
 import { File, Virtualizer } from "@pierre/diffs/react"
 import { usePrefs } from "@/state/prefs"
 import type { FileContents } from "@/lib/types"
@@ -14,8 +15,34 @@ import type { FileContents } from "@/lib/types"
  * and the actions; two stacked filename bars is the sort of thing that makes an
  * interface feel assembled rather than designed.
  */
-export function FileView({ file }: { file: FileContents }) {
+export function FileView({ file, line }: { file: FileContents; line?: number }) {
   const theme = usePrefs((prefs) => prefs.theme)
+  const host = useRef<HTMLDivElement>(null)
+
+  /**
+   * Land on the line you came for.
+   *
+   * The renderer stamps each row with `data-line`, but it fills the DOM after
+   * its own layout pass, so the row is not there on the effect's first tick.
+   * A short poll is cheap, ends the moment it finds the row, and gives up
+   * rather than spinning if the file is shorter than the line asked for.
+   */
+  useEffect(() => {
+    if (!line) return
+    let frames = 0
+    let raf = 0
+    const look = () => {
+      const row = host.current?.querySelector<HTMLElement>(`[data-line="${line}"]`)
+      if (row) {
+        row.scrollIntoView({ block: "center" })
+        return
+      }
+      if (frames++ > 90) return
+      raf = requestAnimationFrame(look)
+    }
+    raf = requestAnimationFrame(look)
+    return () => cancelAnimationFrame(raf)
+  }, [file, line])
 
   if (file.binary) {
     return (
@@ -26,15 +53,18 @@ export function FileView({ file }: { file: FileContents }) {
   }
 
   return (
-    <Virtualizer className="min-h-full">
-      <File
-        file={{ name: file.path, contents: file.contents }}
-        options={{
-          themeType: theme === "light" ? "light" : "dark",
-          disableFileHeader: true,
-        }}
-      />
-    </Virtualizer>
+    <div ref={host}>
+      <Virtualizer className="min-h-full">
+        <File
+          file={{ name: file.path, contents: file.contents }}
+          selectedLines={line ? { start: line, end: line } : null}
+          options={{
+            themeType: theme === "light" ? "light" : "dark",
+            disableFileHeader: true,
+          }}
+        />
+      </Virtualizer>
+    </div>
   )
 }
 

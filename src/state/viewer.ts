@@ -18,6 +18,13 @@ export interface ViewerState {
   file?: FileContents
   loading: boolean
   error?: string
+  /**
+   * The line to land on, when the file was opened from a search hit.
+   *
+   * Carried as state rather than scrolled imperatively because the content
+   * arrives after the open: whoever renders it scrolls once it exists.
+   */
+  line?: number
 }
 
 export const viewerStore = createStore<ViewerState>({ loading: false })
@@ -27,10 +34,10 @@ export const useViewer = createHook(viewerStore)
 let generation = 0
 
 export const viewer = {
-  async open(path: string) {
+  async open(path: string, line?: number) {
     if (!hasBridge()) return
     const mine = ++generation
-    viewerStore.set({ path, loading: true, error: undefined, file: undefined })
+    viewerStore.set({ path, line, loading: true, error: undefined, file: undefined })
     try {
       const file = await getPi().readFile(path)
       if (mine !== generation) return
@@ -46,12 +53,18 @@ export const viewer = {
 
   close() {
     generation += 1
-    viewerStore.set({ path: undefined, file: undefined, loading: false, error: undefined })
+    viewerStore.set({
+      path: undefined,
+      file: undefined,
+      loading: false,
+      error: undefined,
+      line: undefined,
+    })
   },
 
   /** Re-read what is open, after the agent has changed it underneath. */
   refresh() {
-    const { path } = viewerStore.get()
-    if (path) void viewer.open(path)
+    const { path, line } = viewerStore.get()
+    if (path) void viewer.open(path, line)
   },
 }

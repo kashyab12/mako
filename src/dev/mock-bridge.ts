@@ -331,6 +331,14 @@ export function installMockBridge() {
     capabilities: async () => capabilities,
     setActiveTools: async () => {},
     runCommand: async () => {},
+    search: async (query: string) => ({
+      query,
+      files: [{ path: "src/state/session.ts", lines: [{ line: 1, text: `// ${query}` }], more: 0 }],
+      threads: [],
+      total: 1,
+      truncated: false,
+      elapsed: 3,
+    }),
     readFile: async (path: string) => ({
       path,
       contents: `// ${path}\n// The browser mock has no filesystem; this stands in for one.\n`,

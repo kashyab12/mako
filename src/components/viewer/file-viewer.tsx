@@ -23,6 +23,7 @@ export function FileViewer() {
   const path = useViewer((state) => state.path)
   const file = useViewer((state) => state.file)
   const loading = useViewer((state) => state.loading)
+  const line = useViewer((state) => state.line)
   const error = useViewer((state) => state.error)
 
   useEffect(() => {
@@ -80,7 +81,7 @@ export function FileViewer() {
           <p className="p-4 text-[12px] text-removed">{error}</p>
         ) : file ? (
           <Suspense fallback={<p className="shimmer p-4 text-[12px]">Opening…</p>}>
-            <View file={file} />
+            <View file={file} line={line} />
           </Suspense>
         ) : (
           <p className="shimmer p-4 text-[12px]">Reading {path}…</p>
