@@ -552,6 +552,18 @@ impl Render for Desk {
             .text_size(text::UI)
             .child(self.title_bar(&theme, cx))
             .child(
+                // The panel row has to be told it may not grow past the window.
+                // Without `flex_1` + `min_h_0` it sizes to its tallest child —
+                // a transcript is arbitrarily tall — so the composer slid off
+                // the bottom edge and took the status bar with it. `min_h_0` is
+                // the load-bearing half: flex items default to `min-height:
+                // auto`, which refuses to shrink below content height no matter
+                // what `flex_1` asks for.
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_h_0()
+                    .child(
                 // Real resizable panels. The dividers are draggable and the
                 // widths persist across renders, which is the difference
                 // between a layout and a mock-up.
@@ -572,6 +584,10 @@ impl Render for Desk {
                                 .flex()
                                 .flex_col()
                                 .size_full()
+                                // Same rule one level down: the transcript is
+                                // the only part that may scroll, so it is the
+                                // only part allowed to shrink.
+                                .min_h_0()
                                 .child(self.transcript(&theme, window, cx))
                                 .child(self.composer(&theme, cx))
                                 .into_any_element()
@@ -585,6 +601,7 @@ impl Render for Desk {
                                 .child(panel(&theme).size_full().child(self.inspector.clone())),
                         )
                     }),
+                    ),
             )
             .child(self.status_bar(&theme))
             .child(self.palette.clone())
@@ -826,11 +843,10 @@ impl Desk {
                                 div()
                                     .id(("session", index))
                                     .relative()
-                                    .h(px(50.0))
+                                    .h(px(30.0))
                                     .flex()
-                                    .flex_col()
-                                    .justify_center()
-                                    .gap(px(3.0))
+                                    .items_center()
+                                    .gap(px(8.0))
                                     .rounded(space::RADIUS)
                                     .px(px(9.0))
                                     .when(selected, |row| row.bg(theme.selected()))
@@ -858,48 +874,43 @@ impl Desk {
                                                 .bg(theme.foreground.opacity(0.7)),
                                         )
                                     })
+                                    // One line, not two. The title is what the
+                                    // eye scans; the age is what it falls back
+                                    // to. Splitting them over two rows halved
+                                    // how many sessions fit on screen and bought
+                                    // nothing — the count now sits inline, in
+                                    // the same tone as the age.
                                     .child(
                                         div()
-                                            .flex()
-                                            .items_center()
-                                            .gap(px(6.0))
-                                            .child(
-                                                div()
-                                                    .flex_1()
-                                                    .min_w_0()
-                                                    .overflow_hidden()
-                                                    .text_size(text::UI)
-                                                    .text_color(if selected {
-                                                        theme.foreground
-                                                    } else {
-                                                        theme.foreground.opacity(0.85)
-                                                    })
-                                                    .child(SharedString::from(clip(
-                                                        entry.title(),
-                                                        30,
-                                                    ))),
-                                            )
-                                            .child(
-                                                div()
-                                                    .flex_none()
-                                                    .text_size(text::MICRO)
-                                                    .text_color(theme.faint)
-                                                    .child(SharedString::from(relative(
-                                                        entry.modified,
-                                                    ))),
-                                            ),
+                                            .flex_1()
+                                            .min_w_0()
+                                            // The row height is fixed by the
+                                            // virtualized list, so a title that
+                                            // wraps does not make its row taller
+                                            // — it spills into the next one. It
+                                            // has to be a single line by
+                                            // construction, not by hoping the
+                                            // character budget was generous
+                                            // enough for the current rail width.
+                                            .truncate()
+                                            .text_size(text::UI)
+                                            .text_color(if selected {
+                                                theme.foreground
+                                            } else {
+                                                theme.foreground.opacity(0.82)
+                                            })
+                                            .child(SharedString::from(clip(entry.title(), 80))),
                                     )
                                     .child(
                                         div()
+                                            .flex_none()
                                             .flex()
                                             .items_center()
-                                            .gap(px(4.0))
+                                            .gap(px(6.0))
                                             .text_size(text::MICRO)
                                             .text_color(theme.faint)
-                                            .child(
-                                                Icon::new(IconName::GalleryVerticalEnd)
-                                                    .size(px(9.0)),
-                                            )
+                                            .child(SharedString::from(relative(entry.modified)))
+                                            .child(dot_separator(&theme))
                                             .child(SharedString::from(
                                                 entry.messages.to_string(),
                                             )),
@@ -943,7 +954,10 @@ impl Desk {
             .py(px(26.0));
 
         if self.state.exchanges.is_empty() {
-            column = column.child(self.empty_state(theme));
+            // Pushed down toward the composer rather than pinned to the top of
+            // an otherwise empty panel: the thing being introduced is the field
+            // you are about to type in, so the introduction should sit near it.
+            column = column.child(div().h(px(140.0)).flex_none()).child(self.empty_state(theme));
         }
 
         for (index, exchange) in self.state.exchanges.iter().enumerate() {
@@ -1085,16 +1099,31 @@ impl Desk {
         let reply = &exchange.reply;
 
         if !reply.thinking.is_empty() {
+            // Reasoning is an aside, not a message. It reads as one via a rule
+            // down its left edge and no fill at all — the previous filled bar
+            // had the same visual weight as the answer, so a transcript
+            // alternated between two grey slabs with no hierarchy between them.
             block = block.child(
                 div()
-                    .rounded(space::RADIUS)
-                    .bg(theme.raised.opacity(0.45))
-                    .px(px(11.0))
-                    .py(px(7.0))
-                    .text_size(text::SMALL)
-                    .line_height(px(17.0))
-                    .text_color(theme.faint)
-                    .child(SharedString::from(clip(&reply.thinking, 260))),
+                    .flex()
+                    .gap(px(10.0))
+                    .child(
+                        div()
+                            .flex_none()
+                            .w(px(2.0))
+                            .rounded_full()
+                            .bg(theme.foreground.opacity(0.13)),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .py(px(1.0))
+                            .text_size(text::SMALL)
+                            .line_height(px(18.0))
+                            .text_color(theme.faint)
+                            .child(SharedString::from(clip(&reply.thinking, 320))),
+                    ),
             );
         }
 

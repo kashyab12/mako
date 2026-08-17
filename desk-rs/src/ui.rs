@@ -47,22 +47,18 @@ pub fn row(theme: &Theme) -> Div {
 /// rasteriser and a cache for a shape that is two curves, and a drawn mark
 /// picks up the theme's foreground automatically in both schemes.
 ///
-/// The silhouette is a swept triangle — a vertical trailing edge with the
-/// leading edge raked back — approximated here by a rotated square with one
-/// rounded corner, which reads correctly from about 12px up.
-pub fn fin(theme: &Theme, size: Pixels) -> Div {
-    div()
+/// The silhouette is the dorsal fin from the app icon: a concave leading edge
+/// sweeping up to the tip, a convex trailing edge, and a flat base. The earlier
+/// stand-in — a square with one corner rounded off — was not the mark and read
+/// as a missing image at every size.
+///
+/// It picks up the theme's foreground, so it inverts with the scheme without a
+/// second asset.
+pub fn fin(theme: &Theme, size: Pixels) -> gpui::Svg {
+    gpui::svg()
+        .path("icons/mako-fin.svg")
         .size(size)
-        .flex()
-        .items_center()
-        .justify_center()
-        .child(
-            div()
-                .w(size * 0.72)
-                .h(size * 0.72)
-                .rounded_tl(size * 0.62)
-                .bg(theme.foreground.opacity(0.92)),
-        )
+        .text_color(theme.foreground.opacity(0.92))
 }
 
 /// The specular top edge that makes a translucent surface read as glass.

@@ -16,7 +16,7 @@ use gpui::{
 };
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputState};
-use gpui_component::badge::Badge;
+
 use gpui_component::divider::Divider;
 use gpui_component::tab::{Tab, TabBar};
 use gpui_component::Sizable;
@@ -181,7 +181,7 @@ impl Render for Inspector {
 }
 
 impl Inspector {
-    fn tabs(&self, _theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+    fn tabs(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let selected = match self.lane {
             Lane::Changes => 0,
             Lane::Context => 1,
@@ -206,10 +206,24 @@ impl Inspector {
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(5.0))
+                        .gap(px(6.0))
                         .child("Changes")
+                        // A count, not a Badge: Badge pins its number to the
+                        // *corner of its child*, which is right for a bell icon
+                        // and wrong for a word — it landed on top of the "s".
+                        // And it is neutral rather than red, because uncommitted
+                        // work is the normal state of a working tree, not an
+                        // error.
                         .when(changed > 0, |tab| {
-                            tab.child(Badge::new().count(changed).child(div()))
+                            tab.child(
+                                div()
+                                    .rounded_full()
+                                    .bg(theme.foreground.opacity(0.12))
+                                    .px(px(5.0))
+                                    .text_size(text::MICRO)
+                                    .text_color(theme.muted)
+                                    .child(SharedString::from(changed.to_string())),
+                            )
                         }),
                 ),
             )
