@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { MultiFileDiff, Virtualizer } from "@pierre/diffs/react"
 import { Blank, IconAction } from "@/components/ui/kit"
 import { CommitBox } from "@/components/inspector/commit-box"
+import { PullRequestCard } from "@/components/inspector/pull-request"
 import { Slot } from "@/extend/slot"
 import { actions, useSession } from "@/state/session"
 import { getPi } from "@/lib/bridge"
@@ -98,16 +99,21 @@ export function ChangesPanel() {
 
   if (files.length === 0) {
     return (
-      <div className="flex h-full flex-col">
-        <Blank
-          icon={<CheckCircle2Icon />}
-          title={git?.root ? "Working tree is clean" : "Not a git repository"}
-          body={
-            git?.root
-              ? `Nothing has changed on ${git.branch ?? "this branch"}. Edits appear here as Pi makes them.`
-              : "Run git init in this folder to track changes and see diffs here."
-          }
-        />
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="min-h-0 flex-1">
+          <Blank
+            icon={<CheckCircle2Icon />}
+            title={git?.root ? "Working tree is clean" : "Not a git repository"}
+            body={
+              git?.root
+                ? `Nothing has changed on ${git.branch ?? "this branch"}. Edits appear here as the agent makes them.`
+                : "Run git init in this folder to track changes and see diffs here."
+            }
+          />
+        </div>
+        {/* Still here on a clean tree — a branch you have finished committing
+            is exactly when you want to open the pull request. */}
+        <PullRequestCard />
       </div>
     )
   }
@@ -212,6 +218,7 @@ export function ChangesPanel() {
       ) : null}
 
       <CommitBox staged={staged} total={files.length} />
+      <PullRequestCard />
     </div>
   )
 }

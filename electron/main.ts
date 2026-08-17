@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 import { COMMIT_PROMPT, type AgentHost } from "./host.js"
 import { breadcrumb, clearCrashes, crashesDir, installCrashReporting, listCrashes, record } from "./crash.js"
 import { check, installNow, installUpdates, updateState } from "./updates.js"
+import { createPull, githubStatus, listPulls, pullForBranch, rerunChecks, type CreatePullOptions } from "./github.js"
 import { HostPool } from "./pool.js"
 import { listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
 import type { BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
@@ -297,6 +298,14 @@ function bindIpc() {
       if (failure) shell.showItemInFolder(absolute)
     })
   )
+  handle("pi:github-status", () => withHost((h) => githubStatus(h.workspace)))
+  handle("pi:pull-request", () => withHost((h) => pullForBranch(h.workspace)))
+  handle("pi:pull-requests", (_e, limit?: number) => withHost((h) => listPulls(h.workspace, limit)))
+  handle("pi:create-pull", (_e, options: CreatePullOptions) =>
+    withHost((h) => createPull(h.workspace, options))
+  )
+  handle("pi:rerun-checks", () => withHost((h) => rerunChecks(h.workspace)))
+
   handle("pi:update-state", () => updateState())
   handle("pi:check-updates", () => check())
   handle("pi:install-update", () => installNow())
@@ -316,6 +325,13 @@ function bindIpc() {
       record(kind, error, payload.source)
     }
   )
+
+  handle("pi:open-url", (_e, url: string) => {
+    // Only ever http(s): `shell.openExternal` will happily run a `file://` or a
+    // custom scheme, and this is reached from data the app did not author.
+    if (!/^https?:\/\//i.test(url)) return
+    void shell.openExternal(url)
+  })
 
   handle("pi:copy", (_e, text: string) => {
     clipboard.writeText(text)

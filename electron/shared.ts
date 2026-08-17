@@ -277,6 +277,55 @@ export interface UpdateState {
 }
 
 /* ------------------------------------------------------------------ */
+/* github                                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Whether GitHub is usable, and if not, which of three different problems it
+ * is — a missing tool, a missing login, or a folder that is not a GitHub repo.
+ * They want three different answers from the UI, so they are three fields.
+ */
+export interface GitHubStatus {
+  installed: boolean
+  authenticated: boolean
+  login?: string
+  /** `owner/name`, when this folder has a GitHub remote. */
+  repo?: string
+  defaultBranch?: string
+}
+
+export interface CheckSummary {
+  name: string
+  state: "passed" | "failed" | "running" | "unknown"
+  url?: string
+}
+
+export interface ReviewSummary {
+  login: string
+  state: "approved" | "changes" | "commented"
+}
+
+export interface PullRequest {
+  number: number
+  title: string
+  body: string
+  state: "open" | "closed" | "merged"
+  draft: boolean
+  url: string
+  head: string
+  base: string
+  additions: number
+  deletions: number
+  files: number
+  mergeable: "clean" | "conflicting" | "unknown"
+  reviewDecision: "approved" | "changes" | "required" | "none"
+  author?: string
+  updatedAt?: string
+  checks: CheckSummary[]
+  reviews: ReviewSummary[]
+}
+
+/* ------------------------------------------------------------------ */
 /* search                                                              */
 /* ------------------------------------------------------------------ */
 

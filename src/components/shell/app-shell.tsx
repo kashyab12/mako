@@ -39,11 +39,14 @@ export function AppShell() {
     return () => dispose?.()
   }, [])
 
-  // Sessions on disk change outside our process; refresh when the window
-  // regains focus rather than polling.
+  // Sessions and the working tree both change outside our process — a branch
+  // switched in a terminal, a session started elsewhere. Refresh when the
+  // window regains focus rather than polling for either.
   useEffect(() => {
     const refresh = () => {
-      if (store.get().phase === "ready") void actions.refreshSessions()
+      if (store.get().phase !== "ready") return
+      void actions.refreshSessions()
+      void actions.refreshGit()
     }
     window.addEventListener("focus", refresh)
     return () => window.removeEventListener("focus", refresh)

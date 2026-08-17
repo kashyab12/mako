@@ -69,6 +69,15 @@ over the transcript when you switch to it. The session list is virtualized,
 offscreen turns are skipped with `content-visibility`, and the diff engine is
 code-split out of the boot path.
 
+## GitHub
+
+The branch's pull request lives under the commit box: state, base, diff size,
+whether CI passed, whether anyone approved, and whether it conflicts. No PR yet
+and commits to push? One line offers to open one — the agent drafts the title
+and body from the diff, you edit them, and nothing is published until you press
+the button. Authentication is whatever `gh` already has; if `gh` is missing or
+logged out, none of this appears rather than nagging.
+
 ## Shipping it
 
 ```bash

@@ -82,6 +82,7 @@ electron/          main process — needs a restart
   pool.ts          the open tabs: several `AgentHost`s at once, one in front.
                    Commands address the foreground tab; the rest keep running.
   crash.ts         local-only crash reports, plus the IPC breadcrumb trail
+  github.ts        pull requests and checks, through the `gh` CLI
   updates.ts       the update feed; downloads on its own, never installs itself
   shared.ts        the wire contract between main and renderer
   preload.ts       the contextBridge surface

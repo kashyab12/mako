@@ -5,9 +5,11 @@ import type {
   FileContents,
   GitCommitEntry,
   GitDiff,
+  GitHubStatus,
   GitStatus,
   HostEvent,
   ModelInfo,
+  PullRequest,
   SearchOptions,
   SearchResults,
   SessionState,
@@ -90,6 +92,14 @@ const api = {
 
   defaultCommitPrompt: () => invoke<string>("pi:default-commit-prompt"),
 
+  /* GitHub, via the `gh` CLI. See electron/github.ts for why. */
+  githubStatus: () => invoke<GitHubStatus>("pi:github-status"),
+  pullRequest: () => invoke<PullRequest | null>("pi:pull-request"),
+  pullRequests: (limit?: number) => invoke<PullRequest[]>("pi:pull-requests", limit),
+  createPull: (options: { title: string; body: string; base?: string; draft?: boolean }) =>
+    invoke<PullRequest | null>("pi:create-pull", options),
+  rerunChecks: () => invoke<void>("pi:rerun-checks"),
+
   updateState: () => invoke<UpdateState>("pi:update-state"),
   checkUpdates: () => invoke<UpdateState>("pi:check-updates"),
   installUpdate: () => invoke<void>("pi:install-update"),
@@ -105,6 +115,7 @@ const api = {
 
   pickFolder: () => invoke<string | null>("pi:pick-folder"),
   revealPath: (path: string) => invoke<void>("pi:reveal", path),
+  openUrl: (url: string) => invoke<void>("pi:open-url", url),
   copy: (text: string) => invoke<void>("pi:copy", text),
 
   /** Subscribe to host events. Returns a disposer. */
