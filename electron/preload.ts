@@ -62,6 +62,10 @@ const api = {
     invoke<string>("pi:git-generate-message", prompt),
   stageFile: (name: string, base64: string) =>
     invoke<StagedFile>("pi:stage-file", name, base64),
+  listPlugins: () => invoke<Array<{ id: string; source: string }>>("pi:list-plugins"),
+  pluginsDir: () => invoke<string>("pi:plugins-dir"),
+  writePlugin: (id: string, source: string) => invoke<void>("pi:write-plugin", id, source),
+
   defaultCommitPrompt: () => invoke<string>("pi:default-commit-prompt"),
 
   pickFolder: () => invoke<string | null>("pi:pick-folder"),

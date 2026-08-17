@@ -3,6 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { Composer } from "@/components/composer/composer"
 import { CommandPalette } from "@/components/palette/command-palette"
 import { SettingsView } from "@/components/settings/settings-view"
+import { usePlugins } from "@/extend/use-plugins"
 import { Inspector } from "@/components/inspector/inspector"
 import { SessionRail } from "@/components/rail/session-rail"
 import { StatusBar } from "@/components/shell/status-bar"
@@ -46,6 +47,7 @@ export function AppShell() {
   }, [])
 
   useDeskCommands()
+  usePlugins()
 
   useEffect(() => {
     const open = () => setSettingsOpen(true)

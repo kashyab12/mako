@@ -226,6 +226,8 @@ export type HostEvent =
   | { type: "git"; git: GitStatus }
   | { type: "capabilities"; capabilities: Capabilities }
   | { type: "notice"; level: "info" | "success" | "error"; message: string }
+  /** A file in the plugins directory changed; the renderer should re-read them. */
+  | { type: "plugins-changed" }
 
 /** One workspace file, for the composer's `@` picker. */
 export interface WorkspaceFile {

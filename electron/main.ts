@@ -2,6 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeThem
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { COMMIT_PROMPT, PiHost, defaultWorkspace } from "./host.js"
+import { listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
 import type { BootPayload, HostEvent, ThinkingLevel } from "./shared.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -88,6 +89,11 @@ async function createWindow() {
   })
 
   window.once("ready-to-show", () => window?.show())
+
+  // The agent writes a plugin with its ordinary file tools and the window
+  // re-evaluates it — no IPC for it to learn, no command for the user to run.
+  const watcher = watchPlugins(() => emit({ type: "plugins-changed" }))
+  window.once("closed", () => watcher?.close())
   window.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
     return { action: "deny" }
@@ -193,6 +199,10 @@ function bindIpc() {
     withHost((h) => h.stageFile(name, base64))
   )
   ipcMain.handle("pi:default-commit-prompt", () => COMMIT_PROMPT)
+
+  ipcMain.handle("pi:list-plugins", () => listPlugins())
+  ipcMain.handle("pi:plugins-dir", () => pluginsDir())
+  ipcMain.handle("pi:write-plugin", (_e, id: string, source: string) => writePlugin(id, source))
 
   ipcMain.handle("pi:pick-folder", async () => {
     if (!window) return null

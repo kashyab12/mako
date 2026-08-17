@@ -8,37 +8,76 @@ description: How to modify Mako itself — the desktop app you are running insid
 You are running inside Mako, and this session is pointed at Mako's own source.
 Edits you make here change the window you are being read in.
 
-## The hot-reload contract
+## Two ways to change this app
 
-Read this before you plan any change — it determines whether the user sees your
-work immediately or not at all.
+**Decide which one you are doing before you start.** They have different reach
+and very different feedback loops.
 
-| You edit | What happens |
-| --- | --- |
-| `src/**/*.tsx`, `src/**/*.ts` | Vite hot-replaces the module and React Fast Refresh swaps the component **in place**. No reload. Component state, the open session, and the scroll position all survive. |
-| `src/index.css` | Applied instantly. No reload, no flash. |
-| `electron/**` | **Nothing happens.** This is the main process. It needs `npm run build:electron` and a full app restart. Say so explicitly when you touch it. |
-| `package.json`, `vite.config.ts` | Needs the dev server restarted. |
+### 1. A plugin — works in every build, applies with no reload
 
-Two consequences worth planning around:
+Write one `.tsx` file into the plugins directory. Mako compiles it in-process,
+runs it, and the surfaces it contributes to repaint immediately — no reload, no
+lost session, no lost scroll position. Editing the file swaps it again. This is
+the only path that works in a **packaged** app, so unless the change genuinely
+cannot be expressed as a plugin, do it this way.
 
-- **Prefer the renderer.** If a change can be made in `src/` rather than
-  `electron/`, make it there — the user sees it in under a second instead of
-  after a restart that loses their session.
-- **Fast Refresh has one rule you can break by accident.** A module that
-  exports a React component *and* something else (a constant, a hook, a helper)
-  falls back to a full reload instead of a component swap. Keep component files
-  exporting components.
+The directory is `<userData>/plugins/` — on macOS,
+`~/Library/Application Support/mako/plugins/`. Write there with your ordinary
+file tools; you do not need to tell Mako anything.
 
-If you must touch `electron/`, finish the renderer work first so the user has
-something to look at, and tell them plainly that a restart is required and why.
+```tsx
+export function setup(mako) {
+  mako.registerCommand({
+    id: "clear-branch",
+    title: "Copy the branch name",
+    section: "Extension",
+    run: () => navigator.clipboard.writeText(mako.session.read().git?.branch ?? ""),
+  })
+
+  mako.registerSlot("statusbar.trailing", () => {
+    const branch = mako.session.use((s) => s.git?.branch)
+    return <span style={{ fontSize: 11 }}>{branch}</span>
+  })
+}
+```
+
+What `mako` gives you: `registerCommand`, `registerCommands`, `registerSlot`,
+`registerToolView`, `registerInspectorPanel`, `runCommand`, `session`
+(`read` / `use` / `actions`), `prefs` (`read` / `use` / `set` / `toggle`), and
+`React`.
+
+Three rules:
+
+- **No imports.** There is no bundler in the loop. Everything you may use is on
+  `mako`; a bare `import` of a package will fail.
+- **Types are stripped, not checked.** Write TypeScript if you like, but nothing
+  verifies it.
+- **`registerSlot` needs a declared slot name.** The list is in
+  `src/extend/slots.ts`. A seam that is not in that map does not exist.
+
+### 2. Editing the source — only visible when running from a checkout
+
+If Mako is running from source with a dev server, an edit to `src/**` is hot
+replaced and a component swaps in place. If it is a packaged build, **nothing
+you edit in `src/` or `electron/` can be seen at all** — there is no source tree
+in the bundle. Check which situation you are in before promising a result.
+
+Even from a checkout, `electron/**` is the main process: it needs a rebuild and
+a full app restart. Say so plainly whenever you touch it, and finish the
+renderer-side work first so there is something to look at.
+
+One trap when editing source: a module that exports a React component *and*
+something else (a constant, a hook) falls back to a full reload instead of a
+component swap. Keep component files exporting components.
 
 ## Layout
 
 ```
 electron/          main process — needs a restart
   main.ts          window, IPC handlers, app lifecycle
-  host.ts          the Pi SDK wrapper; all agent I/O goes through here
+  host.ts          the agent adapter; all agent I/O goes through here. Today
+                   it wraps Pi, but nothing above this file knows that — keep
+                   agent-specific assumptions inside it.
   shared.ts        the wire contract between main and renderer
   preload.ts       the contextBridge surface
 src/
@@ -127,9 +166,12 @@ few milliseconds and must cost one turn's re-render, not the window's.
 ## Working here
 
 - `npm run typecheck` must pass. It is fast; run it before you say you are done.
+  It does not cover plugins — those are transpiled, not checked — so read a
+  plugin back after writing it.
 - Match the surrounding code's comment density. Comments here explain *why* a
   decision was made, not what the line does. If a line is obvious, say nothing.
 - Make the change the user asked for. If you notice something else wrong,
   mention it — do not fix it silently in the same edit.
 - When you finish, say which files changed and whether the user needs to
-  restart. If everything was in `src/`, say it is already applied.
+  restart. A plugin is always already applied. A source edit is applied only if
+  Mako is running from a checkout.
