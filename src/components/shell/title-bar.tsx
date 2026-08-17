@@ -4,6 +4,7 @@ import { Slot } from "@/extend/slot"
 import { formatChord } from "@/extend/commands"
 import { actions, useSession } from "@/state/session"
 import { togglePref, usePrefs } from "@/state/prefs"
+import { MakoMark } from "@/components/ui/mako-mark"
 import { workspaceName } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import {
@@ -44,6 +45,7 @@ export function TitleBar() {
 
       <div className="pointer-events-none absolute inset-x-0 flex justify-center">
         <div className="pointer-events-auto flex min-w-0 max-w-[46%] items-center gap-2">
+          <MakoMark className="size-3.5 text-foreground/60" />
           {streaming ? (
             <span className="size-1.5 shrink-0 animate-live rounded-full bg-brand" aria-label="Streaming" />
           ) : null}
