@@ -156,6 +156,12 @@ function bindIpc() {
   )
   ipcMain.handle("pi:abort", () => withHost((h) => h.abort()))
   ipcMain.handle("pi:clear-queue", () => withHost((h) => h.clearQueue()))
+  ipcMain.handle("pi:fork", (_e, entryId: string) =>
+    withHost(async (h) => {
+      const result = await h.fork(entryId)
+      return { ...result, session: h.state() }
+    })
+  )
   ipcMain.handle("pi:navigate-tree", (_e, targetId: string) =>
     withHost(async (h) => {
       await h.navigateTree(targetId)

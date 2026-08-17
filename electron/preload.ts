@@ -35,6 +35,8 @@ const api = {
   abort: () => invoke<void>("pi:abort"),
   clearQueue: () => invoke<void>("pi:clear-queue"),
   navigateTree: (targetId: string) => invoke<SessionState>("pi:navigate-tree", targetId),
+  fork: (entryId: string) =>
+    invoke<{ cancelled: boolean; text?: string; session: SessionState }>("pi:fork", entryId),
   compact: (instructions?: string) => invoke<void>("pi:compact", instructions),
   setAutoCompaction: (enabled: boolean) => invoke<void>("pi:set-auto-compaction", enabled),
 

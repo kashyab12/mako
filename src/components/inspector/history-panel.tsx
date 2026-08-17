@@ -33,6 +33,7 @@ export function HistoryPanel() {
 
   const checkpoints = useMemo(() => checkpointsOf(tree), [tree])
   const rewind = useCallback((id: string) => void actions.navigate(id), [])
+  const branch = useCallback((id: string) => void actions.fork(id), [])
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -65,6 +66,7 @@ export function HistoryPanel() {
                 checkpoint={checkpoint}
                 index={index + 1}
                 onRewind={rewind}
+                onBranch={branch}
               />
             ))}
           </div>
@@ -78,10 +80,12 @@ const Row = memo(function Row({
   checkpoint,
   index,
   onRewind,
+  onBranch,
 }: {
   checkpoint: Checkpoint
   index: number
   onRewind: (id: string) => void
+  onBranch: (id: string) => void
 }) {
   const { current, live } = checkpoint
 
@@ -171,22 +175,33 @@ const Row = memo(function Row({
 
         {/* Rewind is an explicit control, not the whole card: moving the
             conversation is too consequential to trigger by a stray click. */}
-        {!current ? (
-          <button
-            type="button"
-            title="Continue the conversation from here"
-            onClick={() => onRewind(checkpoint.id)}
-            className={cn(
-              "pressable absolute top-1.5 right-1.5 flex h-5 items-center gap-1 rounded-md px-1.5",
-              "bg-surface/80 text-[10px] text-faint ring-1 ring-hairline backdrop-blur-sm",
-              "opacity-0 transition-opacity duration-150",
-              "hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
-            )}
-          >
-            <RotateCcwIcon className="size-2.5" />
-            Rewind
-          </button>
-        ) : null}
+        {/* Two different things, so two controls. Rewind moves *this*
+            conversation back onto another branch and abandons where you were.
+            Branch leaves it exactly as it is and opens a new session from that
+            turn — which is what you want when the point is to try the same
+            question two ways and compare. */}
+        <div
+          className={cn(
+            "absolute top-1.5 right-1.5 flex items-center gap-1",
+            "opacity-0 transition-opacity duration-150",
+            "group-hover:opacity-100 focus-within:opacity-100"
+          )}
+        >
+          <CheckpointAction
+            label="Branch"
+            title="Open a new session from this turn, keeping this one"
+            icon={<GitBranchPlusIcon className="size-2.5" />}
+            onClick={() => onBranch(checkpoint.id)}
+          />
+          {!current ? (
+            <CheckpointAction
+              label="Rewind"
+              title="Move this conversation back to here"
+              icon={<RotateCcwIcon className="size-2.5" />}
+              onClick={() => onRewind(checkpoint.id)}
+            />
+          ) : null}
+        </div>
 
         <Slot name="inspector.history.trailing" checkpoint={checkpoint} />
       </div>
@@ -265,6 +280,35 @@ function LaneTab({
           active ? "bg-foreground/60 opacity-100" : "opacity-0"
         )}
       />
+    </button>
+  )
+}
+
+/** One of the two things you can do to a past turn. */
+function CheckpointAction({
+  label,
+  title,
+  icon,
+  onClick,
+}: {
+  label: string
+  title: string
+  icon: React.ReactNode
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={cn(
+        "pressable flex h-5 items-center gap-1 rounded-md px-1.5",
+        "bg-surface/80 text-[10px] text-faint ring-1 ring-hairline backdrop-blur-sm",
+        "transition-colors duration-120 hover:text-foreground"
+      )}
+    >
+      {icon}
+      {label}
     </button>
   )
 }

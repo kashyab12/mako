@@ -211,6 +211,24 @@ export const actions = {
     void actions.refreshModels()
   },
 
+  /**
+   * Branch at a past turn into a new session, leaving the original alone.
+   *
+   * The prompt that was forked from comes back so it can be put in the
+   * composer: the point of forking is to answer that same question a different
+   * way, and retyping it is the one thing the feature exists to avoid.
+   */
+  async fork(entryId: string) {
+    const result = await guard(() => getPi().fork(entryId))
+    if (!result || result.cancelled) return
+    const next = result.session
+    store.set({ meta: next.meta, messages: next.messages, tree: next.tree, stream: null })
+    void actions.refreshSessions(next.meta.cwd)
+    if (result.text) {
+      window.dispatchEvent(new CustomEvent("pi:compose", { detail: result.text }))
+    }
+  },
+
   async navigate(nodeId: string) {
     const next = await guard(() => getPi().navigateTree(nodeId))
     if (!next) return

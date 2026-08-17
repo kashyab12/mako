@@ -575,6 +575,30 @@ export class PiHost {
     this.schedule()
   }
 
+  /**
+   * Branch the conversation at a past turn into a *new* session.
+   *
+   * Distinct from `navigateTree`, which rewinds this session onto another
+   * branch of the same file — that abandons where you were. Forking keeps the
+   * original intact and gives the new line of enquiry its own session, which
+   * is what you want when the point is to try two things and compare them.
+   *
+   * `position: "before"` puts the fork just ahead of the chosen prompt, so the
+   * new session ends with that prompt ready to be re-answered differently
+   * rather than replaying the answer you already have.
+   */
+  async fork(entryId: string) {
+    if (!this.runtime) throw new Error("Pi host is not ready")
+    const result = await this.runtime.fork(entryId, { position: "before" })
+    if (result.cancelled) return { cancelled: true as const }
+    this.cwd = this.session.sessionManager.getCwd() || this.cwd
+    this.bind()
+    this.pushState()
+    void this.pushGit()
+    void this.pushCapabilities()
+    return { cancelled: false as const, text: result.selectedText }
+  }
+
   async navigateTree(targetId: string) {
     await this.session.navigateTree(targetId, { summarize: false })
     this.pushState()
