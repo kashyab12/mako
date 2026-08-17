@@ -178,7 +178,7 @@ const META: SessionMeta = {
   sessionId: "mock-session",
   sessionFile: "/tmp/sessions/rail-perf.jsonl",
   sessionName: "Rail re-render audit",
-  cwd: "/Users/you/pi-ui",
+  cwd: "/Users/you/mako",
   leafId: "n3",
   model: MODELS[0],
   thinkingLevel: "high",
