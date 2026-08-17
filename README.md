@@ -69,6 +69,15 @@ over the transcript when you switch to it. The session list is virtualized,
 offscreen turns are skipped with `content-visibility`, and the diff engine is
 code-split out of the boot path.
 
+## When it breaks
+
+A component that throws no longer takes the window with it: you get a screen
+that says what happened and offers to retry or reload, and the agent keeps
+running either way — it lives in the main process. Unhandled errors, rejections
+and a dead renderer are written to `<userData>/crashes` with the app and OS
+versions and a trail of the last IPC calls. **Nothing is sent anywhere.**
+Settings → Diagnostics lists them and copies one on request.
+
 ## Extending it
 
 Commands, slots, tool views, and inspector panels are registries in

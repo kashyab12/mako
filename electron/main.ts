@@ -2,6 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeThem
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { COMMIT_PROMPT, type AgentHost } from "./host.js"
+import { breadcrumb, clearCrashes, crashesDir, installCrashReporting, listCrashes, record } from "./crash.js"
 import { HostPool } from "./pool.js"
 import { listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
 import type { BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
@@ -105,10 +106,19 @@ async function createWindow() {
       const where = details.lineNumber ? ` (${details.sourceId}:${details.lineNumber})` : ""
       console.log(`[renderer:${details.level}] ${details.message}${where}`)
     })
-    window.webContents.on("render-process-gone", (_event, details) => {
-      console.error(`[renderer] gone: ${details.reason}`)
-    })
   }
+
+  // A dead renderer is a blank window with no way back. Record it, then reload
+  // once — the agent's runtimes live in this process and survived, so the
+  // conversation is still there on the other side of a reload.
+  window.webContents.on("render-process-gone", (_event, details) => {
+    record("renderer-gone", new Error(`renderer exited: ${details.reason}`))
+    if (details.reason === "clean-exit" || window?.isDestroyed()) return
+    setTimeout(() => {
+      if (!window || window.isDestroyed()) return
+      window.reload()
+    }, 400)
+  })
 
   // The agent writes a plugin with its ordinary file tools and the window
   // re-evaluates it — no IPC for it to learn, no command for the user to run.
@@ -126,8 +136,32 @@ async function createWindow() {
   }
 }
 
+/**
+ * Every IPC call, wrapped once.
+ *
+ * Two things fall out of doing this in one place rather than at forty call
+ * sites: a breadcrumb per call, so a crash report says what the app was doing;
+ * and a recorded report for any handler that throws, which until now surfaced
+ * only as a toast and left nothing behind to read afterwards.
+ *
+ * The breadcrumb is the channel name and nothing else. Arguments would mean
+ * keeping the user's prompts and source on disk, which the crash file promises
+ * not to do.
+ */
+function handle(channel: string, listener: Parameters<typeof ipcMain.handle>[1]) {
+  ipcMain.handle(channel, async (event, ...args) => {
+    breadcrumb(channel)
+    try {
+      return await listener(event, ...args)
+    } catch (error) {
+      record("main-uncaught", error, channel)
+      throw error
+    }
+  })
+}
+
 function bindIpc() {
-  ipcMain.handle("pi:boot", async (): Promise<BootPayload> => {
+  handle("pi:boot", async (): Promise<BootPayload> => {
     const live = await ready()
     const [tabs, models] = await Promise.all([live.snapshots(), live.active.listModels()])
     return {
@@ -141,41 +175,41 @@ function bindIpc() {
     }
   })
 
-  ipcMain.handle("pi:open-tab", async (_e, options?: { cwd?: string; sessionPath?: string }) => {
+  handle("pi:open-tab", async (_e, options?: { cwd?: string; sessionPath?: string }) => {
     const live = await ready()
     return live.open(options ?? {})
   })
-  ipcMain.handle("pi:close-tab", async (_e, id: string) => {
+  handle("pi:close-tab", async (_e, id: string) => {
     const live = await ready()
     return live.close(id)
   })
-  ipcMain.handle("pi:activate-tab", async (_e, id: string) => {
+  handle("pi:activate-tab", async (_e, id: string) => {
     const live = await ready()
     return live.activate(id)
   })
 
-  ipcMain.handle("pi:list-sessions", (_e, cwd?: string, scope?: "workspace" | "all") =>
+  handle("pi:list-sessions", (_e, cwd?: string, scope?: "workspace" | "all") =>
     withHost((h) => h.listSessions(cwd, scope))
   )
-  ipcMain.handle("pi:open-session", (_e, path: string) =>
+  handle("pi:open-session", (_e, path: string) =>
     withHost(async (h) => {
       await h.openSession(path)
       return h.state()
     })
   )
-  ipcMain.handle("pi:new-session", () =>
+  handle("pi:new-session", () =>
     withHost(async (h) => {
       await h.newSession()
       return h.state()
     })
   )
-  ipcMain.handle("pi:set-cwd", (_e, cwd: string) =>
+  handle("pi:set-cwd", (_e, cwd: string) =>
     withHost(async (h) => {
       await h.setCwd(cwd)
       return h.state()
     })
   )
-  ipcMain.handle("pi:set-name", (_e, name: string) => withHost((h) => h.setName(name)))
+  handle("pi:set-name", (_e, name: string) => withHost((h) => h.setName(name)))
 
   ipcMain.handle(
     "pi:prompt",
@@ -186,74 +220,74 @@ function bindIpc() {
       images?: Array<{ mimeType: string; data: string }>
     ) => withHost((h) => h.prompt(text, mode, images))
   )
-  ipcMain.handle("pi:abort", () => withHost((h) => h.abort()))
-  ipcMain.handle("pi:clear-queue", () => withHost((h) => h.clearQueue()))
+  handle("pi:abort", () => withHost((h) => h.abort()))
+  handle("pi:clear-queue", () => withHost((h) => h.clearQueue()))
   // Branching opens a tab rather than replacing this one. Exploring the same
   // question two ways only works if both answers stay on screen.
-  ipcMain.handle("pi:fork", async (_e, entryId: string) => {
+  handle("pi:fork", async (_e, entryId: string) => {
     const live = await ready()
     return live.forkIntoTab(entryId)
   })
-  ipcMain.handle("pi:navigate-tree", (_e, targetId: string) =>
+  handle("pi:navigate-tree", (_e, targetId: string) =>
     withHost(async (h) => {
       await h.navigateTree(targetId)
       return h.state()
     })
   )
-  ipcMain.handle("pi:compact", (_e, instructions?: string) => withHost((h) => h.compact(instructions)))
-  ipcMain.handle("pi:set-auto-compaction", (_e, enabled: boolean) =>
+  handle("pi:compact", (_e, instructions?: string) => withHost((h) => h.compact(instructions)))
+  handle("pi:set-auto-compaction", (_e, enabled: boolean) =>
     withHost((h) => h.setAutoCompaction(enabled))
   )
 
-  ipcMain.handle("pi:list-models", () => withHost((h) => h.listModels()))
-  ipcMain.handle("pi:set-model", (_e, provider: string, id: string) =>
+  handle("pi:list-models", () => withHost((h) => h.listModels()))
+  handle("pi:set-model", (_e, provider: string, id: string) =>
     withHost((h) => h.setModel(provider, id))
   )
-  ipcMain.handle("pi:set-thinking", (_e, level: ThinkingLevel) => withHost((h) => h.setThinking(level)))
+  handle("pi:set-thinking", (_e, level: ThinkingLevel) => withHost((h) => h.setThinking(level)))
 
-  ipcMain.handle("pi:capabilities", () => withHost((h) => h.capabilities()))
-  ipcMain.handle("pi:set-active-tools", (_e, names: string[]) => withHost((h) => h.setActiveTools(names)))
-  ipcMain.handle("pi:run-command", (_e, name: string, args?: string) =>
+  handle("pi:capabilities", () => withHost((h) => h.capabilities()))
+  handle("pi:set-active-tools", (_e, names: string[]) => withHost((h) => h.setActiveTools(names)))
+  handle("pi:run-command", (_e, name: string, args?: string) =>
     withHost((h) => h.runCommand(name, args))
   )
 
-  ipcMain.handle("pi:list-files", () => withHost((h) => h.listFiles()))
-  ipcMain.handle("pi:read-file", (_e, path: string) => withHost((h) => h.readWorkspaceFile(path)))
-  ipcMain.handle("pi:search", (_e, query: string, options?: SearchOptions) =>
+  handle("pi:list-files", () => withHost((h) => h.listFiles()))
+  handle("pi:read-file", (_e, path: string) => withHost((h) => h.readWorkspaceFile(path)))
+  handle("pi:search", (_e, query: string, options?: SearchOptions) =>
     withHost((h) => h.search(query, options))
   )
 
-  ipcMain.handle("pi:git-status", () => withHost((h) => h.gitStatus()))
-  ipcMain.handle("pi:git-diff", (_e, path: string) => withHost((h) => h.gitDiff(path)))
-  ipcMain.handle("pi:git-stage", (_e, paths: string[]) => withHost((h) => h.gitStage(paths)))
-  ipcMain.handle("pi:git-unstage", (_e, paths: string[]) => withHost((h) => h.gitUnstage(paths)))
-  ipcMain.handle("pi:git-stage-all", () => withHost((h) => h.gitStageAll()))
-  ipcMain.handle("pi:git-unstage-all", () => withHost((h) => h.gitUnstageAll()))
-  ipcMain.handle("pi:git-commit", (_e, message: string, options?: { amend?: boolean }) =>
+  handle("pi:git-status", () => withHost((h) => h.gitStatus()))
+  handle("pi:git-diff", (_e, path: string) => withHost((h) => h.gitDiff(path)))
+  handle("pi:git-stage", (_e, paths: string[]) => withHost((h) => h.gitStage(paths)))
+  handle("pi:git-unstage", (_e, paths: string[]) => withHost((h) => h.gitUnstage(paths)))
+  handle("pi:git-stage-all", () => withHost((h) => h.gitStageAll()))
+  handle("pi:git-unstage-all", () => withHost((h) => h.gitUnstageAll()))
+  handle("pi:git-commit", (_e, message: string, options?: { amend?: boolean }) =>
     withHost((h) => h.gitCommit(message, options))
   )
-  ipcMain.handle("pi:git-push", () => withHost((h) => h.gitPush()))
-  ipcMain.handle("pi:git-log", (_e, limit?: number) => withHost((h) => h.gitLog(limit)))
-  ipcMain.handle("pi:git-generate-message", (_e, prompt?: string) =>
+  handle("pi:git-push", () => withHost((h) => h.gitPush()))
+  handle("pi:git-log", (_e, limit?: number) => withHost((h) => h.gitLog(limit)))
+  handle("pi:git-generate-message", (_e, prompt?: string) =>
     withHost((h) => h.generateCommitMessage(prompt))
   )
-  ipcMain.handle("pi:stage-file", (_e, name: string, base64: string) =>
+  handle("pi:stage-file", (_e, name: string, base64: string) =>
     withHost((h) => h.stageFile(name, base64))
   )
-  ipcMain.handle("pi:default-commit-prompt", () => COMMIT_PROMPT)
+  handle("pi:default-commit-prompt", () => COMMIT_PROMPT)
 
-  ipcMain.handle("pi:list-plugins", () => listPlugins())
-  ipcMain.handle("pi:plugins-dir", () => pluginsDir())
-  ipcMain.handle("pi:write-plugin", (_e, id: string, source: string) => writePlugin(id, source))
+  handle("pi:list-plugins", () => listPlugins())
+  handle("pi:plugins-dir", () => pluginsDir())
+  handle("pi:write-plugin", (_e, id: string, source: string) => writePlugin(id, source))
 
-  ipcMain.handle("pi:pick-folder", async () => {
+  handle("pi:pick-folder", async () => {
     if (!window) return null
     const result = await dialog.showOpenDialog(window, {
       properties: ["openDirectory", "createDirectory"],
     })
     return result.canceled ? null : result.filePaths[0]
   })
-  ipcMain.handle("pi:reveal", (_e, path: string) =>
+  handle("pi:reveal", (_e, path: string) =>
     withHost(async (h) => {
       // Paths from the UI are workspace-relative; open with the user's default
       // editor rather than only revealing the file in Finder.
@@ -262,10 +296,28 @@ function bindIpc() {
       if (failure) shell.showItemInFolder(absolute)
     })
   )
-  ipcMain.handle("pi:copy", (_e, text: string) => {
+  handle("pi:crashes", () => listCrashes())
+  handle("pi:crashes-dir", () => crashesDir())
+  handle("pi:clear-crashes", () => clearCrashes())
+  ipcMain.handle(
+    "pi:report-crash",
+    (
+      _e,
+      kind: "renderer-error" | "renderer-rejection",
+      payload: { message: string; stack?: string; source?: string }
+    ) => {
+      const error = new Error(payload.message)
+      error.stack = payload.stack
+      record(kind, error, payload.source)
+    }
+  )
+
+  handle("pi:copy", (_e, text: string) => {
     clipboard.writeText(text)
   })
 }
+
+installCrashReporting()
 
 app.whenReady().then(async () => {
   bindIpc()

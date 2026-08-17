@@ -1,15 +1,18 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Action, Eyebrow, Keys } from "@/components/ui/kit"
 import { formatChord } from "@/extend/commands"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { setPref, togglePref, usePrefs, type Theme } from "@/state/prefs"
 import { cn } from "@/lib/utils"
+import { formatRelative } from "@/lib/format"
+import type { CrashReport } from "../../../electron/crash.ts"
 import { RotateCcwIcon, XIcon } from "lucide-react"
 
 const SECTIONS = [
   { id: "appearance", label: "Appearance" },
   { id: "transcript", label: "Transcript" },
   { id: "commits", label: "Commit messages" },
+  { id: "diagnostics", label: "Diagnostics" },
 ] as const
 
 type SectionId = (typeof SECTIONS)[number]["id"]
@@ -82,9 +85,107 @@ export function SettingsView() {
           {section === "appearance" ? <Appearance /> : null}
           {section === "transcript" ? <Transcript /> : null}
           {section === "commits" ? <CommitPrompt fallback={defaultPrompt} /> : null}
+          {section === "diagnostics" ? <Diagnostics /> : null}
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * What broke, and where it is written down.
+ *
+ * Crash reports are useless if nobody can find them, and a report you cannot
+ * read is a report you cannot decide to send. This lists them, shows the stack,
+ * and gives one button to copy the whole thing — which is what someone
+ * actually needs when they want to tell you what happened.
+ */
+function Diagnostics() {
+  const [crashes, setCrashes] = useState<CrashReport[]>([])
+  const [dir, setDir] = useState("")
+  const [openId, setOpenId] = useState<string>()
+
+  const load = useCallback(() => {
+    if (!hasBridge()) return
+    void getPi().crashes().then(setCrashes).catch(() => setCrashes([]))
+    void getPi().crashesDir().then(setDir).catch(() => setDir(""))
+  }, [])
+
+  useEffect(load, [load])
+
+  return (
+    <Section title="Crash reports">
+      <p className="pb-2 text-[12px] leading-relaxed text-muted-foreground">
+        Written to this machine and nowhere else. Nothing here is sent anywhere — copy a report if
+        you want to pass it on.
+      </p>
+
+      {crashes.length === 0 ? (
+        <p className="rounded-lg bg-surface px-3 py-4 text-center text-[12px] text-faint ring-1 ring-hairline">
+          Nothing has crashed. This stays empty unless something does.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {crashes.map((crash) => (
+            <div key={crash.id} className="rounded-lg bg-surface ring-1 ring-hairline">
+              <button
+                type="button"
+                onClick={() => setOpenId(openId === crash.id ? undefined : crash.id)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left"
+              >
+                <span className="shrink-0 rounded bg-raised px-1.5 py-px text-[10px] text-faint">
+                  {crash.kind.replace("-", " ")}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[12px]">{crash.message}</span>
+                <span className="tabular shrink-0 text-[10.5px] text-faint">
+                  {formatRelative(crash.at)}
+                </span>
+              </button>
+              {openId === crash.id ? (
+                <div className="border-t border-hairline px-3 py-2">
+                  <pre className="max-h-56 overflow-auto font-mono text-[10.5px] leading-relaxed text-faint">
+                    {crash.stack ?? "No stack was captured."}
+                  </pre>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Action
+                      tone="outline"
+                      onClick={() => void navigator.clipboard.writeText(JSON.stringify(crash, null, 2))}
+                    >
+                      Copy the report
+                    </Action>
+                    <span className="text-[10.5px] text-faint">
+                      {crash.app.version} · Electron {crash.app.electron} · {crash.os.platform}{" "}
+                      {crash.os.arch}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-2 flex items-center gap-2">
+        <Action tone="outline" onClick={load}>
+          Refresh
+        </Action>
+        {dir ? (
+          <Action tone="ghost" onClick={() => void getPi().revealPath(dir)}>
+            Show the folder
+          </Action>
+        ) : null}
+        {crashes.length > 0 ? (
+          <Action
+            tone="danger"
+            onClick={() => {
+              void getPi().clearCrashes().then(load)
+            }}
+          >
+            Delete them all
+          </Action>
+        ) : null}
+      </div>
+    </Section>
   )
 }
 

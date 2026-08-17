@@ -18,6 +18,8 @@ import type {
   WorkspaceFile,
 } from "./shared.js"
 
+import type { CrashReport } from "./crash.js"
+
 const invoke = <T>(channel: string, ...args: unknown[]) =>
   ipcRenderer.invoke(channel, ...args) as Promise<T>
 
@@ -86,6 +88,15 @@ const api = {
   writePlugin: (id: string, source: string) => invoke<void>("pi:write-plugin", id, source),
 
   defaultCommitPrompt: () => invoke<string>("pi:default-commit-prompt"),
+
+  /* Crash reports. Local only — see electron/crash.ts. */
+  crashes: () => invoke<CrashReport[]>("pi:crashes"),
+  crashesDir: () => invoke<string>("pi:crashes-dir"),
+  clearCrashes: () => invoke<void>("pi:clear-crashes"),
+  reportCrash: (
+    kind: "renderer-error" | "renderer-rejection",
+    payload: { message: string; stack?: string; source?: string }
+  ) => invoke<void>("pi:report-crash", kind, payload),
 
   pickFolder: () => invoke<string | null>("pi:pick-folder"),
   revealPath: (path: string) => invoke<void>("pi:reveal", path),

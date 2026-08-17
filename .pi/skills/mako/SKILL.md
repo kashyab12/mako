@@ -81,6 +81,7 @@ electron/          main process — needs a restart
                    agent-specific assumptions inside it.
   pool.ts          the open tabs: several `AgentHost`s at once, one in front.
                    Commands address the foreground tab; the rest keep running.
+  crash.ts         local-only crash reports, plus the IPC breadcrumb trail
   shared.ts        the wire contract between main and renderer
   preload.ts       the contextBridge surface
 src/
@@ -176,7 +177,9 @@ than one conversation streams at a time, so "cheap per token" is now also
 
 ## Working here
 
-- `npm run typecheck` must pass. It is fast; run it before you say you are done.
+- `npm run typecheck` must pass. It runs `tsc -b`, which follows the project
+  references — `tsc --noEmit` does not, and silently checked nothing for months.
+  Run it before you say you are done.
   It does not cover plugins — those are transpiled, not checked — so read a
   plugin back after writing it.
 - Match the surrounding code's comment density. Comments here explain *why* a
