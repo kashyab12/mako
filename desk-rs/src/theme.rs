@@ -199,6 +199,18 @@ pub fn apply_to_components(theme: &Theme, cx: &mut gpui::App) {
     ui.success = theme.added;
     ui.warning = theme.caution;
 
+    // TextView reads the *global* highlight theme when it builds a markdown
+    // document, and the library's default is the light one regardless of
+    // `mode`. Left alone, every fenced code block in the transcript was
+    // syntax-highlighted for a white page and then drawn on a near-black
+    // surface — dark blues and browns on charcoal, which is why highlighting
+    // looked absent rather than wrong.
+    ui.highlight_theme = if theme.is_dark {
+        gpui_component::highlighter::HighlightTheme::default_dark().clone()
+    } else {
+        gpui_component::highlighter::HighlightTheme::default_light().clone()
+    };
+
     ui.scrollbar = gpui::transparent_black();
     ui.scrollbar_thumb = theme.foreground.opacity(0.16);
     ui.scrollbar_thumb_hover = theme.foreground.opacity(0.28);

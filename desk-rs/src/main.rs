@@ -39,7 +39,7 @@ use gpui_component::kbd::Kbd;
 use gpui_component::resizable::{h_resizable, resizable_panel};
 use gpui_component::scroll::Scrollbar;
 use gpui_component::skeleton::Skeleton;
-use gpui_component::text::TextView;
+use gpui_component::text::{TextView, TextViewStyle};
 use gpui_component::{Icon, IconName, Root, Sizable};
 use rpc::{Incoming, PiRpc};
 use session::{Exchange, SessionState, ToolCall};
@@ -73,6 +73,33 @@ fn dot_separator(theme: &Theme) -> impl IntoElement {
         .size(px(2.0))
         .rounded_full()
         .bg(theme.faint.opacity(0.45))
+}
+
+/// How an assistant reply's markdown is rendered.
+///
+/// The library's defaults are tuned for a document, not a transcript: a full
+/// rem between paragraphs and headings that step up hard from the body. In a
+/// column of answers that reads as loose and shouty, so both are pulled in.
+fn markdown_style(theme: &Theme) -> TextViewStyle {
+    let mut code_block = gpui::StyleRefinement::default();
+    code_block.background = Some(theme.raised.opacity(0.55).into());
+    code_block.corner_radii.top_left = Some(space::RADIUS.into());
+    code_block.corner_radii.top_right = Some(space::RADIUS.into());
+    code_block.corner_radii.bottom_left = Some(space::RADIUS.into());
+    code_block.corner_radii.bottom_right = Some(space::RADIUS.into());
+
+    TextViewStyle::default()
+        .paragraph_gap(gpui::rems(0.72))
+        .code_block(code_block)
+        // A heading inside a chat reply marks a section of one answer, not a
+        // chapter. One step over the body is enough to see it; three is a
+        // magazine.
+        .heading_font_size(|level, base| match level {
+            1 => base + px(4.0),
+            2 => base + px(2.0),
+            3 => base + px(1.0),
+            _ => base,
+        })
 }
 
 /// The glyph for a tool, by what the tool actually does.
@@ -1148,12 +1175,10 @@ impl Desk {
             // Real markdown: headings, lists, links, and fenced code with
             // syntax highlighting, rendered natively rather than as one blob.
             block = block.child(
-                div().text_size(text::BODY).child(TextView::markdown(
-                    ("reply", id),
-                    reply.text.clone(),
-                    window,
-                    cx,
-                )),
+                div().text_size(text::BODY).child(
+                    TextView::markdown(("reply", id), reply.text.clone(), window, cx)
+                        .style(markdown_style(theme)),
+                ),
             );
         }
 
