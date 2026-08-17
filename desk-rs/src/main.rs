@@ -297,6 +297,7 @@ impl Desk {
             // Widening to every project means re-reading a different slice of
             // the store, which only the shell can do — it owns the index.
             RailEvent::ScopeChanged(_) => desk.rescan_sessions(cx),
+            RailEvent::OpenWorkspace(path) => desk.open_workspace(&path.clone(), cx),
         })
         .detach();
 
@@ -330,6 +331,54 @@ impl Desk {
         }
     }
 
+    /// Point the window at a different folder.
+    ///
+    /// The agent is a child process launched with a working directory, and Pi
+    /// has no command to change it — so this genuinely restarts it. Dropping
+    /// the old client is what kills the old one: `PiRpc` owns the child and
+    /// reaps it on drop, which matters because it holds a model connection and
+    /// would otherwise keep a request in flight against a folder nobody is
+    /// looking at any more.
+    fn open_workspace(&mut self, path: &str, cx: &mut Context<Self>) {
+        if path == self.state.cwd {
+            return;
+        }
+
+        // Ordered: kill first, then spawn. Two agents against two folders,
+        // both writing to the same transcript view, is the one state this must
+        // not pass through.
+        self.rpc = None;
+
+        self.state.exchanges.clear();
+        self.state.session_file = None;
+        self.state.session_name.clear();
+        self.state.cost = 0.0;
+        self.state.tokens = 0;
+        self.state.cwd = path.to_string();
+        self.opened_tools.clear();
+        self.pinned = true;
+
+        match PiRpc::spawn(path) {
+            Ok(mut client) => {
+                let _ = client.get_state();
+                let _ = client.get_messages();
+                let _ = client.available_models();
+                self.rpc = Some(client);
+                self.state.connected = true;
+                self.state.fault = None;
+            }
+            Err(error) => {
+                self.state.connected = false;
+                self.state.fault = Some(error.to_string());
+            }
+        }
+
+        // Both of these read `state.cwd`, so they have to run after it moves.
+        self.rescan_sessions(cx);
+        self.refresh_inspector(path, cx);
+        cx.notify();
+    }
+
     /// Re-read the session store and hand the result to the rail.
     ///
     /// The scope lives on the rail because that is where it is set, but the
@@ -342,14 +391,19 @@ impl Desk {
             rail::Scope::Workspace => self.index.scan(Some(&cwd)),
             rail::Scope::All => self.index.scan(None),
         };
-        if sessions == self.sessions {
-            return;
-        }
+        let unchanged = sessions == self.sessions;
         self.sessions = sessions.clone();
         let active = self.state.session_file.clone();
         self.rail.update(cx, |rail, cx| {
+            // Always: switching folders can land on a list that happens to be
+            // identical — two empty ones, most obviously — and the header would
+            // otherwise keep naming the folder we just left.
             rail.set_active(active, cwd, cx);
-            rail.set_sessions(sessions, cx);
+            // Only when it moved: rebuilding rows re-runs grouping and ranking
+            // over every session, and this is called whenever the agent settles.
+            if !unchanged {
+                rail.set_sessions(sessions, cx);
+            }
         });
     }
 

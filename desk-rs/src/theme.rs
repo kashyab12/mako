@@ -45,6 +45,13 @@ pub struct Theme {
     pub lit_edge: Hsla,
     /// A translucent panel that still needs to be readable over the desktop.
     pub panel: Hsla,
+    /// Menus, popovers, and dialogs.
+    ///
+    /// Fully opaque, unlike every other surface here. The rest of the window is
+    /// translucent on purpose — it sits over the system's blurred backdrop —
+    /// but a menu floats over the *app's own content*, and any alpha there
+    /// means reading the list against whatever text happens to be behind it.
+    pub floating: Hsla,
     pub is_dark: bool,
 }
 
@@ -72,6 +79,7 @@ impl Theme {
             glass: gray(0.165, 0.72),
             lit_edge: gray(1.0, 0.08),
             panel: gray(0.190, 0.82),
+            floating: gray(0.215, 1.0),
             is_dark: true,
         }
     }
@@ -97,6 +105,7 @@ impl Theme {
             glass: gray(1.0, 0.68),
             lit_edge: gray(1.0, 0.60),
             panel: gray(1.0, 0.80),
+            floating: gray(1.0, 1.0),
             is_dark: false,
         }
     }
@@ -174,7 +183,10 @@ pub fn apply_to_components(theme: &Theme, cx: &mut gpui::App) {
     ui.muted = theme.raised;
     ui.muted_foreground = theme.faint;
 
-    ui.popover = theme.panel;
+    // Opaque, not `panel`. Every popover in the window drew at 82% alpha
+    // because it inherited the translucent panel fill, so the transcript read
+    // straight through open menus.
+    ui.popover = theme.floating;
     ui.popover_foreground = theme.foreground;
 
     // The accent is light, not coloured: selection reads as "brighter".

@@ -22,14 +22,14 @@ use std::time::{Duration, SystemTime};
 
 use gpui::prelude::*;
 use gpui::{
-    div, px, App, Context, Corner, Entity, EventEmitter, MouseButton, Pixels, SharedString, Size,
-    Window,
+    actions, div, px, App, Context, Corner, Entity, EventEmitter, FocusHandle, Focusable,
+    MouseButton, PathPromptOptions, Pixels, SharedString, Size, Window,
 };
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputEvent, InputState};
-use gpui_component::popover::Popover;
 use gpui_component::skeleton::Skeleton;
 use gpui_component::tooltip::Tooltip;
+use gpui_component::menu::DropdownMenu;
 use gpui_component::{v_virtual_list, Icon, IconName, Sizable};
 
 use crate::fuzzy;
@@ -37,6 +37,21 @@ use crate::prefs::Prefs;
 use crate::sessions::{relative, SessionEntry};
 use crate::theme::{space, text, Theme};
 use crate::ui::{clip, workspace_name};
+
+actions!(
+    rail,
+    [
+        ScopeWorkspace,
+        ScopeAll,
+        SortRecent,
+        SortName,
+        SortLength,
+        GroupDate,
+        GroupProject,
+        GroupNothing,
+        ExpandGroups,
+    ]
+);
 
 /// Which sessions the rail is showing.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -135,6 +150,8 @@ pub enum RailEvent {
     NewSession,
     /// The scope changed; the shell owns the index and has to rescan.
     ScopeChanged(Scope),
+    /// Point the whole window at a different folder.
+    OpenWorkspace(String),
 }
 
 pub struct Rail {
@@ -153,6 +170,15 @@ pub struct Rail {
     /// True until the first scan lands, so an empty list can say "still
     /// looking" rather than "nothing here".
     loading: bool,
+    /// Where the menu's actions are dispatched. `PopupMenu` returns focus here
+    /// before firing, so the handlers below receive them.
+    focus: FocusHandle,
+}
+
+impl Focusable for Rail {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus.clone()
+    }
 }
 
 impl EventEmitter<RailEvent> for Rail {}
@@ -194,6 +220,7 @@ impl Rail {
             sort_by: SortBy::from_pref(&prefs.rail_sort_by),
             collapsed: prefs.collapsed_groups.iter().cloned().collect(),
             loading: true,
+            focus: cx.focus_handle(),
         }
     }
 
@@ -261,6 +288,59 @@ impl Rail {
     /// quit, or that crashes, should still have remembered the last thing you
     /// told it. The file is four fields, so the write is cheaper than
     /// tracking whether one is needed.
+    fn set_scope(&mut self, next: Scope, window: &mut Window, cx: &mut Context<Self>) {
+        if self.scope == next {
+            return;
+        }
+        self.scope = next;
+        self.sync_placeholder(window, cx);
+        self.remember();
+        cx.emit(RailEvent::ScopeChanged(next));
+        self.rebuild(cx);
+    }
+
+    fn set_group_by(&mut self, next: GroupBy, cx: &mut Context<Self>) {
+        self.group_by = next;
+        self.remember();
+        self.rebuild(cx);
+    }
+
+    fn set_sort_by(&mut self, next: SortBy, cx: &mut Context<Self>) {
+        self.sort_by = next;
+        self.remember();
+        self.rebuild(cx);
+    }
+
+    /// Ask the system for a folder, then hand it to the shell.
+    ///
+    /// The prompt is a real NSOpenPanel, so it comes with the sidebar of
+    /// favourites, recent places, and typing a path with `/` — none of which is
+    /// worth rebuilding inside the window.
+    fn pick_workspace(&mut self, cx: &mut Context<Self>) {
+        let picked = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some("Open".into()),
+        });
+
+        cx.spawn(async move |rail, cx| {
+            // Three layers of "maybe": the channel can drop, the panel can
+            // fail, and the user can cancel. All three mean the same thing
+            // here — carry on with the folder we have.
+            let Ok(Ok(Some(paths))) = picked.await else {
+                return;
+            };
+            let Some(path) = paths.first().map(|p| p.to_string_lossy().to_string()) else {
+                return;
+            };
+            let _ = rail.update(cx, |_rail, cx| {
+                cx.emit(RailEvent::OpenWorkspace(path));
+            });
+        })
+        .detach();
+    }
+
     /// The placeholder names the scope, so the field says what a search will
     /// actually cover before anyone types into it and is surprised.
     fn sync_placeholder(&self, window: &mut Window, cx: &mut App) {
@@ -478,6 +558,37 @@ impl Render for Rail {
         let theme = self.theme.clone();
 
         div()
+            .key_context("Rail")
+            .track_focus(&self.focus)
+            .on_action(cx.listener(|rail, _: &ScopeWorkspace, window, cx| {
+                rail.set_scope(Scope::Workspace, window, cx)
+            }))
+            .on_action(cx.listener(|rail, _: &ScopeAll, window, cx| {
+                rail.set_scope(Scope::All, window, cx)
+            }))
+            .on_action(cx.listener(|rail, _: &SortRecent, _w, cx| {
+                rail.set_sort_by(SortBy::Recent, cx)
+            }))
+            .on_action(cx.listener(|rail, _: &SortName, _w, cx| {
+                rail.set_sort_by(SortBy::Name, cx)
+            }))
+            .on_action(cx.listener(|rail, _: &SortLength, _w, cx| {
+                rail.set_sort_by(SortBy::Length, cx)
+            }))
+            .on_action(cx.listener(|rail, _: &GroupDate, _w, cx| {
+                rail.set_group_by(GroupBy::Date, cx)
+            }))
+            .on_action(cx.listener(|rail, _: &GroupProject, _w, cx| {
+                rail.set_group_by(GroupBy::Project, cx)
+            }))
+            .on_action(cx.listener(|rail, _: &GroupNothing, _w, cx| {
+                rail.set_group_by(GroupBy::Nothing, cx)
+            }))
+            .on_action(cx.listener(|rail, _: &ExpandGroups, _w, cx| {
+                rail.collapsed.clear();
+                rail.remember();
+                rail.rebuild(cx);
+            }))
             .flex()
             .flex_col()
             .size_full()
@@ -502,14 +613,33 @@ impl Rail {
             .px(px(8.0))
             .border_b_1()
             .border_color(theme.hairline)
+            // The workspace name is the control for changing it. A folder is
+            // the one piece of global state in this window — it decides which
+            // sessions exist and which files the agent can touch — so it is
+            // worth a click from where it is already displayed.
             .child(
                 div()
+                    .id("rail-workspace")
                     .flex()
                     .flex_1()
                     .min_w_0()
                     .items_center()
                     .gap(px(6.0))
-                    .px(px(4.0))
+                    .h(px(26.0))
+                    .px(px(5.0))
+                    .rounded(space::RADIUS)
+                    .hover(|style| style.bg(theme.raised.opacity(0.7)))
+                    .tooltip({
+                        let cwd = self.workspace.clone();
+                        move |window, cx| {
+                            Tooltip::new(format!("{cwd}\nOpen a different folder"))
+                                .build(window, cx)
+                        }
+                    })
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|rail, _event, _window, cx| rail.pick_workspace(cx)),
+                    )
                     .child(
                         Icon::new(IconName::Folder)
                             .size(px(13.0))
@@ -524,6 +654,11 @@ impl Rail {
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(theme.foreground)
                             .child(SharedString::from(workspace_name(&self.workspace))),
+                    )
+                    .child(
+                        Icon::new(IconName::ChevronsUpDown)
+                            .size(px(10.0))
+                            .text_color(theme.faint.opacity(0.8)),
                     ),
             )
             .child(
@@ -589,120 +724,97 @@ impl Rail {
                         )
                     }),
             )
-            .child(self.options(theme, cx))
+            .child(self.options(cx))
     }
 
     /// Scope, sort, and grouping — behind one button rather than as visible
     /// switches. They are set rarely and read never, so spending a row of the
     /// rail on them takes space from the list they exist to organise.
-    fn options(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = theme.clone();
-        let rail = cx.entity();
+    ///
+    /// Built on the library's `dropdown_menu` rather than a hand-rolled
+    /// popover. The hand-rolled one had to reimplement dismissal, and did it
+    /// badly: choosing an item left the menu open, because nothing in a plain
+    /// `Popover` knows that a click on your content was a *choice*. `PopupMenu`
+    /// knows, and brings keyboard navigation and check marks with it.
+    fn options(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let scope = self.scope;
         let group_by = self.group_by;
         let sort_by = self.sort_by;
         let adjusted = self.adjusted();
         let collapsed_any = !self.collapsed.is_empty();
+        let focus = self.focus.clone();
 
-        div().relative().flex_none().child(
-            Popover::new("rail-options")
-                .anchor(Corner::TopRight)
-                .trigger(
-                    Button::new("rail-options-trigger")
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::Settings2)
-                        .tooltip("Scope, sort, and grouping"),
-                )
-                .content(move |_state, _window, _cx| {
-                    let theme = theme.clone();
-                    let rail = rail.clone();
-
-                    div()
-                        .w(px(248.0))
-                        .p(px(4.0))
-                        .child(section(&theme, "Show"))
-                        .children([
-                            option_row(
-                                &theme, &rail, 0, "This project",
-                                "Sessions in the current folder",
+        div()
+            .relative()
+            .flex_none()
+            .child(
+                Button::new("rail-options")
+                    .ghost()
+                    .xsmall()
+                    .icon(IconName::Settings2)
+                    .tooltip("Scope, sort, and grouping")
+                    .dropdown_menu_with_anchor(Corner::TopRight, move |menu, _window, _cx| {
+                        // Actions rather than closures, so every one of these
+                        // is also a thing the command palette and a key binding
+                        // can reach without a second implementation.
+                        let menu = menu
+                            .action_context(focus.clone())
+                            .label("Show")
+                            .menu_with_check(
+                                "This project",
                                 scope == Scope::Workspace,
-                            ),
-                            option_row(
-                                &theme, &rail, 1, "All projects",
-                                "Everywhere Pi has run",
-                                scope == Scope::All,
-                            ),
-                        ])
-                        .child(divider(&theme))
-                        .child(section(&theme, "Sort by"))
-                        .children([
-                            option_row(
-                                &theme, &rail, 2, "Last used",
-                                "Most recently touched first",
-                                sort_by == SortBy::Recent,
-                            ),
-                            option_row(&theme, &rail, 3, "Name", "Alphabetical", sort_by == SortBy::Name),
-                            option_row(
-                                &theme, &rail, 4, "Length",
-                                "Longest conversations first",
-                                sort_by == SortBy::Length,
-                            ),
-                        ])
-                        .child(divider(&theme))
-                        .child(section(&theme, "Group by"))
-                        .children([
-                            option_row(
-                                &theme, &rail, 5, "Date", "Today, this week, earlier",
-                                group_by == GroupBy::Date,
-                            ),
-                            option_row(
-                                &theme, &rail, 6, "Project", "One group per folder",
-                                group_by == GroupBy::Project,
-                            ),
-                            option_row(
-                                &theme, &rail, 7, "Nothing", "One flat list",
-                                group_by == GroupBy::Nothing,
-                            ),
-                        ])
-                        .when(collapsed_any, |menu| {
-                            let rail = rail.clone();
-                            let theme = theme.clone();
-                            menu.child(divider(&theme)).child(
-                                div()
-                                    .id("expand-all")
-                                    .rounded(space::RADIUS)
-                                    .px(px(8.0))
-                                    .py(px(6.0))
-                                    .text_size(text::UI)
-                                    .text_color(theme.muted)
-                                    .hover(|style| style.bg(theme.hover()))
-                                    .on_mouse_down(MouseButton::Left, move |_e, _w, cx| {
-                                        rail.update(cx, |rail, cx| {
-                                            rail.collapsed.clear();
-                                            rail.remember();
-                                            rail.rebuild(cx);
-                                        });
-                                    })
-                                    .child("Expand all groups"),
+                                Box::new(ScopeWorkspace),
                             )
-                        })
-                }),
-        )
-        // The dot is the whole point of hiding these behind a button: at rest
-        // it is the only thing that has to say the list is not showing you
-        // everything, in its default order.
-        .when(adjusted, |wrap| {
-            wrap.child(
-                div()
-                    .absolute()
-                    .top(px(3.0))
-                    .right(px(3.0))
-                    .size(px(4.0))
-                    .rounded_full()
-                    .bg(self.theme.foreground.opacity(0.7)),
+                            .menu_with_check("All projects", scope == Scope::All, Box::new(ScopeAll))
+                            .separator()
+                            .label("Sort by")
+                            .menu_with_check(
+                                "Last used",
+                                sort_by == SortBy::Recent,
+                                Box::new(SortRecent),
+                            )
+                            .menu_with_check("Name", sort_by == SortBy::Name, Box::new(SortName))
+                            .menu_with_check(
+                                "Length",
+                                sort_by == SortBy::Length,
+                                Box::new(SortLength),
+                            )
+                            .separator()
+                            .label("Group by")
+                            .menu_with_check("Date", group_by == GroupBy::Date, Box::new(GroupDate))
+                            .menu_with_check(
+                                "Project",
+                                group_by == GroupBy::Project,
+                                Box::new(GroupProject),
+                            )
+                            .menu_with_check(
+                                "Nothing",
+                                group_by == GroupBy::Nothing,
+                                Box::new(GroupNothing),
+                            );
+
+                        if collapsed_any {
+                            menu.separator()
+                                .menu("Expand all groups", Box::new(ExpandGroups))
+                        } else {
+                            menu
+                        }
+                    }),
             )
-        })
+            // The dot is the whole point of hiding these behind a button: at
+            // rest it is the only thing that has to say the list is not showing
+            // you everything, in its default order.
+            .when(adjusted, |wrap| {
+                wrap.child(
+                    div()
+                        .absolute()
+                        .top(px(2.0))
+                        .right(px(2.0))
+                        .size(px(4.0))
+                        .rounded_full()
+                        .bg(self.theme.foreground.opacity(0.75)),
+                )
+            })
     }
 
     fn body(&self, theme: &Theme, cx: &mut Context<Self>) -> gpui::AnyElement {
