@@ -42,8 +42,23 @@ pub struct Response {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct ThinkingLevel(pub String);
+/// What to do with a prompt sent while the agent is mid-turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Queue {
+    /// Deliver it as soon as the current tool calls finish.
+    Steer,
+    /// Hold it until the agent has stopped.
+    FollowUp,
+}
+
+impl Queue {
+    fn as_str(self) -> &'static str {
+        match self {
+            Queue::Steer => "steer",
+            Queue::FollowUp => "followUp",
+        }
+    }
+}
 
 /// A running `pi --mode rpc` process.
 pub struct PiRpc {
@@ -96,8 +111,32 @@ impl PiRpc {
         Ok(id)
     }
 
-    pub fn prompt(&mut self, message: &str) -> Result<String> {
-        self.send("prompt", json!({ "message": message }))
+    /// Send a prompt.
+    ///
+    /// `behaviour` must be set when the agent is already streaming — Pi rejects
+    /// a bare `prompt` in that state rather than queueing it, so omitting this
+    /// meant every message typed mid-turn was silently dropped.
+    pub fn prompt(&mut self, message: &str, behaviour: Option<Queue>) -> Result<String> {
+        let mut payload = json!({ "message": message });
+        if let Some(behaviour) = behaviour {
+            payload["streamingBehavior"] = json!(behaviour.as_str());
+        }
+        self.send("prompt", payload)
+    }
+
+    /// Interrupt the running turn with new instructions. Delivered after the
+    /// current tool calls finish, before the next model call.
+    pub fn steer(&mut self, message: &str) -> Result<String> {
+        self.send("steer", json!({ "message": message }))
+    }
+
+    /// Hold a message until the agent stops entirely.
+    pub fn follow_up(&mut self, message: &str) -> Result<String> {
+        self.send("follow_up", json!({ "message": message }))
+    }
+
+    pub fn compact(&mut self) -> Result<String> {
+        self.send("compact", json!({}))
     }
 
     pub fn abort(&mut self) -> Result<String> {

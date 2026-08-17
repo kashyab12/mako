@@ -70,6 +70,15 @@ pub struct SessionState {
     pub context_tokens: Option<u64>,
     pub connected: bool,
     pub fault: Option<String>,
+    /// The agent is rewriting its own history to fit the context window. It is
+    /// not answering during this, which is why it gets a banner rather than
+    /// being folded into `streaming`.
+    pub compacting: bool,
+    /// A transient provider failure is being retried, with the attempt number.
+    pub retrying: Option<(u32, u32)>,
+    /// Messages Pi is holding: interrupts first, then ones waiting for the end.
+    pub queued_steering: usize,
+    pub queued_follow_up: usize,
 }
 
 impl SessionState {
@@ -118,6 +127,46 @@ impl SessionState {
                 }
                 true
             }
+            "queue_update" => {
+                self.queued_steering = event
+                    .get("steering")
+                    .and_then(Value::as_array)
+                    .map_or(0, Vec::len);
+                self.queued_follow_up = event
+                    .get("followUp")
+                    .and_then(Value::as_array)
+                    .map_or(0, Vec::len);
+                true
+            }
+            "compaction_start" => {
+                self.compacting = true;
+                true
+            }
+            "compaction_end" => {
+                self.compacting = false;
+                true
+            }
+            "auto_retry_start" => {
+                let attempt = event.get("attempt").and_then(Value::as_u64).unwrap_or(1) as u32;
+                let max = event
+                    .get("maxAttempts")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(3) as u32;
+                self.retrying = Some((attempt, max));
+                true
+            }
+            "auto_retry_end" => {
+                self.retrying = None;
+                // A retry that ran out of attempts is the end of the turn, and
+                // the reason it failed is the only thing worth surfacing.
+                if event.get("success").and_then(Value::as_bool) == Some(false) {
+                    if let Some(error) = event.get("finalError").and_then(Value::as_str) {
+                        self.fault = Some(error.to_string());
+                    }
+                    self.streaming = false;
+                }
+                true
+            }
             "thinking_level_changed" => {
                 if let Some(level) = event.get("level").and_then(Value::as_str) {
                     self.thinking = level.to_string();
@@ -154,6 +203,14 @@ impl SessionState {
         }
         if let Some(level) = data.get("thinkingLevel").and_then(Value::as_str) {
             self.thinking = level.to_string();
+        }
+        // Trust the settled state over the event stream: a window that opens
+        // onto a session already mid-turn never saw `agent_start`.
+        if let Some(streaming) = data.get("isStreaming").and_then(Value::as_bool) {
+            self.streaming = streaming;
+        }
+        if let Some(compacting) = data.get("isCompacting").and_then(Value::as_bool) {
+            self.compacting = compacting;
         }
         if let Some(cwd) = data.get("cwd").and_then(Value::as_str) {
             self.cwd = cwd.to_string();

@@ -20,7 +20,7 @@ mod sessions;
 mod theme;
 mod ui;
 
-use composer::{Composer, Submit};
+use composer::{Abort, Composer, Submit};
 use effort::{EffortPicker, SelectEffort};
 use inspector::Inspector;
 use palette::{Command, Entry, Palette, Run};
@@ -45,7 +45,7 @@ use gpui_component::scroll::Scrollbar;
 use gpui_component::skeleton::Skeleton;
 use gpui_component::text::{TextView, TextViewStyle};
 use gpui_component::{Icon, IconName, Root, Sizable};
-use rpc::{Incoming, PiRpc};
+use rpc::{Incoming, PiRpc, Queue};
 use session::{Exchange, SessionState, ToolCall};
 use std::time::Duration;
 use theme::{space, text, Theme};
@@ -61,6 +61,7 @@ actions!(
         ToggleInspector,
         OpenPalette,
         OpenSettings,
+        QueueAfter,
         Dismiss,
         Up,
         Down
@@ -252,12 +253,6 @@ impl Desk {
         })
         .detach();
 
-        let composer = cx.new(|cx| Composer::new(window, cx));
-        cx.subscribe(&composer, |desk, _composer, event: &Submit, cx| {
-            desk.dispatch_prompt(event.0.clone(), cx);
-        })
-        .detach();
-
         let theme = Theme::dark();
         let model_picker = cx.new(|cx| ModelPicker::new(theme.clone(), window, cx));
         cx.subscribe(&model_picker, |desk, _picker, event: &SelectModel, cx| {
@@ -278,6 +273,27 @@ impl Desk {
                 let _ = rpc.set_thinking_level(&event.0);
             }
             desk.state.thinking = event.0.clone();
+            cx.notify();
+        })
+        .detach();
+
+        let composer = cx.new(|cx| {
+            Composer::new(
+                theme.clone(),
+                model_picker.clone(),
+                effort_picker.clone(),
+                window,
+                cx,
+            )
+        });
+        cx.subscribe(&composer, |desk, _composer, event: &Submit, cx| {
+            desk.dispatch_prompt(event.text.clone(), event.queue, cx);
+        })
+        .detach();
+        cx.subscribe(&composer, |desk, _composer, _: &Abort, cx| {
+            if let Some(rpc) = desk.rpc.as_mut() {
+                let _ = rpc.abort();
+            }
             cx.notify();
         })
         .detach();
@@ -418,13 +434,20 @@ impl Desk {
 
     /// Send a prompt and record it optimistically, so the question appears the
     /// instant it is asked rather than when the agent gets round to echoing it.
-    fn dispatch_prompt(&mut self, text: String, cx: &mut Context<Self>) {
+    fn dispatch_prompt(&mut self, text: String, queue: Option<Queue>, cx: &mut Context<Self>) {
         let text = text.trim().to_string();
         if text.is_empty() {
             return;
         }
         if let Some(rpc) = self.rpc.as_mut() {
-            let _ = rpc.prompt(&text);
+            let _ = rpc.prompt(&text, queue);
+        }
+        // A queued message is not this turn's question — showing it above the
+        // reply still being written would put it in the wrong place in the
+        // conversation. Pi echoes it back when it actually lands.
+        if queue.is_some() {
+            cx.notify();
+            return;
         }
         self.state.push_prompt(text);
         self.pinned = true;
@@ -434,7 +457,14 @@ impl Desk {
 
     fn send(&mut self, _: &Send, window: &mut Window, cx: &mut Context<Self>) {
         self.composer
-            .update(cx, |composer, cx| composer.submit(window, cx));
+            .update(cx, |composer, cx| composer.submit(None, window, cx));
+    }
+
+    /// Hold this one until the agent has stopped entirely.
+    fn queue_after(&mut self, _: &QueueAfter, window: &mut Window, cx: &mut Context<Self>) {
+        self.composer.update(cx, |composer, cx| {
+            composer.submit(Some(Queue::FollowUp), window, cx)
+        });
     }
 
     fn stop(&mut self, _: &Stop, _window: &mut Window, cx: &mut Context<Self>) {
@@ -624,10 +654,25 @@ impl Render for Desk {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.clone();
 
+        // Synced here rather than in the polling loop because both of these
+        // touch the text field, and a field needs a `Window` to move its caret
+        // — which a background task does not have. Both calls return early when
+        // nothing moved, so this cannot drive a repaint loop.
+        let streaming = self.state.streaming;
+        let compacting = self.state.compacting;
+        let retrying = self.state.retrying;
+        let queued = self.state.queued_steering + self.state.queued_follow_up;
+        let session = self.state.session_file.clone();
+        self.composer.update(cx, |composer, cx| {
+            composer.set_status(streaming, compacting, retrying, queued, window, cx);
+            composer.set_session(session, window, cx);
+        });
+
         div()
             .key_context("Desk")
             .track_focus(&self.focus)
             .on_action(cx.listener(Self::send))
+            .on_action(cx.listener(Self::queue_after))
             .on_action(cx.listener(Self::stop))
             .on_action(cx.listener(Self::cycle_thinking))
             .on_action(cx.listener(Self::toggle_rail))
@@ -682,7 +727,7 @@ impl Render for Desk {
                                 // only part allowed to shrink.
                                 .min_h_0()
                                 .child(self.transcript(&theme, window, cx))
-                                .child(self.composer(&theme, cx))
+                                .child(self.composer.clone())
                                 .into_any_element()
                         }),
                     )
@@ -1207,76 +1252,6 @@ impl Desk {
             })
     }
 
-    fn composer(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        let ready = !self.composer.read(cx).is_empty(cx);
-        let streaming = self.state.streaming;
-
-        div()
-            .flex_none()
-            .flex()
-            .justify_center()
-            .px(px(28.0))
-            .pb(px(18.0))
-            .pt(px(4.0))
-            .child(
-                div()
-                    .w_full()
-                    .max_w(space::COLUMN)
-                    .rounded(space::RADIUS_XL)
-                    .bg(theme.surface)
-                    .border_1()
-                    .border_color(theme.border)
-                    .overflow_hidden()
-                    .shadow_lg()
-                    .child(lit_top(theme))
-                    .child(self.composer.clone())
-                    .child(Divider::horizontal())
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(4.0))
-                            .px(px(8.0))
-                            .py(px(6.0))
-                            .child(self.model_picker.clone())
-                            .child(self.effort_picker.clone())
-                            .child(div().flex_1())
-                            .child(
-                                // The primary action. While a turn is running
-                                // this *becomes* the stop control rather than
-                                // sitting next to one: there is only ever one
-                                // thing to do here, and swapping the affordance
-                                // keeps the hand in the same place.
-                                Button::new("send")
-                                    .when(streaming || ready, |button| button.primary())
-                                    .when(!streaming && !ready, |button| button.ghost())
-                                    .small()
-                                    .icon(if streaming {
-                                        IconName::Close
-                                    } else {
-                                        IconName::ArrowUp
-                                    })
-                                    .rounded(gpui_component::button::ButtonRounded::Large)
-                                    .tooltip(if streaming {
-                                        "Stop this turn  ⌘⎋"
-                                    } else {
-                                        "Send  ↩"
-                                    })
-                                    .on_click(cx.listener(move |desk, _event, window, cx| {
-                                        if streaming {
-                                            if let Some(rpc) = desk.rpc.as_mut() {
-                                                let _ = rpc.abort();
-                                            }
-                                            cx.notify();
-                                        } else {
-                                            desk.send(&Send, window, cx);
-                                        }
-                                    })),
-                            ),
-                    ),
-            )
-    }
-
     /// Settings, as a full view rather than a modal.
     ///
     /// These are things you read and compare — a keyboard map most of all —
@@ -1512,6 +1487,7 @@ fn main() {
 
         cx.bind_keys([
             KeyBinding::new("cmd-escape", Stop, Some("Desk")),
+            KeyBinding::new("cmd-enter", QueueAfter, Some("Desk")),
             KeyBinding::new("cmd-.", CycleThinking, Some("Desk")),
             KeyBinding::new("cmd-b", ToggleRail, Some("Desk")),
             KeyBinding::new("cmd-i", ToggleInspector, Some("Desk")),
