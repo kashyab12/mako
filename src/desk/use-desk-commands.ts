@@ -190,6 +190,18 @@ const DESK_COMMANDS: DeskCommand[] = [
     run: () => togglePref("railOpen"),
   },
   {
+    id: "view.toggle-diff",
+    title: "Toggle the diff pane",
+    section: "View",
+    keys: "mod+shift+d",
+    hint: "The changed file's contents, beneath the file list",
+    run: () => {
+      setPref("inspectorOpen", true)
+      setPref("inspectorTab", "changes")
+      togglePref("autoOpenDiff")
+    },
+  },
+  {
     id: "view.search",
     title: "Search everything…",
     section: "View",

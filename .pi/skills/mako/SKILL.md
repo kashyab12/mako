@@ -92,7 +92,7 @@ src/
     rail/          the session sidebar
     transcript/    the conversation — exchanges, tool rows, markdown
     composer/      the input, model/effort pickers, mentions, attachments
-    inspector/     the right panel — changes, context, history
+    inspector/     the right panel — changes, context, history, review notes
     viewer/        the open file, over the conversation column
     palette/       ⌘K
     ui/            the shared kit; `kit.tsx` is the primitives

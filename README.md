@@ -69,6 +69,16 @@ over the transcript when you switch to it. The session list is virtualized,
 offscreen turns are skipped with `content-visibility`, and the diff engine is
 code-split out of the boot path.
 
+## Reviewing what the agent wrote
+
+Hover a line in the diff and comment on it, the way you would on a pull
+request. Notes collect at the bottom of the panel; **Send to the agent** turns
+them into one message — grouped by file, ordered by line, each quoting the line
+it is about — and drops it in the composer so you can add a sentence before
+sending. Notes survive a reload. The alternative is describing the location in
+prose, which is where the friction has always been: `src/net.ts:42` is not a
+sentence anyone should have to compose.
+
 ## GitHub
 
 The branch's pull request lives under the commit box: state, base, diff size,

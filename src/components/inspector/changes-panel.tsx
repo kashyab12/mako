@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { MultiFileDiff, Virtualizer } from "@pierre/diffs/react"
 import { Blank, IconAction } from "@/components/ui/kit"
 import { CommitBox } from "@/components/inspector/commit-box"
+import { Annotation, GutterAdd, ReviewBar } from "@/components/inspector/review"
+import { review, useReview } from "@/state/review"
 import { PullRequestCard } from "@/components/inspector/pull-request"
 import { Slot } from "@/extend/slot"
 import { actions, useSession } from "@/state/session"
@@ -29,6 +31,18 @@ import {
  * commit box beneath. Contents are fetched one file at a time on selection, so
  * a repo with a thousand dirty files still opens instantly.
  */
+/**
+ * The text of one line of the diff.
+ *
+ * Read from the file contents the panel already has rather than from the DOM:
+ * the rendered row is virtualized and may not exist, and its text carries the
+ * renderer's own whitespace handling. Quoting the source is the honest version.
+ */
+function lineAt(diff: GitDiff, line: number, side: "additions" | "deletions"): string | undefined {
+  const file = side === "deletions" ? diff.oldFile : diff.newFile
+  return file?.contents.split("\n")[line - 1]
+}
+
 const MARK: Record<GitFile["status"], { glyph: string; tone: string; title: string }> = {
   added: { glyph: "A", tone: "text-added", title: "Added" },
   untracked: { glyph: "U", tone: "text-added", title: "Untracked" },
@@ -71,6 +85,34 @@ export function ChangesPanel() {
       cancelled = true
     }
   }, [path])
+
+  const allComments = useReview((state) => state.comments)
+  const draft = useReview((state) => state.draft)
+  const comments = useMemo(
+    () => allComments.filter((comment) => comment.path === path),
+    [allComments, path]
+  )
+
+  /**
+   * Which lines carry an annotation.
+   *
+   * Saved comments and the one being written, deduplicated: a line already
+   * carrying a note that is now being edited must not ask for two slots, or
+   * the diff renders the same block twice.
+   */
+  const annotations = useMemo(() => {
+    const keys = new Set<string>()
+    const list: Array<{ lineNumber: number; side: "additions" | "deletions" }> = []
+    const add = (line: number, side: "additions" | "deletions") => {
+      const key = `${side}:${line}`
+      if (keys.has(key)) return
+      keys.add(key)
+      list.push({ lineNumber: line, side })
+    }
+    for (const comment of comments) add(comment.line, comment.side)
+    if (draft && draft.path === path) add(draft.line, draft.side)
+    return list
+  }, [comments, draft, path])
 
   const toggleDir = useCallback((key: string) => {
     // Read through the store rather than the hook value so the callback stays
@@ -209,7 +251,41 @@ export function ChangesPanel() {
                 : diff.newFile
                   ? { oldFile: null, newFile: diff.newFile }
                   : { oldFile: diff.oldFile!, newFile: null })}
-              options={{ themeType: theme === "light" ? "light" : "dark" }}
+              options={{
+                themeType: theme === "light" ? "light" : "dark",
+                // Unified, not split. This panel is a few hundred pixels wide;
+                // two columns of code in it means every line is truncated and
+                // the gutter — where the comment control lives — is off-screen.
+                diffStyle: "unified",
+                // Off by default, which is why the comment control rendered
+                // nowhere at all. `onGutterUtilityClick` is the other half of
+                // this API and the two are mutually exclusive — a custom slot
+                // owns its own click.
+                enableGutterUtility: true,
+              }}
+              lineAnnotations={annotations}
+              renderAnnotation={(annotation) => (
+                <Annotation
+                  path={path ?? ""}
+                  line={annotation.lineNumber}
+                  side={annotation.side}
+                  comments={comments}
+                />
+              )}
+              renderGutterUtility={(getHoveredLine) => (
+                <GutterAdd
+                  onClick={() => {
+                    const hovered = getHoveredLine()
+                    if (!hovered || !path) return
+                    review.start({
+                      path,
+                      line: hovered.lineNumber,
+                      side: hovered.side,
+                      code: lineAt(diff, hovered.lineNumber, hovered.side),
+                    })
+                  }}
+                />
+              )}
             />
           </Virtualizer>
             )}
@@ -217,6 +293,7 @@ export function ChangesPanel() {
         </div>
       ) : null}
 
+      <ReviewBar />
       <CommitBox staged={staged} total={files.length} />
       <PullRequestCard />
     </div>
