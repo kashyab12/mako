@@ -1,0 +1,269 @@
+import { useEffect, useState } from "react"
+import { Action, Eyebrow, Keys } from "@/components/ui/kit"
+import { formatChord } from "@/extend/commands"
+import { getPi, hasBridge } from "@/lib/bridge"
+import { setPref, togglePref, usePrefs, type Theme } from "@/state/prefs"
+import { cn } from "@/lib/utils"
+import { RotateCcwIcon, XIcon } from "lucide-react"
+
+const SECTIONS = [
+  { id: "appearance", label: "Appearance" },
+  { id: "transcript", label: "Transcript" },
+  { id: "commits", label: "Commit messages" },
+] as const
+
+type SectionId = (typeof SECTIONS)[number]["id"]
+
+/**
+ * Settings.
+ *
+ * A view rather than a modal. Settings here are things you read and compare —
+ * a multi-paragraph commit prompt most of all — and a dialog floating over a
+ * dimmed transcript is the wrong shape for that: it is cramped, it hides the
+ * thing being configured, and it implies you are meant to leave quickly. Both
+ * T3 and ORCA route settings to full surfaces with a section list for exactly
+ * this reason.
+ */
+export function SettingsView() {
+  const [section, setSection] = useState<SectionId>("appearance")
+  const [defaultPrompt, setDefaultPrompt] = useState("")
+  const open = true
+
+  useEffect(() => {
+    if (defaultPrompt || !hasBridge()) return
+    void getPi()
+      .defaultCommitPrompt()
+      .then(setDefaultPrompt)
+      .catch(() => setDefaultPrompt(""))
+  }, [defaultPrompt])
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") window.dispatchEvent(new CustomEvent("pi:close-settings"))
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
+
+  if (!open) return null
+
+  return (
+    <div className="flex min-h-0 flex-1">
+      {/* A section list, so the surface scales past three groups without
+          turning into one long scroll. */}
+      <nav className="flex w-44 shrink-0 flex-col gap-0.5 border-r border-hairline p-2">
+        {SECTIONS.map((entry) => (
+          <button
+            key={entry.id}
+            type="button"
+            onClick={() => setSection(entry.id)}
+            className={cn(
+              "rounded-md px-2 py-1.5 text-left text-[12.5px] transition-colors duration-100",
+              section === entry.id
+                ? "bg-raised font-medium text-foreground"
+                : "text-muted-foreground hover:bg-raised/60 hover:text-foreground"
+            )}
+          >
+            {entry.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent("pi:close-settings"))}
+          className="pressable mt-auto flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[12px] text-faint hover:bg-raised hover:text-foreground"
+        >
+          <XIcon className="size-3.5" />
+          Close settings
+        </button>
+      </nav>
+
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div className="mx-auto w-full max-w-[42rem] px-6 py-6">
+          {section === "appearance" ? <Appearance /> : null}
+          {section === "transcript" ? <Transcript /> : null}
+          {section === "commits" ? <CommitPrompt fallback={defaultPrompt} /> : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="mb-5 last:mb-0">
+      <Eyebrow className="px-0 pb-2">{title}</Eyebrow>
+      <div className="flex flex-col gap-1">{children}</div>
+    </section>
+  )
+}
+
+function Appearance() {
+  const theme = usePrefs((prefs) => prefs.theme)
+  const glass = usePrefs((prefs) => prefs.glass)
+
+  return (
+    <Section title="Appearance">
+      <Row label="Theme" hint="Follows the system when set to Auto">
+        <Segmented<Theme>
+          value={theme}
+          options={[
+            { value: "dark", label: "Dark" },
+            { value: "light", label: "Light" },
+            { value: "system", label: "Auto" },
+          ]}
+          onChange={(next) => setPref("theme", next)}
+        />
+      </Row>
+      <Row label="Depth" hint="Translucent panels and a soft light wash">
+        <Toggle on={glass} onChange={() => togglePref("glass")} />
+      </Row>
+    </Section>
+  )
+}
+
+function Transcript() {
+  const showThinking = usePrefs((prefs) => prefs.showThinking)
+  const autoDiff = usePrefs((prefs) => prefs.autoOpenDiff)
+
+  return (
+    <Section title="Transcript and changes">
+      <Row label="Show reasoning" hint="Collapsed by default; this hides it entirely">
+        <Toggle on={showThinking} onChange={() => togglePref("showThinking")} />
+      </Row>
+      <Row label="Open the diff on select" hint="Off keeps the changes panel as a plain list">
+        <Toggle on={autoDiff} onChange={() => togglePref("autoOpenDiff")} />
+      </Row>
+    </Section>
+  )
+}
+
+function CommitPrompt({ fallback }: { fallback: string }) {
+  const stored = usePrefs((prefs) => prefs.commitPrompt)
+  const [draft, setDraft] = useState<string | null>(null)
+  const value = draft ?? stored ?? fallback
+  const customized = Boolean(stored && stored !== fallback)
+
+  return (
+    <Section title="Commit messages">
+      <p className="px-0.5 pb-1.5 text-[11px] leading-relaxed text-faint">
+        The instructions used when drafting a commit message from the diff. The default is the
+        prompt Zed ships, which is well tuned; edit it to change the house style.
+      </p>
+
+      <textarea
+        value={value}
+        spellCheck={false}
+        rows={18}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => {
+          if (draft !== null) setPref("commitPrompt", draft.trim() ? draft : undefined)
+          setDraft(null)
+        }}
+        className={cn(
+          "w-full resize-y rounded-lg bg-raised/60 px-2.5 py-2 font-mono text-[11.5px] leading-relaxed",
+          "ring-1 ring-hairline focus:outline-none focus-visible:ring-border"
+        )}
+      />
+
+      <div className="mt-1.5 flex items-center gap-2">
+        <span className="text-[10.5px] text-faint">
+          {customized ? "Customized" : "Using the default"}
+        </span>
+        <Action
+          tone="ghost"
+          size="xs"
+          className="ml-auto"
+          disabled={!customized}
+          onClick={() => {
+            setDraft(fallback)
+            setPref("commitPrompt", undefined)
+          }}
+        >
+          <RotateCcwIcon />
+          Restore default
+        </Action>
+        <span className="flex items-center gap-1 text-[10.5px] text-faint">
+          <Keys keys={formatChord("mod+shift+g")} /> drafts
+        </span>
+      </div>
+    </Section>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+
+function Row({
+  label,
+  hint,
+  children,
+}: {
+  label: string
+  hint: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg px-0.5 py-1.5">
+      <span className="min-w-0 flex-1">
+        <span className="block text-[12.5px]">{label}</span>
+        <span className="block text-[10.5px] text-faint">{hint}</span>
+      </span>
+      {children}
+    </div>
+  )
+}
+
+function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={onChange}
+      className={cn(
+        "pressable flex h-4 w-7 shrink-0 items-center rounded-full p-[2px]",
+        "[transition:background-color_150ms_ease]",
+        on ? "bg-foreground/80" : "bg-foreground/15"
+      )}
+    >
+      <span
+        className={cn(
+          "block size-3 rounded-full bg-background",
+          "[transition:transform_180ms_var(--ease-out)]",
+          on ? "translate-x-3" : "translate-x-0"
+        )}
+      />
+    </button>
+  )
+}
+
+function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T
+  options: Array<{ value: T; label: string }>
+  onChange: (next: T) => void
+}) {
+  return (
+    <div className="flex h-6 shrink-0 items-center rounded-md bg-raised/70 p-[2px]">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          className={cn(
+            "rounded-[4px] px-2 text-[10.5px] font-medium",
+            "[transition:background-color_120ms_ease,color_120ms_ease]",
+            value === option.value
+              ? "bg-surface text-foreground"
+              : "text-faint hover:text-muted-foreground"
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
