@@ -1,6 +1,8 @@
-# Pi Desk
+# Mako
 
-A desktop surface for the Pi coding agent: chat sessions, the session tree, and
+<img src="mako-icons/dark/logomark-1024.png" width="96" align="right" alt="" />
+
+A fast desktop for the Pi coding agent: chat sessions, the session tree, and
 the working diff. Pi is the only harness — no other CLI is wrapped, and models
 come from whatever Pi already has authenticated.
 
@@ -80,4 +82,4 @@ ORCA, Codex, and Zed. Do not import from it.
 If Anthropic returns `Invalid signature in thinking block`, Pi is replaying a
 thinking block the API will not accept — common after a mid-session model
 switch or a resumed Opus turn. Start a new session, or turn thinking off, then
-continue. It is not a Pi Desk bug.
+continue. It is not a Mako bug.

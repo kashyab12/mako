@@ -1,4 +1,4 @@
-# Pi Desk
+# Mako
 
 Pi is the only agent harness. Do not wrap Codex, Claude Code, Cursor, or ORCA CLIs.
 Pi already talks to every model those tools use.
