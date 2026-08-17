@@ -149,3 +149,57 @@ pub mod space {
     /// The transcript's reading column.
     pub const COLUMN: Pixels = px(760.0);
 }
+
+/// Drive `gpui-component`'s palette from Mako's.
+///
+/// The library styles its own inputs, popovers, scrollbars, and menus from a
+/// global `ThemeColor`. Left at its defaults those components would be a
+/// second design system sitting inside this one — a differently-grey popover,
+/// a differently-blue focus ring. Mapping the fields we care about onto the
+/// same ramp is what makes a library dropdown and a hand-built row look like
+/// they came from the same place.
+pub fn apply_to_components(theme: &Theme, cx: &mut gpui::App) {
+    use gpui_component::{Theme as ComponentTheme, ThemeMode};
+
+    let ui = ComponentTheme::global_mut(cx);
+    ui.mode = if theme.is_dark {
+        ThemeMode::Dark
+    } else {
+        ThemeMode::Light
+    };
+
+    ui.background = theme.background;
+    ui.foreground = theme.foreground;
+    ui.border = theme.border;
+    ui.muted = theme.raised;
+    ui.muted_foreground = theme.faint;
+
+    ui.popover = theme.panel;
+    ui.popover_foreground = theme.foreground;
+
+    // The accent is light, not coloured: selection reads as "brighter".
+    ui.accent = theme.selected();
+    ui.accent_foreground = theme.foreground;
+    ui.primary = theme.accent;
+    ui.primary_foreground = theme.on_accent();
+    ui.primary_hover = theme.accent.opacity(0.9);
+    ui.primary_active = theme.accent.opacity(0.8);
+
+    ui.secondary = theme.raised;
+    ui.secondary_foreground = theme.foreground;
+    ui.secondary_hover = theme.hover();
+    ui.secondary_active = theme.selected();
+
+    ui.input = theme.border;
+    ui.ring = theme.foreground.opacity(0.32);
+    ui.selection = theme.foreground.opacity(0.18);
+
+    ui.danger = theme.removed;
+    ui.danger_foreground = theme.on_accent();
+    ui.success = theme.added;
+    ui.warning = theme.caution;
+
+    ui.scrollbar = gpui::transparent_black();
+    ui.scrollbar_thumb = theme.foreground.opacity(0.16);
+    ui.scrollbar_thumb_hover = theme.foreground.opacity(0.28);
+}
