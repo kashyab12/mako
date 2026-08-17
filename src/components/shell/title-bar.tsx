@@ -8,6 +8,8 @@ import { MakoMark } from "@/components/ui/mako-mark"
 import { workspaceName } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import {
+  ChevronsUpDownIcon,
+  FolderIcon,
   PanelLeftIcon,
   PanelRightIcon,
   PlusIcon,
@@ -17,32 +19,65 @@ import {
 } from "lucide-react"
 
 /**
- * A single draggable strip. It carries the window controls' inset, the session
- * name (editable in place), and the two panel toggles — nothing that competes
- * with the transcript for attention.
+ * The title strip.
+ *
+ * Its left segment *is* the sidebar's header — same width, same right border,
+ * so the two read as one column rather than as two stacked bars each with
+ * their own "new session" button. That duplication was the whole reason the
+ * chrome looked wrong: a window has one header, not one per panel.
+ *
+ * When the rail is closed the segment collapses to just the toggle and the
+ * traffic-light inset, and the title recentres over the full width.
  */
 export function TitleBar() {
   const name = useSession((state) => state.meta?.sessionName)
   const cwd = useSession((state) => state.meta?.cwd)
   const streaming = useSession((state) => state.meta?.isStreaming ?? false)
   const railOpen = usePrefs((prefs) => prefs.railOpen)
+  const railWidth = usePrefs((prefs) => prefs.railWidth)
   const inspectorOpen = usePrefs((prefs) => prefs.inspectorOpen)
 
   return (
-    <header className="drag-region relative flex h-[38px] shrink-0 items-center gap-1 border-b border-hairline bg-surface pr-2 pl-[86px]">
-      <IconAction
-        label={railOpen ? "Hide sessions" : "Show sessions"}
-        keys={formatChord("mod+b")}
-        data-on={railOpen}
-        onClick={() => togglePref("railOpen")}
+    <header className="drag-region relative flex h-[38px] shrink-0 items-center border-b border-hairline bg-surface pr-2">
+      <div
+        style={railOpen ? { width: railWidth } : undefined}
+        className={cn(
+          "flex h-full shrink-0 items-center gap-1 pr-2 pl-[86px]",
+          railOpen && "border-r border-hairline"
+        )}
       >
-        <PanelLeftIcon />
-      </IconAction>
-      <IconAction label="New session" keys={formatChord("mod+n")} onClick={() => void actions.newSession()}>
-        <PlusIcon />
-      </IconAction>
+        <IconAction
+          label={railOpen ? "Hide sessions" : "Show sessions"}
+          keys={formatChord("mod+b")}
+          data-on={railOpen}
+          onClick={() => togglePref("railOpen")}
+        >
+          <PanelLeftIcon />
+        </IconAction>
 
-      <Slot name="titlebar.leading" />
+        {railOpen ? (
+          <>
+            <WorkspaceButton cwd={cwd} />
+            <IconAction
+              label="New session"
+              keys={formatChord("mod+n")}
+              onClick={() => void actions.newSession()}
+            >
+              <PlusIcon />
+            </IconAction>
+          </>
+        ) : (
+          <IconAction
+            label="New session"
+            keys={formatChord("mod+n")}
+            onClick={() => void actions.newSession()}
+          >
+            <PlusIcon />
+          </IconAction>
+        )}
+
+        <Slot name="titlebar.leading" />
+      </div>
 
       <div className="pointer-events-none absolute inset-x-0 flex justify-center">
         <div className="pointer-events-auto flex min-w-0 max-w-[46%] items-center gap-2">
@@ -54,7 +89,7 @@ export function TitleBar() {
         </div>
       </div>
 
-      <div className="ml-auto flex items-center gap-1">
+      <div className="ml-auto flex items-center gap-1 pl-2">
         <Slot name="titlebar.trailing" />
         {streaming ? (
           <IconAction
@@ -90,6 +125,25 @@ export function TitleBar() {
         </IconAction>
       </div>
     </header>
+  )
+}
+
+/** The folder the agent is pointed at, and the control for changing it. */
+function WorkspaceButton({ cwd }: { cwd?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={() => void actions.pickWorkspace()}
+      title={`${cwd ?? ""}\nOpen a different folder`}
+      className={cn(
+        "no-drag pressable group flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5",
+        "transition-colors duration-100 hover:bg-raised"
+      )}
+    >
+      <FolderIcon className="size-3.5 shrink-0 text-faint" />
+      <span className="truncate text-[12.5px] font-semibold">{workspaceName(cwd)}</span>
+      <ChevronsUpDownIcon className="size-3 shrink-0 text-faint opacity-0 transition-opacity duration-120 group-hover:opacity-100" />
+    </button>
   )
 }
 

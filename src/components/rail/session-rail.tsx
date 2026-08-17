@@ -4,11 +4,9 @@ import { VirtualSessions } from "@/components/rail/virtual-sessions"
 import { buildRows } from "@/components/rail/rail-rows"
 import { RailOptions } from "@/components/rail/rail-options"
 import { Slot } from "@/extend/slot"
-import { formatChord } from "@/extend/commands"
 import { actions, useSession } from "@/state/session"
-import { workspaceName } from "@/lib/format"
 import { setPref, usePrefs } from "@/state/prefs"
-import { FolderIcon, MessagesSquareIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react"
+import { MessagesSquareIcon, SearchIcon, XIcon } from "lucide-react"
 
 /** Varied widths, because real session titles are not all the same length. */
 const SKELETON_ROWS = [
@@ -56,26 +54,9 @@ export function SessionRail() {
 
   return (
     <aside className="flex h-full min-h-0 flex-col">
-      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-hairline px-2">
-        <button
-          type="button"
-          onClick={() => void actions.pickWorkspace()}
-          title={`${cwd}\nClick to open a different folder`}
-          className="pressable flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 text-left hover:bg-raised"
-        >
-          <FolderIcon className="size-3.5 shrink-0 text-faint" />
-          <span className="truncate text-[12.5px] font-semibold">{workspaceName(cwd)}</span>
-        </button>
-        <Slot name="rail.header" />
-        <IconAction
-          label="New session"
-          keys={formatChord("mod+n")}
-          onClick={() => void actions.newSession()}
-        >
-          <PlusIcon />
-        </IconAction>
-      </div>
-
+      {/* No header here. The workspace name and "new session" live in the
+          title strip's left segment, which is this column's header — a window
+          has one header, not one per panel. */}
       <div className="flex shrink-0 items-center gap-1 px-2 py-2">
         <div className="relative min-w-0 flex-1">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-faint" />

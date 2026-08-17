@@ -65,6 +65,12 @@ export function Transcript() {
     return [...list.slice(0, -1), { ...last, response: [...last.response, stream] }]
   }, [messages, stream])
 
+  // Declared here, before any effect that reads it: the keyboard handler and
+  // the intersection observer both close over `shown`, and a `const` in the
+  // temporal dead zone throws the moment one of them runs.
+  const hidden = Math.max(0, exchanges.length - limit)
+  const shown = hidden > 0 ? exchanges.slice(hidden) : exchanges
+
   const scrollToEnd = useCallback((behavior: ScrollBehavior = "auto") => {
     const node = viewport.current
     if (!node) return
@@ -160,9 +166,6 @@ export function Transcript() {
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [activeTurn, shown, jump])
-
-  const hidden = Math.max(0, exchanges.length - limit)
-  const shown = hidden > 0 ? exchanges.slice(hidden) : exchanges
 
   const empty = exchanges.length === 0
   const showNavigator = !empty && shown.length >= 3
