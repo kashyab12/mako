@@ -62,6 +62,15 @@ actions!(
 /// How close to the end still counts as "following the stream".
 const NEAR_BOTTOM: f32 = 96.0;
 
+/// A faint dot between status-bar fields — quieter than a pipe, and it does
+/// not read as a border the way a rule would.
+fn dot_separator(theme: &Theme) -> impl IntoElement {
+    div()
+        .size(px(2.0))
+        .rounded_full()
+        .bg(theme.faint.opacity(0.45))
+}
+
 /// The glyph for a tool, by what the tool actually does.
 ///
 /// Matched on substrings rather than exact names because Pi's tool set is not
@@ -108,6 +117,12 @@ struct Desk {
     scroll: ScrollHandle,
     /// True while the reader is at the bottom, so the stream may follow.
     pinned: bool,
+    /// Which tool calls have their output open, as (exchange, tool).
+    ///
+    /// Collapsed is the default because a transcript is read for the answer,
+    /// and ten thousand lines of `grep` output between two paragraphs buries
+    /// it. The row says what ran; opening it says what came back.
+    opened_tools: std::collections::HashSet<(usize, usize)>,
 }
 
 impl Desk {
@@ -257,6 +272,7 @@ impl Desk {
             focus: cx.focus_handle(),
             scroll: ScrollHandle::new(),
             pinned: true,
+            opened_tools: std::collections::HashSet::new(),
         }
     }
 
@@ -899,22 +915,57 @@ impl Desk {
             )
     }
 
+    /// The resting state: what this is, where it is pointed, and what to do.
+    ///
+    /// A blank column is the most common screen in the app — it is what every
+    /// new session opens to — so it is worth more than a heading. Naming the
+    /// working directory matters most: the agent can edit files here, and the
+    /// one thing worth being certain of before typing is *which* files.
     fn empty_state(&self, theme: &Theme) -> impl IntoElement {
+        let model = if self.state.model.name.is_empty() {
+            "no model selected yet".to_string()
+        } else {
+            self.state.model.name.clone()
+        };
+
         div()
             .flex()
             .flex_col()
-            .gap(px(4.0))
+            .gap(px(14.0))
+            .py(px(24.0))
+            .child(fin(theme, px(26.0)))
             .child(
                 div()
-                    .text_size(text::BODY)
-                    .text_color(theme.foreground)
-                    .child("Start a turn"),
-            )
-            .child(
-                div()
-                    .text_size(text::META)
-                    .text_color(theme.faint)
-                    .child(SharedString::from(self.state.cwd.clone())),
+                    .flex()
+                    .flex_col()
+                    .gap(px(5.0))
+                    .child(
+                        div()
+                            .text_size(text::TITLE)
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(theme.foreground)
+                            .child("Ask Pi something"),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.0))
+                            .text_size(text::META)
+                            .text_color(theme.faint)
+                            .child(Icon::new(IconName::Folder).size(px(11.0)))
+                            .child(SharedString::from(clip(&self.state.cwd, 72))),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.0))
+                            .text_size(text::META)
+                            .text_color(theme.faint)
+                            .child(Icon::new(IconName::Bot).size(px(11.0)))
+                            .child(SharedString::from(model)),
+                    ),
             )
     }
 
@@ -924,7 +975,7 @@ impl Desk {
         exchange: &Exchange,
         id: usize,
         window: &mut Window,
-        cx: &mut App,
+        cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let mut block = div().flex().flex_col().gap(px(11.0));
 
@@ -972,7 +1023,14 @@ impl Desk {
                     .flex()
                     .flex_col()
                     .gap(px(4.0))
-                    .children(reply.tools.iter().map(|call| self.tool_row(theme, call))),
+                    .children(
+                        reply
+                            .tools
+                            .iter()
+                            .enumerate()
+                            .map(|(slot, call)| self.tool_row(theme, call, id, slot, cx))
+                            .collect::<Vec<_>>(),
+                    ),
             );
         }
 
@@ -1001,7 +1059,14 @@ impl Desk {
         block
     }
 
-    fn tool_row(&self, theme: &Theme, call: &ToolCall) -> impl IntoElement {
+    fn tool_row(
+        &self,
+        theme: &Theme,
+        call: &ToolCall,
+        exchange: usize,
+        slot: usize,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let tint = if call.failed {
             theme.removed
         } else if call.done {
@@ -1021,37 +1086,97 @@ impl Desk {
             IconName::LoaderCircle
         };
 
+        let key = (exchange, slot);
+        let open = self.opened_tools.contains(&key);
+        let has_output = !call.output.trim().is_empty();
+
         div()
             .flex()
-            .items_center()
-            .gap(px(8.0))
+            .flex_col()
             .rounded(space::RADIUS)
             .border_1()
-            .border_color(theme.hairline)
+            .border_color(if call.failed {
+                theme.removed.opacity(0.35)
+            } else {
+                theme.hairline
+            })
             .bg(theme.surface.opacity(0.6))
-            .px(px(9.0))
-            .py(px(5.0))
-            .child(
-                Icon::new(outcome)
-                    .size(px(11.0))
-                    .text_color(tint),
-            )
-            .child(Icon::new(tool_glyph(&call.name)).size(px(11.0)).text_color(theme.faint))
+            .overflow_hidden()
             .child(
                 div()
-                    .text_size(text::META)
-                    .text_color(theme.foreground.opacity(0.9))
-                    .child(SharedString::from(call.name.clone())),
+                    .id(("tool", exchange * 64 + slot))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .px(px(9.0))
+                    .py(px(5.0))
+                    .when(has_output, |row| {
+                        row.cursor_pointer()
+                            .hover(|style| style.bg(theme.hover()))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |desk, _event, _window, cx| {
+                                    if !desk.opened_tools.remove(&key) {
+                                        desk.opened_tools.insert(key);
+                                    }
+                                    cx.notify();
+                                }),
+                            )
+                    })
+                    .child(Icon::new(outcome).size(px(11.0)).text_color(tint))
+                    .child(
+                        Icon::new(tool_glyph(&call.name))
+                            .size(px(11.0))
+                            .text_color(theme.faint),
+                    )
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_size(text::META)
+                            .text_color(theme.foreground.opacity(0.9))
+                            .child(SharedString::from(call.name.clone())),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .text_size(text::META)
+                            .text_color(theme.faint)
+                            .child(SharedString::from(clip(&call.summary, 72))),
+                    )
+                    // The chevron is the only thing that says a row can be
+                    // opened, so it is absent when there is nothing behind it
+                    // rather than present and inert.
+                    .when(has_output, |row| {
+                        row.child(
+                            Icon::new(if open {
+                                IconName::ChevronDown
+                            } else {
+                                IconName::ChevronRight
+                            })
+                            .size(px(11.0))
+                            .text_color(theme.faint),
+                        )
+                    }),
             )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .overflow_hidden()
-                    .text_size(text::META)
-                    .text_color(theme.faint)
-                    .child(SharedString::from(clip(&call.summary, 78))),
-            )
+            .when(open && has_output, |block| {
+                block.child(Divider::horizontal()).child(
+                    div()
+                        .id(("tool-output", exchange * 64 + slot))
+                        .max_h(px(320.0))
+                        .overflow_y_scroll()
+                        .px(px(11.0))
+                        .py(px(8.0))
+                        .font_family("ui-monospace")
+                        .text_size(text::SMALL)
+                        .line_height(px(17.0))
+                        .text_color(theme.muted)
+                        // Bounded before it reaches the element: a tool that
+                        // returns a 40MB file should cost this frame nothing.
+                        .child(SharedString::from(clip(&call.output, 12_000))),
+                )
+            })
     }
 
     fn composer(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1260,6 +1385,34 @@ impl Desk {
     }
 
     fn status_bar(&self, theme: &Theme) -> impl IntoElement {
+        // How full the context window is, which is the one number here that
+        // changes what you *do* next — past roughly 80% the useful move is a
+        // new session, not another prompt.
+        let used = self.state.context_tokens.unwrap_or(self.state.tokens);
+        let window_size = self.state.model.context_window;
+        let fraction = if window_size > 0 {
+            (used as f32 / window_size as f32).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let pressure = if fraction > 0.85 {
+            theme.removed
+        } else if fraction > 0.65 {
+            theme.caution
+        } else {
+            theme.faint
+        };
+
+        let (dot, connection) = if self.state.fault.is_some() {
+            (theme.removed, "agent unreachable")
+        } else if self.state.streaming {
+            (theme.added, "working")
+        } else if self.state.connected {
+            (theme.faint, "ready")
+        } else {
+            (theme.caution, "connecting")
+        };
+
         div()
             .flex()
             .flex_col()
@@ -1270,26 +1423,50 @@ impl Desk {
                     .h(space::STATUSBAR)
                     .flex()
                     .items_center()
-                    .gap(px(12.0))
+                    .gap(px(6.0))
                     .bg(theme.surface)
                     .px(px(10.0))
                     .text_size(text::SMALL)
                     .text_color(theme.faint)
-                    .child(SharedString::from(workspace_name(&self.state.cwd)))
+                    .child(div().size(px(5.0)).rounded_full().bg(dot))
+                    .child(connection)
                     .child(div().flex_1())
+                    // A bar rather than a percentage: this is glanced at, not
+                    // read, and a bar answers "how full" in one saccade.
+                    .when(window_size > 0, |bar| {
+                        bar.child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(6.0))
+                                .child(
+                                    div()
+                                        .w(px(46.0))
+                                        .h(px(3.0))
+                                        .rounded_full()
+                                        .bg(theme.foreground.opacity(0.12))
+                                        .child(
+                                            div()
+                                                .h_full()
+                                                .w(gpui::relative(fraction.max(0.02)))
+                                                .rounded_full()
+                                                .bg(pressure),
+                                        ),
+                                )
+                                .child(
+                                    div().text_color(pressure).child(SharedString::from(
+                                        format!("{}% context", (fraction * 100.0).round() as u32),
+                                    )),
+                                ),
+                        )
+                        .child(dot_separator(theme))
+                    })
                     .child(SharedString::from(format!(
                         "{} tokens",
                         format_tokens(self.state.tokens)
                     )))
-                    .child(SharedString::from(format!(
-                        "{} spent",
-                        format_cost(self.state.cost)
-                    )))
-                    .child(
-                        div()
-                            .text_color(theme.faint.opacity(0.7))
-                            .child("⌘K"),
-                    ),
+                    .child(dot_separator(theme))
+                    .child(SharedString::from(format_cost(self.state.cost))),
             )
     }
 }

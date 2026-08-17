@@ -123,7 +123,12 @@ impl Render for ModelPicker {
                 Button::new("model-trigger")
                     .ghost()
                     .xsmall()
-                    .label(SharedString::from(format!("{label}  ▾"))),
+                    .icon(gpui_component::IconName::Bot)
+                    .label(SharedString::from(label))
+                    // The library draws the caret, so it matches every other
+                    // dropdown in the window instead of being a glyph typed
+                    // into the label.
+                    .dropdown_caret(true),
             )
             .content(move |_state, _window, _cx| {
                 let theme = theme.clone();

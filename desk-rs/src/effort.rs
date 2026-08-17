@@ -102,7 +102,8 @@ impl Render for EffortPicker {
                 Button::new("effort-trigger")
                     .ghost()
                     .xsmall()
-                    .label(SharedString::from(current.clone())),
+                    .label(SharedString::from(current.clone()))
+                    .dropdown_caret(true),
             )
             .content(move |_state, _window, _cx| {
                 let theme = theme.clone();
