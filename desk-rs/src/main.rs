@@ -4,38 +4,39 @@
 //! the interface. Nothing here links against Pi; the protocol is JSONL over
 //! stdio and is documented for exactly this use.
 
+mod composer;
 mod rpc;
 mod session;
 mod theme;
 mod ui;
 
+use composer::{Composer, Submit};
 use gpui::prelude::*;
 use gpui::{
-    actions, div, px, App, Application, Bounds, Context, FocusHandle, Focusable, KeyBinding,
-    SharedString, Window, WindowBackgroundAppearance, WindowBounds, WindowOptions,
+    actions, div, px, App, Application, Bounds, Context, Entity, FocusHandle, Focusable,
+    KeyBinding, SharedString, Window, WindowBackgroundAppearance, WindowBounds, WindowOptions,
 };
+use gpui_component::text::TextView;
+use gpui_component::Root;
 use rpc::{Incoming, PiRpc};
 use session::{Exchange, SessionState, ToolCall};
 use std::time::Duration;
 use theme::{space, text, Theme};
 use ui::{clip, eyebrow, fin, format_cost, format_tokens, lit_top, panel, workspace_name};
 
-actions!(
-    desk,
-    [Send, Stop, CycleThinking, Backspace, ClearDraft, ToggleRail]
-);
+actions!(desk, [Send, Stop, CycleThinking, ToggleRail]);
 
 struct Desk {
     theme: Theme,
     state: SessionState,
     rpc: Option<PiRpc>,
-    draft: String,
+    composer: Entity<Composer>,
     rail_open: bool,
     focus: FocusHandle,
 }
 
 impl Desk {
-    fn new(cx: &mut Context<Self>) -> Self {
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let mut state = SessionState::default();
         let cwd = std::env::current_dir().unwrap_or_default();
 
@@ -101,18 +102,26 @@ impl Desk {
         })
         .detach();
 
+        let composer = cx.new(|cx| Composer::new(window, cx));
+        cx.subscribe(&composer, |desk, _composer, event: &Submit, cx| {
+            desk.dispatch_prompt(event.0.clone(), cx);
+        })
+        .detach();
+
         Self {
             theme: Theme::dark(),
             state,
             rpc,
-            draft: String::new(),
+            composer,
             rail_open: true,
             focus: cx.focus_handle(),
         }
     }
 
-    fn send(&mut self, _: &Send, _window: &mut Window, cx: &mut Context<Self>) {
-        let text = self.draft.trim().to_string();
+    /// Send a prompt and record it optimistically, so the question appears the
+    /// instant it is asked rather than when the agent gets round to echoing it.
+    fn dispatch_prompt(&mut self, text: String, cx: &mut Context<Self>) {
+        let text = text.trim().to_string();
         if text.is_empty() {
             return;
         }
@@ -120,8 +129,12 @@ impl Desk {
             let _ = rpc.prompt(&text);
         }
         self.state.push_prompt(text);
-        self.draft.clear();
         cx.notify();
+    }
+
+    fn send(&mut self, _: &Send, window: &mut Window, cx: &mut Context<Self>) {
+        self.composer
+            .update(cx, |composer, cx| composer.submit(window, cx));
     }
 
     fn stop(&mut self, _: &Stop, _window: &mut Window, cx: &mut Context<Self>) {
@@ -150,15 +163,6 @@ impl Desk {
         cx.notify();
     }
 
-    fn backspace(&mut self, _: &Backspace, _window: &mut Window, cx: &mut Context<Self>) {
-        self.draft.pop();
-        cx.notify();
-    }
-
-    fn clear_draft(&mut self, _: &ClearDraft, _window: &mut Window, cx: &mut Context<Self>) {
-        self.draft.clear();
-        cx.notify();
-    }
 }
 
 impl Focusable for Desk {
@@ -168,7 +172,7 @@ impl Focusable for Desk {
 }
 
 impl Render for Desk {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.clone();
 
         div()
@@ -178,18 +182,6 @@ impl Render for Desk {
             .on_action(cx.listener(Self::stop))
             .on_action(cx.listener(Self::cycle_thinking))
             .on_action(cx.listener(Self::toggle_rail))
-            .on_action(cx.listener(Self::backspace))
-            .on_action(cx.listener(Self::clear_draft))
-            // Typing goes straight into the draft. A real text input lands with
-            // gpui-component's editor; this keeps the loop closed meanwhile.
-            .on_key_down(cx.listener(|desk, event: &gpui::KeyDownEvent, _window, cx| {
-                if let Some(key) = event.keystroke.key_char.as_ref() {
-                    if !event.keystroke.modifiers.platform && !event.keystroke.modifiers.control {
-                        desk.draft.push_str(key);
-                        cx.notify();
-                    }
-                }
-            }))
             .flex()
             .flex_col()
             .size_full()
@@ -209,8 +201,8 @@ impl Render for Desk {
                             .flex_col()
                             .flex_1()
                             .min_w_0()
-                            .child(self.transcript(&theme))
-                            .child(self.composer(&theme)),
+                            .child(self.transcript(&theme, window, cx))
+                            .child(self.composer(&theme, cx)),
                     ),
             )
             .child(self.status_bar(&theme))
@@ -290,7 +282,7 @@ impl Desk {
             )
     }
 
-    fn transcript(&self, theme: &Theme) -> impl IntoElement {
+    fn transcript(&self, theme: &Theme, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let mut column = div()
             .flex()
             .flex_col()
@@ -304,8 +296,8 @@ impl Desk {
             column = column.child(self.empty_state(theme));
         }
 
-        for exchange in &self.state.exchanges {
-            column = column.child(self.exchange(theme, exchange));
+        for (index, exchange) in self.state.exchanges.iter().enumerate() {
+            column = column.child(self.exchange(theme, exchange, index, window, cx));
         }
 
         if let Some(fault) = &self.state.fault {
@@ -349,7 +341,14 @@ impl Desk {
             )
     }
 
-    fn exchange(&self, theme: &Theme, exchange: &Exchange) -> impl IntoElement {
+    fn exchange(
+        &self,
+        theme: &Theme,
+        exchange: &Exchange,
+        id: usize,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> impl IntoElement {
         let mut block = div().flex().flex_col().gap(px(12.0));
 
         if !exchange.prompt.is_empty() {
@@ -392,12 +391,15 @@ impl Desk {
         }
 
         if !reply.text.is_empty() {
+            // Real markdown: headings, lists, links, and fenced code with
+            // syntax highlighting, rendered natively rather than as one blob.
             block = block.child(
-                div()
-                    .text_size(text::BODY)
-                    .line_height(px(22.0))
-                    .text_color(theme.foreground)
-                    .child(SharedString::from(reply.text.clone())),
+                div().text_size(text::BODY).child(TextView::markdown(
+                    ("reply", id),
+                    reply.text.clone(),
+                    window,
+                    cx,
+                )),
             );
         }
 
@@ -457,8 +459,8 @@ impl Desk {
             })
     }
 
-    fn composer(&self, theme: &Theme) -> impl IntoElement {
-        let ready = !self.draft.trim().is_empty();
+    fn composer(&self, theme: &Theme, cx: &App) -> impl IntoElement {
+        let ready = !self.composer.read(cx).is_empty(cx);
 
         div()
             .flex_none()
@@ -475,23 +477,7 @@ impl Desk {
                     .border_1()
                     .border_color(theme.border)
                     .child(lit_top(theme))
-                    .child(
-                        div()
-                            .px(px(14.0))
-                            .py(px(11.0))
-                            .min_h(px(44.0))
-                            .text_size(text::BODY)
-                            .text_color(if self.draft.is_empty() {
-                                theme.faint
-                            } else {
-                                theme.foreground
-                            })
-                            .child(SharedString::from(if self.draft.is_empty() {
-                                "Ask Pi to change something".to_string()
-                            } else {
-                                self.draft.clone()
-                            })),
-                    )
+                    .child(self.composer.clone())
                     .child(div().h(px(1.0)).bg(theme.hairline))
                     .child(
                         div()
@@ -577,13 +563,14 @@ impl Desk {
 
 fn main() {
     Application::new().run(|cx: &mut App| {
+        // Brings the component library's own key bindings, theme, and the
+        // hosts that dialogs, popovers, and notifications render into.
+        gpui_component::init(cx);
+
         cx.bind_keys([
-            KeyBinding::new("enter", Send, Some("Desk")),
             KeyBinding::new("cmd-escape", Stop, Some("Desk")),
-            KeyBinding::new("backspace", Backspace, Some("Desk")),
             KeyBinding::new("cmd-.", CycleThinking, Some("Desk")),
             KeyBinding::new("cmd-b", ToggleRail, Some("Desk")),
-            KeyBinding::new("escape", ClearDraft, Some("Desk")),
         ]);
 
         let bounds = Bounds::centered(None, gpui::size(px(1480.0), px(940.0)), cx);
@@ -598,9 +585,11 @@ fn main() {
 
         let window = cx
             .open_window(options, |window, cx| {
-                let desk = cx.new(Desk::new);
-                window.focus(&desk.focus_handle(cx));
-                desk
+                let desk = cx.new(|cx| Desk::new(window, cx));
+                // Focus the composer on open: the first thing anyone does here
+                // is type.
+                window.focus(&desk.read(cx).composer.focus_handle(cx));
+                cx.new(|cx| Root::new(desk, window, cx))
             })
             .expect("could not open the window");
 
