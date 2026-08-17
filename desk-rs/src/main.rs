@@ -30,18 +30,21 @@ use gpui::{
     WindowOptions,
 };
 use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::clipboard::Clipboard;
+use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::divider::Divider;
+use gpui_component::spinner::Spinner;
 use gpui_component::kbd::Kbd;
 use gpui_component::resizable::{h_resizable, resizable_panel};
 use gpui_component::scroll::Scrollbar;
 use gpui_component::skeleton::Skeleton;
 use gpui_component::text::TextView;
-use gpui_component::{Icon, IconName, Root, Sizable, StyledExt};
+use gpui_component::{Icon, IconName, Root, Sizable};
 use rpc::{Incoming, PiRpc};
 use session::{Exchange, SessionState, ToolCall};
 use std::time::Duration;
 use theme::{space, text, Theme};
-use ui::{clip, eyebrow, fin, format_cost, format_tokens, lit_top, panel, workspace_name};
+use ui::{clip, fin, format_cost, format_tokens, lit_top, panel, workspace_name};
 
 actions!(
     desk,
@@ -111,12 +114,15 @@ struct Desk {
     settings_open: bool,
     sessions: Vec<SessionEntry>,
     index: SessionIndex,
-    git: git::GitStatus,
     focus: FocusHandle,
     /// Owns the transcript's scroll offset across renders.
     scroll: ScrollHandle,
     /// True while the reader is at the bottom, so the stream may follow.
     pinned: bool,
+    /// Narrows the session rail. Lives on `Desk` rather than inside the rail
+    /// because the rail is rebuilt every frame and a field that loses its
+    /// caret mid-word is worse than no field.
+    rail_query: Entity<InputState>,
     /// Which tool calls have their output open, as (exchange, tool).
     ///
     /// Collapsed is the default because a transcript is read for the answer,
@@ -200,6 +206,12 @@ impl Desk {
                         // more time in `fork` than in rendering.
                         let cwd = desk.state.cwd.clone();
                         desk.refresh_inspector(&cwd, cx);
+                        // And re-read the session directory, so a session
+                        // started in a terminal — or by this window — shows up
+                        // in the rail without a restart. The index caches by
+                        // mtime, so an unchanged file is a stat and nothing
+                        // more.
+                        desk.sessions = desk.index.scan(None);
                     }
                     desk.follow_stream();
                     cx.notify();
@@ -249,10 +261,18 @@ impl Desk {
         })
         .detach();
 
+        let rail_query =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Filter sessions"));
+        cx.subscribe(&rail_query, |_desk, _state, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                cx.notify();
+            }
+        })
+        .detach();
+
         let mut index = SessionIndex::default();
-        let cwd_string = cwd.to_string_lossy().to_string();
+
         let sessions = index.scan(None);
-        let git_status = git::status(&cwd_string);
 
         Self {
             theme,
@@ -268,12 +288,29 @@ impl Desk {
             settings_open: false,
             sessions,
             index,
-            git: git_status,
             focus: cx.focus_handle(),
             scroll: ScrollHandle::new(),
             pinned: true,
+            rail_query,
             opened_tools: std::collections::HashSet::new(),
         }
+    }
+
+    /// The sessions the rail should show, in the order it should show them.
+    ///
+    /// Substring, not fuzzy: session titles are the user's own first sentences,
+    /// so they are recalled almost verbatim, and scattered-character matching
+    /// mostly produces surprising top hits on a corpus like that.
+    fn visible_sessions(&self, cx: &App) -> Vec<SessionEntry> {
+        let needle = self.rail_query.read(cx).value().trim().to_lowercase();
+        if needle.is_empty() {
+            return self.sessions.clone();
+        }
+        self.sessions
+            .iter()
+            .filter(|entry| entry.title().to_lowercase().contains(&needle))
+            .cloned()
+            .collect()
     }
 
     /// Follow the stream only while the reader is already at the bottom. The
@@ -673,6 +710,7 @@ impl Desk {
 
     fn rail(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let active = self.state.session_file.clone();
+        let visible = self.visible_sessions(cx);
 
         panel(theme)
             .size_full()
@@ -703,8 +741,50 @@ impl Desk {
                             .child(SharedString::from(self.sessions.len().to_string())),
                     ),
             )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .mx(px(8.0))
+                    .mb(px(7.0))
+                    .px(px(8.0))
+                    .rounded(space::RADIUS)
+                    .bg(theme.foreground.opacity(0.05))
+                    .text_size(text::META)
+                    .child(Icon::new(IconName::Search).size(px(11.0)).text_color(theme.faint))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(Input::new(&self.rail_query).appearance(false).xsmall()),
+                    ),
+            )
             .child(Divider::horizontal())
-            .child(if self.sessions.is_empty() {
+            .child(if visible.is_empty() && !self.sessions.is_empty() {
+                // Filtered to nothing. Say so, rather than showing the blank
+                // panel that "still loading" also shows.
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap(px(3.0))
+                    .py(px(28.0))
+                    .px(px(16.0))
+                    .child(
+                        div()
+                            .text_size(text::META)
+                            .text_color(theme.muted)
+                            .child("No sessions match"),
+                    )
+                    .child(
+                        div()
+                            .text_size(text::MICRO)
+                            .text_color(theme.faint)
+                            .child("Try fewer words."),
+                    )
+                    .into_any_element()
+            } else if self.sessions.is_empty() {
                 // The list is read off disk on a background pass, so an empty
                 // vector on the first frames means "not yet", not "none". Three
                 // skeleton rows say that without claiming a count.
@@ -727,7 +807,7 @@ impl Desk {
                 // twenty rows per frame, not a thousand. The row height is
                 // fixed at 52px, which is what lets it be.
                 let entity = cx.entity();
-                let sessions = self.sessions.clone();
+                let sessions = visible;
                 let theme = theme.clone();
 
                 gpui::uniform_list("session-rail", sessions.len(), move |range, _window, _cx| {
@@ -1048,11 +1128,36 @@ impl Desk {
         }
 
         if reply.streaming && reply.is_empty() {
+            // A moving indicator, not the word "Thinking". Between the prompt
+            // landing and the first token there is nothing else on screen, and
+            // static text there is indistinguishable from a hang.
             block = block.child(
                 div()
+                    .flex()
+                    .items_center()
+                    .gap(px(7.0))
                     .text_size(text::UI)
                     .text_color(theme.faint)
-                    .child("Thinking…"),
+                    .child(Spinner::new().xsmall().color(theme.faint))
+                    .child("Working"),
+            );
+        }
+
+        // The unit anyone copies is the answer, so there is one control per
+        // exchange rather than one per message part — copying "the second
+        // paragraph but not the code block" is not a thing people want.
+        if !reply.text.is_empty() && !reply.streaming {
+            block = block.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(2.0))
+                    .mt(px(-4.0))
+                    .ml(px(-4.0))
+                    .child(
+                        Clipboard::new(("copy-reply", id))
+                            .value(SharedString::from(reply.text.clone())),
+                    ),
             );
         }
 
