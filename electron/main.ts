@@ -7,13 +7,27 @@ import type { BootPayload, HostEvent, ThinkingLevel } from "./shared.js"
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const isDev = !app.isPackaged && !process.env.MAKO_PROD
 
-/** The dock and window icon. Bundled next to the renderer in both modes. */
+/**
+ * The Dock and window icon.
+ *
+ * A raw square PNG is not a macOS icon: the system draws it exactly as given,
+ * so it renders with hard corners and no margin — visibly larger and squarer
+ * than everything beside it. `build/Mako.icns` carries Apple's icon grid
+ * (824 of 1024, 185.4pt corner radius, transparent margin) and is preferred
+ * wherever it is present; the PNG is only a fallback.
+ */
 function appIcon() {
-  const file = isDev
-    ? join(__dirname, "../public/icons/app-icon.png")
-    : join(__dirname, "../dist/icons/app-icon.png")
-  const image = nativeImage.createFromPath(file)
-  return image.isEmpty() ? undefined : image
+  const candidates = [
+    join(__dirname, "../build/Mako.icns"),
+    isDev
+      ? join(__dirname, "../public/icons/app-icon.png")
+      : join(__dirname, "../dist/icons/app-icon.png"),
+  ]
+  for (const file of candidates) {
+    const image = nativeImage.createFromPath(file)
+    if (!image.isEmpty()) return image
+  }
+  return undefined
 }
 
 let window: BrowserWindow | null = null
