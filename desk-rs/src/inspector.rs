@@ -16,6 +16,9 @@ use gpui::{
 };
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputState};
+use gpui_component::badge::Badge;
+use gpui_component::divider::Divider;
+use gpui_component::tab::{Tab, TabBar};
 use gpui_component::Sizable;
 use std::path::PathBuf;
 
@@ -169,7 +172,6 @@ impl Render for Inspector {
             .flex_col()
             .size_full()
             .child(self.tabs(&theme, cx))
-            .child(div().h(px(1.0)).bg(theme.hairline))
             .child(match self.lane {
                 Lane::Changes => self.changes(&theme, cx).into_any_element(),
                 Lane::Context => self.context_lane(&theme).into_any_element(),
@@ -179,54 +181,40 @@ impl Render for Inspector {
 }
 
 impl Inspector {
-    fn tabs(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        let active = self.lane;
+    fn tabs(&self, _theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        let selected = match self.lane {
+            Lane::Changes => 0,
+            Lane::Context => 1,
+            Lane::History => 2,
+        };
         let changed = self.status.files.len();
 
-        div()
-            .flex()
-            .items_center()
-            .gap(px(2.0))
-            .h(px(34.0))
-            .px(px(6.0))
-            .children(
-                [Lane::Changes, Lane::Context, Lane::History]
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, lane)| {
-                        let theme = theme.clone();
-                        div()
-                            .id(("lane", index))
-                            .flex()
-                            .items_center()
-                            .gap(px(5.0))
-                            .rounded(space::RADIUS)
-                            .px(px(8.0))
-                            .py(px(4.0))
-                            .text_size(text::META)
-                            .when(lane == active, |tab| {
-                                tab.bg(theme.selected()).text_color(theme.foreground)
-                            })
-                            .when(lane != active, |tab| tab.text_color(theme.faint))
-                            .hover(|style| style.bg(theme.hover()))
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(move |inspector, _event, _window, cx| {
-                                    inspector.lane = lane;
-                                    cx.notify();
-                                }),
-                            )
-                            .child(lane.label())
-                            .when(lane == Lane::Changes && changed > 0, |tab| {
-                                tab.child(
-                                    div()
-                                        .text_size(text::MICRO)
-                                        .text_color(theme.caution)
-                                        .child(SharedString::from(changed.to_string())),
-                                )
-                            })
-                    }),
+        // The library's TabBar carries the selected underline, hover, and
+        // keyboard semantics; the previous hand-built strip had none of them.
+        TabBar::new("inspector-lanes")
+            .selected_index(selected)
+            .on_click(cx.listener(|inspector, index: &usize, _window, cx| {
+                inspector.lane = match index {
+                    0 => Lane::Changes,
+                    1 => Lane::Context,
+                    _ => Lane::History,
+                };
+                cx.notify();
+            }))
+            .child(
+                Tab::new().child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(5.0))
+                        .child("Changes")
+                        .when(changed > 0, |tab| {
+                            tab.child(Badge::new().count(changed).child(div()))
+                        }),
+                ),
             )
+            .child(Tab::new().child("Context"))
+            .child(Tab::new().child("History"))
     }
 
     fn changes(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
