@@ -5,12 +5,14 @@
 //! stdio and is documented for exactly this use.
 
 mod composer;
+mod model_picker;
 mod rpc;
 mod session;
 mod theme;
 mod ui;
 
 use composer::{Composer, Submit};
+use model_picker::{ModelPicker, SelectModel};
 use gpui::prelude::*;
 use gpui::{
     actions, div, px, App, Application, Bounds, Context, Entity, FocusHandle, Focusable,
@@ -36,6 +38,7 @@ struct Desk {
     state: SessionState,
     rpc: Option<PiRpc>,
     composer: Entity<Composer>,
+    model_picker: Entity<ModelPicker>,
     rail_open: bool,
     focus: FocusHandle,
     /// Owns the transcript's scroll offset across renders.
@@ -102,6 +105,12 @@ impl Desk {
                     }
                 }
                 if dirty {
+                    let models = desk.state.models.clone();
+                    let current = desk.state.model.clone();
+                    desk.model_picker.update(cx, |picker, cx| {
+                        picker.set_models(models, cx);
+                        picker.set_current(current, cx);
+                    });
                     desk.follow_stream();
                     cx.notify();
                 }
@@ -118,11 +127,26 @@ impl Desk {
         })
         .detach();
 
+        let theme = Theme::dark();
+        let model_picker = cx.new(|cx| ModelPicker::new(theme.clone(), window, cx));
+        cx.subscribe(&model_picker, |desk, _picker, event: &SelectModel, cx| {
+            if let Some(rpc) = desk.rpc.as_mut() {
+                let _ = rpc.set_model(&event.provider, &event.id);
+                // Ask for the settled state rather than assuming the switch
+                // took: the host clamps the thinking level to what the new
+                // model supports, and that has to come back from Pi.
+                let _ = rpc.get_state();
+            }
+            cx.notify();
+        })
+        .detach();
+
         Self {
-            theme: Theme::dark(),
+            theme,
             state,
             rpc,
             composer,
+            model_picker,
             rail_open: true,
             focus: cx.focus_handle(),
             scroll: ScrollHandle::new(),
@@ -538,16 +562,7 @@ impl Desk {
                             .gap(px(8.0))
                             .px(px(10.0))
                             .py(px(7.0))
-                            .child(
-                                div()
-                                    .text_size(text::META)
-                                    .text_color(theme.muted)
-                                    .child(SharedString::from(if self.state.model.name.is_empty() {
-                                        "no model".to_string()
-                                    } else {
-                                        self.state.model.name.clone()
-                                    })),
-                            )
+                            .child(self.model_picker.clone())
                             .when(!self.state.thinking.is_empty(), |row| {
                                 row.child(
                                     div()
