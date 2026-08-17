@@ -4,8 +4,36 @@ import { actions, shallowEqual, useSession } from "@/state/session"
 import { formatContextWindow, formatCost, formatTokens, workspaceName } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { HotIndicator } from "@/components/shell/hot-indicator"
-import { FolderIcon, GitBranchIcon } from "lucide-react"
+import { updates, useUpdates } from "@/state/updates"
+import { ArrowUpCircleIcon, FolderIcon, GitBranchIcon } from "lucide-react"
 import { useCallback } from "react"
+
+/**
+ * A new version, once there is one.
+ *
+ * Silent until a download has finished. Nothing about "checking" or "up to
+ * date" earns a permanent place in a status bar — those are answers to a
+ * question nobody asked, and this row is otherwise all facts you need. The
+ * install is a click, never automatic: a turn can be minutes long and hold
+ * real edits, and relaunching underneath that is not an improvement.
+ */
+function UpdatePill() {
+  const status = useUpdates((state) => state.status)
+  const version = useUpdates((state) => state.available)
+  if (status !== "ready") return null
+
+  return (
+    <button
+      type="button"
+      onClick={() => updates.install()}
+      title={`Restart into ${version ?? "the new version"}`}
+      className="no-drag flex items-center gap-1 rounded px-1.5 text-foreground/80 transition-colors duration-100 hover:bg-raised hover:text-foreground"
+    >
+      <ArrowUpCircleIcon className="size-3" />
+      <span>Update ready</span>
+    </button>
+  )
+}
 
 /**
  * The always-on facts: where we are, what branch, how full the context is,
@@ -55,6 +83,7 @@ export function StatusBar() {
       ) : null}
 
       <HotIndicator />
+      <UpdatePill />
 
       <div className="ml-auto flex items-center gap-3">
         <Slot name="statusbar.trailing" meta={undefined} />

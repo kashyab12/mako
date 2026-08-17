@@ -13,7 +13,9 @@
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc -b --force",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "package": "npm run build && electron-builder --publish never",
+    "release": "npm run build && electron-builder --publish always"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^0.84.2",
@@ -25,6 +27,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "electron-updater": "^6.8.9",
     "lucide-react": "^1.31.0",
     "next-themes": "^0.4.6",
     "radix-ui": "^1.6.7",
@@ -48,6 +51,7 @@
     "@vitejs/plugin-react": "^6",
     "concurrently": "^10.0.5",
     "electron": "^43.4.0",
+    "electron-builder": "^26.15.3",
     "electron-is-dev": "^3.0.1",
     "eslint": "^10",
     "eslint-plugin-react-hooks": "^7.1.1",
@@ -60,5 +64,65 @@
     "typescript-eslint": "^8",
     "vite": "^8",
     "wait-on": "^9.1.0"
+  },
+  "build": {
+    "appId": "dev.mako.app",
+    "productName": "Mako",
+    "copyright": "Mako",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json",
+      "!**/*.map"
+    ],
+    "extraMetadata": {
+      "main": "dist-electron/main.js"
+    },
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "build/Mako.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "linux": {
+      "category": "Development",
+      "target": [
+        "AppImage"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "kashyab12",
+        "repo": "mako"
+      }
+    ]
   }
 }

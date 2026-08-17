@@ -25,6 +25,7 @@ import {
   writeCache,
 } from "@/state/tabs"
 import { viewer, viewerStore } from "@/state/viewer"
+import { applyUpdate, updates } from "@/state/updates"
 import { toast } from "sonner"
 
 export type Phase = "booting" | "ready" | "detached"
@@ -177,6 +178,9 @@ function applyToActive(event: HostEvent) {
     case "capabilities":
       store.set({ capabilities: event.capabilities })
       break
+    case "update":
+      applyUpdate(event.update)
+      break
     case "notice":
       if (event.level === "error") toast.error(event.message)
       else if (event.level === "success") toast.success(event.message)
@@ -256,6 +260,7 @@ export const actions = {
         sourceRoot: boot.sourceRoot,
       })
       void actions.refreshSessions(active.session.meta.cwd)
+      void updates.load()
     } catch (error) {
       store.set({ phase: "detached", fault: error instanceof Error ? error.message : String(error) })
     }

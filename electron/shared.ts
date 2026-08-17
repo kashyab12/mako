@@ -228,6 +228,8 @@ export type HostEventBody =
   | { type: "notice"; level: "info" | "success" | "error"; message: string }
   /** A file in the plugins directory changed; the renderer should re-read them. */
   | { type: "plugins-changed" }
+  /** Update progress. Window-wide, not tied to any tab. */
+  | { type: "update"; update: UpdateState }
 
 /**
  * Every event says which tab it came from.
@@ -252,6 +254,26 @@ export interface WorkspaceFile {
   path: string
   /** True when the file also appears in the working diff. */
   changed?: boolean
+}
+
+/**
+ * Where the app is in the update cycle.
+ *
+ * `unsupported` is the normal state when running from a checkout: there is no
+ * feed and never will be, and the UI should say that rather than sit on
+ * "checking" forever. `ready` is the only state with a button attached — the
+ * install is always a decision, never a surprise mid-turn.
+ */
+export interface UpdateState {
+  status: "idle" | "checking" | "current" | "downloading" | "ready" | "error" | "unsupported"
+  /** The version currently running. */
+  version: string
+  /** The version waiting, once there is one. */
+  available?: string
+  /** Download percentage, while downloading. */
+  progress?: number
+  notes?: string
+  error?: string
 }
 
 /* ------------------------------------------------------------------ */

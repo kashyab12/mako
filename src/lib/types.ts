@@ -27,6 +27,7 @@ export type {
   StagedFile,
   TabSnapshot,
   ThinkingLevel,
+  UpdateState,
   TokenStats,
   ToolSummary,
   TreeNode,

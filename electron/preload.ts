@@ -15,6 +15,7 @@ import type {
   StagedFile,
   TabSnapshot,
   ThinkingLevel,
+  UpdateState,
   WorkspaceFile,
 } from "./shared.js"
 
@@ -88,6 +89,10 @@ const api = {
   writePlugin: (id: string, source: string) => invoke<void>("pi:write-plugin", id, source),
 
   defaultCommitPrompt: () => invoke<string>("pi:default-commit-prompt"),
+
+  updateState: () => invoke<UpdateState>("pi:update-state"),
+  checkUpdates: () => invoke<UpdateState>("pi:check-updates"),
+  installUpdate: () => invoke<void>("pi:install-update"),
 
   /* Crash reports. Local only — see electron/crash.ts. */
   crashes: () => invoke<CrashReport[]>("pi:crashes"),

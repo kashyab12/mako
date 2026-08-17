@@ -69,6 +69,19 @@ over the transcript when you switch to it. The session list is virtualized,
 offscreen turns are skipped with `content-visibility`, and the diff engine is
 code-split out of the boot path.
 
+## Shipping it
+
+```bash
+npm run package    # builds a DMG and a zip into release/
+```
+
+Pushing a `v*` tag builds on macOS and Linux and publishes to GitHub releases,
+which is also the update feed. The app checks on launch and every six hours,
+downloads on its own, and **never installs on its own** — a turn can run for
+minutes and touch real files, so the restart is always a click. Builds are
+unsigned until certificates exist; they install and update either way, macOS
+just asks once on first launch.
+
 ## When it breaks
 
 A component that throws no longer takes the window with it: you get a screen

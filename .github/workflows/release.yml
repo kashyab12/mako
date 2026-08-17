@@ -1,0 +1,51 @@
+name: Release
+
+# Cutting a release is pushing a tag. Nothing else triggers a publish — a
+# release built from an arbitrary commit is a release nobody can point at.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      # One failing platform must not delete the artifacts of the others; the
+      # release is assembled from whatever finishes.
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            name: macOS
+          - os: ubuntu-24.04
+            name: Linux
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # The same gate that must pass locally. `tsc -b` follows the project
+      # references; `tsc --noEmit` does not, and would check nothing here.
+      - run: npm run typecheck
+
+      - name: Build and publish
+        run: npx electron-builder --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signing and notarization are skipped until the certificates exist.
+          # An unsigned build still installs and still auto-updates; it just
+          # asks the user to confirm on first launch. Set these three secrets
+          # and the same workflow starts producing signed builds.
+          CSC_LINK: ${{ secrets.MAC_CERT_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}

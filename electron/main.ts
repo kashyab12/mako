@@ -3,6 +3,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { COMMIT_PROMPT, type AgentHost } from "./host.js"
 import { breadcrumb, clearCrashes, crashesDir, installCrashReporting, listCrashes, record } from "./crash.js"
+import { check, installNow, installUpdates, updateState } from "./updates.js"
 import { HostPool } from "./pool.js"
 import { listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
 import type { BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
@@ -296,6 +297,10 @@ function bindIpc() {
       if (failure) shell.showItemInFolder(absolute)
     })
   )
+  handle("pi:update-state", () => updateState())
+  handle("pi:check-updates", () => check())
+  handle("pi:install-update", () => installNow())
+
   handle("pi:crashes", () => listCrashes())
   handle("pi:crashes-dir", () => crashesDir())
   handle("pi:clear-crashes", () => clearCrashes())
@@ -322,6 +327,7 @@ installCrashReporting()
 app.whenReady().then(async () => {
   bindIpc()
   await createWindow()
+  installUpdates(emit)
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow()
   })

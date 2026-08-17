@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Hardened-runtime exceptions Mako actually needs.
+
+  The JIT and unsigned-memory entitlements are what V8 requires; without them a
+  hardened, signed build crashes on launch rather than misbehaving subtly. The
+  rest is deliberately absent: no camera, no microphone, no location. The agent
+  runs shell commands as the user, which needs no entitlement at all.
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+    <key>com.apple.security.inherit</key>
+    <true/>
+  </dict>
+</plist>

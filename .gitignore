@@ -38,3 +38,4 @@ build/*.iconset
 # Local agent scratch
 .claude/
 build/make-icns
+release/
