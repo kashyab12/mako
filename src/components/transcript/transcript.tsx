@@ -6,7 +6,15 @@ import { toExchanges } from "@/lib/exchanges"
 import { foldTools } from "@/lib/tools"
 import { useSession } from "@/state/session"
 import { cn } from "@/lib/utils"
-import { ArrowDownIcon, ArrowUpIcon, TerminalIcon } from "lucide-react"
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  CircleCheckIcon,
+  FolderIcon,
+  GitCompareIcon,
+  MapIcon,
+} from "lucide-react"
+import { MakoMark } from "@/components/ui/mako-mark"
 
 const NEAR_BOTTOM = 96
 
@@ -133,7 +141,13 @@ export function Transcript() {
         {empty ? (
           <EmptyTranscript />
         ) : (
-          <div className="mx-auto flex w-full max-w-[760px] flex-col gap-7 px-6 py-6">
+          <div
+            // Keyed by session so the animation replays on a switch and not on
+            // every token: within a session the key never changes, so a
+            // streaming turn costs nothing here.
+            key={sessionId ?? "none"}
+            className="animate-thread mx-auto flex w-full max-w-[760px] flex-col gap-7 px-6 py-6"
+          >
             {exchanges.map((exchange, index) => (
               <Exchange
                 key={exchange.id}
@@ -177,34 +191,47 @@ export function Transcript() {
 }
 
 /**
- * The opening screen carries the one fact worth knowing before you type —
- * which folder the agent is pointed at — and three concrete openers. The
- * openers fill the composer rather than sending, so the first message is
- * still the user's.
+ * The opening screen.
+ *
+ * The most-seen screen in the app — every new session lands here — so it earns
+ * the mark rather than a generic terminal glyph. It carries the two facts
+ * worth knowing before typing (which folder the agent can edit, and which
+ * model will answer) and three concrete openers. The openers fill the composer
+ * rather than sending, so the first message is still the user's.
  */
 function EmptyTranscript() {
   const cwd = useSession((state) => state.meta?.cwd)
+  const model = useSession((state) => state.meta?.model?.name)
 
   return (
     <div className="flex h-full items-center justify-center px-6">
-      <div className="w-full max-w-[440px] pb-12">
-        <div className="flex items-center gap-2.5">
-          <span className="flex size-7 items-center justify-center rounded-lg bg-raised text-faint">
-            <TerminalIcon className="size-3.5" />
-          </span>
+      <div className="w-full max-w-[460px] pb-16">
+        <div className="flex items-center gap-3.5">
+          <MakoMark className="size-8 shrink-0 text-foreground/85" />
           <div className="min-w-0">
-            <p className="text-[13.5px] font-medium">Start a turn</p>
-            <p className="truncate font-mono text-[11px] text-faint" title={cwd}>
-              {cwd ?? "no workspace"}
+            <p className="text-[16px] leading-tight font-semibold tracking-[-0.01em]">
+              Ask Pi something
+            </p>
+            <p className="mt-1 flex min-w-0 items-center gap-1.5 text-[11.5px] text-faint">
+              <FolderIcon className="size-3 shrink-0" />
+              <span className="truncate" title={cwd}>
+                {cwd ?? "no workspace"}
+              </span>
+              {model ? (
+                <>
+                  <span className="text-faint/50">·</span>
+                  <span className="shrink-0 truncate">{model}</span>
+                </>
+              ) : null}
             </p>
           </div>
         </div>
 
         <Slot name="transcript.empty" meta={undefined} />
 
-        <div className="mt-4 flex flex-col">
+        <div className="mt-6 flex flex-col">
           {SUGGESTIONS.map((suggestion, index) => (
-            <Suggestion key={suggestion} text={suggestion} index={index} />
+            <Suggestion key={suggestion.text} suggestion={suggestion} index={index} />
           ))}
         </div>
       </div>
@@ -213,12 +240,20 @@ function EmptyTranscript() {
 }
 
 const SUGGESTIONS = [
-  "Explain how this project is structured",
-  "Review my uncommitted changes",
-  "Find and fix the failing test",
+  { text: "Explain how this project is structured", icon: MapIcon },
+  { text: "Review my uncommitted changes", icon: GitCompareIcon },
+  { text: "Find and fix the failing test", icon: CircleCheckIcon },
 ]
 
-function Suggestion({ text, index }: { text: string; index: number }) {
+function Suggestion({
+  suggestion,
+  index,
+}: {
+  suggestion: (typeof SUGGESTIONS)[number]
+  index: number
+}) {
+  const Icon = suggestion.icon
+
   return (
     <button
       type="button"
@@ -226,15 +261,18 @@ function Suggestion({ text, index }: { text: string; index: number }) {
       // as having always been there. 45ms apart stays under the threshold
       // where waiting becomes perceptible.
       style={{ animationDelay: `${60 + index * 45}ms` }}
-      onClick={() => window.dispatchEvent(new CustomEvent("pi:compose", { detail: text }))}
+      onClick={() =>
+        window.dispatchEvent(new CustomEvent("pi:compose", { detail: suggestion.text }))
+      }
       className={cn(
-        "pressable group flex w-full animate-enter items-center gap-2 rounded-md border-t border-hairline",
-        "px-2 py-2 text-left text-[12.5px] text-muted-foreground",
+        "pressable group flex w-full animate-enter items-center gap-2.5 rounded-md border-t border-hairline",
+        "px-2.5 py-2.5 text-left text-[12.5px] text-muted-foreground",
         "[transition:transform_var(--duration-press)_var(--ease-out),color_120ms_ease,background-color_120ms_ease]",
         "first:border-t-0 hover:bg-raised hover:text-foreground"
       )}
     >
-      <span className="min-w-0 flex-1 truncate">{text}</span>
+      <Icon className="size-3.5 shrink-0 text-faint transition-colors duration-120 group-hover:text-muted-foreground" />
+      <span className="min-w-0 flex-1 truncate">{suggestion.text}</span>
       <ArrowUpIcon className="size-3 shrink-0 rotate-45 text-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100" />
     </button>
   )

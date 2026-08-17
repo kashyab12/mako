@@ -12,6 +12,7 @@ import {
   PanelRightIcon,
   PlusIcon,
   SearchIcon,
+  SettingsIcon,
   SquareIcon,
 } from "lucide-react"
 
@@ -71,6 +72,13 @@ export function TitleBar() {
           onClick={() => window.dispatchEvent(new CustomEvent("pi:palette"))}
         >
           <SearchIcon />
+        </IconAction>
+        <IconAction
+          label="Settings"
+          keys={formatChord("mod+,")}
+          onClick={() => window.dispatchEvent(new CustomEvent("pi:settings"))}
+        >
+          <SettingsIcon />
         </IconAction>
         <IconAction
           label={inspectorOpen ? "Hide inspector" : "Show inspector"}

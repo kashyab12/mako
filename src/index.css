@@ -236,6 +236,39 @@
     outline: 2px solid var(--ring);
     outline-offset: 1px;
   }
+
+  /*
+   * Cursors.
+   *
+   * Tailwind v4's preflight dropped the browser default of `cursor: pointer`
+   * on <button>, so without this every control in the window shows an arrow.
+   * It is the cheapest possible signal that a thing can be clicked, and its
+   * absence is felt as the interface being dead rather than as a missing
+   * style.
+   */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary,
+  label[for],
+  a[href] {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
+  /* A drag handle should say which way it moves before it is grabbed. */
+  [data-panel-resize-handle-id],
+  .resize-x {
+    cursor: ew-resize;
+  }
+
+  /* The title strip is draggable, so it must not offer a text caret. */
+  .drag-region {
+    cursor: default;
+  }
 }
 
 @layer utilities {
@@ -524,6 +557,30 @@
 
 .animate-enter {
   animation: pi-enter var(--duration-menu) var(--ease-out) both;
+}
+
+/*
+ * Switching threads.
+ *
+ * Occasional rather than constant — tens of times a day, not hundreds — so it
+ * earns a transition where the palette does not. Short and ease-out: the new
+ * conversation should look like it arrived, not like it is being presented.
+ * Transform and opacity only, so a switch costs the compositor a frame and the
+ * main thread nothing while tokens are landing next door.
+ */
+@keyframes pi-thread {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.animate-thread {
+  animation: pi-thread 190ms var(--ease-out) both;
 }
 
 .animate-live {

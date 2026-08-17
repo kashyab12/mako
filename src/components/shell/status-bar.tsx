@@ -3,6 +3,7 @@ import { Slot } from "@/extend/slot"
 import { actions, shallowEqual, useSession } from "@/state/session"
 import { formatContextWindow, formatCost, formatTokens, workspaceName } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { HotIndicator } from "@/components/shell/hot-indicator"
 import { FolderIcon, GitBranchIcon } from "lucide-react"
 import { useCallback } from "react"
 
@@ -52,6 +53,8 @@ export function StatusBar() {
           {changed > 0 ? <span className="text-caution">·{changed}</span> : null}
         </span>
       ) : null}
+
+      <HotIndicator />
 
       <div className="ml-auto flex items-center gap-3">
         <Slot name="statusbar.trailing" meta={undefined} />

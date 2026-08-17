@@ -31,6 +31,8 @@ export interface SessionStore {
   sessions: SessionSummary[]
   sessionsLoading: boolean
   platform: NodeJS.Platform | "unknown"
+  /** Mako's own source tree, when it is editable — development only. */
+  sourceRoot?: string
 }
 
 const empty: Capabilities = { tools: [], commands: [], skills: [] }
@@ -131,6 +133,7 @@ export const actions = {
         models: boot.models,
         capabilities: boot.capabilities,
         platform: boot.platform,
+        sourceRoot: boot.sourceRoot,
       })
       void actions.refreshSessions(boot.session.meta.cwd)
     } catch (error) {
@@ -196,7 +199,11 @@ export const actions = {
 
   async pickWorkspace() {
     const folder = await guard(() => getPi().pickFolder())
-    if (!folder) return
+    if (folder) await actions.openWorkspace(folder)
+  },
+
+  /** Point the agent at a folder by path, without a dialog. */
+  async openWorkspace(folder: string) {
     const next = await guard(() => getPi().setCwd(folder))
     if (!next) return
     store.set({ meta: next.meta, messages: next.messages, tree: next.tree, stream: null })

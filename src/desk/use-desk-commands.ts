@@ -208,6 +208,22 @@ const DESK_COMMANDS: DeskCommand[] = [
     run: () => window.dispatchEvent(new CustomEvent("pi:settings")),
   },
   {
+    id: "session.improve-mako",
+    title: "Improve Mako",
+    section: "Session",
+    // Hidden in a packaged build, where there is no source tree to point at
+    // and no dev server to apply an edit through.
+    hint: "Point this session at Mako's own source",
+    keywords: "self edit source dogfood hack",
+    // Hidden in a packaged build, where there is no source tree to point at
+    // and no dev server to apply an edit through.
+    when: () => Boolean(store.get().sourceRoot),
+    run: async () => {
+      const root = store.get().sourceRoot
+      if (root) await actions.openWorkspace(root)
+    },
+  },
+  {
     id: "view.toggle-depth",
     title: "Toggle translucency and depth",
     section: "View",

@@ -70,7 +70,11 @@ async function createWindow() {
     minWidth: 900,
     minHeight: 620,
     titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 14, y: 18 },
+    // Centred in the 38px title strip, not eyeballed: the button group is 12px
+    // tall, so (38 - 12) / 2 puts it on the same line as the panel toggles
+    // beside it. At y:18 it sat five pixels low and the whole row read as
+    // broken.
+    trafficLightPosition: { x: 14, y: 13 },
     backgroundColor: "#111110",
     show: false,
     webPreferences: {
@@ -106,6 +110,9 @@ function bindIpc() {
       models,
       capabilities: ready.capabilities(),
       platform: process.platform,
+      // Only when the renderer is coming from Vite: that is exactly the
+      // condition under which an edit here shows up without a restart.
+      sourceRoot: isDev ? app.getAppPath() : undefined,
     }
   })
 

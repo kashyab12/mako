@@ -253,4 +253,14 @@ export interface BootPayload {
   models: ModelInfo[]
   capabilities: Capabilities
   platform: NodeJS.Platform
+  /**
+   * Where Mako's own source lives, when it is editable.
+   *
+   * Present only in development, where the renderer is served by Vite and an
+   * edit to `src/` is hot-applied into the running window. A packaged build
+   * has no source tree and no dev server, so pointing a session at it would
+   * offer a change you could never see — the field is absent there, and the
+   * feature hides itself.
+   */
+  sourceRoot?: string
 }

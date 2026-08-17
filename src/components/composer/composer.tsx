@@ -23,7 +23,6 @@ import {
 /** Drafts survive session switches within a run; nobody should lose a paragraph. */
 const drafts = new Map<string, string>()
 
-const MAX_HEIGHT = 320
 
 export function Composer() {
   const sessionId = useSession((state) => state.meta?.sessionId)
@@ -47,6 +46,7 @@ export function Composer() {
   const [mention, setMention] = useState<ActiveMention | null>(null)
   const [dragging, setDragging] = useState(false)
   const textarea = useRef<HTMLTextAreaElement>(null)
+  const scroller = useRef<HTMLDivElement>(null)
   const filePicker = useRef<HTMLInputElement>(null)
   const attachments = useAttachments()
 
@@ -92,14 +92,31 @@ export function Composer() {
     setMention(found)
   }, [])
 
-  // Autogrow, measured in a layout effect so the row never flashes at the
-  // wrong height between the keystroke and the paint.
+  /*
+   * Autogrow, measured in a layout effect so the row never flashes at the
+   * wrong height between the keystroke and the paint.
+   *
+   * The textarea itself never scrolls — it is always exactly as tall as its
+   * content, and the wrapper around it is what clips and scrolls. That is not
+   * a style choice: the chips are painted on a layer *behind* a transparent
+   * textarea, and if the textarea scrolled on its own the painted glyphs would
+   * stay put while the real ones moved. Pasting anything over ~15 lines used to
+   * tear the two layers apart completely. Both layers now live inside one
+   * scroller, so they cannot drift by construction.
+   */
   useLayoutEffect(() => {
     const node = textarea.current
     if (!node) return
     node.style.height = "0px"
-    node.style.height = `${Math.min(node.scrollHeight, MAX_HEIGHT)}px`
-    node.style.overflowY = node.scrollHeight > MAX_HEIGHT ? "auto" : "hidden"
+    node.style.height = `${node.scrollHeight}px`
+
+    // Keep the caret in view. After typing or pasting at the end — which is
+    // nearly always — that means the bottom. Anywhere else and the browser has
+    // already scrolled the wrapper to reveal it.
+    const box = scroller.current
+    if (box && (node.selectionStart ?? 0) >= draft.length) {
+      box.scrollTop = box.scrollHeight
+    }
   }, [draft])
 
   useEffect(() => {
@@ -252,7 +269,10 @@ export function Composer() {
            */}
           <AttachmentStrip items={attachments.items} onRemove={attachments.remove} />
 
-          <div className="relative">
+          <div
+            ref={scroller}
+            className="relative max-h-[320px] overflow-y-auto overscroll-contain"
+          >
             <ReferenceOverlay text={draft} />
             <textarea
               ref={textarea}
@@ -282,7 +302,9 @@ export function Composer() {
               }
               spellCheck={false}
               className={cn(
-                "relative block max-h-[320px] w-full resize-none bg-transparent px-3 pt-2.5 pb-1",
+                // No max-height and no scrolling of its own — the wrapper owns
+                // both, so the painted layer behind it stays in register.
+                "relative block w-full resize-none overflow-hidden bg-transparent px-3 pt-2.5 pb-1",
                 "font-sans text-[13.5px] leading-[1.55] placeholder:text-faint focus:outline-none",
                 // Transparent glyphs let the overlay show through; the caret
                 // and selection stay native and visible.
