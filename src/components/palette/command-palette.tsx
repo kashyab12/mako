@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Eyebrow, Keys } from "@/components/ui/kit"
 import { formatChord, useCommands, type DeskCommand } from "@/extend/commands"
-import { fuzzy } from "@/lib/fuzzy"
+import { fuzzy, rank } from "@/lib/fuzzy"
 import { firstLine } from "@/lib/format"
 import { actions, useSession } from "@/state/session"
 import { modelKey, noteModelUse } from "@/state/prefs"
+import { useWorkspaceFiles } from "@/state/files"
+import { viewer } from "@/state/viewer"
 import { cn } from "@/lib/utils"
 
 interface Entry {
@@ -25,10 +27,20 @@ interface Entry {
  */
 export function CommandPalette() {
   const [open, setOpen] = useState(false)
+  /**
+   * Commands, or files.
+   *
+   * Two modes rather than one merged list, because they answer different
+   * questions and a merged list serves both badly: typing `session` should not
+   * bury the command you meant under forty files whose path happens to contain
+   * it. ⌘K asks "what can I do", ⌘P asks "where is that file".
+   */
+  const [mode, setMode] = useState<"commands" | "files">("commands")
   const [query, setQuery] = useState("")
   const [cursor, setCursor] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
 
+  const files = useWorkspaceFiles(open && mode === "files")
   const deskCommands = useCommands()
   const sessions = useSession((state) => state.sessions)
   const models = useSession((state) => state.models)
@@ -42,14 +54,42 @@ export function CommandPalette() {
   }, [])
 
   useEffect(() => {
-    const show = () => {
+    const show = (next: "commands" | "files") => () => {
       setQuery("")
       setCursor(0)
+      setMode(next)
       setOpen(true)
     }
-    window.addEventListener("pi:palette", show)
-    return () => window.removeEventListener("pi:palette", show)
+    const commands = show("commands")
+    const quickOpen = show("files")
+    window.addEventListener("pi:palette", commands)
+    window.addEventListener("pi:quick-open", quickOpen)
+    return () => {
+      window.removeEventListener("pi:palette", commands)
+      window.removeEventListener("pi:quick-open", quickOpen)
+    }
   }, [])
+
+  /**
+   * Files, ranked.
+   *
+   * With no query the changed ones come first: in an agent session those are
+   * the files you were just discussing, and they are a small enough set to be
+   * useful rather than arbitrary.
+   */
+  const fileEntries = useMemo<Entry[]>(() => {
+    const term = query.trim()
+    const ordered = term
+      ? rank(files, term, (file) => file.path).slice(0, 60)
+      : [...files].sort((a, b) => Number(Boolean(b.changed)) - Number(Boolean(a.changed))).slice(0, 60)
+    return ordered.map((file) => ({
+      id: `file:${file.path}`,
+      section: "Open file",
+      title: file.path.split("/").at(-1) ?? file.path,
+      hint: file.path,
+      run: () => void viewer.open(file.path),
+    }))
+  }, [files, query])
 
   const entries = useMemo<Entry[]>(() => {
     const list: Entry[] = deskCommands
@@ -95,6 +135,7 @@ export function CommandPalette() {
   }, [activeModel, deskCommands, models, piCommands, sessions])
 
   const results = useMemo(() => {
+    if (mode === "files") return fileEntries
     const term = query.trim()
     if (!term) {
       // No query: show only the desk's own verbs, in registration order.
@@ -107,7 +148,7 @@ export function CommandPalette() {
     }
     scored.sort((a, b) => b.score - a.score)
     return scored.slice(0, 60).map((item) => item.entry)
-  }, [entries, query])
+  }, [entries, fileEntries, mode, query])
 
   const [lastQuery, setLastQuery] = useState(query)
   if (lastQuery !== query) {
@@ -141,10 +182,15 @@ export function CommandPalette() {
     if (event.key === "Enter") {
       event.preventDefault()
       const entry = results[cursor]
-      if (entry) {
-        close()
-        entry.run()
+      if (!entry) return
+      close()
+      // ⌘↩ on a file puts it in the composer rather than opening it — the
+      // other reason you went looking for it.
+      if (mode === "files" && (event.metaKey || event.ctrlKey) && entry.hint) {
+        window.dispatchEvent(new CustomEvent("pi:insert", { detail: `@${entry.hint} ` }))
+        return
       }
+      entry.run()
     }
   }
 
@@ -168,13 +214,15 @@ export function CommandPalette() {
           autoFocus
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search commands, models, sessions…"
+          placeholder={mode === "files" ? "Open a file by name" : "Search commands, models, sessions…"}
           className="h-11 w-full border-b border-hairline bg-transparent px-3.5 text-[13.5px] placeholder:text-faint focus:outline-none"
         />
 
         <div ref={listRef} className="max-h-[22rem] overflow-y-auto overscroll-contain p-1.5">
           {results.length === 0 ? (
-            <p className="px-2 py-8 text-center text-[12.5px] text-faint">No matches</p>
+            <p className="px-2 py-8 text-center text-[12.5px] text-faint">
+              {mode === "files" && files.length === 0 ? "Reading the project…" : "No matches"}
+            </p>
           ) : (
             results.map((entry, index) => {
               const header = entry.section !== lastSection ? entry.section : null

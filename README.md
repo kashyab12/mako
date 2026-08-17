@@ -30,6 +30,12 @@ opens it beside the current one. **Branch** on any past turn continues that
 conversation in a new tab, leaving the original running — which is how you
 answer the same question two ways and compare.
 
+**Files** — the left rail switches between your threads and the project. ⌘P
+opens any file by name, ⌘⇧E shows the tree. A file opens in place of the
+transcript with syntax highlighting, and re-reads itself when the agent edits
+it, so what you are looking at is never a stale copy. ⌘↩ in the file finder
+puts an `@` reference in the composer instead of opening it.
+
 **Composer** — model picker with context window, price, and whether a model
 reasons or takes images. Reasoning effort offers only the levels the selected
 model supports. `@` references files, `$` skills, `/` commands. While a turn is

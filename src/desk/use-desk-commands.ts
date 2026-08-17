@@ -189,6 +189,34 @@ const DESK_COMMANDS: DeskCommand[] = [
     run: () => togglePref("railOpen"),
   },
   {
+    id: "view.quick-open",
+    title: "Open a file…",
+    section: "View",
+    keys: "mod+p",
+    hint: "Find any file in the project by name",
+    run: () => window.dispatchEvent(new CustomEvent("pi:quick-open")),
+  },
+  {
+    id: "view.files",
+    title: "Show the project files",
+    section: "View",
+    keys: "mod+shift+e",
+    hint: "Browse the folder the agent is working in",
+    run: () => {
+      setPref("railOpen", true)
+      setPref("railMode", "files")
+    },
+  },
+  {
+    id: "view.threads",
+    title: "Show the thread list",
+    section: "View",
+    run: () => {
+      setPref("railOpen", true)
+      setPref("railMode", "threads")
+    },
+  },
+  {
     id: "view.toggle-inspector",
     title: "Toggle the inspector",
     section: "View",

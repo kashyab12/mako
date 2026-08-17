@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises"
+import { mkdir, open, readdir, readFile, stat, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { isAbsolute, join, relative } from "node:path"
 import { promisify } from "node:util"
@@ -21,6 +21,7 @@ import {
   type Capabilities,
   type ChatRole,
   type ContextUsage,
+  type FileContents,
   type GitDiff,
   type GitFile,
   type GitFileStatus,
@@ -52,6 +53,14 @@ function attempt<T>(read: () => T, fallback: T): T {
 
 /** Untracked files above this size are not line-counted for the status list. */
 const UNTRACKED_STAT_LIMIT = 2_000_000
+
+/**
+ * The most of a file the viewer will render.
+ *
+ * Two megabytes is far past any source file and far short of what freezes a
+ * renderer. Above it the head is shown and the viewer says the rest was cut.
+ */
+const FILE_VIEW_LIMIT = 2_000_000
 
 /** The `@` picker re-queries per keystroke; the file set does not move that fast. */
 const FILE_CACHE_MS = 5_000
@@ -884,6 +893,42 @@ export class AgentHost {
   }
 
   /** Absolute path for a workspace-relative one, for reveal/open. */
+  /**
+   * Read a workspace file for the viewer.
+   *
+   * Two guards, both about not hanging the window on something it cannot show
+   * anyway: a byte ceiling, because a 40MB log renders as a frozen tab, and a
+   * NUL check, because a binary opened as text is a screenful of noise that
+   * takes longer to draw than to read. Both are reported rather than silently
+   * applied — a truncated file that does not say so is a lie about the code.
+   */
+  async readWorkspaceFile(path: string): Promise<FileContents> {
+    const absolute = await this.resolvePath(path)
+    const info = await stat(absolute)
+    if (info.isDirectory()) throw new Error(`${path} is a directory`)
+
+    const handle = await open(absolute, "r")
+    try {
+      const length = Math.min(info.size, FILE_VIEW_LIMIT)
+      const buffer = Buffer.alloc(length)
+      await handle.read(buffer, 0, length, 0)
+      // A NUL byte in the first few KB is the same heuristic git uses, and it
+      // is right far more often than sniffing extensions.
+      if (buffer.subarray(0, 8000).includes(0)) {
+        return { path, contents: "", size: info.size, binary: true, truncated: false }
+      }
+      return {
+        path,
+        contents: buffer.toString("utf8"),
+        size: info.size,
+        binary: false,
+        truncated: info.size > FILE_VIEW_LIMIT,
+      }
+    } finally {
+      await handle.close()
+    }
+  }
+
   async resolvePath(path: string): Promise<string> {
     if (isAbsolute(path)) return path
     const root = this.gitRoot ?? (await findGitRoot(this.cwd))

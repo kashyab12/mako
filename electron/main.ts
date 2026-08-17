@@ -218,6 +218,7 @@ function bindIpc() {
   )
 
   ipcMain.handle("pi:list-files", () => withHost((h) => h.listFiles()))
+  ipcMain.handle("pi:read-file", (_e, path: string) => withHost((h) => h.readWorkspaceFile(path)))
 
   ipcMain.handle("pi:git-status", () => withHost((h) => h.gitStatus()))
   ipcMain.handle("pi:git-diff", (_e, path: string) => withHost((h) => h.gitDiff(path)))

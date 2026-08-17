@@ -24,6 +24,7 @@ import {
   tabsStore,
   writeCache,
 } from "@/state/tabs"
+import { viewer, viewerStore } from "@/state/viewer"
 import { toast } from "sonner"
 
 export type Phase = "booting" | "ready" | "detached"
@@ -135,6 +136,13 @@ function absorb(id: string, event: HostEvent) {
   if (wasWorking && !nowWorking) patchTab(id, { unread: true })
 }
 
+/** Re-read the open file when the agent's last turn touched it. */
+function followEdits(git: GitStatus) {
+  const path = viewerStore.get().path
+  if (!path) return
+  if (git.files.some((file) => file.path === path)) viewer.refresh()
+}
+
 function applyToActive(event: HostEvent) {
   switch (event.type) {
     case "session":
@@ -161,6 +169,10 @@ function applyToActive(event: HostEvent) {
       break
     case "git":
       store.set({ git: event.git })
+      // The agent just wrote something. If it wrote the file you happen to be
+      // reading, the version on screen is now wrong — and a stale file is
+      // worse than no file, because nothing about it looks stale.
+      followEdits(event.git)
       break
     case "capabilities":
       store.set({ capabilities: event.capabilities })

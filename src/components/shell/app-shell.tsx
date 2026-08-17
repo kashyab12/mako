@@ -11,6 +11,7 @@ import { TitleBar } from "@/components/shell/title-bar"
 import { TabStrip } from "@/components/shell/tab-strip"
 import { Divider } from "@/components/shell/divider"
 import { Transcript } from "@/components/transcript/transcript"
+import { FileViewer } from "@/components/viewer/file-viewer"
 import { Action, Blank } from "@/components/ui/kit"
 import { useDeskCommands } from "@/desk/use-desk-commands"
 import { actions, store, useSession } from "@/state/session"
@@ -93,7 +94,7 @@ export function AppShell() {
             </>
           ) : null}
 
-          <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
             {phase === "detached" ? (
               <Blank
                 icon={<PlugZapIcon />}
@@ -110,6 +111,9 @@ export function AppShell() {
                 <TabStrip />
                 <Transcript />
                 <Composer />
+                {/* Over the conversation column only. The rail stays reachable,
+                    so you can walk the tree with a file already open. */}
+                <FileViewer />
               </>
             )}
           </main>

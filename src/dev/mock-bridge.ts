@@ -331,6 +331,13 @@ export function installMockBridge() {
     capabilities: async () => capabilities,
     setActiveTools: async () => {},
     runCommand: async () => {},
+    readFile: async (path: string) => ({
+      path,
+      contents: `// ${path}\n// The browser mock has no filesystem; this stands in for one.\n`,
+      size: 96,
+      binary: false,
+      truncated: false,
+    }),
     listFiles: async () => [
       "src/components/composer/composer.tsx",
       "src/components/rail/session-rail.tsx",

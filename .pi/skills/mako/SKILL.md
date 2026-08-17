@@ -90,10 +90,12 @@ src/
     transcript/    the conversation — exchanges, tool rows, markdown
     composer/      the input, model/effort pickers, mentions, attachments
     inspector/     the right panel — changes, context, history
+    viewer/        the open file, over the conversation column
     palette/       ⌘K
     ui/            the shared kit; `kit.tsx` is the primitives
   state/           stores — `session.ts` is the tab in front, `tabs.ts` is the
-                   strip plus a cache of every background conversation
+                   strip plus a cache of every background conversation,
+                   `viewer.ts` is the open file
   lib/             pure helpers; no React, no IPC
   extend/          the plugin registries (commands, slots, tool views)
   desk/            command definitions and app-level wiring

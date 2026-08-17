@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron"
 import type {
   BootPayload,
   Capabilities,
+  FileContents,
   GitCommitEntry,
   GitDiff,
   GitStatus,
@@ -60,6 +61,7 @@ const api = {
   runCommand: (name: string, args?: string) => invoke<void>("pi:run-command", name, args),
 
   listFiles: () => invoke<WorkspaceFile[]>("pi:list-files"),
+  readFile: (path: string) => invoke<FileContents>("pi:read-file", path),
 
   gitStatus: () => invoke<GitStatus>("pi:git-status"),
   gitDiff: (path: string) => invoke<GitDiff>("pi:git-diff", path),

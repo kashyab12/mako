@@ -8,6 +8,9 @@ import { createHook, createStore } from "@/state/store"
 export type Theme = "dark" | "light" | "system"
 export type InspectorTab = "changes" | "context" | "history"
 
+/** What the left rail is showing: your conversations, or the project. */
+export type RailMode = "threads" | "files"
+
 /** How the session rail is scoped and grouped, mirroring ORCA's sidebar model. */
 export type RailScope = "workspace" | "all"
 export type RailGroupBy = "none" | "date" | "project"
@@ -26,12 +29,15 @@ export interface Prefs {
   recentModels: string[]
   showThinking: boolean
   denseTools: boolean
+  railMode: RailMode
   railScope: RailScope
   railGroupBy: RailGroupBy
   railSortBy: RailSortBy
   railDensity: RailDensity
   collapsedGroups: string[]
   collapsedDirs: string[]
+  /** Folders open in the project tree. Keys are folded paths, not path prefixes. */
+  openDirs: string[]
   glass: boolean
   autoOpenDiff: boolean
   /** Overrides the host's default commit-drafting prompt. */
@@ -51,12 +57,14 @@ const defaults: Prefs = {
   recentModels: [],
   showThinking: true,
   denseTools: false,
+  railMode: "threads",
   railScope: "workspace",
   railGroupBy: "date",
   railSortBy: "recent",
   railDensity: "comfortable",
   collapsedGroups: [],
   collapsedDirs: [],
+  openDirs: [],
   glass: true,
   autoOpenDiff: true,
 }

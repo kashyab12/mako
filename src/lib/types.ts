@@ -6,6 +6,7 @@ export type {
   ChatRole,
   CommandSummary,
   ContextUsage,
+  FileContents,
   GitCommitEntry,
   GitDiff,
   GitFile,

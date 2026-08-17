@@ -254,6 +254,19 @@ export interface WorkspaceFile {
   changed?: boolean
 }
 
+/** One workspace file, opened for reading. */
+export interface FileContents {
+  /** Workspace-relative, as it was asked for. */
+  path: string
+  contents: string
+  /** Bytes on disk, not of `contents` — they differ when truncated. */
+  size: number
+  /** Not text. `contents` is empty; the viewer says so rather than rendering noise. */
+  binary: boolean
+  /** Only the head was read, because the whole file is too large to render. */
+  truncated: boolean
+}
+
 /**
  * A file the agent cannot receive inline — a PDF, a video, an archive.
  * The host materializes it to disk and hands back a path, so Pi's own read
