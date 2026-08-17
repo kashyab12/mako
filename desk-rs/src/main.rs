@@ -5,17 +5,23 @@
 //! stdio and is documented for exactly this use.
 
 mod composer;
+mod effort;
+mod git;
 mod model_picker;
 mod rpc;
 mod session;
+mod sessions;
 mod theme;
 mod ui;
 
 use composer::{Composer, Submit};
+use effort::{EffortPicker, SelectEffort};
 use model_picker::{ModelPicker, SelectModel};
+use sessions::{relative, SessionEntry, SessionIndex};
 use gpui::prelude::*;
 use gpui::{
     actions, div, px, App, Application, Bounds, Context, Entity, FocusHandle, Focusable,
+    MouseButton,
     KeyBinding, ScrollHandle, SharedString, Window, WindowBackgroundAppearance, WindowBounds,
     WindowOptions,
 };
@@ -39,7 +45,11 @@ struct Desk {
     rpc: Option<PiRpc>,
     composer: Entity<Composer>,
     model_picker: Entity<ModelPicker>,
+    effort_picker: Entity<EffortPicker>,
     rail_open: bool,
+    sessions: Vec<SessionEntry>,
+    index: SessionIndex,
+    git: git::GitStatus,
     focus: FocusHandle,
     /// Owns the transcript's scroll offset across renders.
     scroll: ScrollHandle,
@@ -111,6 +121,11 @@ impl Desk {
                         picker.set_models(models, cx);
                         picker.set_current(current, cx);
                     });
+                    let levels = desk.state.thinking_levels.clone();
+                    let thinking = desk.state.thinking.clone();
+                    desk.effort_picker.update(cx, |picker, cx| {
+                        picker.set(levels, thinking, cx);
+                    });
                     desk.follow_stream();
                     cx.notify();
                 }
@@ -141,13 +156,32 @@ impl Desk {
         })
         .detach();
 
+        let effort_picker = cx.new(|_| EffortPicker::new(theme.clone()));
+        cx.subscribe(&effort_picker, |desk, _picker, event: &SelectEffort, cx| {
+            if let Some(rpc) = desk.rpc.as_mut() {
+                let _ = rpc.set_thinking_level(&event.0);
+            }
+            desk.state.thinking = event.0.clone();
+            cx.notify();
+        })
+        .detach();
+
+        let mut index = SessionIndex::default();
+        let cwd_string = cwd.to_string_lossy().to_string();
+        let sessions = index.scan(None);
+        let git_status = git::status(&cwd_string);
+
         Self {
             theme,
             state,
             rpc,
             composer,
             model_picker,
+            effort_picker,
             rail_open: true,
+            sessions,
+            index,
+            git: git_status,
             focus: cx.focus_handle(),
             scroll: ScrollHandle::new(),
             pinned: true,
@@ -241,7 +275,7 @@ impl Render for Desk {
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .when(self.rail_open, |row| row.child(self.rail(&theme)))
+                    .when(self.rail_open, |row| row.child(self.rail(&theme, cx)))
                     .child(
                         div()
                             .flex()
@@ -300,7 +334,9 @@ impl Desk {
             .child(div().h(px(1.0)).bg(theme.hairline))
     }
 
-    fn rail(&self, theme: &Theme) -> impl IntoElement {
+    fn rail(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        let active = self.state.session_file.clone();
+
         panel(theme)
             .w(space::RAIL_WIDTH)
             .flex_none()
@@ -324,9 +360,86 @@ impl Desk {
             .child(div().h(px(1.0)).bg(theme.hairline))
             .child(
                 div()
-                    .p(px(10.0))
-                    .child(eyebrow(theme, "This session")),
+                    .id("session-rail")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .p(px(6.0))
+                    .children(self.sessions.iter().take(200).enumerate().map(
+                        |(index, entry)| {
+                            let selected = active
+                                .as_deref()
+                                .is_some_and(|path| path == entry.path.to_string_lossy());
+                            let path = entry.path.to_string_lossy().to_string();
+                            let theme = theme.clone();
+
+                            div()
+                                .id(("session", index))
+                                .flex()
+                                .flex_col()
+                                .gap(px(1.0))
+                                .rounded(space::RADIUS)
+                                .px(px(7.0))
+                                .py(px(5.0))
+                                .when(selected, |row| row.bg(theme.selected()))
+                                .hover(|style| style.bg(theme.hover()))
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |desk, _event, _window, cx| {
+                                        desk.open_session(&path, cx);
+                                    }),
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(6.0))
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .min_w_0()
+                                                .text_size(text::UI)
+                                                .text_color(theme.foreground)
+                                                .child(SharedString::from(clip(
+                                                    entry.title(),
+                                                    30,
+                                                ))),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(text::MICRO)
+                                                .text_color(theme.faint)
+                                                .child(SharedString::from(relative(
+                                                    entry.modified,
+                                                ))),
+                                        ),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(text::MICRO)
+                                        .text_color(theme.faint)
+                                        .child(SharedString::from(format!(
+                                            "{} messages",
+                                            entry.messages
+                                        ))),
+                                )
+                        },
+                    )),
             )
+    }
+
+    /// Switch the agent to another session and reload the transcript.
+    fn open_session(&mut self, path: &str, cx: &mut Context<Self>) {
+        if let Some(rpc) = self.rpc.as_mut() {
+            let _ = rpc.switch_session(path);
+            // The switch replaces the whole conversation, so ask for it rather
+            // than trying to patch what is on screen.
+            let _ = rpc.get_state();
+            let _ = rpc.get_messages();
+        }
+        self.state.exchanges.clear();
+        self.pinned = true;
+        cx.notify();
     }
 
     fn transcript(
@@ -563,14 +676,7 @@ impl Desk {
                             .px(px(10.0))
                             .py(px(7.0))
                             .child(self.model_picker.clone())
-                            .when(!self.state.thinking.is_empty(), |row| {
-                                row.child(
-                                    div()
-                                        .text_size(text::META)
-                                        .text_color(theme.faint)
-                                        .child(SharedString::from(self.state.thinking.clone())),
-                                )
-                            })
+                            .child(self.effort_picker.clone())
                             .child(div().flex_1())
                             .child(
                                 // The primary action, filled only when there is
