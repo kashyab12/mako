@@ -6,7 +6,7 @@
 
 use crate::theme::{space, text, Theme};
 use gpui::prelude::*;
-use gpui::{div, px, Div, SharedString};
+use gpui::{div, px, Div, Pixels, SharedString};
 
 /// A panel that floats over the vibrant window background.
 pub fn panel(theme: &Theme) -> Div {
@@ -39,6 +39,30 @@ pub fn row(theme: &Theme) -> Div {
         .px(px(6.0))
         .py(px(4.0))
         .hover(|style| style.bg(theme.hover()))
+}
+
+/// The Mako fin.
+///
+/// Drawn rather than loaded: at title-bar sizes an SVG asset would need a
+/// rasteriser and a cache for a shape that is two curves, and a drawn mark
+/// picks up the theme's foreground automatically in both schemes.
+///
+/// The silhouette is a swept triangle — a vertical trailing edge with the
+/// leading edge raked back — approximated here by a rotated square with one
+/// rounded corner, which reads correctly from about 12px up.
+pub fn fin(theme: &Theme, size: Pixels) -> Div {
+    div()
+        .size(size)
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(
+            div()
+                .w(size * 0.72)
+                .h(size * 0.72)
+                .rounded_tl(size * 0.62)
+                .bg(theme.foreground.opacity(0.92)),
+        )
 }
 
 /// The specular top edge that makes a translucent surface read as glass.

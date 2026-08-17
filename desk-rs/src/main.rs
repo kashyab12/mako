@@ -1,4 +1,4 @@
-//! Pi Desk, native.
+//! Mako — a native desktop for the Pi coding agent.
 //!
 //! The agent runs in its own process (`pi --mode rpc`) and this binary is only
 //! the interface. Nothing here links against Pi; the protocol is JSONL over
@@ -18,7 +18,7 @@ use rpc::{Incoming, PiRpc};
 use session::{Exchange, SessionState, ToolCall};
 use std::time::Duration;
 use theme::{space, text, Theme};
-use ui::{clip, eyebrow, format_cost, format_tokens, lit_top, panel, workspace_name};
+use ui::{clip, eyebrow, fin, format_cost, format_tokens, lit_top, panel, workspace_name};
 
 actions!(
     desk,
@@ -240,7 +240,8 @@ impl Desk {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(6.0))
+                            .gap(px(7.0))
+                            .child(fin(theme, px(13.0)))
                             .when(self.state.streaming, |row| {
                                 row.child(
                                     div()
@@ -604,7 +605,7 @@ fn main() {
             .expect("could not open the window");
 
         window
-            .update(cx, |_, window, _| window.set_window_title("Pi Desk"))
+            .update(cx, |_, window, _| window.set_window_title("Mako"))
             .ok();
     });
 }
