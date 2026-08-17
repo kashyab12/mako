@@ -1,0 +1,23 @@
+[package]
+name = "pi-desk"
+version = "0.1.0"
+edition = "2021"
+description = "A GPUI desktop for the Pi coding agent"
+
+[dependencies]
+# `runtime_shaders` moves Metal shader compilation from build time to startup.
+# Without it, building requires `xcrun metal`, which ships only with full
+# Xcode — this machine has Command Line Tools, and so will most contributors'.
+gpui = { version = "0.2", features = ["runtime_shaders"] }
+gpui-component = "0.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+
+[profile.dev]
+# GPUI pulls in 750+ crates; building dependencies optimized once makes the
+# development loop bearable without slowing incremental builds of this crate.
+opt-level = 0
+
+[profile.dev.package."*"]
+opt-level = 2
