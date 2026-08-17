@@ -64,6 +64,7 @@ pub struct SessionState {
     pub thinking_levels: Vec<String>,
     pub cwd: String,
     pub session_name: String,
+    pub session_file: Option<String>,
     pub cost: f64,
     pub tokens: u64,
     pub context_tokens: Option<u64>,
@@ -159,6 +160,9 @@ impl SessionState {
         }
         if let Some(name) = data.get("sessionName").and_then(Value::as_str) {
             self.session_name = name.to_string();
+        }
+        if let Some(file) = data.get("sessionFile").and_then(Value::as_str) {
+            self.session_file = Some(file.to_string());
         }
         if let Some(levels) = data.get("thinkingLevels").and_then(Value::as_array) {
             self.thinking_levels = levels
