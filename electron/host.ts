@@ -1174,7 +1174,7 @@ async function countLines(path: string): Promise<{ lines: number; binary: boolea
 
 export function defaultWorkspace(): string {
   const home = homedir()
-  const candidates = [join(home, "pi-ui"), home]
+  const candidates = [join(home, "mako"), join(home, "pi-ui"), home]
   return candidates.find((path) => existsSync(path)) ?? home
 }
 
