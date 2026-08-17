@@ -13,6 +13,7 @@ gpui-component = "0.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
+include_dir = "0.7.4"
 
 [profile.dev]
 # GPUI pulls in 750+ crates; building dependencies optimized once makes the

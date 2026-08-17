@@ -4,6 +4,7 @@
 //! the interface. Nothing here links against Pi; the protocol is JSONL over
 //! stdio and is documented for exactly this use.
 
+mod assets;
 mod composer;
 mod effort;
 mod git;
@@ -1577,7 +1578,11 @@ impl Desk {
 }
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
+    Application::new()
+        // Without this every icon resolves to nothing and the window
+        // renders buttons with no glyphs in them.
+        .with_assets(assets::Assets)
+        .run(|cx: &mut App| {
         // Brings the component library's own key bindings, theme, and the
         // hosts that dialogs, popovers, and notifications render into.
         gpui_component::init(cx);
