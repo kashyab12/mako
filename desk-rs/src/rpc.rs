@@ -120,6 +120,10 @@ impl PiRpc {
         self.send("set_model", json!({ "provider": provider, "model": model }))
     }
 
+    pub fn new_session(&mut self) -> Result<String> {
+        self.send("new_session", json!({}))
+    }
+
     pub fn switch_session(&mut self, path: &str) -> Result<String> {
         self.send("switch_session", json!({ "sessionPath": path }))
     }
