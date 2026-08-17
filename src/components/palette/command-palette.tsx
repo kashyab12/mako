@@ -1,0 +1,223 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Eyebrow, Keys } from "@/components/ui/kit"
+import { formatChord, useCommands, type DeskCommand } from "@/extend/commands"
+import { fuzzy } from "@/lib/fuzzy"
+import { firstLine } from "@/lib/format"
+import { actions, useSession } from "@/state/session"
+import { modelKey, noteModelUse } from "@/state/prefs"
+import { cn } from "@/lib/utils"
+
+interface Entry {
+  id: string
+  section: string
+  title: string
+  hint?: string
+  keys?: string[]
+  run: () => void
+}
+
+/**
+ * The command palette.
+ *
+ * Deliberately unanimated. This is opened dozens of times a day by keyboard,
+ * and any entrance transition — however tasteful — puts a delay between the
+ * chord and the caret. Raycast gets this right by having no animation at all.
+ */
+export function CommandPalette() {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const [cursor, setCursor] = useState(0)
+  const listRef = useRef<HTMLDivElement>(null)
+
+  const deskCommands = useCommands()
+  const sessions = useSession((state) => state.sessions)
+  const models = useSession((state) => state.models)
+  const piCommands = useSession((state) => state.capabilities.commands)
+  const activeModel = useSession((state) => state.meta?.model)
+
+  const close = useCallback(() => {
+    setOpen(false)
+    setQuery("")
+    setCursor(0)
+  }, [])
+
+  useEffect(() => {
+    const show = () => {
+      setQuery("")
+      setCursor(0)
+      setOpen(true)
+    }
+    window.addEventListener("pi:palette", show)
+    return () => window.removeEventListener("pi:palette", show)
+  }, [])
+
+  const entries = useMemo<Entry[]>(() => {
+    const list: Entry[] = deskCommands
+      .filter((command) => command.when?.() !== false)
+      .map((command) => toEntry(command))
+
+    for (const command of piCommands) {
+      list.push({
+        id: `pi:${command.name}`,
+        section: "Agent",
+        title: `/${command.name}`,
+        hint: command.description,
+        run: () => void actions.runCommand(command.name),
+      })
+    }
+
+    for (const model of models) {
+      const key = modelKey(model.provider, model.id)
+      const current = activeModel?.provider === model.provider && activeModel.id === model.id
+      list.push({
+        id: `model:${key}`,
+        section: "Switch model",
+        title: model.name,
+        hint: current ? `${model.provider} · current` : model.provider,
+        run: () => {
+          noteModelUse(key)
+          void actions.setModel(model.provider, model.id)
+        },
+      })
+    }
+
+    for (const session of sessions.slice(0, 40)) {
+      list.push({
+        id: `session:${session.path}`,
+        section: "Open session",
+        title: session.name || firstLine(session.firstMessage, 60) || "Untitled session",
+        hint: `${session.messageCount} messages`,
+        run: () => void actions.openSession(session.path),
+      })
+    }
+
+    return list
+  }, [activeModel, deskCommands, models, piCommands, sessions])
+
+  const results = useMemo(() => {
+    const term = query.trim()
+    if (!term) {
+      // No query: show only the desk's own verbs, in registration order.
+      return entries.filter((entry) => !entry.id.startsWith("session:") && !entry.id.startsWith("model:"))
+    }
+    const scored: Array<{ entry: Entry; score: number }> = []
+    for (const entry of entries) {
+      const match = fuzzy(term, `${entry.title} ${entry.section} ${entry.hint ?? ""}`)
+      if (match) scored.push({ entry, score: match.score })
+    }
+    scored.sort((a, b) => b.score - a.score)
+    return scored.slice(0, 60).map((item) => item.entry)
+  }, [entries, query])
+
+  const [lastQuery, setLastQuery] = useState(query)
+  if (lastQuery !== query) {
+    setLastQuery(query)
+    setCursor(0)
+  }
+
+  if (!open) return null
+
+  const move = (delta: number) => {
+    setCursor((value) => {
+      const next = (value + delta + results.length) % Math.max(results.length, 1)
+      listRef.current?.querySelector(`[data-index="${next}"]`)?.scrollIntoView({ block: "nearest" })
+      return next
+    })
+  }
+
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.preventDefault()
+      close()
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault()
+      move(1)
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault()
+      move(-1)
+    }
+    if (event.key === "Enter") {
+      event.preventDefault()
+      const entry = results[cursor]
+      if (entry) {
+        close()
+        entry.run()
+      }
+    }
+  }
+
+  let lastSection = ""
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Command palette"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-background/55 pt-[14vh] backdrop-blur-[2px]"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) close()
+      }}
+    >
+      <div
+        onKeyDown={onKeyDown}
+        className="glass-panel w-full max-w-[34rem] overflow-hidden rounded-xl"
+      >
+        <input
+          autoFocus
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search commands, models, sessions…"
+          className="h-11 w-full border-b border-hairline bg-transparent px-3.5 text-[13.5px] placeholder:text-faint focus:outline-none"
+        />
+
+        <div ref={listRef} className="max-h-[22rem] overflow-y-auto overscroll-contain p-1.5">
+          {results.length === 0 ? (
+            <p className="px-2 py-8 text-center text-[12.5px] text-faint">No matches</p>
+          ) : (
+            results.map((entry, index) => {
+              const header = entry.section !== lastSection ? entry.section : null
+              lastSection = entry.section
+              return (
+                <div key={entry.id}>
+                  {header ? <Eyebrow className="px-1.5 pt-2 pb-1">{header}</Eyebrow> : null}
+                  <button
+                    type="button"
+                    data-index={index}
+                    onMouseMove={() => setCursor(index)}
+                    onClick={() => {
+                      close()
+                      entry.run()
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left",
+                      index === cursor && "bg-raised"
+                    )}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-[12.5px]">{entry.title}</span>
+                    {entry.hint ? (
+                      <span className="shrink-0 truncate text-[11px] text-faint">{entry.hint}</span>
+                    ) : null}
+                    {entry.keys?.length ? <Keys keys={entry.keys} /> : null}
+                  </button>
+                </div>
+              )
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function toEntry(command: DeskCommand): Entry {
+  return {
+    id: command.id,
+    section: command.section,
+    title: command.title,
+    hint: command.hint,
+    keys: formatChord(command.keys),
+    run: () => void command.run(),
+  }
+}
