@@ -7,6 +7,7 @@
 mod composer;
 mod effort;
 mod git;
+mod inspector;
 mod model_picker;
 mod rpc;
 mod session;
@@ -16,6 +17,7 @@ mod ui;
 
 use composer::{Composer, Submit};
 use effort::{EffortPicker, SelectEffort};
+use inspector::Inspector;
 use model_picker::{ModelPicker, SelectModel};
 use sessions::{relative, SessionEntry, SessionIndex};
 use gpui::prelude::*;
@@ -34,7 +36,7 @@ use std::time::Duration;
 use theme::{space, text, Theme};
 use ui::{clip, eyebrow, fin, format_cost, format_tokens, lit_top, panel, workspace_name};
 
-actions!(desk, [Send, Stop, CycleThinking, ToggleRail]);
+actions!(desk, [Send, Stop, CycleThinking, ToggleRail, ToggleInspector]);
 
 /// How close to the end still counts as "following the stream".
 const NEAR_BOTTOM: f32 = 96.0;
@@ -46,7 +48,9 @@ struct Desk {
     composer: Entity<Composer>,
     model_picker: Entity<ModelPicker>,
     effort_picker: Entity<EffortPicker>,
+    inspector: Entity<Inspector>,
     rail_open: bool,
+    inspector_open: bool,
     sessions: Vec<SessionEntry>,
     index: SessionIndex,
     git: git::GitStatus,
@@ -126,6 +130,13 @@ impl Desk {
                     desk.effort_picker.update(cx, |picker, cx| {
                         picker.set(levels, thinking, cx);
                     });
+                    if !desk.state.streaming {
+                        // Only once the agent has stopped: git status is three
+                        // subprocesses, and running them per token would spend
+                        // more time in `fork` than in rendering.
+                        let cwd = desk.state.cwd.clone();
+                        desk.refresh_inspector(&cwd, cx);
+                    }
                     desk.follow_stream();
                     cx.notify();
                 }
@@ -166,6 +177,8 @@ impl Desk {
         })
         .detach();
 
+        let inspector = cx.new(|cx| Inspector::new(theme.clone(), window, cx));
+
         let mut index = SessionIndex::default();
         let cwd_string = cwd.to_string_lossy().to_string();
         let sessions = index.scan(None);
@@ -178,7 +191,9 @@ impl Desk {
             composer,
             model_picker,
             effort_picker,
+            inspector,
             rail_open: true,
+            inspector_open: true,
             sessions,
             index,
             git: git_status,
@@ -244,6 +259,37 @@ impl Desk {
         cx.notify();
     }
 
+    fn toggle_inspector(
+        &mut self,
+        _: &ToggleInspector,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.inspector_open = !self.inspector_open;
+        cx.notify();
+    }
+
+    /// Hand the inspector the settled session numbers and let it re-read git.
+    fn refresh_inspector(&mut self, cwd: &str, cx: &mut Context<Self>) {
+        let model_name = self.state.model.name.clone();
+        let provider = self.state.model.provider.clone();
+        let thinking = self.state.thinking.clone();
+        let context_window = self.state.model.context_window;
+        let tokens = self.state.tokens;
+        let cost = self.state.cost;
+        let cwd = cwd.to_string();
+
+        self.inspector.update(cx, |inspector, cx| {
+            inspector.model_name = model_name;
+            inspector.provider = provider;
+            inspector.thinking = thinking;
+            inspector.context_window = context_window;
+            inspector.tokens = tokens;
+            inspector.cost = cost;
+            inspector.refresh(&cwd, cx);
+        });
+    }
+
 }
 
 impl Focusable for Desk {
@@ -263,6 +309,7 @@ impl Render for Desk {
             .on_action(cx.listener(Self::stop))
             .on_action(cx.listener(Self::cycle_thinking))
             .on_action(cx.listener(Self::toggle_rail))
+            .on_action(cx.listener(Self::toggle_inspector))
             .flex()
             .flex_col()
             .size_full()
@@ -284,7 +331,17 @@ impl Render for Desk {
                             .min_w_0()
                             .child(self.transcript(&theme, window, cx))
                             .child(self.composer(&theme, cx)),
-                    ),
+                    )
+                    .when(self.inspector_open, |row| {
+                        row.child(
+                            panel(&theme)
+                                .w(space::INSPECTOR_WIDTH)
+                                .flex_none()
+                                .border_l_1()
+                                .border_color(theme.hairline)
+                                .child(self.inspector.clone()),
+                        )
+                    }),
             )
             .child(self.status_bar(&theme))
     }
@@ -745,6 +802,7 @@ fn main() {
             KeyBinding::new("cmd-escape", Stop, Some("Desk")),
             KeyBinding::new("cmd-.", CycleThinking, Some("Desk")),
             KeyBinding::new("cmd-b", ToggleRail, Some("Desk")),
+            KeyBinding::new("cmd-i", ToggleInspector, Some("Desk")),
         ]);
 
         let bounds = Bounds::centered(None, gpui::size(px(1480.0), px(940.0)), cx);
