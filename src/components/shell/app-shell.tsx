@@ -8,6 +8,7 @@ import { Inspector } from "@/components/inspector/inspector"
 import { SessionRail } from "@/components/rail/session-rail"
 import { StatusBar } from "@/components/shell/status-bar"
 import { TitleBar } from "@/components/shell/title-bar"
+import { TabStrip } from "@/components/shell/tab-strip"
 import { Divider } from "@/components/shell/divider"
 import { Transcript } from "@/components/transcript/transcript"
 import { Action, Blank } from "@/components/ui/kit"
@@ -96,7 +97,7 @@ export function AppShell() {
             {phase === "detached" ? (
               <Blank
                 icon={<PlugZapIcon />}
-                title="No Pi host attached"
+                title="No agent attached"
                 body={fault ?? "Launch the desktop app so the agent runtime can connect."}
                 action={
                   <Action tone="outline" size="md" className="mt-2" onClick={() => location.reload()}>
@@ -106,6 +107,7 @@ export function AppShell() {
               />
             ) : (
               <>
+                <TabStrip />
                 <Transcript />
                 <Composer />
               </>

@@ -1,0 +1,213 @@
+import { createHook, createStore } from "@/state/store"
+import type {
+  Capabilities,
+  GitStatus,
+  PiMessage,
+  SessionMeta,
+  TabSnapshot,
+  TreeNode,
+} from "@/lib/types"
+
+/**
+ * The open conversations.
+ *
+ * One tab is on screen; the rest keep running in the background. This store
+ * holds only what the tab strip draws — a title and whether the agent is still
+ * working — because that is all that needs to re-render when a background tab
+ * makes progress. The conversations themselves live in `cache`, which is a
+ * plain map on purpose: nothing subscribes to it, so a background tab writing
+ * to it costs no React work at all.
+ */
+
+export interface TabInfo {
+  id: string
+  title: string
+  cwd: string
+  /** The agent is doing something — streaming, compacting, retrying, or in a shell. */
+  working: boolean
+  /** Waiting on the model right now, as opposed to running a tool. */
+  streaming: boolean
+  /** Finished, or spoke, while you were reading a different tab. */
+  unread: boolean
+}
+
+/** Everything needed to draw a tab the instant it is selected. */
+export interface TabCache {
+  meta?: SessionMeta
+  messages: PiMessage[]
+  stream: PiMessage | null
+  tree: TreeNode[]
+  git?: GitStatus
+  capabilities?: Capabilities
+}
+
+const emptyCache = (): TabCache => ({ messages: [], stream: null, tree: [] })
+
+export const tabsStore = createStore<{ tabs: TabInfo[]; activeId: string }>({
+  tabs: [],
+  activeId: "",
+})
+
+export const useTabs = createHook(tabsStore)
+
+const cache = new Map<string, TabCache>()
+
+export function cacheOf(id: string): TabCache {
+  let entry = cache.get(id)
+  if (!entry) {
+    entry = emptyCache()
+    cache.set(id, entry)
+  }
+  return entry
+}
+
+export function writeCache(id: string, patch: Partial<TabCache>) {
+  cache.set(id, { ...cacheOf(id), ...patch })
+}
+
+export function dropCache(id: string) {
+  cache.delete(id)
+}
+
+/* ------------------------------------------------------------------ */
+/* titles                                                              */
+/* ------------------------------------------------------------------ */
+
+const MAX_TITLE = 60
+
+/**
+ * What to call a tab.
+ *
+ * A named session uses its name. An unnamed one uses its opening question,
+ * which is what people actually remember a conversation by — far better than
+ * "Session 3" and better than the folder, since several tabs usually share a
+ * folder.
+ */
+export function titleFor(meta: SessionMeta | undefined, messages: PiMessage[]): string {
+  if (meta?.sessionName) return meta.sessionName
+  const first = messages.find((message) => message.role === "user")
+  const text = first?.blocks
+    .filter((block) => block.type === "text")
+    .map((block) => block.text ?? "")
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
+  if (text) return text.length > MAX_TITLE ? `${text.slice(0, MAX_TITLE - 1)}…` : text
+  return "New thread"
+}
+
+function workingFrom(meta: SessionMeta | undefined): { working: boolean; streaming: boolean } {
+  return {
+    working: Boolean(
+      meta && (meta.isStreaming || meta.isCompacting || meta.isRetrying || meta.isBashRunning)
+    ),
+    streaming: Boolean(meta?.isStreaming),
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* mutations                                                           */
+/* ------------------------------------------------------------------ */
+
+function infoFrom(id: string, entry: TabCache, previous?: TabInfo): TabInfo {
+  return {
+    id,
+    title: titleFor(entry.meta, entry.messages),
+    cwd: entry.meta?.cwd ?? previous?.cwd ?? "",
+    ...workingFrom(entry.meta),
+    unread: previous?.unread ?? false,
+  }
+}
+
+export function hydrate(snapshots: TabSnapshot[], activeId: string) {
+  cache.clear()
+  for (const snapshot of snapshots) {
+    cache.set(snapshot.id, {
+      meta: snapshot.session.meta,
+      messages: snapshot.session.messages,
+      stream: null,
+      tree: snapshot.session.tree,
+      git: snapshot.git,
+      capabilities: snapshot.capabilities,
+    })
+  }
+  tabsStore.set({
+    tabs: snapshots.map((snapshot) => infoFrom(snapshot.id, cacheOf(snapshot.id))),
+    activeId,
+  })
+}
+
+export function addTab(snapshot: TabSnapshot, { activate = true } = {}) {
+  const entry: TabCache = {
+    meta: snapshot.session.meta,
+    messages: snapshot.session.messages,
+    stream: null,
+    tree: snapshot.session.tree,
+    git: snapshot.git,
+    capabilities: snapshot.capabilities,
+  }
+  cache.set(snapshot.id, entry)
+  const { tabs, activeId } = tabsStore.get()
+  if (tabs.some((tab) => tab.id === snapshot.id)) {
+    refresh(snapshot.id, entry)
+    if (activate) tabsStore.set({ activeId: snapshot.id })
+    return
+  }
+  tabsStore.set({
+    tabs: [...tabs, infoFrom(snapshot.id, entry)],
+    activeId: activate ? snapshot.id : activeId,
+  })
+}
+
+export function removeTab(id: string, nextActiveId: string) {
+  dropCache(id)
+  tabsStore.set((state) => ({
+    tabs: state.tabs.filter((tab) => tab.id !== id),
+    activeId: nextActiveId,
+  }))
+}
+
+/**
+ * Recompute one tab's strip entry.
+ *
+ * `source` is passed in rather than read from the cache because the tab you
+ * are looking at keeps its conversation in the session store, not here — and a
+ * title that only updated for background tabs would be a strange bug to chase.
+ * Bails out when nothing changed, so a token arriving cannot repaint the strip.
+ */
+export function refresh(id: string, source: TabCache, patch: Partial<TabInfo> = {}) {
+  tabsStore.set((state) => {
+    const index = state.tabs.findIndex((tab) => tab.id === id)
+    if (index === -1) return {}
+    const previous = state.tabs[index] as TabInfo
+    const next = { ...infoFrom(id, source, previous), ...patch }
+    if (
+      next.title === previous.title &&
+      next.cwd === previous.cwd &&
+      next.working === previous.working &&
+      next.streaming === previous.streaming &&
+      next.unread === previous.unread
+    ) {
+      return {}
+    }
+    const tabs = [...state.tabs]
+    tabs[index] = next
+    return { tabs }
+  })
+}
+
+/** Change strip fields directly, leaving the derived ones alone. */
+export function patchTab(id: string, patch: Partial<TabInfo>) {
+  tabsStore.set((state) => {
+    const index = state.tabs.findIndex((tab) => tab.id === id)
+    if (index === -1) return {}
+    const previous = state.tabs[index] as TabInfo
+    const next = { ...previous, ...patch }
+    if ((Object.keys(patch) as (keyof TabInfo)[]).every((key) => previous[key] === next[key])) {
+      return {}
+    }
+    const tabs = [...state.tabs]
+    tabs[index] = next
+    return { tabs }
+  })
+}

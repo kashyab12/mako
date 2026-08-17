@@ -217,7 +217,7 @@ export interface SessionState {
   tree: TreeNode[]
 }
 
-export type HostEvent =
+export type HostEventBody =
   | { type: "session"; session: SessionState }
   | { type: "meta"; meta: SessionMeta }
   | { type: "messages"; messages: PiMessage[] }
@@ -228,6 +228,23 @@ export type HostEvent =
   | { type: "notice"; level: "info" | "success" | "error"; message: string }
   /** A file in the plugins directory changed; the renderer should re-read them. */
   | { type: "plugins-changed" }
+
+/**
+ * Every event says which tab it came from.
+ *
+ * More than one agent runs at a time — that is the whole point of tabs — so an
+ * untagged event would be applied to whichever conversation happens to be on
+ * screen. Absent only on window-wide events like `plugins-changed`.
+ */
+export type HostEvent = HostEventBody & { tabId?: string }
+
+/** Everything the renderer needs to draw one tab from cold. */
+export interface TabSnapshot {
+  id: string
+  session: SessionState
+  git: GitStatus
+  capabilities: Capabilities
+}
 
 /** One workspace file, for the composer's `@` picker. */
 export interface WorkspaceFile {
@@ -250,10 +267,10 @@ export interface StagedFile {
 }
 
 export interface BootPayload {
-  session: SessionState
-  git: GitStatus
+  /** Open tabs, in strip order. Always at least one. */
+  tabs: TabSnapshot[]
+  activeTabId: string
   models: ModelInfo[]
-  capabilities: Capabilities
   platform: NodeJS.Platform
   /**
    * Where Mako's own source lives, when it is editable.

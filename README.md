@@ -2,9 +2,10 @@
 
 <img src="mako-icons/dark/logomark-1024.png" width="88" align="right" alt="" />
 
-A desktop app for the [Pi coding agent](https://github.com/earendil-works/pi-coding-agent).
-Pi is the only harness — no other CLI is wrapped, and models come from whatever
-Pi already has authenticated.
+A desktop app for coding agents. Today it runs the
+[Pi agent](https://github.com/earendil-works/pi-coding-agent), and models come
+from whatever Pi already has authenticated — but the agent sits behind one
+adapter (`electron/host.ts`), and nothing above that file names it.
 
 ## Run
 
@@ -21,6 +22,13 @@ open 'http://127.0.0.1:5173/?mock'
 ```
 
 ## What's here
+
+**Tabs** — several agents at once, each with its own runtime and working
+directory. A background tab keeps streaming while you read another one, and
+says so with a dot. ⌘T opens one, ⌘1–9 jumps, ⌘-click a thread in the sidebar
+opens it beside the current one. **Branch** on any past turn continues that
+conversation in a new tab, leaving the original running — which is how you
+answer the same question two ways and compare.
 
 **Composer** — model picker with context window, price, and whether a model
 reasons or takes images. Reasoning effort offers only the levels the selected
@@ -46,8 +54,10 @@ sessions inside it.
 Streaming is the design constraint. The host sends only the in-flight message
 on the hot path and coalesces bursts to one flush per frame. Message identity
 is reconciled across updates, so a token re-renders one turn rather than the
-window. The session list is virtualized, offscreen turns are skipped with
-`content-visibility`, and the diff engine is code-split out of the boot path.
+window. A background tab sends only the scalars its strip entry needs and hands
+over the transcript when you switch to it. The session list is virtualized,
+offscreen turns are skipped with `content-visibility`, and the diff engine is
+code-split out of the boot path.
 
 ## Extending it
 

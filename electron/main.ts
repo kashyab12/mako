@@ -1,7 +1,8 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { COMMIT_PROMPT, PiHost, defaultWorkspace } from "./host.js"
+import { COMMIT_PROMPT, type AgentHost } from "./host.js"
+import { HostPool } from "./pool.js"
 import { listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
 import type { BootPayload, HostEvent, ThinkingLevel } from "./shared.js"
 
@@ -32,30 +33,33 @@ function appIcon() {
 }
 
 let window: BrowserWindow | null = null
-let host: PiHost | null = null
-let starting: Promise<PiHost> | null = null
+const pool = new HostPool(emit)
+let starting: Promise<unknown> | null = null
 
 function emit(event: HostEvent) {
   if (window?.isDestroyed()) return
   window?.webContents.send("pi:event", event)
 }
 
-async function ensureHost(): Promise<PiHost> {
-  if (host) return host
-  starting ??= (async () => {
-    const next = new PiHost(emit)
-    await next.start(defaultWorkspace())
-    host = next
-    return next
-  })().finally(() => {
+/** Start the first tab once, however many callers race for it. */
+async function ready(): Promise<HostPool> {
+  starting ??= pool.ensure().finally(() => {
     starting = null
   })
-  return starting
+  await starting
+  return pool
 }
 
-/** Every mutating handler needs a live host; this keeps the call sites honest. */
-async function withHost<T>(run: (host: PiHost) => T | Promise<T>): Promise<T> {
-  return run(await ensureHost())
+/**
+ * Run against the tab in front.
+ *
+ * Every command from the UI is aimed at the conversation on screen — that is
+ * the only one with a composer pointed at it — so tab routing does not need to
+ * reach the handlers. Background tabs keep streaming; they just take no orders.
+ */
+async function withHost<T>(run: (host: AgentHost) => T | Promise<T>): Promise<T> {
+  const live = await ready()
+  return run(live.active)
 }
 
 async function createWindow() {
@@ -90,6 +94,22 @@ async function createWindow() {
 
   window.once("ready-to-show", () => window?.show())
 
+  // Renderer console output, in the terminal you started the app from.
+  //
+  // Without this the window is a black box: a component that throws leaves no
+  // trace anywhere you are looking, which is exactly how a crash-on-boot went
+  // unnoticed through a passing typecheck. Dev only — in a packaged build this
+  // becomes the crash reporter's job, not stdout's.
+  if (isDev) {
+    window.webContents.on("console-message", (details) => {
+      const where = details.lineNumber ? ` (${details.sourceId}:${details.lineNumber})` : ""
+      console.log(`[renderer:${details.level}] ${details.message}${where}`)
+    })
+    window.webContents.on("render-process-gone", (_event, details) => {
+      console.error(`[renderer] gone: ${details.reason}`)
+    })
+  }
+
   // The agent writes a plugin with its ordinary file tools and the window
   // re-evaluates it — no IPC for it to learn, no command for the user to run.
   const watcher = watchPlugins(() => emit({ type: "plugins-changed" }))
@@ -108,18 +128,30 @@ async function createWindow() {
 
 function bindIpc() {
   ipcMain.handle("pi:boot", async (): Promise<BootPayload> => {
-    const ready = await ensureHost()
-    const [git, models] = await Promise.all([ready.gitStatus(), ready.listModels()])
+    const live = await ready()
+    const [tabs, models] = await Promise.all([live.snapshots(), live.active.listModels()])
     return {
-      session: ready.state(),
-      git,
+      tabs,
+      activeTabId: live.activeId,
       models,
-      capabilities: ready.capabilities(),
       platform: process.platform,
       // Only when the renderer is coming from Vite: that is exactly the
       // condition under which an edit here shows up without a restart.
       sourceRoot: isDev ? app.getAppPath() : undefined,
     }
+  })
+
+  ipcMain.handle("pi:open-tab", async (_e, options?: { cwd?: string; sessionPath?: string }) => {
+    const live = await ready()
+    return live.open(options ?? {})
+  })
+  ipcMain.handle("pi:close-tab", async (_e, id: string) => {
+    const live = await ready()
+    return live.close(id)
+  })
+  ipcMain.handle("pi:activate-tab", async (_e, id: string) => {
+    const live = await ready()
+    return live.activate(id)
   })
 
   ipcMain.handle("pi:list-sessions", (_e, cwd?: string, scope?: "workspace" | "all") =>
@@ -156,12 +188,12 @@ function bindIpc() {
   )
   ipcMain.handle("pi:abort", () => withHost((h) => h.abort()))
   ipcMain.handle("pi:clear-queue", () => withHost((h) => h.clearQueue()))
-  ipcMain.handle("pi:fork", (_e, entryId: string) =>
-    withHost(async (h) => {
-      const result = await h.fork(entryId)
-      return { ...result, session: h.state() }
-    })
-  )
+  // Branching opens a tab rather than replacing this one. Exploring the same
+  // question two ways only works if both answers stay on screen.
+  ipcMain.handle("pi:fork", async (_e, entryId: string) => {
+    const live = await ready()
+    return live.forkIntoTab(entryId)
+  })
   ipcMain.handle("pi:navigate-tree", (_e, targetId: string) =>
     withHost(async (h) => {
       await h.navigateTree(targetId)
@@ -244,5 +276,5 @@ app.on("window-all-closed", () => {
 })
 
 app.on("before-quit", () => {
-  void host?.dispose()
+  void pool.dispose()
 })

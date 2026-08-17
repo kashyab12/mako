@@ -268,7 +268,7 @@ function EmptyTranscript() {
           <MakoMark className="size-8 shrink-0 text-foreground/85" />
           <div className="min-w-0">
             <p className="text-[16px] leading-tight font-semibold tracking-[-0.01em]">
-              Ask Pi something
+              Ask for anything
             </p>
             <p className="mt-1 flex min-w-0 items-center gap-1.5 text-[11.5px] text-faint">
               <FolderIcon className="size-3 shrink-0" />

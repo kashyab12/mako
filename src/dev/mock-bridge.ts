@@ -1,5 +1,6 @@
 import type {
   BootPayload,
+  Capabilities,
   GitStatus,
   HostEvent,
   ModelInfo,
@@ -10,7 +11,7 @@ import type {
 } from "@/lib/types"
 
 /**
- * A fake Pi host for design work.
+ * A fake agent host for design work.
  *
  * Load the dev server with `?mock` and the desk boots against fixtures instead
  * of a real agent, so layout, density, and motion can be judged in a browser
@@ -237,32 +238,33 @@ export function installMockBridge() {
   const emit = (event: HostEvent) => listeners.forEach((listener) => listener(event))
   let meta = { ...META }
 
+  const capabilities: Capabilities = {
+    tools: [
+      { name: "read", description: "Read a file from disk", active: true },
+      { name: "edit", description: "Replace exact text in a file", active: true },
+      { name: "write", description: "Create or overwrite a file", active: true },
+      { name: "bash", description: "Run a shell command in the workspace", active: true },
+      { name: "grep", description: "Search file contents by regex", active: true },
+      { name: "find", description: "Find files by glob pattern", active: true },
+      { name: "ls", description: "List a directory", active: false },
+    ],
+    commands: [
+      { name: "compact", description: "Summarize history to free context" },
+      { name: "model", description: "Switch the active model" },
+      { name: "cost", description: "Show token spend for this session" },
+      { name: "export", description: "Write this session to HTML" },
+      { name: "tree", description: "Jump to another point in the session tree" },
+    ],
+    skills: [
+      { name: "review-diff", description: "Read the working tree and report defects with severities." },
+      { name: "write-tests", description: "Generate tests for changed code paths, matching the repo's style." },
+    ],
+  }
+
   const boot: BootPayload = {
-    session: { meta, messages: MESSAGES, tree: TREE },
-    git: GIT,
+    tabs: [{ id: "tab-1", session: { meta, messages: MESSAGES, tree: TREE }, git: GIT, capabilities }],
+    activeTabId: "tab-1",
     models: MODELS,
-    capabilities: {
-      tools: [
-        { name: "read", description: "Read a file from disk", active: true },
-        { name: "edit", description: "Replace exact text in a file", active: true },
-        { name: "write", description: "Create or overwrite a file", active: true },
-        { name: "bash", description: "Run a shell command in the workspace", active: true },
-        { name: "grep", description: "Search file contents by regex", active: true },
-        { name: "find", description: "Find files by glob pattern", active: true },
-        { name: "ls", description: "List a directory", active: false },
-      ],
-      commands: [
-        { name: "compact", description: "Summarize history to free context" },
-        { name: "model", description: "Switch the active model" },
-        { name: "cost", description: "Show token spend for this session" },
-        { name: "export", description: "Write this session to HTML" },
-        { name: "tree", description: "Jump to another point in the session tree" },
-      ],
-      skills: [
-        { name: "review-diff", description: "Read the working tree and report defects with severities." },
-        { name: "write-tests", description: "Generate tests for changed code paths, matching the repo's style." },
-      ],
-    },
     platform: "darwin",
   }
 
@@ -271,8 +273,23 @@ export function installMockBridge() {
     emit({ type: "meta", meta })
   }
 
+  // Tabs in the browser mock are cosmetic: there is no second runtime to run,
+  // so a new tab is another view of the same fixture. Enough to lay out the
+  // strip against, not enough to pretend it is the real thing.
+  let tabCount = 1
+  const mockTab = (id: string) => ({
+    id,
+    session: { meta, messages: MESSAGES, tree: TREE },
+    git: GIT,
+    capabilities,
+  })
+
   window.pi = {
     boot: async () => boot,
+    openTab: async () => mockTab(`tab-${++tabCount}`),
+    closeTab: async (id: string) => ({ tabs: [id], activeId: "tab-1" }),
+    activateTab: async () => true,
+    fork: async () => ({ cancelled: false as const, text: "", tab: mockTab(`tab-${++tabCount}`) }),
     listSessions: async () => sessions(),
     openSession: async () => ({ meta, messages: MESSAGES, tree: TREE }),
     newSession: async () => ({ meta, messages: [], tree: [] }),
@@ -311,7 +328,7 @@ export function installMockBridge() {
       if (model) update({ model, thinkingLevels: model.thinkingLevels })
     },
     setThinking: async (level) => update({ thinkingLevel: level }),
-    capabilities: async () => boot.capabilities,
+    capabilities: async () => capabilities,
     setActiveTools: async () => {},
     runCommand: async () => {},
     listFiles: async () => [
@@ -351,6 +368,9 @@ export function installMockBridge() {
       oldFile: { name: path, contents: "const sessions = useSession((state) => state)\n" },
       newFile: { name: path, contents: "const sessions = useSession((state) => state.sessions)\n" },
     }),
+    listPlugins: async () => [],
+    pluginsDir: async () => "/tmp/mako/plugins",
+    writePlugin: async () => {},
     pickFolder: async () => null,
     revealPath: async () => {},
     copy: async () => {},

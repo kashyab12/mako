@@ -75,9 +75,12 @@ component swap. Keep component files exporting components.
 ```
 electron/          main process — needs a restart
   main.ts          window, IPC handlers, app lifecycle
-  host.ts          the agent adapter; all agent I/O goes through here. Today
-                   it wraps Pi, but nothing above this file knows that — keep
+  host.ts          one agent, hosted: `AgentHost` owns a single runtime, cwd,
+                   and git root. All agent I/O goes through here. Today it
+                   wraps Pi, but nothing above this file knows that — keep
                    agent-specific assumptions inside it.
+  pool.ts          the open tabs: several `AgentHost`s at once, one in front.
+                   Commands address the foreground tab; the rest keep running.
   shared.ts        the wire contract between main and renderer
   preload.ts       the contextBridge surface
 src/
@@ -89,7 +92,8 @@ src/
     inspector/     the right panel — changes, context, history
     palette/       ⌘K
     ui/            the shared kit; `kit.tsx` is the primitives
-  state/           zustand stores — `session.ts` is the big one
+  state/           stores — `session.ts` is the tab in front, `tabs.ts` is the
+                   strip plus a cache of every background conversation
   lib/             pure helpers; no React, no IPC
   extend/          the plugin registries (commands, slots, tool views)
   desk/            command definitions and app-level wiring
@@ -150,7 +154,9 @@ The curves and durations are tokens in `src/index.css` (`--ease-out`,
 ## Performance rules
 
 Streaming is the constraint everything else bends around. A token arrives every
-few milliseconds and must cost one turn's re-render, not the window's.
+few milliseconds and must cost one turn's re-render, not the window's. More
+than one conversation streams at a time, so "cheap per token" is now also
+"cheap per *hidden* conversation".
 
 - Subscribe through selectors (`useSession((s) => s.thing)`), never to the whole
   store. Subscribing to `meta` re-renders on every token-count update.
@@ -162,6 +168,9 @@ few milliseconds and must cost one turn's re-render, not the window's.
   anything that repeats down the transcript.
 - The hot path in `electron/host.ts` sends only the in-flight message and
   coalesces bursts to one flush per frame. Do not add a full-state send to it.
+- A backgrounded `AgentHost` sends only `meta`, at 400ms rather than 16ms, and
+  hands over everything else in one push when it comes forward. If you add an
+  event type, decide which side of that line it belongs on.
 
 ## Working here
 

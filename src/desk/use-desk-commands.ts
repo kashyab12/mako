@@ -10,6 +10,7 @@ import { installBuiltins } from "@/desk/builtins"
 import { actions, store } from "@/state/session"
 import { getPi } from "@/lib/bridge"
 import { prefsStore, setPref, togglePref } from "@/state/prefs"
+import { tabsStore } from "@/state/tabs"
 import type { ThinkingLevel } from "@/lib/types"
 
 const openPalette = () => {
@@ -17,6 +18,22 @@ const openPalette = () => {
 }
 const focusComposer = () => {
   window.dispatchEvent(new CustomEvent("pi:focus-composer"))
+}
+
+/** 1-9 from a keyboard event, or 0 if this was not a digit. */
+function digitOf(event: KeyboardEvent): number {
+  if (/^[1-9]$/.test(event.key)) return Number(event.key)
+  if (/^Digit[1-9]$/.test(event.code)) return Number(event.code.slice(5))
+  return 0
+}
+
+/** Move `delta` tabs along the strip, wrapping at both ends. */
+function stepTab(delta: number) {
+  const { tabs, activeId } = tabsStore.get()
+  if (tabs.length < 2) return
+  const at = tabs.findIndex((tab) => tab.id === activeId)
+  const next = tabs[(at + delta + tabs.length) % tabs.length]
+  if (next) void actions.switchTab(next.id)
 }
 
 /** Advance to the next effort level the current model actually supports. */
@@ -36,6 +53,38 @@ const DESK_COMMANDS: DeskCommand[] = [
     section: "Session",
     keys: "mod+n",
     run: () => void actions.newSession(),
+  },
+  {
+    id: "tab.new",
+    title: "New tab",
+    section: "Session",
+    hint: "Another conversation, running beside this one",
+    keys: "mod+t",
+    run: () => void actions.openTab(),
+  },
+  {
+    id: "tab.close",
+    title: "Close tab",
+    section: "Session",
+    keys: "mod+w",
+    when: () => tabsStore.get().tabs.length > 1,
+    run: () => void actions.closeTab(tabsStore.get().activeId),
+  },
+  {
+    id: "tab.next",
+    title: "Next tab",
+    section: "Session",
+    keys: "mod+shift+]",
+    when: () => tabsStore.get().tabs.length > 1,
+    run: () => stepTab(1),
+  },
+  {
+    id: "tab.previous",
+    title: "Previous tab",
+    section: "Session",
+    keys: "mod+shift+[",
+    when: () => tabsStore.get().tabs.length > 1,
+    run: () => stepTab(-1),
   },
   {
     id: "session.focus-composer",
@@ -150,7 +199,7 @@ const DESK_COMMANDS: DeskCommand[] = [
     id: "view.changes",
     title: "Show changed files",
     section: "View",
-    keys: "mod+1",
+    keys: "mod+alt+1",
     run: () => {
       setPref("inspectorOpen", true)
       setPref("inspectorTab", "changes")
@@ -160,7 +209,7 @@ const DESK_COMMANDS: DeskCommand[] = [
     id: "view.context",
     title: "Show context: files, skills, tokens",
     section: "View",
-    keys: "mod+2",
+    keys: "mod+alt+2",
     run: () => {
       setPref("inspectorOpen", true)
       setPref("inspectorTab", "context")
@@ -170,7 +219,7 @@ const DESK_COMMANDS: DeskCommand[] = [
     id: "view.history",
     title: "Show history and rewind points",
     section: "View",
-    keys: "mod+3",
+    keys: "mod+alt+3",
     run: () => {
       setPref("inspectorOpen", true)
       setPref("inspectorTab", "history")
@@ -256,6 +305,21 @@ export function useDeskCommands() {
         event.preventDefault()
         openPalette()
         return
+      }
+
+      // ⌘1…⌘9 jumps straight to a tab — the one shortcut every tabbed app
+      // agrees on. Bound here rather than as nine palette commands nobody
+      // would ever search for. Both `key` and `code` are consulted: `code` is
+      // layout-independent, `key` is what synthetic events actually carry.
+      const digit = digitOf(event)
+      if (mod && !event.shiftKey && !event.altKey && digit > 0) {
+        const tabs = tabsStore.get().tabs
+        const target = tabs[digit - 1]
+        if (tabs.length > 1 && target) {
+          event.preventDefault()
+          void actions.switchTab(target.id)
+          return
+        }
       }
 
       // Unmodified keys belong to whatever the user is typing into.

@@ -1,5 +1,5 @@
 import { useCallback, useDeferredValue, useMemo, useState } from "react"
-import { Action, Blank, IconAction } from "@/components/ui/kit"
+import { Action, Blank } from "@/components/ui/kit"
 import { VirtualSessions } from "@/components/rail/virtual-sessions"
 import { buildRows } from "@/components/rail/rail-rows"
 import { RailOptions } from "@/components/rail/rail-options"
@@ -49,7 +49,10 @@ export function SessionRail() {
     [collapsed, cwd, deferred, groupBy, sortBy, sessions]
   )
 
-  const open = useCallback((path: string) => void actions.openSession(path), [])
+  const open = useCallback(
+    (path: string, options?: { inNewTab?: boolean }) => void actions.openSession(path, options),
+    []
+  )
   const showProject = scope === "all" && groupBy !== "project"
 
   return (

@@ -10,6 +10,7 @@ import type {
   SessionState,
   SessionSummary,
   StagedFile,
+  TabSnapshot,
   ThinkingLevel,
   WorkspaceFile,
 } from "./shared.js"
@@ -19,6 +20,13 @@ const invoke = <T>(channel: string, ...args: unknown[]) =>
 
 const api = {
   boot: () => invoke<BootPayload>("pi:boot"),
+
+  /* Tabs. Session-scoped calls below always address the active tab. */
+  openTab: (options?: { cwd?: string; sessionPath?: string }) =>
+    invoke<TabSnapshot>("pi:open-tab", options),
+  closeTab: (id: string) =>
+    invoke<{ tabs: string[]; activeId: string; opened?: TabSnapshot }>("pi:close-tab", id),
+  activateTab: (id: string) => invoke<boolean>("pi:activate-tab", id),
 
   listSessions: (cwd?: string, scope?: "workspace" | "all") =>
     invoke<SessionSummary[]>("pi:list-sessions", cwd, scope),
@@ -36,7 +44,10 @@ const api = {
   clearQueue: () => invoke<void>("pi:clear-queue"),
   navigateTree: (targetId: string) => invoke<SessionState>("pi:navigate-tree", targetId),
   fork: (entryId: string) =>
-    invoke<{ cancelled: boolean; text?: string; session: SessionState }>("pi:fork", entryId),
+    invoke<{ cancelled: true } | { cancelled: false; text?: string; tab: TabSnapshot }>(
+      "pi:fork",
+      entryId
+    ),
   compact: (instructions?: string) => invoke<void>("pi:compact", instructions),
   setAutoCompaction: (enabled: boolean) => invoke<void>("pi:set-auto-compaction", enabled),
 

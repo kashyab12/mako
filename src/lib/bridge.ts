@@ -12,7 +12,7 @@ export function hasBridge(): boolean {
 
 export function getPi(): PiBridge {
   if (!window.pi) {
-    throw new Error("The Pi desktop bridge is unavailable. Launch with `npm run desktop`.")
+    throw new Error("The desktop bridge is unavailable. Launch with `npm run desktop`.")
   }
   return window.pi
 }

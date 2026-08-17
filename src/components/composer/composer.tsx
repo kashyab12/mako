@@ -298,7 +298,7 @@ export function Composer() {
                 void attach(files)
               }}
               placeholder={
-                status.streaming ? "Steer the current turn…" : "Ask Pi to change something"
+                status.streaming ? "Steer the current turn…" : "Ask for a change"
               }
               spellCheck={false}
               className={cn(

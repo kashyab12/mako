@@ -276,7 +276,19 @@ function statusFor(xy: string): GitFileStatus {
 /* host                                                                */
 /* ------------------------------------------------------------------ */
 
-export class PiHost {
+/**
+ * One agent, hosted.
+ *
+ * Exactly one conversation runs here: one runtime, one working directory, one
+ * git root, one coalescing budget. Several of these run side by side — see
+ * `HostPool` — which is what lets a forked conversation keep streaming while
+ * you read the original.
+ *
+ * Everything specific to the agent backend lives inside this class. Nothing
+ * above it names Pi, so swapping the runtime out is a change to one file.
+ */
+export class AgentHost {
+  readonly id: string
   private runtime: AgentSessionRuntime | null = null
   private unsubscribe: (() => void) | null = null
   private cwd = homedir()
@@ -289,18 +301,50 @@ export class PiHost {
   private gitRoot: string | null = null
   private lastStreamKey = ""
   private fileCache: { at: number; files: WorkspaceFile[] } | null = null
+  /**
+   * Whether this tab is the one on screen.
+   *
+   * A background tab has no transcript rendering it, so sending sixty stream
+   * frames a second would be pure waste on a wire that the *visible* tab is
+   * also using. Backgrounded, it emits only the scalars the tab strip needs to
+   * show that it is still working, and hands over everything else in one go
+   * when it is brought forward.
+   */
+  private foreground = true
 
-  constructor(emit: (event: HostEvent) => void) {
-    this.emit = emit
+  constructor(id: string, emit: (event: HostEvent) => void) {
+    this.id = id
+    this.emit = (event) => emit({ ...event, tabId: id })
   }
 
   get session(): AgentSession {
-    if (!this.runtime) throw new Error("Pi host is not ready")
+    if (!this.runtime) throw new Error("The agent is not ready yet")
     return this.runtime.session
   }
 
   get ready(): boolean {
     return this.runtime !== null
+  }
+
+  /** The folder this tab's agent is working in. */
+  get workspace(): string {
+    return this.cwd
+  }
+
+  /** The session file backing this tab, if it has been written yet. */
+  get sessionFile(): string | undefined {
+    return this.runtime ? this.session.sessionFile : undefined
+  }
+
+  setForeground(value: boolean) {
+    if (this.foreground === value) return
+    this.foreground = value
+    // Coming forward, replay everything that was skipped while hidden.
+    if (value && this.runtime) {
+      this.pushState()
+      void this.pushGit()
+      void this.pushCapabilities()
+    }
   }
 
   /* -------------------------------------------------- lifecycle */
@@ -375,10 +419,13 @@ export class PiHost {
   /** ~60fps ceiling on renderer traffic; every burst collapses to one flush. */
   private schedule() {
     if (this.flushTimer) return
-    this.flushTimer = setTimeout(() => {
-      this.flushTimer = null
-      this.flush()
-    }, 16)
+    this.flushTimer = setTimeout(
+      () => {
+        this.flushTimer = null
+        this.flush()
+      },
+      this.foreground ? 16 : 400
+    )
   }
 
   private flush() {
@@ -386,6 +433,13 @@ export class PiHost {
     const { meta, messages, tree, stream } = this.pending
     this.pending = { meta: false, messages: false, tree: false, stream: false }
     try {
+      // Hidden: only the scalars, which is all the tab strip reads. The heavy
+      // payloads are rebuilt on the way forward, so skipping them here cannot
+      // leave the transcript stale.
+      if (!this.foreground) {
+        if (meta || messages || tree || stream) this.emit({ type: "meta", meta: this.meta() })
+        return
+      }
       if (stream) {
         const message = this.streamingMessage()
         // Skip the emission entirely when nothing about the draft changed.
@@ -483,6 +537,7 @@ export class PiHost {
   }
 
   pushState() {
+    if (!this.foreground) return
     this.lastStreamKey = ""
     this.emit({ type: "session", session: this.state() })
     this.emit({ type: "stream", message: this.streamingMessage() })
@@ -516,7 +571,7 @@ export class PiHost {
   }
 
   async newSession() {
-    if (!this.runtime) throw new Error("Pi host is not ready")
+    if (!this.runtime) throw new Error("The agent is not ready yet")
     await this.runtime.newSession()
     this.bind()
     this.pushState()
@@ -524,7 +579,7 @@ export class PiHost {
   }
 
   async openSession(path: string) {
-    if (!this.runtime) throw new Error("Pi host is not ready")
+    if (!this.runtime) throw new Error("The agent is not ready yet")
     await this.runtime.switchSession(path)
     this.cwd = this.session.sessionManager.getCwd() || this.cwd
     this.gitRoot = await findGitRoot(this.cwd)
@@ -588,7 +643,7 @@ export class PiHost {
    * rather than replaying the answer you already have.
    */
   async fork(entryId: string) {
-    if (!this.runtime) throw new Error("Pi host is not ready")
+    if (!this.runtime) throw new Error("The agent is not ready yet")
     const result = await this.runtime.fork(entryId, { position: "before" })
     if (result.cancelled) return { cancelled: true as const }
     this.cwd = this.session.sessionManager.getCwd() || this.cwd
@@ -686,6 +741,7 @@ export class PiHost {
   }
 
   async pushCapabilities() {
+    if (!this.foreground) return
     try {
       this.emit({ type: "capabilities", capabilities: this.capabilities() })
     } catch (error) {
@@ -1047,6 +1103,7 @@ export class PiHost {
   }
 
   async pushGit() {
+    if (!this.foreground) return
     try {
       this.emit({ type: "git", git: await this.gitStatus() })
     } catch (error) {

@@ -18,7 +18,9 @@ export function HotIndicator() {
   const [update, setUpdate] = useState<HotUpdate | null>(null)
   const [reloaded, setReloaded] = useState(false)
 
-  useEffect(() => setReloaded(consumeFullReload()), [])
+  useEffect(() => {
+    setReloaded(consumeFullReload())
+  }, [])
 
   useEffect(() => onHotUpdate(setUpdate), [])
 

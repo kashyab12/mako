@@ -60,8 +60,29 @@ export function matchesChord(event: KeyboardEvent, chord: string): boolean {
   if (!wants.has("mod") && (isMac ? event.ctrlKey : event.metaKey)) return false
   const pressed = event.key.toLowerCase()
   if (pressed === key) return true
-  // Option-modified keys report their composed character on macOS.
-  return event.code.toLowerCase() === `key${key}` || event.code.toLowerCase() === `digit${key}`
+  // Option-modified keys report their composed character on macOS, and shifted
+  // punctuation reports the shifted glyph — "]" arrives as "}". Matching the
+  // physical key covers both.
+  return (
+    event.code.toLowerCase() === `key${key}` ||
+    event.code.toLowerCase() === `digit${key}` ||
+    event.code === PHYSICAL[key]
+  )
+}
+
+/** Physical keys whose reported character changes under a modifier. */
+const PHYSICAL: Record<string, string> = {
+  "[": "BracketLeft",
+  "]": "BracketRight",
+  "\\": "Backslash",
+  "/": "Slash",
+  ".": "Period",
+  ",": "Comma",
+  ";": "Semicolon",
+  "'": "Quote",
+  "-": "Minus",
+  "=": "Equal",
+  "`": "Backquote",
 }
 
 /** Render a chord for display: "mod+k" → "⌘K" on macOS, "Ctrl K" elsewhere. */

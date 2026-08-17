@@ -20,6 +20,7 @@ export type {
   SessionSummary,
   SkillSummary,
   StagedFile,
+  TabSnapshot,
   ThinkingLevel,
   TokenStats,
   ToolSummary,

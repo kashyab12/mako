@@ -10,6 +10,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   CornerDownRightIcon,
+  GitBranchPlusIcon,
   HistoryIcon,
   RotateCcwIcon,
   SplitIcon,
@@ -189,7 +190,7 @@ const Row = memo(function Row({
         >
           <CheckpointAction
             label="Branch"
-            title="Open a new session from this turn, keeping this one"
+            title="Continue from this turn in a new tab, leaving this one running"
             icon={<GitBranchPlusIcon className="size-2.5" />}
             onClick={() => onBranch(checkpoint.id)}
           />

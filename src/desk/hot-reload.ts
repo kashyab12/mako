@@ -26,9 +26,13 @@ type Listener = (update: HotUpdate) => void
 
 const listeners = new Set<Listener>()
 
-export function onHotUpdate(listener: Listener) {
+export function onHotUpdate(listener: Listener): () => void {
   listeners.add(listener)
-  return () => listeners.delete(listener)
+  // Returns nothing on purpose: `Set.delete` reports a boolean, and a
+  // disposer that returns a value cannot be handed straight to `useEffect`.
+  return () => {
+    listeners.delete(listener)
+  }
 }
 
 function announce(files: string[]) {

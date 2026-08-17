@@ -30,7 +30,7 @@ export function VirtualSessions({
   activePath?: string
   /** Label each row with its project — only useful when scope spans projects. */
   showProject: boolean
-  onOpen: (path: string) => void
+  onOpen: (path: string, options?: { inNewTab?: boolean }) => void
 }) {
   const scroller = useRef<HTMLDivElement>(null)
   const virtualizer = useVirtualizer({
@@ -120,7 +120,7 @@ const RailRowItem = memo(function RailRowItem({
   session: SessionSummary
   active: boolean
   showProject: boolean
-  onOpen: (path: string) => void
+  onOpen: (path: string, options?: { inNewTab?: boolean }) => void
 }) {
   const title = session.name || firstLine(session.firstMessage, 60) || "Untitled session"
   const detail = session.name ? firstLine(session.firstMessage, 60) : `${session.messageCount} messages`
@@ -128,9 +128,16 @@ const RailRowItem = memo(function RailRowItem({
   return (
     <button
       type="button"
-      onClick={() => onOpen(session.path)}
+      // Modifier-click opens beside instead of replacing — the same bargain
+      // every browser and editor makes, so it needs no explaining.
+      onClick={(event) =>
+        onOpen(session.path, { inNewTab: event.metaKey || event.ctrlKey || event.shiftKey })
+      }
+      onAuxClick={(event) => {
+        if (event.button === 1) onOpen(session.path, { inNewTab: true })
+      }}
       data-active={active || undefined}
-      title={session.cwd}
+      title={`${session.cwd}\n⌘-click to open in a new tab`}
       className={cn(
         "group relative flex h-[42px] w-full flex-col justify-center gap-0.5 rounded-md px-2 text-left",
         "transition-colors duration-100 hover:bg-raised data-active:bg-raised"
