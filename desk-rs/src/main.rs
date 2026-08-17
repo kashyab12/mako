@@ -9,6 +9,7 @@ mod effort;
 mod git;
 mod inspector;
 mod model_picker;
+mod palette;
 mod rpc;
 mod session;
 mod sessions;
@@ -18,6 +19,7 @@ mod ui;
 use composer::{Composer, Submit};
 use effort::{EffortPicker, SelectEffort};
 use inspector::Inspector;
+use palette::{Command, Entry, Palette, Run};
 use model_picker::{ModelPicker, SelectModel};
 use sessions::{relative, SessionEntry, SessionIndex};
 use gpui::prelude::*;
@@ -29,6 +31,7 @@ use gpui::{
 };
 use gpui_component::scroll::Scrollbar;
 use gpui_component::text::TextView;
+use gpui_component::divider::Divider;
 use gpui_component::Root;
 use rpc::{Incoming, PiRpc};
 use session::{Exchange, SessionState, ToolCall};
@@ -36,7 +39,21 @@ use std::time::Duration;
 use theme::{space, text, Theme};
 use ui::{clip, eyebrow, fin, format_cost, format_tokens, lit_top, panel, workspace_name};
 
-actions!(desk, [Send, Stop, CycleThinking, ToggleRail, ToggleInspector]);
+actions!(
+    desk,
+    [
+        Send,
+        Stop,
+        CycleThinking,
+        ToggleRail,
+        ToggleInspector,
+        OpenPalette,
+        OpenSettings,
+        Dismiss,
+        Up,
+        Down
+    ]
+);
 
 /// How close to the end still counts as "following the stream".
 const NEAR_BOTTOM: f32 = 96.0;
@@ -49,8 +66,10 @@ struct Desk {
     model_picker: Entity<ModelPicker>,
     effort_picker: Entity<EffortPicker>,
     inspector: Entity<Inspector>,
+    palette: Entity<Palette>,
     rail_open: bool,
     inspector_open: bool,
+    settings_open: bool,
     sessions: Vec<SessionEntry>,
     index: SessionIndex,
     git: git::GitStatus,
@@ -179,6 +198,12 @@ impl Desk {
 
         let inspector = cx.new(|cx| Inspector::new(theme.clone(), window, cx));
 
+        let palette = cx.new(|cx| Palette::new(theme.clone(), window, cx));
+        cx.subscribe(&palette, |desk, _palette, event: &Run, cx| {
+            desk.run_command(event.0.clone(), cx);
+        })
+        .detach();
+
         let mut index = SessionIndex::default();
         let cwd_string = cwd.to_string_lossy().to_string();
         let sessions = index.scan(None);
@@ -192,8 +217,10 @@ impl Desk {
             model_picker,
             effort_picker,
             inspector,
+            palette,
             rail_open: true,
             inspector_open: true,
+            settings_open: false,
             sessions,
             index,
             git: git_status,
@@ -259,6 +286,33 @@ impl Desk {
         cx.notify();
     }
 
+    fn open_palette(&mut self, _: &OpenPalette, window: &mut Window, cx: &mut Context<Self>) {
+        let entries = self.palette_entries();
+        self.palette.update(cx, |palette, cx| {
+            palette.set_entries(entries);
+            palette.show(window, cx);
+        });
+    }
+
+    fn open_settings(&mut self, _: &OpenSettings, _window: &mut Window, cx: &mut Context<Self>) {
+        self.settings_open = true;
+        cx.notify();
+    }
+
+    fn dismiss(&mut self, _: &Dismiss, _window: &mut Window, cx: &mut Context<Self>) {
+        self.palette.update(cx, |palette, cx| palette.hide(cx));
+        self.settings_open = false;
+        cx.notify();
+    }
+
+    fn cursor_up(&mut self, _: &Up, _window: &mut Window, cx: &mut Context<Self>) {
+        self.palette.update(cx, |palette, cx| palette.move_cursor(-1, cx));
+    }
+
+    fn cursor_down(&mut self, _: &Down, _window: &mut Window, cx: &mut Context<Self>) {
+        self.palette.update(cx, |palette, cx| palette.move_cursor(1, cx));
+    }
+
     fn toggle_inspector(
         &mut self,
         _: &ToggleInspector,
@@ -266,6 +320,97 @@ impl Desk {
         cx: &mut Context<Self>,
     ) {
         self.inspector_open = !self.inspector_open;
+        cx.notify();
+    }
+
+    /// Everything the palette can reach, rebuilt when it opens so the model
+    /// and session lists are never stale.
+    fn palette_entries(&self) -> Vec<Entry> {
+        let mut entries = vec![
+            Entry {
+                section: "Actions",
+                title: "New session".into(),
+                hint: "⌘N".into(),
+                command: Command::NewSession,
+            },
+            Entry {
+                section: "Actions",
+                title: "Stop the current turn".into(),
+                hint: "⌘⎋".into(),
+                command: Command::Stop,
+            },
+            Entry {
+                section: "Actions",
+                title: "Toggle the session list".into(),
+                hint: "⌘B".into(),
+                command: Command::ToggleRail,
+            },
+            Entry {
+                section: "Actions",
+                title: "Toggle the inspector".into(),
+                hint: "⌘I".into(),
+                command: Command::ToggleInspector,
+            },
+            Entry {
+                section: "Actions",
+                title: "Settings".into(),
+                hint: "⌘,".into(),
+                command: Command::OpenSettings,
+            },
+        ];
+
+        for model in &self.state.models {
+            entries.push(Entry {
+                section: "Switch model",
+                title: model.name.clone(),
+                hint: model.provider.clone(),
+                command: Command::SelectModel {
+                    provider: model.provider.clone(),
+                    id: model.id.clone(),
+                },
+            });
+        }
+
+        for entry in self.sessions.iter().take(80) {
+            entries.push(Entry {
+                section: "Open session",
+                title: entry.title().to_string(),
+                hint: format!("{} messages", entry.messages),
+                command: Command::OpenSession {
+                    path: entry.path.to_string_lossy().to_string(),
+                },
+            });
+        }
+
+        entries
+    }
+
+    fn run_command(&mut self, command: Command, cx: &mut Context<Self>) {
+        match command {
+            Command::NewSession => {
+                if let Some(rpc) = self.rpc.as_mut() {
+                    let _ = rpc.new_session();
+                    let _ = rpc.get_state();
+                }
+                self.state.exchanges.clear();
+                self.pinned = true;
+            }
+            Command::Stop => {
+                if let Some(rpc) = self.rpc.as_mut() {
+                    let _ = rpc.abort();
+                }
+            }
+            Command::ToggleRail => self.rail_open = !self.rail_open,
+            Command::ToggleInspector => self.inspector_open = !self.inspector_open,
+            Command::OpenSettings => self.settings_open = true,
+            Command::SelectModel { provider, id } => {
+                if let Some(rpc) = self.rpc.as_mut() {
+                    let _ = rpc.set_model(&provider, &id);
+                    let _ = rpc.get_state();
+                }
+            }
+            Command::OpenSession { path } => self.open_session(&path, cx),
+        }
         cx.notify();
     }
 
@@ -310,6 +455,11 @@ impl Render for Desk {
             .on_action(cx.listener(Self::cycle_thinking))
             .on_action(cx.listener(Self::toggle_rail))
             .on_action(cx.listener(Self::toggle_inspector))
+            .on_action(cx.listener(Self::open_palette))
+            .on_action(cx.listener(Self::open_settings))
+            .on_action(cx.listener(Self::dismiss))
+            .on_action(cx.listener(Self::cursor_up))
+            .on_action(cx.listener(Self::cursor_down))
             .flex()
             .flex_col()
             .size_full()
@@ -323,15 +473,18 @@ impl Render for Desk {
                     .flex_1()
                     .min_h_0()
                     .when(self.rail_open, |row| row.child(self.rail(&theme, cx)))
-                    .child(
+                    .child(if self.settings_open {
+                        self.settings(&theme, cx).into_any_element()
+                    } else {
                         div()
                             .flex()
                             .flex_col()
                             .flex_1()
                             .min_w_0()
                             .child(self.transcript(&theme, window, cx))
-                            .child(self.composer(&theme, cx)),
-                    )
+                            .child(self.composer(&theme, cx))
+                            .into_any_element()
+                    })
                     .when(self.inspector_open, |row| {
                         row.child(
                             panel(&theme)
@@ -344,6 +497,7 @@ impl Render for Desk {
                     }),
             )
             .child(self.status_bar(&theme))
+            .child(self.palette.clone())
     }
 }
 
@@ -355,40 +509,39 @@ impl Desk {
             self.state.session_name.clone()
         };
 
+        // `title_bar` is private in the component crate, so this is built by
+        // hand — but the part that actually matters is the traffic-light
+        // inset, which the window sets below. Without it the controls overlap
+        // whatever the app draws in the top-left.
         div()
+            .h(space::TITLEBAR)
             .flex()
-            .flex_col()
-            .flex_none()
+            .items_center()
+            .justify_center()
+            .bg(theme.surface)
             .child(
-                div()
-                    .h(space::TITLEBAR)
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .bg(theme.surface)
-                    .child(
+            div()
+                .flex()
+                .flex_1()
+                .items_center()
+                .justify_center()
+                .gap(px(7.0))
+                .child(fin(theme, px(13.0)))
+                .when(self.state.streaming, |row| {
+                    row.child(
                         div()
-                            .flex()
-                            .items_center()
-                            .gap(px(7.0))
-                            .child(fin(theme, px(13.0)))
-                            .when(self.state.streaming, |row| {
-                                row.child(
-                                    div()
-                                        .size(px(5.0))
-                                        .rounded_full()
-                                        .bg(theme.foreground.opacity(0.7)),
-                                )
-                            })
-                            .child(
-                                div()
-                                    .text_size(text::UI)
-                                    .text_color(theme.foreground)
-                                    .child(SharedString::from(title)),
-                            ),
-                    ),
-            )
-            .child(div().h(px(1.0)).bg(theme.hairline))
+                            .size(px(5.0))
+                            .rounded_full()
+                            .bg(theme.foreground.opacity(0.7)),
+                    )
+                })
+                .child(
+                    div()
+                        .text_size(text::UI)
+                        .text_color(theme.foreground)
+                        .child(SharedString::from(title)),
+                ),
+        )
     }
 
     fn rail(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
@@ -414,7 +567,7 @@ impl Desk {
                             .child(SharedString::from(workspace_name(&self.state.cwd))),
                     ),
             )
-            .child(div().h(px(1.0)).bg(theme.hairline))
+            .child(Divider::horizontal())
             .child(
                 div()
                     .id("session-rail")
@@ -761,6 +914,112 @@ impl Desk {
             )
     }
 
+    /// Settings, as a full view rather than a modal.
+    ///
+    /// These are things you read and compare — a keyboard map most of all —
+    /// and a dialog floating over a dimmed transcript is the wrong shape for
+    /// that: cramped, hiding the thing being configured, and implying you are
+    /// meant to leave quickly.
+    fn settings(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        let shortcuts = [
+            ("⌘K", "Command palette"),
+            ("⌘N", "New session"),
+            ("⌘B", "Toggle the session list"),
+            ("⌘I", "Toggle the inspector"),
+            ("⌘.", "Cycle reasoning effort"),
+            ("⌘⎋", "Stop the current turn"),
+            ("⇧↩", "Newline in the composer"),
+            ("⎋", "Dismiss"),
+        ];
+
+        div()
+            .flex()
+            .flex_1()
+            .min_h_0()
+            .bg(theme.background)
+            .child(
+                div()
+                    .w(px(180.0))
+                    .flex_none()
+                    .border_r_1()
+                    .border_color(theme.hairline)
+                    .p(px(10.0))
+                    .child(
+                        div()
+                            .rounded(space::RADIUS)
+                            .bg(theme.selected())
+                            .px(px(8.0))
+                            .py(px(5.0))
+                            .text_size(text::UI)
+                            .child("Keyboard"),
+                    )
+                    .child(
+                        div()
+                            .id("close-settings")
+                            .mt(px(6.0))
+                            .rounded(space::RADIUS)
+                            .px(px(8.0))
+                            .py(px(5.0))
+                            .text_size(text::UI)
+                            .text_color(theme.faint)
+                            .hover(|style| style.bg(theme.hover()))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|desk, _event, _window, cx| {
+                                    desk.settings_open = false;
+                                    cx.notify();
+                                }),
+                            )
+                            .child("Close settings"),
+                    ),
+            )
+            .child(
+                div()
+                    .id("settings-body")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .p(px(20.0))
+                    .child(
+                        div()
+                            .text_size(text::TITLE)
+                            .text_color(theme.foreground)
+                            .child("Keyboard"),
+                    )
+                    .child(
+                        div()
+                            .mt(px(12.0))
+                            .flex()
+                            .flex_col()
+                            .gap(px(2.0))
+                            .children(shortcuts.iter().map(|(chord, what)| {
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(12.0))
+                                    .py(px(5.0))
+                                    .child(
+                                        div()
+                                            .w(px(52.0))
+                                            .rounded(space::RADIUS_SM)
+                                            .bg(theme.raised)
+                                            .px(px(6.0))
+                                            .py(px(2.0))
+                                            .text_size(text::MICRO)
+                                            .text_color(theme.muted)
+                                            .child(*chord),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(text::UI)
+                                            .text_color(theme.foreground)
+                                            .child(*what),
+                                    )
+                            })),
+                    ),
+            )
+    }
+
     fn status_bar(&self, theme: &Theme) -> impl IntoElement {
         div()
             .flex()
@@ -803,11 +1062,23 @@ fn main() {
             KeyBinding::new("cmd-.", CycleThinking, Some("Desk")),
             KeyBinding::new("cmd-b", ToggleRail, Some("Desk")),
             KeyBinding::new("cmd-i", ToggleInspector, Some("Desk")),
+            KeyBinding::new("cmd-k", OpenPalette, Some("Desk")),
+            KeyBinding::new("cmd-,", OpenSettings, Some("Desk")),
+            KeyBinding::new("escape", Dismiss, Some("Desk")),
+            KeyBinding::new("up", Up, Some("Desk")),
+            KeyBinding::new("down", Down, Some("Desk")),
         ]);
 
         let bounds = Bounds::centered(None, gpui::size(px(1480.0), px(940.0)), cx);
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
+            // Hidden chrome with the controls inset into our own title row,
+            // the same arrangement the Electron build uses.
+            titlebar: Some(gpui::TitlebarOptions {
+                appears_transparent: true,
+                traffic_light_position: Some(gpui::point(px(14.0), px(12.0))),
+                title: Some("Mako".into()),
+            }),
             // The native equivalent of the web build's depth layer: the system
             // blurs what is behind the window, and the panels above are
             // translucent fills over it.
