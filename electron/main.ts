@@ -1,11 +1,20 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, shell } from "electron"
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { COMMIT_PROMPT, PiHost, defaultWorkspace } from "./host.js"
 import type { BootPayload, HostEvent, ThinkingLevel } from "./shared.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const isDev = !app.isPackaged && !process.env.PI_UI_PROD
+const isDev = !app.isPackaged && !process.env.MAKO_PROD
+
+/** The dock and window icon. Bundled next to the renderer in both modes. */
+function appIcon() {
+  const file = isDev
+    ? join(__dirname, "../public/icons/app-icon.png")
+    : join(__dirname, "../dist/icons/app-icon.png")
+  const image = nativeImage.createFromPath(file)
+  return image.isEmpty() ? undefined : image
+}
 
 let window: BrowserWindow | null = null
 let host: PiHost | null = null
@@ -36,7 +45,12 @@ async function withHost<T>(run: (host: PiHost) => T | Promise<T>): Promise<T> {
 
 async function createWindow() {
   nativeTheme.themeSource = "dark"
+  const icon = appIcon()
+  if (icon && process.platform === "darwin") app.dock?.setIcon(icon)
+
   window = new BrowserWindow({
+    title: "Mako",
+    ...(icon ? { icon } : {}),
     width: 1480,
     height: 940,
     minWidth: 900,
