@@ -7,10 +7,13 @@
 mod assets;
 mod composer;
 mod effort;
+mod fuzzy;
 mod git;
 mod inspector;
 mod model_picker;
 mod palette;
+mod prefs;
+mod rail;
 mod rpc;
 mod session;
 mod sessions;
@@ -21,6 +24,7 @@ use composer::{Composer, Submit};
 use effort::{EffortPicker, SelectEffort};
 use inspector::Inspector;
 use palette::{Command, Entry, Palette, Run};
+use rail::{Rail, RailEvent};
 use model_picker::{ModelPicker, SelectModel};
 use sessions::{relative, SessionEntry, SessionIndex};
 use gpui::prelude::*;
@@ -137,6 +141,7 @@ struct Desk {
     effort_picker: Entity<EffortPicker>,
     inspector: Entity<Inspector>,
     palette: Entity<Palette>,
+    rail: Entity<Rail>,
     rail_open: bool,
     inspector_open: bool,
     settings_open: bool,
@@ -147,10 +152,6 @@ struct Desk {
     scroll: ScrollHandle,
     /// True while the reader is at the bottom, so the stream may follow.
     pinned: bool,
-    /// Narrows the session rail. Lives on `Desk` rather than inside the rail
-    /// because the rail is rebuilt every frame and a field that loses its
-    /// caret mid-word is worse than no field.
-    rail_query: Entity<InputState>,
     /// Which tool calls have their output open, as (exchange, tool).
     ///
     /// Collapsed is the default because a transcript is read for the answer,
@@ -239,7 +240,7 @@ impl Desk {
                         // in the rail without a restart. The index caches by
                         // mtime, so an unchanged file is a stat and nothing
                         // more.
-                        desk.sessions = desk.index.scan(None);
+                        desk.rescan_sessions(cx);
                     }
                     desk.follow_stream();
                     cx.notify();
@@ -289,18 +290,23 @@ impl Desk {
         })
         .detach();
 
-        let rail_query =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Filter sessions"));
-        cx.subscribe(&rail_query, |_desk, _state, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::Change) {
-                cx.notify();
-            }
+        let rail = cx.new(|cx| Rail::new(theme.clone(), window, cx));
+        cx.subscribe(&rail, |desk, _rail, event: &RailEvent, cx| match event {
+            RailEvent::Open(path) => desk.open_session(&path.clone(), cx),
+            RailEvent::NewSession => desk.run_command(Command::NewSession, cx),
+            // Widening to every project means re-reading a different slice of
+            // the store, which only the shell can do — it owns the index.
+            RailEvent::ScopeChanged(_) => desk.rescan_sessions(cx),
         })
         .detach();
 
         let mut index = SessionIndex::default();
-
-        let sessions = index.scan(None);
+        let cwd_string = cwd.to_string_lossy().to_string();
+        let sessions = index.scan(Some(&cwd_string));
+        rail.update(cx, |rail, cx| {
+            rail.set_active(None, cwd_string.clone(), cx);
+            rail.set_sessions(sessions.clone(), cx);
+        });
 
         Self {
             theme,
@@ -311,6 +317,7 @@ impl Desk {
             effort_picker,
             inspector,
             palette,
+            rail,
             rail_open: true,
             inspector_open: true,
             settings_open: false,
@@ -319,26 +326,31 @@ impl Desk {
             focus: cx.focus_handle(),
             scroll: ScrollHandle::new(),
             pinned: true,
-            rail_query,
             opened_tools: std::collections::HashSet::new(),
         }
     }
 
-    /// The sessions the rail should show, in the order it should show them.
+    /// Re-read the session store and hand the result to the rail.
     ///
-    /// Substring, not fuzzy: session titles are the user's own first sentences,
-    /// so they are recalled almost verbatim, and scattered-character matching
-    /// mostly produces surprising top hits on a corpus like that.
-    fn visible_sessions(&self, cx: &App) -> Vec<SessionEntry> {
-        let needle = self.rail_query.read(cx).value().trim().to_lowercase();
-        if needle.is_empty() {
-            return self.sessions.clone();
+    /// The scope lives on the rail because that is where it is set, but the
+    /// index lives here because it is a cache with a lifetime longer than any
+    /// one view. Rescanning an unchanged store is a `stat` per file.
+    fn rescan_sessions(&mut self, cx: &mut Context<Self>) {
+        let scope = self.rail.read(cx).scope;
+        let cwd = self.state.cwd.clone();
+        let sessions = match scope {
+            rail::Scope::Workspace => self.index.scan(Some(&cwd)),
+            rail::Scope::All => self.index.scan(None),
+        };
+        if sessions == self.sessions {
+            return;
         }
-        self.sessions
-            .iter()
-            .filter(|entry| entry.title().to_lowercase().contains(&needle))
-            .cloned()
-            .collect()
+        self.sessions = sessions.clone();
+        let active = self.state.session_file.clone();
+        self.rail.update(cx, |rail, cx| {
+            rail.set_active(active, cwd, cx);
+            rail.set_sessions(sessions, cx);
+        });
     }
 
     /// Follow the stream only while the reader is already at the bottom. The
@@ -600,7 +612,7 @@ impl Render for Desk {
                             resizable_panel()
                                 .size(space::RAIL_WIDTH)
                                 .size_range(px(200.0)..px(420.0))
-                                .child(self.rail(&theme, cx)),
+                                .child(self.rail.clone()),
                         )
                     })
                     .child(
@@ -751,204 +763,6 @@ impl Desk {
                         cx.notify();
                     })),
             )
-    }
-
-    fn rail(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        let active = self.state.session_file.clone();
-        let visible = self.visible_sessions(cx);
-
-        panel(theme)
-            .size_full()
-            .flex()
-            .flex_col()
-            .border_r_1()
-            .border_color(theme.hairline)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(7.0))
-                    .h(px(38.0))
-                    .px(px(12.0))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .text_size(text::UI)
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .text_color(theme.foreground)
-                            .child(SharedString::from(workspace_name(&self.state.cwd))),
-                    )
-                    .child(
-                        div()
-                            .text_size(text::MICRO)
-                            .text_color(theme.faint)
-                            .child(SharedString::from(self.sessions.len().to_string())),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .mx(px(8.0))
-                    .mb(px(7.0))
-                    .px(px(8.0))
-                    .rounded(space::RADIUS)
-                    .bg(theme.foreground.opacity(0.05))
-                    .text_size(text::META)
-                    .child(Icon::new(IconName::Search).size(px(11.0)).text_color(theme.faint))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .child(Input::new(&self.rail_query).appearance(false).xsmall()),
-                    ),
-            )
-            .child(Divider::horizontal())
-            .child(if visible.is_empty() && !self.sessions.is_empty() {
-                // Filtered to nothing. Say so, rather than showing the blank
-                // panel that "still loading" also shows.
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .gap(px(3.0))
-                    .py(px(28.0))
-                    .px(px(16.0))
-                    .child(
-                        div()
-                            .text_size(text::META)
-                            .text_color(theme.muted)
-                            .child("No sessions match"),
-                    )
-                    .child(
-                        div()
-                            .text_size(text::MICRO)
-                            .text_color(theme.faint)
-                            .child("Try fewer words."),
-                    )
-                    .into_any_element()
-            } else if self.sessions.is_empty() {
-                // The list is read off disk on a background pass, so an empty
-                // vector on the first frames means "not yet", not "none". Three
-                // skeleton rows say that without claiming a count.
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(10.0))
-                    .p(px(12.0))
-                    .children((0..3).map(|_| {
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(px(5.0))
-                            .child(Skeleton::new().h(px(11.0)).w_full())
-                            .child(Skeleton::new().secondary().h(px(9.0)).w(px(84.0)))
-                    }))
-                    .into_any_element()
-            } else {
-                // Virtualized: a workspace with a thousand sessions builds
-                // twenty rows per frame, not a thousand. The row height is
-                // fixed at 52px, which is what lets it be.
-                let entity = cx.entity();
-                let sessions = visible;
-                let theme = theme.clone();
-
-                gpui::uniform_list("session-rail", sessions.len(), move |range, _window, _cx| {
-                    range
-                        .map(|index| {
-                            let entry = &sessions[index];
-                            let selected = active
-                                .as_deref()
-                                .is_some_and(|path| path == entry.path.to_string_lossy());
-                            let path = entry.path.to_string_lossy().to_string();
-                            let theme = theme.clone();
-                            let entity = entity.clone();
-
-                            div().px(px(6.0)).py(px(1.0)).child(
-                                div()
-                                    .id(("session", index))
-                                    .relative()
-                                    .h(px(30.0))
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(8.0))
-                                    .rounded(space::RADIUS)
-                                    .px(px(9.0))
-                                    .when(selected, |row| row.bg(theme.selected()))
-                                    .hover(|style| style.bg(theme.hover()))
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        move |_event, _window, cx| {
-                                            entity.update(cx, |desk: &mut Desk, cx| {
-                                                desk.open_session(&path, cx);
-                                            });
-                                        },
-                                    )
-                                    // An accent bar rather than a heavier fill:
-                                    // the selected row should read as marked,
-                                    // not as a different kind of surface.
-                                    .when(selected, |row| {
-                                        row.child(
-                                            div()
-                                                .absolute()
-                                                .left(px(-3.0))
-                                                .top(px(9.0))
-                                                .bottom(px(9.0))
-                                                .w(px(2.0))
-                                                .rounded_full()
-                                                .bg(theme.foreground.opacity(0.7)),
-                                        )
-                                    })
-                                    // One line, not two. The title is what the
-                                    // eye scans; the age is what it falls back
-                                    // to. Splitting them over two rows halved
-                                    // how many sessions fit on screen and bought
-                                    // nothing — the count now sits inline, in
-                                    // the same tone as the age.
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .min_w_0()
-                                            // The row height is fixed by the
-                                            // virtualized list, so a title that
-                                            // wraps does not make its row taller
-                                            // — it spills into the next one. It
-                                            // has to be a single line by
-                                            // construction, not by hoping the
-                                            // character budget was generous
-                                            // enough for the current rail width.
-                                            .truncate()
-                                            .text_size(text::UI)
-                                            .text_color(if selected {
-                                                theme.foreground
-                                            } else {
-                                                theme.foreground.opacity(0.82)
-                                            })
-                                            .child(SharedString::from(clip(entry.title(), 80))),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex_none()
-                                            .flex()
-                                            .items_center()
-                                            .gap(px(6.0))
-                                            .text_size(text::MICRO)
-                                            .text_color(theme.faint)
-                                            .child(SharedString::from(relative(entry.modified)))
-                                            .child(dot_separator(&theme))
-                                            .child(SharedString::from(
-                                                entry.messages.to_string(),
-                                            )),
-                                    ),
-                            )
-                        })
-                        .collect()
-                })
-                .flex_1()
-                .into_any_element()
-            })
     }
 
     /// Switch the agent to another session and reload the transcript.
