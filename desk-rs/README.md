@@ -1,30 +1,25 @@
-# Pi Desk, native (GPUI)
+# Mako, native (GPUI)
 
 A native front end for the Pi agent, built on [GPUI](https://crates.io/crates/gpui)
 and [gpui-component](https://github.com/longbridge/gpui-component).
 
-## This does not build on this machine yet
+## Building without Xcode
 
-GPUI compiles its Metal shaders during `cargo build`, using `xcrun metal`.
-That tool ships **only with full Xcode**, not with the Command Line Tools. This
-machine has CLT alone:
+GPUI normally compiles its Metal shaders during `cargo build`, using
+`xcrun metal` — a tool that ships **only with full Xcode**, not with the
+Command Line Tools. That would make this crate unbuildable on a machine with
+CLT alone, which is most machines.
 
+The `runtime_shaders` feature moves that compilation to startup instead:
+
+```toml
+gpui = { version = "0.2", features = ["runtime_shaders"] }
 ```
-$ xcode-select -p
-/Library/Developer/CommandLineTools
-$ xcrun -f metal
-xcrun: error: unable to find utility "metal", not a developer tool or in PATH
-```
 
-`cargo check` fails too, because the failure is in a build script rather than
-in type checking — so none of this crate has been compiled or verified.
-
-To unblock:
+With it, the crate builds and runs against Command Line Tools only. No Xcode
+required.
 
 ```bash
-# Install Xcode from the App Store (~10 GB), then point the toolchain at it:
-sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-sudo xcodebuild -license accept
 cargo run
 ```
 
