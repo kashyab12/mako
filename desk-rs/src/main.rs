@@ -29,11 +29,14 @@ use gpui::{
     KeyBinding, ScrollHandle, SharedString, Window, WindowBackgroundAppearance, WindowBounds,
     WindowOptions,
 };
-use gpui_component::scroll::Scrollbar;
-use gpui_component::text::TextView;
+use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::divider::Divider;
+use gpui_component::kbd::Kbd;
 use gpui_component::resizable::{h_resizable, resizable_panel};
-use gpui_component::Root;
+use gpui_component::scroll::Scrollbar;
+use gpui_component::skeleton::Skeleton;
+use gpui_component::text::TextView;
+use gpui_component::{Icon, IconName, Root, Sizable, StyledExt};
 use rpc::{Incoming, PiRpc};
 use session::{Exchange, SessionState, ToolCall};
 use std::time::Duration;
@@ -58,6 +61,32 @@ actions!(
 
 /// How close to the end still counts as "following the stream".
 const NEAR_BOTTOM: f32 = 96.0;
+
+/// The glyph for a tool, by what the tool actually does.
+///
+/// Matched on substrings rather than exact names because Pi's tool set is not
+/// fixed — an MCP server can add `github_search` tomorrow, and it should get
+/// the search glyph without anyone editing this list.
+fn tool_glyph(name: &str) -> IconName {
+    let name = name.to_ascii_lowercase();
+    if name.contains("bash") || name.contains("shell") || name.contains("terminal") {
+        IconName::SquareTerminal
+    } else if name.contains("write") || name.contains("edit") || name.contains("replace") {
+        IconName::Replace
+    } else if name.contains("read") || name.contains("file") || name.contains("notebook") {
+        IconName::File
+    } else if name.contains("glob") || name.contains("list") || name.contains("ls") {
+        IconName::Folder
+    } else if name.contains("grep") || name.contains("search") || name.contains("find") {
+        IconName::Search
+    } else if name.contains("fetch") || name.contains("web") || name.contains("url") {
+        IconName::Globe
+    } else if name.contains("task") || name.contains("agent") {
+        IconName::Bot
+    } else {
+        IconName::Asterisk
+    }
+}
 
 struct Desk {
     theme: Theme,
@@ -467,7 +496,7 @@ impl Render for Desk {
             .bg(theme.background)
             .text_color(theme.foreground)
             .text_size(text::UI)
-            .child(self.title_bar(&theme))
+            .child(self.title_bar(&theme, cx))
             .child(
                 // Real resizable panels. The dividers are draggable and the
                 // widths persist across renders, which is the difference
@@ -483,7 +512,7 @@ impl Render for Desk {
                     })
                     .child(
                         resizable_panel().child(if self.settings_open {
-                            self.settings(&theme, cx).into_any_element()
+                            self.settings(&theme, window, cx).into_any_element()
                         } else {
                             div()
                                 .flex()
@@ -509,7 +538,7 @@ impl Render for Desk {
 }
 
 impl Desk {
-    fn title_bar(&self, theme: &Theme) -> impl IntoElement {
+    fn title_bar(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let title = if self.state.session_name.is_empty() {
             workspace_name(&self.state.cwd)
         } else {
@@ -520,35 +549,110 @@ impl Desk {
         // hand — but the part that actually matters is the traffic-light
         // inset, which the window sets below. Without it the controls overlap
         // whatever the app draws in the top-left.
+        //
+        // Every action here also has a chord, and the tooltips say so. Chords
+        // are how this app is actually driven; the buttons exist so that the
+        // chords are *discoverable*, not as the primary path.
         div()
             .h(space::TITLEBAR)
             .flex()
             .items_center()
-            .justify_center()
+            .gap(px(2.0))
             .bg(theme.surface)
+            .border_b_1()
+            .border_color(theme.hairline)
+            .pr(px(8.0))
+            // Clears the traffic lights, which the window insets at x=14.
+            .child(div().w(px(78.0)).flex_none())
             .child(
-            div()
-                .flex()
-                .flex_1()
-                .items_center()
-                .justify_center()
-                .gap(px(7.0))
-                .child(fin(theme, px(13.0)))
-                .when(self.state.streaming, |row| {
-                    row.child(
+                Button::new("toggle-rail")
+                    .ghost()
+                    .xsmall()
+                    .icon(if self.rail_open {
+                        IconName::PanelLeftClose
+                    } else {
+                        IconName::PanelLeftOpen
+                    })
+                    .tooltip("Sessions  ⌘B")
+                    .on_click(cx.listener(|desk, _event, _window, cx| {
+                        desk.rail_open = !desk.rail_open;
+                        cx.notify();
+                    })),
+            )
+            .child(
+                Button::new("new-session")
+                    .ghost()
+                    .xsmall()
+                    .icon(IconName::Plus)
+                    .tooltip("New session  ⌘N")
+                    .on_click(cx.listener(|desk, _event, _window, cx| {
+                        desk.run_command(Command::NewSession, cx);
+                    })),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_w_0()
+                    .items_center()
+                    .justify_center()
+                    .gap(px(7.0))
+                    .child(fin(theme, px(13.0)))
+                    .when(self.state.streaming, |row| {
+                        row.child(
+                            div()
+                                .size(px(5.0))
+                                .rounded_full()
+                                .bg(theme.foreground.opacity(0.7)),
+                        )
+                    })
+                    .child(
                         div()
-                            .size(px(5.0))
-                            .rounded_full()
-                            .bg(theme.foreground.opacity(0.7)),
-                    )
-                })
-                .child(
-                    div()
-                        .text_size(text::UI)
-                        .text_color(theme.foreground)
-                        .child(SharedString::from(title)),
-                ),
-        )
+                            .text_size(text::UI)
+                            .text_color(theme.foreground)
+                            .child(SharedString::from(clip(&title, 64))),
+                    ),
+            )
+            .child(
+                Button::new("open-palette")
+                    .ghost()
+                    .xsmall()
+                    .icon(IconName::Search)
+                    .tooltip("Search everything  ⌘K")
+                    .on_click(cx.listener(|desk, _event, window, cx| {
+                        let entries = desk.palette_entries();
+                        desk.palette.update(cx, |palette, cx| {
+                            palette.set_entries(entries);
+                            palette.show(window, cx);
+                        });
+                    })),
+            )
+            .child(
+                Button::new("open-settings")
+                    .ghost()
+                    .xsmall()
+                    .icon(IconName::Settings)
+                    .tooltip("Settings  ⌘,")
+                    .on_click(cx.listener(|desk, _event, _window, cx| {
+                        desk.settings_open = true;
+                        cx.notify();
+                    })),
+            )
+            .child(
+                Button::new("toggle-inspector")
+                    .ghost()
+                    .xsmall()
+                    .icon(if self.inspector_open {
+                        IconName::PanelRightClose
+                    } else {
+                        IconName::PanelRightOpen
+                    })
+                    .tooltip("Inspector  ⌘I")
+                    .on_click(cx.listener(|desk, _event, _window, cx| {
+                        desk.inspector_open = !desk.inspector_open;
+                        cx.notify();
+                    })),
+            )
     }
 
     fn rail(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
@@ -584,94 +688,132 @@ impl Desk {
                     ),
             )
             .child(Divider::horizontal())
-            .child(
+            .child(if self.sessions.is_empty() {
+                // The list is read off disk on a background pass, so an empty
+                // vector on the first frames means "not yet", not "none". Three
+                // skeleton rows say that without claiming a count.
                 div()
-                    .id("session-rail")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .p(px(6.0))
-                    .children(self.sessions.iter().take(300).enumerate().map(
-                        |(index, entry)| {
+                    .flex()
+                    .flex_col()
+                    .gap(px(10.0))
+                    .p(px(12.0))
+                    .children((0..3).map(|_| {
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(5.0))
+                            .child(Skeleton::new().h(px(11.0)).w_full())
+                            .child(Skeleton::new().secondary().h(px(9.0)).w(px(84.0)))
+                    }))
+                    .into_any_element()
+            } else {
+                // Virtualized: a workspace with a thousand sessions builds
+                // twenty rows per frame, not a thousand. The row height is
+                // fixed at 52px, which is what lets it be.
+                let entity = cx.entity();
+                let sessions = self.sessions.clone();
+                let theme = theme.clone();
+
+                gpui::uniform_list("session-rail", sessions.len(), move |range, _window, _cx| {
+                    range
+                        .map(|index| {
+                            let entry = &sessions[index];
                             let selected = active
                                 .as_deref()
                                 .is_some_and(|path| path == entry.path.to_string_lossy());
                             let path = entry.path.to_string_lossy().to_string();
                             let theme = theme.clone();
+                            let entity = entity.clone();
 
-                            div()
-                                .id(("session", index))
-                                .relative()
-                                .flex()
-                                .flex_col()
-                                .gap(px(2.0))
-                                .rounded(space::RADIUS)
-                                .px(px(8.0))
-                                .py(px(6.0))
-                                .when(selected, |row| row.bg(theme.selected()))
-                                .hover(|style| style.bg(theme.hover()))
-                                .on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(move |desk, _event, _window, cx| {
-                                        desk.open_session(&path, cx);
-                                    }),
-                                )
-                                // An accent bar rather than a heavier fill: the
-                                // selected row should read as marked, not as a
-                                // different kind of surface.
-                                .when(selected, |row| {
-                                    row.child(
-                                        div()
-                                            .absolute()
-                                            .left(px(0.0))
-                                            .top(px(7.0))
-                                            .bottom(px(7.0))
-                                            .w(px(2.0))
-                                            .rounded_full()
-                                            .bg(theme.foreground.opacity(0.7)),
+                            div().px(px(6.0)).py(px(1.0)).child(
+                                div()
+                                    .id(("session", index))
+                                    .relative()
+                                    .h(px(50.0))
+                                    .flex()
+                                    .flex_col()
+                                    .justify_center()
+                                    .gap(px(3.0))
+                                    .rounded(space::RADIUS)
+                                    .px(px(9.0))
+                                    .when(selected, |row| row.bg(theme.selected()))
+                                    .hover(|style| style.bg(theme.hover()))
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        move |_event, _window, cx| {
+                                            entity.update(cx, |desk: &mut Desk, cx| {
+                                                desk.open_session(&path, cx);
+                                            });
+                                        },
                                     )
-                                })
-                                .child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap(px(6.0))
-                                        .child(
+                                    // An accent bar rather than a heavier fill:
+                                    // the selected row should read as marked,
+                                    // not as a different kind of surface.
+                                    .when(selected, |row| {
+                                        row.child(
                                             div()
-                                                .flex_1()
-                                                .min_w_0()
-                                                .text_size(text::UI)
-                                                .text_color(if selected {
-                                                    theme.foreground
-                                                } else {
-                                                    theme.foreground.opacity(0.85)
-                                                })
-                                                .child(SharedString::from(clip(
-                                                    entry.title(),
-                                                    30,
-                                                ))),
+                                                .absolute()
+                                                .left(px(-3.0))
+                                                .top(px(9.0))
+                                                .bottom(px(9.0))
+                                                .w(px(2.0))
+                                                .rounded_full()
+                                                .bg(theme.foreground.opacity(0.7)),
                                         )
-                                        .child(
-                                            div()
-                                                .text_size(text::MICRO)
-                                                .text_color(theme.faint)
-                                                .child(SharedString::from(relative(
-                                                    entry.modified,
-                                                ))),
-                                        ),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(text::MICRO)
-                                        .text_color(theme.faint)
-                                        .child(SharedString::from(format!(
-                                            "{} messages",
-                                            entry.messages
-                                        ))),
-                                )
-                        },
-                    )),
-            )
+                                    })
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(6.0))
+                                            .child(
+                                                div()
+                                                    .flex_1()
+                                                    .min_w_0()
+                                                    .overflow_hidden()
+                                                    .text_size(text::UI)
+                                                    .text_color(if selected {
+                                                        theme.foreground
+                                                    } else {
+                                                        theme.foreground.opacity(0.85)
+                                                    })
+                                                    .child(SharedString::from(clip(
+                                                        entry.title(),
+                                                        30,
+                                                    ))),
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex_none()
+                                                    .text_size(text::MICRO)
+                                                    .text_color(theme.faint)
+                                                    .child(SharedString::from(relative(
+                                                        entry.modified,
+                                                    ))),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(4.0))
+                                            .text_size(text::MICRO)
+                                            .text_color(theme.faint)
+                                            .child(
+                                                Icon::new(IconName::GalleryVerticalEnd)
+                                                    .size(px(9.0)),
+                                            )
+                                            .child(SharedString::from(
+                                                entry.messages.to_string(),
+                                            )),
+                                    ),
+                            )
+                        })
+                        .collect()
+                })
+                .flex_1()
+                .into_any_element()
+            })
     }
 
     /// Switch the agent to another session and reload the transcript.
@@ -868,6 +1010,17 @@ impl Desk {
             theme.caution
         };
 
+        // The glyph carries the outcome and the glyph *for the tool itself*
+        // carries what kind of work it was, so a column of ten reads as a
+        // shape rather than as ten lines of prose.
+        let outcome = if call.failed {
+            IconName::CircleX
+        } else if call.done {
+            IconName::Check
+        } else {
+            IconName::LoaderCircle
+        };
+
         div()
             .flex()
             .items_center()
@@ -878,9 +1031,12 @@ impl Desk {
             .bg(theme.surface.opacity(0.6))
             .px(px(9.0))
             .py(px(5.0))
-            // A dot rather than the word "running": the state is binary and a
-            // label repeated down a column of ten tools is noise.
-            .child(div().size(px(5.0)).rounded_full().bg(tint))
+            .child(
+                Icon::new(outcome)
+                    .size(px(11.0))
+                    .text_color(tint),
+            )
+            .child(Icon::new(tool_glyph(&call.name)).size(px(11.0)).text_color(theme.faint))
             .child(
                 div()
                     .text_size(text::META)
@@ -898,8 +1054,9 @@ impl Desk {
             )
     }
 
-    fn composer(&self, theme: &Theme, cx: &App) -> impl IntoElement {
+    fn composer(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let ready = !self.composer.read(cx).is_empty(cx);
+        let streaming = self.state.streaming;
 
         div()
             .flex_none()
@@ -931,37 +1088,37 @@ impl Desk {
                             .child(self.model_picker.clone())
                             .child(self.effort_picker.clone())
                             .child(div().flex_1())
-                            .when(self.state.streaming, |row| {
-                                row.child(
-                                    div()
-                                        .text_size(text::MICRO)
-                                        .text_color(theme.faint)
-                                        .mr(px(4.0))
-                                        .child("⎋ to stop"),
-                                )
-                            })
                             .child(
-                                // The primary action: filled and lit only when
-                                // there is something to send, so the composer
-                                // never invites a no-op.
-                                div()
-                                    .size(px(27.0))
-                                    .rounded_full()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .bg(if ready {
-                                        theme.accent
+                                // The primary action. While a turn is running
+                                // this *becomes* the stop control rather than
+                                // sitting next to one: there is only ever one
+                                // thing to do here, and swapping the affordance
+                                // keeps the hand in the same place.
+                                Button::new("send")
+                                    .when(streaming || ready, |button| button.primary())
+                                    .when(!streaming && !ready, |button| button.ghost())
+                                    .small()
+                                    .icon(if streaming {
+                                        IconName::Close
                                     } else {
-                                        theme.foreground.opacity(0.09)
+                                        IconName::ArrowUp
                                     })
-                                    .text_size(text::UI)
-                                    .text_color(if ready {
-                                        theme.on_accent()
+                                    .rounded(gpui_component::button::ButtonRounded::Large)
+                                    .tooltip(if streaming {
+                                        "Stop this turn  ⌘⎋"
                                     } else {
-                                        theme.faint
+                                        "Send  ↩"
                                     })
-                                    .child(if self.state.streaming { "↵" } else { "↑" }),
+                                    .on_click(cx.listener(move |desk, _event, window, cx| {
+                                        if streaming {
+                                            if let Some(rpc) = desk.rpc.as_mut() {
+                                                let _ = rpc.abort();
+                                            }
+                                            cx.notify();
+                                        } else {
+                                            desk.send(&Send, window, cx);
+                                        }
+                                    })),
                             ),
                     ),
             )
@@ -973,16 +1130,39 @@ impl Desk {
     /// and a dialog floating over a dimmed transcript is the wrong shape for
     /// that: cramped, hiding the thing being configured, and implying you are
     /// meant to leave quickly.
-    fn settings(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        let shortcuts = [
-            ("⌘K", "Command palette"),
-            ("⌘N", "New session"),
-            ("⌘B", "Toggle the session list"),
-            ("⌘I", "Toggle the inspector"),
-            ("⌘.", "Cycle reasoning effort"),
-            ("⌘⎋", "Stop the current turn"),
-            ("⇧↩", "Newline in the composer"),
-            ("⎋", "Dismiss"),
+    fn settings(&self, theme: &Theme, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Each row asks the *window* what the binding actually is rather than
+        // stating one. Hand-typed chords are a second source of truth that goes
+        // stale the first time a binding moves; these cannot.
+        let shortcuts: Vec<(Option<Kbd>, &str)> = vec![
+            (
+                Kbd::binding_for_action(&OpenPalette, Some("Desk"), window),
+                "Search sessions, models, and commands",
+            ),
+            (
+                Kbd::binding_for_action(&ToggleRail, Some("Desk"), window),
+                "Show or hide the session list",
+            ),
+            (
+                Kbd::binding_for_action(&ToggleInspector, Some("Desk"), window),
+                "Show or hide the inspector",
+            ),
+            (
+                Kbd::binding_for_action(&CycleThinking, Some("Desk"), window),
+                "Cycle reasoning effort",
+            ),
+            (
+                Kbd::binding_for_action(&Stop, Some("Desk"), window),
+                "Stop the current turn",
+            ),
+            (
+                Kbd::binding_for_action(&OpenSettings, Some("Desk"), window),
+                "Open settings",
+            ),
+            (
+                Kbd::binding_for_action(&Dismiss, Some("Desk"), window),
+                "Close whatever is open",
+            ),
         ];
 
         div()
@@ -992,38 +1172,38 @@ impl Desk {
             .bg(theme.background)
             .child(
                 div()
-                    .w(px(180.0))
+                    .w(px(190.0))
                     .flex_none()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.0))
                     .border_r_1()
                     .border_color(theme.hairline)
                     .p(px(10.0))
                     .child(
+                        Button::new("settings-back")
+                            .ghost()
+                            .small()
+                            .icon(IconName::ArrowLeft)
+                            .label("Back to the session")
+                            .on_click(cx.listener(|desk, _event, _window, cx| {
+                                desk.settings_open = false;
+                                cx.notify();
+                            })),
+                    )
+                    .child(div().h(px(6.0)))
+                    .child(
                         div()
+                            .flex()
+                            .items_center()
+                            .gap(px(7.0))
                             .rounded(space::RADIUS)
                             .bg(theme.selected())
                             .px(px(8.0))
                             .py(px(5.0))
                             .text_size(text::UI)
+                            .child(Icon::new(IconName::Settings2).size(px(12.0)))
                             .child("Keyboard"),
-                    )
-                    .child(
-                        div()
-                            .id("close-settings")
-                            .mt(px(6.0))
-                            .rounded(space::RADIUS)
-                            .px(px(8.0))
-                            .py(px(5.0))
-                            .text_size(text::UI)
-                            .text_color(theme.faint)
-                            .hover(|style| style.bg(theme.hover()))
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|desk, _event, _window, cx| {
-                                    desk.settings_open = false;
-                                    cx.notify();
-                                }),
-                            )
-                            .child("Close settings"),
                     ),
             )
             .child(
@@ -1032,43 +1212,49 @@ impl Desk {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .p(px(20.0))
+                    .p(px(24.0))
                     .child(
                         div()
                             .text_size(text::TITLE)
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(theme.foreground)
                             .child("Keyboard"),
                     )
                     .child(
                         div()
-                            .mt(px(12.0))
+                            .mt(px(2.0))
+                            .text_size(text::META)
+                            .text_color(theme.faint)
+                            .child("Everything here is also reachable from the palette."),
+                    )
+                    .child(
+                        div()
+                            .mt(px(16.0))
+                            .w_full()
+                            .max_w(px(560.0))
                             .flex()
                             .flex_col()
-                            .gap(px(2.0))
-                            .children(shortcuts.iter().map(|(chord, what)| {
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(12.0))
-                                    .py(px(5.0))
-                                    .child(
-                                        div()
-                                            .w(px(52.0))
-                                            .rounded(space::RADIUS_SM)
-                                            .bg(theme.raised)
-                                            .px(px(6.0))
-                                            .py(px(2.0))
-                                            .text_size(text::MICRO)
-                                            .text_color(theme.muted)
-                                            .child(*chord),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(text::UI)
-                                            .text_color(theme.foreground)
-                                            .child(*what),
-                                    )
-                            })),
+                            .children(shortcuts.into_iter().enumerate().map(
+                                |(index, (chord, what))| {
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(12.0))
+                                        .py(px(9.0))
+                                        .when(index > 0, |row| {
+                                            row.border_t_1().border_color(theme.hairline)
+                                        })
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .min_w_0()
+                                                .text_size(text::UI)
+                                                .text_color(theme.foreground)
+                                                .child(what),
+                                        )
+                                        .children(chord)
+                                },
+                            )),
                     ),
             )
     }
