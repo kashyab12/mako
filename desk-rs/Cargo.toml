@@ -1,8 +1,8 @@
 [package]
-name = "pi-desk"
+name = "mako"
 version = "0.1.0"
 edition = "2021"
-description = "A GPUI desktop for the Pi coding agent"
+description = "Mako — a native desktop for the Pi coding agent"
 
 [dependencies]
 # `runtime_shaders` moves Metal shader compilation from build time to startup.
