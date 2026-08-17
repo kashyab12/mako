@@ -32,6 +32,7 @@ use gpui::{
 use gpui_component::scroll::Scrollbar;
 use gpui_component::text::TextView;
 use gpui_component::divider::Divider;
+use gpui_component::resizable::{h_resizable, resizable_panel};
 use gpui_component::Root;
 use rpc::{Incoming, PiRpc};
 use session::{Exchange, SessionState, ToolCall};
@@ -468,31 +469,37 @@ impl Render for Desk {
             .text_size(text::UI)
             .child(self.title_bar(&theme))
             .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .min_h_0()
-                    .when(self.rail_open, |row| row.child(self.rail(&theme, cx)))
-                    .child(if self.settings_open {
-                        self.settings(&theme, cx).into_any_element()
-                    } else {
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .min_w_0()
-                            .child(self.transcript(&theme, window, cx))
-                            .child(self.composer(&theme, cx))
-                            .into_any_element()
+                // Real resizable panels. The dividers are draggable and the
+                // widths persist across renders, which is the difference
+                // between a layout and a mock-up.
+                h_resizable("panels")
+                    .when(self.rail_open, |group| {
+                        group.child(
+                            resizable_panel()
+                                .size(space::RAIL_WIDTH)
+                                .size_range(px(200.0)..px(420.0))
+                                .child(self.rail(&theme, cx)),
+                        )
                     })
-                    .when(self.inspector_open, |row| {
-                        row.child(
-                            panel(&theme)
-                                .w(space::INSPECTOR_WIDTH)
-                                .flex_none()
-                                .border_l_1()
-                                .border_color(theme.hairline)
-                                .child(self.inspector.clone()),
+                    .child(
+                        resizable_panel().child(if self.settings_open {
+                            self.settings(&theme, cx).into_any_element()
+                        } else {
+                            div()
+                                .flex()
+                                .flex_col()
+                                .size_full()
+                                .child(self.transcript(&theme, window, cx))
+                                .child(self.composer(&theme, cx))
+                                .into_any_element()
+                        }),
+                    )
+                    .when(self.inspector_open, |group| {
+                        group.child(
+                            resizable_panel()
+                                .size(space::INSPECTOR_WIDTH)
+                                .size_range(px(300.0)..px(720.0))
+                                .child(panel(&theme).size_full().child(self.inspector.clone())),
                         )
                     }),
             )
@@ -548,8 +555,7 @@ impl Desk {
         let active = self.state.session_file.clone();
 
         panel(theme)
-            .w(space::RAIL_WIDTH)
-            .flex_none()
+            .size_full()
             .flex()
             .flex_col()
             .border_r_1()
@@ -558,13 +564,23 @@ impl Desk {
                 div()
                     .flex()
                     .items_center()
-                    .h(px(36.0))
-                    .px(px(10.0))
+                    .gap(px(7.0))
+                    .h(px(38.0))
+                    .px(px(12.0))
                     .child(
                         div()
+                            .flex_1()
+                            .min_w_0()
                             .text_size(text::UI)
                             .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(theme.foreground)
                             .child(SharedString::from(workspace_name(&self.state.cwd))),
+                    )
+                    .child(
+                        div()
+                            .text_size(text::MICRO)
+                            .text_color(theme.faint)
+                            .child(SharedString::from(self.sessions.len().to_string())),
                     ),
             )
             .child(Divider::horizontal())
@@ -575,7 +591,7 @@ impl Desk {
                     .min_h_0()
                     .overflow_y_scroll()
                     .p(px(6.0))
-                    .children(self.sessions.iter().take(200).enumerate().map(
+                    .children(self.sessions.iter().take(300).enumerate().map(
                         |(index, entry)| {
                             let selected = active
                                 .as_deref()
@@ -585,12 +601,13 @@ impl Desk {
 
                             div()
                                 .id(("session", index))
+                                .relative()
                                 .flex()
                                 .flex_col()
-                                .gap(px(1.0))
+                                .gap(px(2.0))
                                 .rounded(space::RADIUS)
-                                .px(px(7.0))
-                                .py(px(5.0))
+                                .px(px(8.0))
+                                .py(px(6.0))
                                 .when(selected, |row| row.bg(theme.selected()))
                                 .hover(|style| style.bg(theme.hover()))
                                 .on_mouse_down(
@@ -599,6 +616,21 @@ impl Desk {
                                         desk.open_session(&path, cx);
                                     }),
                                 )
+                                // An accent bar rather than a heavier fill: the
+                                // selected row should read as marked, not as a
+                                // different kind of surface.
+                                .when(selected, |row| {
+                                    row.child(
+                                        div()
+                                            .absolute()
+                                            .left(px(0.0))
+                                            .top(px(7.0))
+                                            .bottom(px(7.0))
+                                            .w(px(2.0))
+                                            .rounded_full()
+                                            .bg(theme.foreground.opacity(0.7)),
+                                    )
+                                })
                                 .child(
                                     div()
                                         .flex()
@@ -609,7 +641,11 @@ impl Desk {
                                                 .flex_1()
                                                 .min_w_0()
                                                 .text_size(text::UI)
-                                                .text_color(theme.foreground)
+                                                .text_color(if selected {
+                                                    theme.foreground
+                                                } else {
+                                                    theme.foreground.opacity(0.85)
+                                                })
                                                 .child(SharedString::from(clip(
                                                     entry.title(),
                                                     30,
@@ -661,11 +697,11 @@ impl Desk {
         let mut column = div()
             .flex()
             .flex_col()
-            .gap(px(26.0))
+            .gap(px(28.0))
             .w_full()
             .max_w(space::COLUMN)
-            .px(px(24.0))
-            .py(px(22.0));
+            .px(px(28.0))
+            .py(px(26.0));
 
         if self.state.exchanges.is_empty() {
             column = column.child(self.empty_state(theme));
@@ -748,10 +784,10 @@ impl Desk {
         window: &mut Window,
         cx: &mut App,
     ) -> impl IntoElement {
-        let mut block = div().flex().flex_col().gap(px(12.0));
+        let mut block = div().flex().flex_col().gap(px(11.0));
 
         if !exchange.prompt.is_empty() {
-            // The prompt gets its own surface, so whose words these are is
+            // The prompt gets its own lit surface, so whose words these are is
             // never in question.
             block = block.child(
                 div()
@@ -759,12 +795,14 @@ impl Desk {
                     .bg(theme.raised)
                     .border_1()
                     .border_color(theme.hairline)
+                    .overflow_hidden()
                     .child(lit_top(theme))
                     .child(
                         div()
-                            .px(px(14.0))
-                            .py(px(10.0))
+                            .px(px(15.0))
+                            .py(px(11.0))
                             .text_size(text::BODY)
+                            .line_height(px(21.0))
                             .child(SharedString::from(exchange.prompt.clone())),
                     ),
             );
@@ -776,17 +814,24 @@ impl Desk {
             block = block.child(
                 div()
                     .rounded(space::RADIUS)
-                    .bg(theme.raised.opacity(0.5))
-                    .px(px(10.0))
-                    .py(px(6.0))
+                    .bg(theme.raised.opacity(0.45))
+                    .px(px(11.0))
+                    .py(px(7.0))
                     .text_size(text::SMALL)
+                    .line_height(px(17.0))
                     .text_color(theme.faint)
-                    .child(SharedString::from(clip(&reply.thinking, 220))),
+                    .child(SharedString::from(clip(&reply.thinking, 260))),
             );
         }
 
-        for call in &reply.tools {
-            block = block.child(self.tool_row(theme, call));
+        if !reply.tools.is_empty() {
+            block = block.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.0))
+                    .children(reply.tools.iter().map(|call| self.tool_row(theme, call))),
+            );
         }
 
         if !reply.text.is_empty() {
@@ -820,7 +865,7 @@ impl Desk {
         } else if call.done {
             theme.faint
         } else {
-            theme.foreground.opacity(0.8)
+            theme.caution
         };
 
         div()
@@ -830,13 +875,16 @@ impl Desk {
             .rounded(space::RADIUS)
             .border_1()
             .border_color(theme.hairline)
-            .bg(theme.surface)
+            .bg(theme.surface.opacity(0.6))
             .px(px(9.0))
             .py(px(5.0))
+            // A dot rather than the word "running": the state is binary and a
+            // label repeated down a column of ten tools is noise.
+            .child(div().size(px(5.0)).rounded_full().bg(tint))
             .child(
                 div()
                     .text_size(text::META)
-                    .text_color(tint)
+                    .text_color(theme.foreground.opacity(0.9))
                     .child(SharedString::from(call.name.clone())),
             )
             .child(
@@ -846,16 +894,8 @@ impl Desk {
                     .overflow_hidden()
                     .text_size(text::META)
                     .text_color(theme.faint)
-                    .child(SharedString::from(clip(&call.summary, 72))),
+                    .child(SharedString::from(clip(&call.summary, 78))),
             )
-            .when(!call.done, |row| {
-                row.child(
-                    div()
-                        .text_size(text::MICRO)
-                        .text_color(theme.foreground.opacity(0.7))
-                        .child("running"),
-                )
-            })
     }
 
     fn composer(&self, theme: &Theme, cx: &App) -> impl IntoElement {
@@ -865,8 +905,9 @@ impl Desk {
             .flex_none()
             .flex()
             .justify_center()
-            .px(px(24.0))
-            .pb(px(16.0))
+            .px(px(28.0))
+            .pb(px(18.0))
+            .pt(px(4.0))
             .child(
                 div()
                     .w_full()
@@ -875,24 +916,36 @@ impl Desk {
                     .bg(theme.surface)
                     .border_1()
                     .border_color(theme.border)
+                    .overflow_hidden()
+                    .shadow_lg()
                     .child(lit_top(theme))
                     .child(self.composer.clone())
-                    .child(div().h(px(1.0)).bg(theme.hairline))
+                    .child(Divider::horizontal())
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(8.0))
-                            .px(px(10.0))
-                            .py(px(7.0))
+                            .gap(px(4.0))
+                            .px(px(8.0))
+                            .py(px(6.0))
                             .child(self.model_picker.clone())
                             .child(self.effort_picker.clone())
                             .child(div().flex_1())
+                            .when(self.state.streaming, |row| {
+                                row.child(
+                                    div()
+                                        .text_size(text::MICRO)
+                                        .text_color(theme.faint)
+                                        .mr(px(4.0))
+                                        .child("⎋ to stop"),
+                                )
+                            })
                             .child(
-                                // The primary action, filled only when there is
-                                // something to send.
+                                // The primary action: filled and lit only when
+                                // there is something to send, so the composer
+                                // never invites a no-op.
                                 div()
-                                    .size(px(26.0))
+                                    .size(px(27.0))
                                     .rounded_full()
                                     .flex()
                                     .items_center()
@@ -900,7 +953,7 @@ impl Desk {
                                     .bg(if ready {
                                         theme.accent
                                     } else {
-                                        theme.foreground.opacity(0.10)
+                                        theme.foreground.opacity(0.09)
                                     })
                                     .text_size(text::UI)
                                     .text_color(if ready {
@@ -908,7 +961,7 @@ impl Desk {
                                     } else {
                                         theme.faint
                                     })
-                                    .child("↑"),
+                                    .child(if self.state.streaming { "↵" } else { "↑" }),
                             ),
                     ),
             )
@@ -1045,7 +1098,12 @@ impl Desk {
                     .child(SharedString::from(format!(
                         "{} spent",
                         format_cost(self.state.cost)
-                    ))),
+                    )))
+                    .child(
+                        div()
+                            .text_color(theme.faint.opacity(0.7))
+                            .child("⌘K"),
+                    ),
             )
     }
 }
