@@ -1,0 +1,219 @@
+import { memo, useMemo, useState } from "react"
+import { Prose } from "@/components/transcript/markdown"
+import { ToolRow } from "@/components/transcript/tool-row"
+import { FileChip, SkillChip } from "@/components/composer/reference-chip"
+import { Slot } from "@/extend/slot"
+import { tokenize } from "@/lib/mentions"
+import { pairTools } from "@/lib/tools"
+import { formatTime, textOf } from "@/lib/format"
+import { responseText, type Exchange as ExchangeData } from "@/lib/exchanges"
+import { actions } from "@/state/session"
+import { usePrefs } from "@/state/prefs"
+import { cn } from "@/lib/utils"
+import type { PiMessage } from "@/lib/types"
+import {
+  BrainIcon,
+  CheckIcon,
+  ChevronRightIcon,
+  CopyIcon,
+  RotateCcwIcon,
+  TriangleAlertIcon,
+} from "lucide-react"
+
+/**
+ * One question and the answer to it.
+ *
+ * Grouping by exchange is what lets the prompt be unmistakably the user's —
+ * it gets its own surface rather than a hairline that reads like a quote — and
+ * what lets "copy" mean "the agent's answer to this", once, instead of
+ * appearing on every fragment of a long reply.
+ */
+export const Exchange = memo(function Exchange({
+  exchange,
+  streaming,
+}: {
+  exchange: ExchangeData
+  streaming?: boolean
+}) {
+  return (
+    <article data-exchange={exchange.id} className="contain-turn scroll-mt-6">
+      {exchange.prompt ? <Prompt message={exchange.prompt} /> : null}
+
+      {exchange.system.map((message) => (
+        <SystemNote key={message.id} message={message} />
+      ))}
+
+      {exchange.response.length > 0 ? (
+        <div className={cn("flex flex-col gap-2.5", exchange.prompt && "mt-3")}>
+          {exchange.response.map((message) => (
+            <Response key={message.id} message={message} />
+          ))}
+        </div>
+      ) : null}
+
+      {!streaming && exchange.response.length > 0 ? <Footer exchange={exchange} /> : null}
+    </article>
+  )
+})
+
+/* ------------------------------------------------------------------ */
+/* the prompt                                                          */
+/* ------------------------------------------------------------------ */
+
+function Prompt({ message }: { message: PiMessage }) {
+  const text = textOf(message.blocks)
+  // References the user typed read back as the chips they were written as.
+  const segments = useMemo(() => tokenize(text), [text])
+
+  return (
+    <div className="group/prompt relative">
+      <div className="prompt-card rounded-xl bg-raised px-3.5 py-2.5 ring-1 ring-hairline ring-inset">
+        <div className="text-[13.5px] leading-[1.6] whitespace-pre-wrap text-foreground">
+          {segments.map((segment, index) =>
+            segment.kind === "text" ? (
+              <span key={index}>{segment.text}</span>
+            ) : segment.kind === "file" ? (
+              <FileChip key={index} path={segment.path} interactive />
+            ) : (
+              <SkillChip key={index} name={segment.name} />
+            )
+          )}
+        </div>
+      </div>
+
+      <div className="mt-1 flex h-4 items-center gap-2 px-0.5 text-[10.5px] text-faint opacity-0 transition-opacity duration-150 group-hover/prompt:opacity-100 focus-within:opacity-100">
+        {message.timestamp ? <span className="tabular">{formatTime(message.timestamp)}</span> : null}
+        <button
+          type="button"
+          title="Put this prompt back in the composer"
+          onClick={() =>
+            window.dispatchEvent(new CustomEvent("pi:compose", { detail: text }))
+          }
+          className="pressable flex items-center gap-1 rounded px-1 hover:text-foreground"
+        >
+          <RotateCcwIcon className="size-3" />
+          Reuse
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* the response                                                        */
+/* ------------------------------------------------------------------ */
+
+function Response({ message }: { message: PiMessage }) {
+  const showThinking = usePrefs((prefs) => prefs.showThinking)
+
+  const { thinking, tools, text } = useMemo(() => {
+    const thinkingParts: string[] = []
+    const textParts: string[] = []
+    for (const block of message.blocks) {
+      if (block.type === "thinking" && block.thinking) thinkingParts.push(block.thinking)
+      if (block.type === "text" && block.text) textParts.push(block.text)
+    }
+    return {
+      thinking: thinkingParts.join("\n\n"),
+      tools: pairTools(message.blocks),
+      text: textParts.join(""),
+    }
+  }, [message.blocks])
+
+  const blank = !thinking && !tools.length && !text && !message.error
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      {thinking && showThinking ? <Thinking text={thinking} live={Boolean(message.streaming && !text)} /> : null}
+
+      {tools.length > 0 ? (
+        <div className="flex flex-col gap-1">
+          {tools.map((call) => (
+            <ToolRow key={call.id} call={call} />
+          ))}
+        </div>
+      ) : null}
+
+      {text ? <Prose text={text} streaming={message.streaming} /> : null}
+
+      {message.error ? (
+        <div className="flex items-start gap-2 rounded-md border border-negative/30 bg-negative/[0.06] px-2.5 py-2 text-[12.5px] text-negative">
+          <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
+          <span className="whitespace-pre-wrap">{message.error}</span>
+        </div>
+      ) : null}
+
+      {blank && message.streaming ? <p className="shimmer text-[12.5px]">Thinking…</p> : null}
+    </div>
+  )
+}
+
+function Thinking({ text, live }: { text: string; live: boolean }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="rounded-md bg-raised/50">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-[11.5px] text-faint transition-colors duration-100 hover:text-muted-foreground"
+      >
+        <ChevronRightIcon
+          className={cn("size-3 transition-transform duration-150", open && "rotate-90")}
+        />
+        <BrainIcon className="size-3" />
+        <span className={cn(live && "shimmer")}>{live ? "Reasoning…" : "Reasoning"}</span>
+      </button>
+      {open ? (
+        <p className="border-t border-hairline px-2.5 py-2 text-[12px] leading-[1.65] whitespace-pre-wrap text-muted-foreground">
+          {text}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function SystemNote({ message }: { message: PiMessage }) {
+  const text = textOf(message.blocks)
+  if (!text) return null
+  return (
+    <div className="my-3 flex items-center gap-2.5">
+      <span className="h-px flex-1 bg-hairline" />
+      <span className="shrink-0 text-[11px] text-faint">{text.slice(0, 140)}</span>
+      <span className="h-px flex-1 bg-hairline" />
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* one footer per answer                                               */
+/* ------------------------------------------------------------------ */
+
+function Footer({ exchange }: { exchange: ExchangeData }) {
+  const [copied, setCopied] = useState(false)
+  const text = responseText(exchange)
+  const last = exchange.response.at(-1)
+  if (!text && !last?.timestamp) return null
+
+  return (
+    <div className="mt-1.5 flex h-4 items-center gap-2.5 text-[10.5px] text-faint opacity-0 transition-opacity duration-150 group-hover/transcript:opacity-100 focus-within:opacity-100">
+      {last?.timestamp ? <span className="tabular">{formatTime(last.timestamp)}</span> : null}
+      {last?.model ? <span className="truncate">{last.model}</span> : null}
+      {text ? (
+        <button
+          type="button"
+          title="Copy the agent's whole answer to this question"
+          onClick={() => {
+            actions.copy(text)
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1400)
+          }}
+          className="pressable flex items-center gap-1 rounded px-1 hover:text-foreground"
+        >
+          {copied ? <CheckIcon className="size-3 text-positive" /> : <CopyIcon className="size-3" />}
+          {copied ? "Copied answer" : "Copy answer"}
+        </button>
+      ) : null}
+      {last ? <Slot name="transcript.turn.trailing" message={last} /> : null}
+    </div>
+  )
+}
