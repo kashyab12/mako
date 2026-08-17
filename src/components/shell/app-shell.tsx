@@ -134,9 +134,16 @@ export function AppShell() {
 
         {/* Settings covers the whole window rather than only the chat column:
             it is a place you go, not a panel you consult, and leaving it
-            should feel like returning rather than like closing a drawer. */}
+            should feel like returning rather than like closing a drawer.
+
+            Below the title bar, though, not over it. The window controls are
+            drawn by the OS on top of whatever we paint, so covering that strip
+            put the traffic lights on top of the first section in the list. */}
         {settingsOpen ? (
-          <div className="absolute inset-0 z-40 flex flex-col bg-background">
+          <div
+            className="absolute inset-x-0 bottom-0 z-40 flex flex-col bg-background"
+            style={{ top: "var(--titlebar-height)" }}
+          >
             <SettingsView />
           </div>
         ) : null}

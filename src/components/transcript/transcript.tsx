@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils"
 import {
   ArrowDownIcon,
   ArrowUpIcon,
+  ChevronUpIcon,
   CircleCheckIcon,
   FolderIcon,
   GitCompareIcon,
@@ -17,6 +18,22 @@ import {
 import { MakoMark } from "@/components/ui/mako-mark"
 
 const NEAR_BOTTOM = 96
+
+/**
+ * How many turns are mounted when a session opens, and how many more each
+ * "show earlier" reveals.
+ *
+ * Opening a thread used to mount every exchange in one commit, and each one
+ * parses its own markdown — so a 400-message session paid a couple of hundred
+ * parses on the main thread before it painted anything. That is the entire
+ * reason long threads felt slow to open; the IPC that carries them is not the
+ * bottleneck.
+ *
+ * Thirty covers more than a screenful at any window size, so the window is
+ * invisible unless you deliberately scroll back through a long session.
+ */
+const INITIAL_TURNS = 30
+const MORE_TURNS = 50
 
 /**
  * The transcript scroller.
@@ -37,6 +54,7 @@ export function Transcript() {
   const pinned = useRef(true)
   const [showJump, setShowJump] = useState(false)
   const [activeTurn, setActiveTurn] = useState<string | null>(null)
+  const [limit, setLimit] = useState(INITIAL_TURNS)
 
   const exchanges = useMemo(() => {
     const list = toExchanges(foldTools(messages))
@@ -81,7 +99,7 @@ export function Transcript() {
     )
     for (const element of node.querySelectorAll("[data-exchange]")) observer.observe(element)
     return () => observer.disconnect()
-  }, [exchanges.length])
+  }, [shown.length])
 
   // Layout effect so the pin happens in the same frame the content grew —
   // otherwise the reader sees a one-frame jump on every token.
@@ -92,11 +110,34 @@ export function Transcript() {
     }
   }, [exchanges])
 
-  // A different session is a different reading position: start at the end.
+  // A different session is a different reading position: start at the end, and
+  // back at a small window — carrying an expanded one across would make every
+  // switch after a deep scroll slow again.
   useEffect(() => {
     pinned.current = true
+    setLimit(INITIAL_TURNS)
     scrollToEnd()
   }, [sessionId, scrollToEnd])
+
+  /*
+   * Reveal earlier turns without the view jumping.
+   *
+   * Prepending content moves everything below it down by exactly the height
+   * that was added, so the reader would lose their place. Recording the scroll
+   * height before the commit and restoring the difference after keeps whatever
+   * they were reading under the same pixel.
+   */
+  const showEarlier = useCallback(() => {
+    const node = viewport.current
+    const before = node?.scrollHeight ?? 0
+    const top = node?.scrollTop ?? 0
+    pinned.current = false
+    setLimit((current) => current + MORE_TURNS)
+    requestAnimationFrame(() => {
+      if (!node) return
+      node.scrollTop = top + (node.scrollHeight - before)
+    })
+  }, [])
 
   const jump = useCallback((id: string) => {
     viewport.current
@@ -109,22 +150,22 @@ export function Transcript() {
     const onKey = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey)) return
       if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return
-      if (exchanges.length === 0) return
+      if (shown.length === 0) return
       event.preventDefault()
-      const at = exchanges.findIndex((exchange) => exchange.id === activeTurn)
-      const from = at < 0 ? exchanges.length - 1 : at
-      const next = Math.min(
-        exchanges.length - 1,
-        Math.max(0, from + (event.key === "ArrowDown" ? 1 : -1))
-      )
-      jump(exchanges[next].id)
+      const at = shown.findIndex((exchange) => exchange.id === activeTurn)
+      const from = at < 0 ? shown.length - 1 : at
+      const next = Math.min(shown.length - 1, Math.max(0, from + (event.key === "ArrowDown" ? 1 : -1)))
+      jump(shown[next].id)
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [activeTurn, exchanges, jump])
+  }, [activeTurn, shown, jump])
+
+  const hidden = Math.max(0, exchanges.length - limit)
+  const shown = hidden > 0 ? exchanges.slice(hidden) : exchanges
 
   const empty = exchanges.length === 0
-  const showNavigator = !empty && exchanges.length >= 3
+  const showNavigator = !empty && shown.length >= 3
 
   return (
     <div ref={pane} className="relative flex min-h-0 flex-1 flex-col">
@@ -148,11 +189,25 @@ export function Transcript() {
             key={sessionId ?? "none"}
             className="animate-thread mx-auto flex w-full max-w-[760px] flex-col gap-7 px-6 py-6"
           >
-            {exchanges.map((exchange, index) => (
+            {hidden > 0 ? (
+              <button
+                type="button"
+                onClick={showEarlier}
+                className={cn(
+                  "pressable mx-auto flex h-7 items-center gap-1.5 rounded-full bg-raised px-3",
+                  "text-[11.5px] text-muted-foreground ring-1 ring-hairline",
+                  "transition-colors duration-120 hover:text-foreground"
+                )}
+              >
+                <ChevronUpIcon className="size-3" />
+                {hidden === 1 ? "Show 1 earlier turn" : `Show ${Math.min(hidden, MORE_TURNS)} earlier turns`}
+              </button>
+            ) : null}
+            {shown.map((exchange, index) => (
               <Exchange
                 key={exchange.id}
                 exchange={exchange}
-                streaming={Boolean(stream) && index === exchanges.length - 1}
+                streaming={Boolean(stream) && index === shown.length - 1}
               />
             ))}
           </div>
@@ -161,7 +216,7 @@ export function Transcript() {
 
       {showNavigator ? (
         <TurnNavigator
-          exchanges={exchanges}
+          exchanges={shown}
           activeId={activeTurn}
           onJump={jump}
           paneRef={pane}

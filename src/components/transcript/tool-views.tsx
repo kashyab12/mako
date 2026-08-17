@@ -157,7 +157,7 @@ export function BashBody({ call }: ToolViewProps) {
       {call.result ? (
         <Output text={call.result} isError={call.isError} />
       ) : (
-        <p className="shimmer font-mono text-[11px]">running…</p>
+        <p className="shimmer text-[11.5px]">running…</p>
       )}
     </div>
   )

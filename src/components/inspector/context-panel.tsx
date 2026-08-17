@@ -272,7 +272,7 @@ function Tools() {
               </span>
               <span
                 className={cn(
-                  "min-w-0 flex-1 truncate font-mono text-[11px]",
+                  "min-w-0 flex-1 truncate text-[12px]",
                   tool.active ? "text-foreground/85" : "text-faint"
                 )}
               >

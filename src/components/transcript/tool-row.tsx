@@ -46,7 +46,7 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
             call.isError ? "text-negative" : call.pending ? "text-brand" : "text-faint"
           )}
         />
-        <span className="shrink-0 font-mono text-[11.5px] font-medium text-foreground/90">
+        <span className="shrink-0 text-[12px] font-medium text-foreground/90">
           {call.name}
         </span>
         <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-faint">{summary}</span>
@@ -99,7 +99,7 @@ function DefaultBody({ call, dense }: { call: ToolCall; dense: boolean }) {
       {call.result ? (
         <Output text={call.result} dense={dense} isError={call.isError} />
       ) : (
-        <p className="shimmer font-mono text-[11px]">waiting for result…</p>
+        <p className="shimmer text-[11.5px]">waiting for result…</p>
       )}
     </div>
   )

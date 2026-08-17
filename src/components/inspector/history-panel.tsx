@@ -98,9 +98,12 @@ const Row = memo(function Row({
         className={cn(
           "relative ml-[26px] mb-1.5 rounded-xl px-2.5 py-2",
           "[transition:background-color_160ms_ease,box-shadow_160ms_ease,transform_160ms_var(--ease-out)]",
-          current
-            ? "raised-card ring-1 ring-border"
-            : "hover:raised-card hover:ring-1 hover:ring-hairline"
+          // The ring is always there, and only its colour changes. Adding a
+          // ring on hover means going from no box-shadow to one, which the
+          // browser cannot interpolate — the edge snapped into existence
+          // instead of fading up.
+          "ring-1",
+          current ? "raised-card ring-border" : "ring-transparent hover:raised-card hover:ring-hairline"
         )}
       >
         {/* The marker sits on the spine, not inside the card. */}
@@ -153,7 +156,7 @@ const Row = memo(function Row({
               {checkpoint.settings.map((setting) => (
                 <span
                   key={setting}
-                  className="truncate rounded bg-raised/70 px-1 py-px font-mono text-[9.5px] text-faint/80"
+                  className="truncate rounded bg-raised/70 px-1.5 py-px text-[10px] text-faint/80"
                 >
                   {setting}
                 </span>
