@@ -7,37 +7,47 @@
 mod rpc;
 mod session;
 mod theme;
+mod ui;
 
 use gpui::prelude::*;
 use gpui::{
-    div, px, size, App, Application, Bounds, Context, FocusHandle, Focusable,
-    KeyBinding, SharedString, Window, WindowBackgroundAppearance, WindowBounds, WindowOptions,
+    actions, div, px, App, Application, Bounds, Context, FocusHandle, Focusable, KeyBinding,
+    SharedString, Window, WindowBackgroundAppearance, WindowBounds, WindowOptions,
 };
 use rpc::{Incoming, PiRpc};
-use session::SessionState;
+use session::{Exchange, SessionState, ToolCall};
 use std::time::Duration;
-use theme::Theme;
+use theme::{space, text, Theme};
+use ui::{clip, eyebrow, format_cost, format_tokens, lit_top, panel, workspace_name};
 
-actions!(desk, [Send, Stop]);
-
-use gpui::actions;
+actions!(
+    desk,
+    [Send, Stop, CycleThinking, Backspace, ClearDraft, ToggleRail]
+);
 
 struct Desk {
     theme: Theme,
     state: SessionState,
     rpc: Option<PiRpc>,
     draft: String,
+    rail_open: bool,
     focus: FocusHandle,
 }
 
 impl Desk {
     fn new(cx: &mut Context<Self>) -> Self {
         let mut state = SessionState::default();
-        let rpc = match PiRpc::spawn(&std::env::current_dir().unwrap_or_default().to_string_lossy())
-        {
+        let cwd = std::env::current_dir().unwrap_or_default();
+
+        let rpc = match PiRpc::spawn(&cwd.to_string_lossy()) {
             Ok(mut client) => {
+                // Ask for everything the first paint needs; the replies arrive
+                // on the same channel as events and are folded in below.
                 let _ = client.get_state();
+                let _ = client.get_messages();
+                let _ = client.available_models();
                 state.connected = true;
+                state.cwd = cwd.to_string_lossy().to_string();
                 Some(client)
             }
             Err(error) => {
@@ -48,32 +58,44 @@ impl Desk {
 
         // The agent is on a channel, not a future: poll it on a cadence rather
         // than blocking the frame. 30ms is under the threshold where a token
-        // landing looks late, and costs nothing when the queue is empty.
+        // landing looks late, and costs nothing when the queue is empty. The
+        // view is only notified when something actually changed, so a quiet
+        // session paints zero frames.
         cx.spawn(async move |this, cx| loop {
             cx.background_executor()
                 .timer(Duration::from_millis(30))
                 .await;
-            let updated = this.update(cx, |desk: &mut Desk, cx| {
-                let mut changed = false;
+            let alive = this.update(cx, |desk: &mut Desk, cx| {
+                let mut dirty = false;
+                let mut records = Vec::new();
                 if let Some(rpc) = desk.rpc.as_ref() {
                     while let Ok(record) = rpc.incoming.try_recv() {
-                        match record {
-                            Incoming::Event(event) => desk.state.apply(&event),
-                            Incoming::Response(response) => {
-                                if let Some(data) = response.data.as_ref() {
-                                    desk.state.apply_state(data);
-                                }
-                            }
-                        }
-                        changed = true;
+                        records.push(record);
                     }
                 }
-                if changed {
+                for record in records {
+                    match record {
+                        Incoming::Event(event) => dirty |= desk.state.apply(&event),
+                        Incoming::Response(response) => {
+                            let Some(data) = response.data.as_ref() else {
+                                continue;
+                            };
+                            match response.command.as_deref() {
+                                Some("get_state") => desk.state.apply_state(data),
+                                Some("get_messages") => desk.state.apply_messages(data),
+                                Some("get_available_models") => desk.state.apply_models(data),
+                                Some("get_session_stats") => desk.state.apply_stats(data),
+                                _ => {}
+                            }
+                            dirty = true;
+                        }
+                    }
+                }
+                if dirty {
                     cx.notify();
                 }
-                true
             });
-            if updated.is_err() {
+            if alive.is_err() {
                 break;
             }
         })
@@ -84,6 +106,7 @@ impl Desk {
             state,
             rpc,
             draft: String::new(),
+            rail_open: true,
             focus: cx.focus_handle(),
         }
     }
@@ -107,6 +130,35 @@ impl Desk {
         }
         cx.notify();
     }
+
+    fn cycle_thinking(&mut self, _: &CycleThinking, _window: &mut Window, cx: &mut Context<Self>) {
+        let levels = &self.state.thinking_levels;
+        if levels.is_empty() {
+            return;
+        }
+        let at = levels.iter().position(|l| *l == self.state.thinking);
+        let next = levels[(at.map_or(0, |i| i + 1)) % levels.len()].clone();
+        if let Some(rpc) = self.rpc.as_mut() {
+            let _ = rpc.set_thinking_level(&next);
+        }
+        self.state.thinking = next;
+        cx.notify();
+    }
+
+    fn toggle_rail(&mut self, _: &ToggleRail, _window: &mut Window, cx: &mut Context<Self>) {
+        self.rail_open = !self.rail_open;
+        cx.notify();
+    }
+
+    fn backspace(&mut self, _: &Backspace, _window: &mut Window, cx: &mut Context<Self>) {
+        self.draft.pop();
+        cx.notify();
+    }
+
+    fn clear_draft(&mut self, _: &ClearDraft, _window: &mut Window, cx: &mut Context<Self>) {
+        self.draft.clear();
+        cx.notify();
+    }
 }
 
 impl Focusable for Desk {
@@ -117,145 +169,423 @@ impl Focusable for Desk {
 
 impl Render for Desk {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = &self.theme;
+        let theme = self.theme.clone();
 
         div()
             .key_context("Desk")
             .track_focus(&self.focus)
             .on_action(cx.listener(Self::send))
             .on_action(cx.listener(Self::stop))
+            .on_action(cx.listener(Self::cycle_thinking))
+            .on_action(cx.listener(Self::toggle_rail))
+            .on_action(cx.listener(Self::backspace))
+            .on_action(cx.listener(Self::clear_draft))
+            // Typing goes straight into the draft. A real text input lands with
+            // gpui-component's editor; this keeps the loop closed meanwhile.
+            .on_key_down(cx.listener(|desk, event: &gpui::KeyDownEvent, _window, cx| {
+                if let Some(key) = event.keystroke.key_char.as_ref() {
+                    if !event.keystroke.modifiers.platform && !event.keystroke.modifiers.control {
+                        desk.draft.push_str(key);
+                        cx.notify();
+                    }
+                }
+            }))
             .flex()
             .flex_col()
             .size_full()
-            .bg(theme.glass)
+            .bg(theme.background)
             .text_color(theme.foreground)
-            .font_family("Geist")
-            .text_size(px(13.0))
-            .child(self.title_bar())
+            .text_size(text::UI)
+            .child(self.title_bar(&theme))
             .child(
                 div()
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .child(self.rail())
-                    .child(self.transcript())
-                    .child(self.composer_column()),
+                    .when(self.rail_open, |row| row.child(self.rail(&theme)))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w_0()
+                            .child(self.transcript(&theme))
+                            .child(self.composer(&theme)),
+                    ),
             )
+            .child(self.status_bar(&theme))
     }
 }
 
 impl Desk {
-    fn title_bar(&self) -> impl IntoElement {
-        let theme = &self.theme;
+    fn title_bar(&self, theme: &Theme) -> impl IntoElement {
+        let title = if self.state.session_name.is_empty() {
+            workspace_name(&self.state.cwd)
+        } else {
+            self.state.session_name.clone()
+        };
+
         div()
-            .h(px(38.0))
             .flex()
-            .items_center()
-            .px(px(14.0))
-            // The specular top edge: GPUI has no per-element backdrop filter,
-            // so the highlight that reads as glass is drawn, not filtered.
-            .border_b_1()
+            .flex_col()
+            .flex_none()
+            .child(
+                div()
+                    .h(space::TITLEBAR)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .bg(theme.surface)
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.0))
+                            .when(self.state.streaming, |row| {
+                                row.child(
+                                    div()
+                                        .size(px(5.0))
+                                        .rounded_full()
+                                        .bg(theme.foreground.opacity(0.7)),
+                                )
+                            })
+                            .child(
+                                div()
+                                    .text_size(text::UI)
+                                    .text_color(theme.foreground)
+                                    .child(SharedString::from(title)),
+                            ),
+                    ),
+            )
+            .child(div().h(px(1.0)).bg(theme.hairline))
+    }
+
+    fn rail(&self, theme: &Theme) -> impl IntoElement {
+        panel(theme)
+            .w(space::RAIL_WIDTH)
+            .flex_none()
+            .flex()
+            .flex_col()
+            .border_r_1()
             .border_color(theme.hairline)
             .child(
                 div()
-                    .pl(px(72.0))
-                    .text_size(px(12.5))
-                    .text_color(theme.muted)
-                    .child(SharedString::from(if self.state.cwd.is_empty() {
-                        "Pi Desk".to_string()
-                    } else {
-                        workspace_name(&self.state.cwd)
-                    })),
+                    .flex()
+                    .items_center()
+                    .h(px(36.0))
+                    .px(px(10.0))
+                    .child(
+                        div()
+                            .text_size(text::UI)
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .child(SharedString::from(workspace_name(&self.state.cwd))),
+                    ),
             )
-    }
-
-    fn rail(&self) -> impl IntoElement {
-        let theme = &self.theme;
-        div()
-            .w(px(264.0))
-            .flex_none()
-            .border_r_1()
-            .border_color(theme.hairline)
-            .bg(theme.surface)
+            .child(div().h(px(1.0)).bg(theme.hairline))
             .child(
                 div()
                     .p(px(10.0))
-                    .text_size(px(11.0))
-                    .text_color(theme.faint)
-                    .child("Sessions"),
+                    .child(eyebrow(theme, "This session")),
             )
     }
 
-    fn transcript(&self) -> impl IntoElement {
-        let theme = &self.theme;
-        let mut column = div().flex().flex_col().gap(px(24.0)).p(px(24.0));
+    fn transcript(&self, theme: &Theme) -> impl IntoElement {
+        let mut column = div()
+            .flex()
+            .flex_col()
+            .gap(px(26.0))
+            .w_full()
+            .max_w(space::COLUMN)
+            .px(px(24.0))
+            .py(px(22.0));
 
-        for exchange in &self.state.exchanges {
-            if !exchange.prompt.is_empty() {
-                column = column.child(
-                    div()
-                        .rounded(px(12.0))
-                        .bg(theme.raised)
-                        .px(px(14.0))
-                        .py(px(10.0))
-                        .text_size(px(13.5))
-                        .child(SharedString::from(exchange.prompt.clone())),
-                );
-            }
-            for message in &exchange.response {
-                column = column.child(
-                    div()
-                        .text_size(px(13.5))
-                        .text_color(theme.foreground)
-                        .child(SharedString::from(message.role_text.clone())),
-                );
-            }
+        if self.state.exchanges.is_empty() {
+            column = column.child(self.empty_state(theme));
         }
 
-        if !self.state.draft.is_empty() {
-            column = column.child(
-                div()
-                    .text_size(px(13.5))
-                    .child(SharedString::from(self.state.draft.clone())),
-            );
+        for exchange in &self.state.exchanges {
+            column = column.child(self.exchange(theme, exchange));
         }
 
         if let Some(fault) = &self.state.fault {
             column = column.child(
                 div()
+                    .rounded(space::RADIUS)
+                    .bg(theme.removed.opacity(0.10))
+                    .px(px(12.0))
+                    .py(px(9.0))
+                    .text_size(text::META)
                     .text_color(theme.removed)
-                    .text_size(px(12.5))
                     .child(SharedString::from(fault.clone())),
             );
         }
 
-        div().flex_1().min_w_0().overflow_hidden().child(column)
-    }
-
-    fn composer_column(&self) -> impl IntoElement {
-        let theme = &self.theme;
         div()
-            .w(px(0.0))
-            .flex_none()
-            .child(div().bg(theme.background).w(px(0.0)))
+            .flex_1()
+            .min_h_0()
+            .overflow_hidden()
+            .flex()
+            .justify_center()
+            .child(column)
     }
-}
 
-fn workspace_name(cwd: &str) -> String {
-    cwd.rsplit('/')
-        .find(|part| !part.is_empty())
-        .unwrap_or(cwd)
-        .to_string()
+    fn empty_state(&self, theme: &Theme) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(4.0))
+            .child(
+                div()
+                    .text_size(text::BODY)
+                    .text_color(theme.foreground)
+                    .child("Start a turn"),
+            )
+            .child(
+                div()
+                    .text_size(text::META)
+                    .text_color(theme.faint)
+                    .child(SharedString::from(self.state.cwd.clone())),
+            )
+    }
+
+    fn exchange(&self, theme: &Theme, exchange: &Exchange) -> impl IntoElement {
+        let mut block = div().flex().flex_col().gap(px(12.0));
+
+        if !exchange.prompt.is_empty() {
+            // The prompt gets its own surface, so whose words these are is
+            // never in question.
+            block = block.child(
+                div()
+                    .rounded(space::RADIUS_XL)
+                    .bg(theme.raised)
+                    .border_1()
+                    .border_color(theme.hairline)
+                    .child(lit_top(theme))
+                    .child(
+                        div()
+                            .px(px(14.0))
+                            .py(px(10.0))
+                            .text_size(text::BODY)
+                            .child(SharedString::from(exchange.prompt.clone())),
+                    ),
+            );
+        }
+
+        let reply = &exchange.reply;
+
+        if !reply.thinking.is_empty() {
+            block = block.child(
+                div()
+                    .rounded(space::RADIUS)
+                    .bg(theme.raised.opacity(0.5))
+                    .px(px(10.0))
+                    .py(px(6.0))
+                    .text_size(text::SMALL)
+                    .text_color(theme.faint)
+                    .child(SharedString::from(clip(&reply.thinking, 220))),
+            );
+        }
+
+        for call in &reply.tools {
+            block = block.child(self.tool_row(theme, call));
+        }
+
+        if !reply.text.is_empty() {
+            block = block.child(
+                div()
+                    .text_size(text::BODY)
+                    .line_height(px(22.0))
+                    .text_color(theme.foreground)
+                    .child(SharedString::from(reply.text.clone())),
+            );
+        }
+
+        if reply.streaming && reply.is_empty() {
+            block = block.child(
+                div()
+                    .text_size(text::UI)
+                    .text_color(theme.faint)
+                    .child("Thinking…"),
+            );
+        }
+
+        block
+    }
+
+    fn tool_row(&self, theme: &Theme, call: &ToolCall) -> impl IntoElement {
+        let tint = if call.failed {
+            theme.removed
+        } else if call.done {
+            theme.faint
+        } else {
+            theme.foreground.opacity(0.8)
+        };
+
+        div()
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .rounded(space::RADIUS)
+            .border_1()
+            .border_color(theme.hairline)
+            .bg(theme.surface)
+            .px(px(9.0))
+            .py(px(5.0))
+            .child(
+                div()
+                    .text_size(text::META)
+                    .text_color(tint)
+                    .child(SharedString::from(call.name.clone())),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .text_size(text::META)
+                    .text_color(theme.faint)
+                    .child(SharedString::from(clip(&call.summary, 72))),
+            )
+            .when(!call.done, |row| {
+                row.child(
+                    div()
+                        .text_size(text::MICRO)
+                        .text_color(theme.foreground.opacity(0.7))
+                        .child("running"),
+                )
+            })
+    }
+
+    fn composer(&self, theme: &Theme) -> impl IntoElement {
+        let ready = !self.draft.trim().is_empty();
+
+        div()
+            .flex_none()
+            .flex()
+            .justify_center()
+            .px(px(24.0))
+            .pb(px(16.0))
+            .child(
+                div()
+                    .w_full()
+                    .max_w(space::COLUMN)
+                    .rounded(space::RADIUS_XL)
+                    .bg(theme.surface)
+                    .border_1()
+                    .border_color(theme.border)
+                    .child(lit_top(theme))
+                    .child(
+                        div()
+                            .px(px(14.0))
+                            .py(px(11.0))
+                            .min_h(px(44.0))
+                            .text_size(text::BODY)
+                            .text_color(if self.draft.is_empty() {
+                                theme.faint
+                            } else {
+                                theme.foreground
+                            })
+                            .child(SharedString::from(if self.draft.is_empty() {
+                                "Ask Pi to change something".to_string()
+                            } else {
+                                self.draft.clone()
+                            })),
+                    )
+                    .child(div().h(px(1.0)).bg(theme.hairline))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
+                            .px(px(10.0))
+                            .py(px(7.0))
+                            .child(
+                                div()
+                                    .text_size(text::META)
+                                    .text_color(theme.muted)
+                                    .child(SharedString::from(if self.state.model.name.is_empty() {
+                                        "no model".to_string()
+                                    } else {
+                                        self.state.model.name.clone()
+                                    })),
+                            )
+                            .when(!self.state.thinking.is_empty(), |row| {
+                                row.child(
+                                    div()
+                                        .text_size(text::META)
+                                        .text_color(theme.faint)
+                                        .child(SharedString::from(self.state.thinking.clone())),
+                                )
+                            })
+                            .child(div().flex_1())
+                            .child(
+                                // The primary action, filled only when there is
+                                // something to send.
+                                div()
+                                    .size(px(26.0))
+                                    .rounded_full()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .bg(if ready {
+                                        theme.accent
+                                    } else {
+                                        theme.foreground.opacity(0.10)
+                                    })
+                                    .text_size(text::UI)
+                                    .text_color(if ready {
+                                        theme.on_accent()
+                                    } else {
+                                        theme.faint
+                                    })
+                                    .child("↑"),
+                            ),
+                    ),
+            )
+    }
+
+    fn status_bar(&self, theme: &Theme) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .flex_none()
+            .child(div().h(px(1.0)).bg(theme.hairline))
+            .child(
+                div()
+                    .h(space::STATUSBAR)
+                    .flex()
+                    .items_center()
+                    .gap(px(12.0))
+                    .bg(theme.surface)
+                    .px(px(10.0))
+                    .text_size(text::SMALL)
+                    .text_color(theme.faint)
+                    .child(SharedString::from(workspace_name(&self.state.cwd)))
+                    .child(div().flex_1())
+                    .child(SharedString::from(format!(
+                        "{} tokens",
+                        format_tokens(self.state.tokens)
+                    )))
+                    .child(SharedString::from(format!(
+                        "{} spent",
+                        format_cost(self.state.cost)
+                    ))),
+            )
+    }
 }
 
 fn main() {
     Application::new().run(|cx: &mut App| {
         cx.bind_keys([
             KeyBinding::new("enter", Send, Some("Desk")),
-            KeyBinding::new("escape", Stop, Some("Desk")),
+            KeyBinding::new("cmd-escape", Stop, Some("Desk")),
+            KeyBinding::new("backspace", Backspace, Some("Desk")),
+            KeyBinding::new("cmd-.", CycleThinking, Some("Desk")),
+            KeyBinding::new("cmd-b", ToggleRail, Some("Desk")),
+            KeyBinding::new("escape", ClearDraft, Some("Desk")),
         ]);
 
-        let bounds = Bounds::centered(None, size(px(1480.0), px(940.0)), cx);
+        let bounds = Bounds::centered(None, gpui::size(px(1480.0), px(940.0)), cx);
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             // The native equivalent of the web build's depth layer: the system
@@ -266,14 +596,15 @@ fn main() {
         };
 
         let window = cx
-            .open_window(options, |_window, cx| cx.new(Desk::new))
+            .open_window(options, |window, cx| {
+                let desk = cx.new(Desk::new);
+                window.focus(&desk.focus_handle(cx));
+                desk
+            })
             .expect("could not open the window");
 
         window
-            .update(cx, |_, window, _| {
-                window.set_window_title("Pi Desk");
-            })
+            .update(cx, |_, window, _| window.set_window_title("Pi Desk"))
             .ok();
-
     });
 }
