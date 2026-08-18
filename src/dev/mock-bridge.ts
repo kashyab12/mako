@@ -393,6 +393,25 @@ export function installMockBridge() {
     rerunChecks: async () => {},
     repoAvatar: async () => undefined,
     openUrl: async () => {},
+    threads: async () => [
+      { harness: "codex", nativeId: "cx-1", path: "/mock/codex.jsonl", cwd: "/Users/you/api", title: "Trace the flaky webhook retry", model: "gpt-5.2-codex", updatedAt: new Date(Date.now() - 1_200_000).toISOString(), startedAt: new Date(Date.now() - 5_200_000).toISOString(), bytes: 20_000 },
+      { harness: "claude", nativeId: "cl-1", path: "/mock/claude.jsonl", cwd: "/Users/you/mako", title: "Refactor the composer focus handling", model: "claude-opus-5", updatedAt: new Date(Date.now() - 4_800_000).toISOString(), startedAt: new Date(Date.now() - 9_800_000).toISOString(), bytes: 48_000 },
+      { harness: "cursor", nativeId: "cu-1", path: "/mock/cursor.db", cwd: "/Users/you/site", title: "Make the pricing table responsive", updatedAt: new Date(Date.now() - 86_000_000).toISOString(), startedAt: new Date(Date.now() - 90_000_000).toISOString(), bytes: 12_000 },
+    ],
+    openThread: async (path: string) => ({
+      ref: { harness: "codex", nativeId: "cx-1", path, cwd: "/Users/you/api", title: "Trace the flaky webhook retry", model: "gpt-5.2-codex", updatedAt: new Date().toISOString() },
+      entries: [
+        { kind: "user", text: "The webhook retry is flaky under load — trace it." },
+        { kind: "assistant", blocks: [
+          { type: "thinking", text: "Look at the queue consumer first." },
+          { type: "tool", name: "shell", input: "rg 'retry' src/queue", output: "src/queue/consumer.ts:42" },
+          { type: "text", text: "The retry drops the idempotency key on the second attempt. Fixing." },
+        ] },
+      ],
+    }),
+    continueThread: async () => {
+      throw new Error("The browser mock cannot open tabs")
+    },
     usage: async () => ({
       total: { cost: 36.63, input: 2_400_000, output: 180_000, cacheRead: 9_100_000, cacheWrite: 210_000, messages: 285 },
       days: [], models: [], projects: [], sessions: 12, truncated: false,

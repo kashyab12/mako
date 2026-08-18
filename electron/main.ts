@@ -29,6 +29,7 @@ import {
 } from "./devserver.js"
 import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunChecks, type CreatePullOptions } from "./github.js"
 import { HostPool } from "./pool.js"
+import { handoffFor, installThreads, listThreads, openThread, stopThreads } from "./threads.js"
 import { listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
 import type { BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
 
@@ -343,6 +344,23 @@ function bindIpc() {
 
   handle("pi:usage", () => usageSummary(join(getAgentDir(), "sessions")))
 
+  /* Cross-harness threads: every agent's sessions on this machine. */
+  handle("pi:threads", (_e, filter?: { cwd?: string; harness?: string }) => listThreads(filter))
+  handle("pi:thread-open", (_e, path: string) => openThread(path))
+  /**
+   * Continue a foreign session here: a new tab in the thread's working
+   * directory, opened with the conversation as its first prompt. Pi threads
+   * never take this path — they open natively through `pi:open-tab`.
+   */
+  handle("pi:thread-continue", async (_e, path: string, instruction?: string) => {
+    const [thread, handoff] = await Promise.all([openThread(path), handoffFor(path, instruction)])
+    if (!thread || !handoff) throw new Error("This session could not be read for continuation")
+    const live = await ready()
+    const tab = await live.open(thread.ref.cwd ? { cwd: thread.ref.cwd } : {})
+    await live.active.prompt(handoff)
+    return tab
+  })
+
   handle("pi:automations", () => automationList())
   handle("pi:save-automations", (_e, next: Parameters<typeof saveAutomations>[1]) =>
     withHost((h) => saveAutomations(h.workspace, next))
@@ -396,6 +414,7 @@ app.whenReady().then(async () => {
   bindIpc()
   await createWindow()
   installUpdates(emit)
+  installThreads(emit)
   bindDevServer(emit)
   bindAutomations(emit, async (cwd, prompt) => {
     const live = await ready()
@@ -413,6 +432,7 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   stopWatching()
+  stopThreads()
   // The dev server is in its own process group and will not die with us.
   void stopDevServer()
   void pool.dispose()

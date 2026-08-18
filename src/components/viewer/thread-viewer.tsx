@@ -1,0 +1,224 @@
+import { useEffect, useMemo, useState } from "react"
+import { harnessDot, harnessLabel } from "@/components/rail/agent-threads"
+import { threads, useThreads } from "@/state/threads"
+import { formatRelative } from "@/lib/format"
+import { cn } from "@/lib/utils"
+import { ArrowRightIcon, ChevronRightIcon, Loader2Icon, XIcon } from "lucide-react"
+import type { EntryBlock, ThreadEntry } from "@/lib/types"
+
+/**
+ * A conversation from another harness, readable here.
+ *
+ * Read-only on purpose: the live agent for this session belongs to Codex or
+ * Claude Code or whichever CLI wrote it. What this offers is the transcript
+ * — translated to one shape — and one button: continue the conversation in
+ * this app, in the same working directory, with the transcript handed over.
+ * Cross-harness continuation is a new session that has read the old one, and
+ * the interface says exactly that rather than pretending to be the original.
+ */
+
+export function ThreadViewer() {
+  const thread = useThreads((state) => state.viewing)
+  const busy = useThreads((state) => state.viewingBusy)
+  const continuing = useThreads((state) => state.continuing)
+
+  useEffect(() => {
+    if (!thread) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault()
+        threads.closeViewer()
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [thread])
+
+  if (busy) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-[2px]">
+        <Loader2Icon className="size-5 animate-spin text-faint" />
+      </div>
+    )
+  }
+  if (!thread) return null
+  const { ref } = thread
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Session from ${harnessLabel(ref.harness)}`}
+      className="fixed inset-0 z-50 flex items-start justify-center bg-background/70 pt-[6vh] backdrop-blur-[2px]"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) threads.closeViewer()
+      }}
+    >
+      <div className="glass-panel flex max-h-[86vh] w-full max-w-[52rem] flex-col overflow-hidden rounded-xl">
+        <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-hairline px-4">
+          <span className={cn("size-2 shrink-0 rounded-full", harnessDot(ref.harness))} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[13px] font-medium">{ref.title ?? "Untitled session"}</p>
+            <p className="truncate text-[10.5px] text-faint">
+              {harnessLabel(ref.harness)}
+              {ref.model ? ` · ${ref.model}` : ""}
+              {ref.cwd ? ` · ${ref.cwd}` : ""}
+              {ref.updatedAt ? ` · ${formatRelative(ref.updatedAt)}` : ""}
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={continuing === ref.path}
+            onClick={() => void threads.continueHere(ref)}
+            className={cn(
+              "pressable flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-foreground px-2.5 text-[11.5px] font-medium text-background",
+              "transition-opacity hover:opacity-90 disabled:opacity-50"
+            )}
+          >
+            {continuing === ref.path ? (
+              <Loader2Icon className="size-3 animate-spin" />
+            ) : (
+              <ArrowRightIcon className="size-3" />
+            )}
+            Continue here
+          </button>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={() => threads.closeViewer()}
+            className="pressable shrink-0 rounded p-1 text-faint hover:text-foreground"
+          >
+            <XIcon className="size-3.5" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
+          {thread.entries.length === 0 ? (
+            <p className="pt-8 text-center text-[12px] text-faint">
+              This session has no readable conversation.
+            </p>
+          ) : (
+            thread.entries.map((entry, index) => <Entry key={index} entry={entry} />)
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Entry({ entry }: { entry: ThreadEntry }) {
+  switch (entry.kind) {
+    case "user":
+      return (
+        <div className="my-3 rounded-lg bg-surface px-3 py-2">
+          <p className="pb-0.5 text-[10px] font-medium tracking-wide text-faint uppercase">You</p>
+          <p className="text-[12.5px] leading-relaxed whitespace-pre-wrap text-foreground/95">
+            {entry.text}
+          </p>
+        </div>
+      )
+    case "event":
+      return (
+        <p className="my-2 text-center text-[10.5px] text-faint italic">
+          {entry.label}
+          {entry.detail ? ` — ${entry.detail}` : ""}
+        </p>
+      )
+    case "assistant":
+      return (
+        <div className="my-3 flex flex-col gap-1.5">
+          {entry.blocks.map((block, index) => (
+            <Block key={index} block={block} />
+          ))}
+        </div>
+      )
+  }
+}
+
+function Block({ block }: { block: EntryBlock }) {
+  if (block.type === "text") {
+    return (
+      <p className="text-[12.5px] leading-relaxed whitespace-pre-wrap text-foreground/90">
+        {block.text}
+      </p>
+    )
+  }
+  if (block.type === "thinking") return <Folded label="Thinking" text={block.text} dim />
+  return <Tool block={block} />
+}
+
+/**
+ * Tool calls fold shut. A foreign transcript is read to understand what
+ * happened, and what happened is legible from the tool names; the payloads
+ * are there for the one call that matters.
+ */
+function Tool({ block }: { block: EntryBlock & { type: "tool" } }) {
+  const [open, setOpen] = useState(false)
+  const summary = useMemo(() => firstUseful(block.input), [block.input])
+  return (
+    <div className="rounded-md border border-hairline/60">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center gap-1.5 px-2 py-1 text-left"
+      >
+        <ChevronRightIcon
+          className={cn("size-3 shrink-0 text-faint transition-transform duration-150", open && "rotate-90")}
+        />
+        <span className={cn("font-mono text-[11px]", block.error ? "text-red-400" : "text-muted-foreground")}>
+          {block.name}
+        </span>
+        {summary ? (
+          <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-faint">{summary}</span>
+        ) : null}
+      </button>
+      {open ? (
+        <div className="border-t border-hairline/60 px-2 py-1.5">
+          {block.input ? (
+            <pre className="max-h-48 overflow-y-auto font-mono text-[10.5px] leading-relaxed break-words whitespace-pre-wrap text-muted-foreground">
+              {block.input}
+            </pre>
+          ) : null}
+          {block.output ? (
+            <pre className="mt-1 max-h-64 overflow-y-auto font-mono text-[10.5px] leading-relaxed break-words whitespace-pre-wrap text-faint">
+              {block.output}
+            </pre>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function Folded({ label, text, dim }: { label: string; text: string; dim?: boolean }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex items-center gap-1 text-[10.5px] text-faint hover:text-muted-foreground"
+      >
+        <ChevronRightIcon className={cn("size-3 transition-transform duration-150", open && "rotate-90")} />
+        {label}
+      </button>
+      {open ? (
+        <p
+          className={cn(
+            "mt-1 text-[11.5px] leading-relaxed whitespace-pre-wrap",
+            dim ? "text-faint italic" : "text-muted-foreground"
+          )}
+        >
+          {text}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+/** The first line of a tool's input that is not JSON punctuation. */
+function firstUseful(input: string | undefined): string {
+  if (!input) return ""
+  const line = input.replace(/^[{["\s]+/, "").split("\n", 1)[0] ?? ""
+  return line.slice(0, 90)
+}

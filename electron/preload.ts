@@ -17,6 +17,8 @@ import type {
   SearchResults,
   SessionState,
   SessionSummary,
+  Thread,
+  ThreadRef,
   StagedFile,
   TabSnapshot,
   ThinkingLevel,
@@ -32,6 +34,12 @@ const invoke = <T>(channel: string, ...args: unknown[]) =>
 
 const api = {
   boot: () => invoke<BootPayload>("pi:boot"),
+
+  /* Cross-harness threads: every coding agent's sessions on this machine. */
+  threads: (filter?: { cwd?: string; harness?: string }) => invoke<ThreadRef[]>("pi:threads", filter),
+  openThread: (path: string) => invoke<Thread | null>("pi:thread-open", path),
+  continueThread: (path: string, instruction?: string) =>
+    invoke<TabSnapshot>("pi:thread-continue", path, instruction),
 
   /* Tabs. Session-scoped calls below always address the active tab. */
   openTab: (options?: { cwd?: string; sessionPath?: string }) =>

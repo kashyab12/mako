@@ -1,4 +1,18 @@
 /**
+ * Cross-harness threads, straight from @mako/sessions: every coding-agent
+ * session on the machine, whichever app wrote it, in one shape.
+ */
+export type {
+  EntryBlock,
+  Harness,
+  Thread,
+  ThreadEntry,
+  ThreadRef,
+  TurnUsage,
+} from "@mako/sessions"
+import type { ThreadRef as CatalogThreadRef } from "@mako/sessions"
+
+/**
  * The wire contract between the Electron host and the renderer.
  *
  * Design rule: the hot path (token streaming) must never re-send the whole
@@ -236,6 +250,11 @@ export type HostEventBody =
   | { type: "devserver"; devserver: DevServerState }
   | { type: "automations"; automations: Automation[] }
   | { type: "automation-run"; run: AutomationRun }
+  /**
+   * The cross-harness session catalog changed: a session somewhere on this
+   * machine — from any app — was created or grew. Window-wide.
+   */
+  | { type: "threads"; threads: CatalogThreadRef[] }
 
 /**
  * Every event says which tab it came from.

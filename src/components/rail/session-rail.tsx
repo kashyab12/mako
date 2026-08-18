@@ -2,6 +2,7 @@ import { useCallback, useDeferredValue, useMemo, useState } from "react"
 import { Action, Blank } from "@/components/ui/kit"
 import { VirtualSessions } from "@/components/rail/virtual-sessions"
 import { FileTree } from "@/components/rail/file-tree"
+import { AgentThreads } from "@/components/rail/agent-threads"
 import { buildRows } from "@/components/rail/rail-rows"
 import { RailOptions } from "@/components/rail/rail-options"
 import { Slot } from "@/extend/slot"
@@ -40,7 +41,7 @@ export function SessionRail() {
           title strip's left segment, which is this column's header — a window
           has one header, not one per panel. */}
       <RailModes mode={mode} />
-      {mode === "files" ? <FileTree /> : <Threads />}
+      {mode === "files" ? <FileTree /> : mode === "agents" ? <AgentThreads /> : <Threads />}
       <Slot name="rail.footer" />
     </aside>
   )
@@ -57,6 +58,7 @@ function RailModes({ mode }: { mode: RailMode }) {
   return (
     <div className="flex shrink-0 items-center gap-3 border-b border-hairline px-3">
       <ModeTab label="Threads" active={mode === "threads"} onClick={() => setPref("railMode", "threads")} />
+      <ModeTab label="Agents" active={mode === "agents"} onClick={() => setPref("railMode", "agents")} />
       <ModeTab label="Files" active={mode === "files"} onClick={() => setPref("railMode", "files")} />
     </div>
   )

@@ -1,4 +1,10 @@
 export type {
+  EntryBlock,
+  Harness,
+  Thread,
+  ThreadEntry,
+  ThreadRef,
+  TurnUsage,
   Automation,
   AutomationRun,
   Block,

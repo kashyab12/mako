@@ -28,6 +28,7 @@ import { viewer, viewerStore } from "@/state/viewer"
 import { applyUpdate, updates } from "@/state/updates"
 import { automations } from "@/state/automations"
 import { applyDevServer } from "@/state/devserver"
+import { applyThreads, threads } from "@/state/threads"
 import { applyAutomations, noteAutomationRun } from "@/state/automations"
 import { toast } from "sonner"
 
@@ -190,6 +191,9 @@ function applyToActive(event: HostEvent) {
     case "automations":
       applyAutomations(event.automations)
       break
+    case "threads":
+      applyThreads(event.threads)
+      break
     case "automation-run":
       noteAutomationRun(event.run)
       toast(`${event.run.name} started`, {
@@ -282,6 +286,7 @@ export const actions = {
       void actions.refreshSessions(active.session.meta.cwd)
       void updates.load()
       void automations.load()
+      void threads.load()
     } catch (error) {
       store.set({ phase: "detached", fault: error instanceof Error ? error.message : String(error) })
     }

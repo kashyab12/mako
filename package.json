@@ -124,5 +124,8 @@
         "repo": "mako"
       }
     ]
-  }
+  },
+  "workspaces": [
+    "packages/*"
+  ]
 }

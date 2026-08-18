@@ -9,7 +9,7 @@ export type Theme = "dark" | "light" | "system"
 export type InspectorTab = "changes" | "context" | "history"
 
 /** What the left rail is showing: your conversations, or the project. */
-export type RailMode = "threads" | "files"
+export type RailMode = "threads" | "agents" | "files"
 
 /** How the session rail is scoped and grouped, mirroring ORCA's sidebar model. */
 export type RailScope = "workspace" | "all"
