@@ -21,18 +21,22 @@ export { SessionCatalog, type CatalogEvent } from "./catalog.js"
 export { renderHandoff, type HandoffOptions } from "./handoff.js"
 export { type NativeFile, type SessionProvider } from "./providers/types.js"
 export { CodexProvider } from "./providers/codex.js"
+export { CursorProvider } from "./providers/cursor.js"
+export { GrokProvider } from "./providers/grok.js"
 export { ClaudeProvider } from "./providers/claude.js"
 export { PiProvider } from "./providers/pi.js"
 
 import { SessionCatalog } from "./catalog.js"
 import { CodexProvider } from "./providers/codex.js"
+import { CursorProvider } from "./providers/cursor.js"
+import { GrokProvider } from "./providers/grok.js"
 import { ClaudeProvider } from "./providers/claude.js"
 import { PiProvider } from "./providers/pi.js"
 
 /** The catalog with every built-in provider, ready to scan. */
 export function defaultCatalog(options: { cachePath?: string } = {}): SessionCatalog {
   return new SessionCatalog(
-    [new PiProvider(), new CodexProvider(), new ClaudeProvider()],
+    [new PiProvider(), new CodexProvider(), new ClaudeProvider(), new CursorProvider(), new GrokProvider()],
     options
   )
 }
