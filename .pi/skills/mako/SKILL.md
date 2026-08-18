@@ -81,6 +81,7 @@ electron/          main process — needs a restart
                    agent-specific assumptions inside it.
   pool.ts          the open tabs: several `AgentHost`s at once, one in front.
                    Commands address the foreground tab; the rest keep running.
+  automation.ts    a loopback eval endpoint for checking the UI, dev + opt-in
   crash.ts         local-only crash reports, plus the IPC breadcrumb trail
   github.ts        pull requests and checks, through the `gh` CLI
   devserver.ts     the project's dev server: spawn, sniff its URL, kill its group
@@ -177,6 +178,28 @@ than one conversation streams at a time, so "cheap per token" is now also
 - A backgrounded `AgentHost` sends only `meta`, at 400ms rather than 16ms, and
   hands over everything else in one push when it comes forward. If you add an
   event type, decide which side of that line it belongs on.
+
+## Checking your work
+
+Do not drive the app by synthesising mouse clicks at screen coordinates. It
+takes the machine over while it runs — the pointer moves and whoever is using
+the computer is locked out — and it is fragile besides: it depends on window
+position, on which app is frontmost, and on the click event carrying the right
+click-count field.
+
+Launch with `MAKO_AUTOMATION=7333 npm run desktop` and use `scripts/probe.sh`,
+which evaluates an expression in the window and prints the result:
+
+```bash
+scripts/probe.sh 'document.querySelectorAll("[data-line]").length'
+scripts/probe.sh 'const b = [...document.querySelectorAll("button")].find(x => x.textContent === "Save"); b.click(); return "clicked"'
+```
+
+Two things it makes possible that clicking cannot: measuring an element, which
+is how a control that renders but is 0×0 gets caught; and hovering, by
+dispatching pointer events at an element you found rather than at a coordinate
+you guessed. Screenshots (`screencapture -l<windowid>`) work on a background
+window, so the whole check runs while the machine is in use.
 
 ## Working here
 

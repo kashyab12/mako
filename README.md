@@ -114,6 +114,17 @@ minutes and touch real files, so the restart is always a click. Builds are
 unsigned until certificates exist; they install and update either way, macOS
 just asks once on first launch.
 
+## Checking the UI
+
+```bash
+MAKO_AUTOMATION=7333 npm run desktop
+scripts/probe.sh 'document.querySelectorAll("[data-line]").length'
+```
+
+A loopback endpoint that evaluates an expression in the window, so a check can
+click a button, measure it, or hover it without taking over the pointer. Off
+unless a development build is launched with that variable set.
+
 ## When it breaks
 
 A component that throws no longer takes the window with it: you get a screen

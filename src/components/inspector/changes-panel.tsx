@@ -149,7 +149,7 @@ export function ChangesPanel() {
             body={
               git?.root
                 ? `Nothing has changed on ${git.branch ?? "this branch"}. Edits appear here as the agent makes them.`
-                : "Run git init in this folder to track changes and see diffs here."
+                : "Run git init in this folder to see the agent's edits as diffs."
             }
           />
         </div>

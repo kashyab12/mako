@@ -1,5 +1,4 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react"
-import { GutterUtilitySlotStyles } from "@pierre/diffs/react"
 import { Action } from "@/components/ui/kit"
 import { composeReview, review, useReview, type ReviewComment } from "@/state/review"
 import { cn } from "@/lib/utils"
@@ -119,25 +118,29 @@ function Editor({ initial }: { initial: string }) {
  *
  * A custom slot owns its own click: the renderer refuses `renderGutterUtility`
  * and `onGutterUtilityClick` together, so `getHoveredLine()` is how this knows
- * which line it is on. The wrapper carries the renderer's own slot styles —
- * without them it lays out in the flow of the code column instead of the
- * gutter, which reads exactly like the feature not existing.
+ * which line it is on.
+ *
+ * No wrapper. The renderer already puts this inside its own slot element
+ * carrying `GutterUtilitySlotStyles` — absolutely positioned, pinned top and
+ * bottom, with no width of its own. Adding a second div with the same styles
+ * nested it inside a zero-width box, and the button measured 0×0: present in
+ * the DOM, findable by label, and invisible. That is a worse failure than not
+ * rendering at all, because everything about it looks correct.
  */
 export function GutterAdd({ onClick }: { onClick: () => void }) {
   return (
-    <div style={GutterUtilitySlotStyles} className="flex items-center justify-center">
-      <button
-        type="button"
-        aria-label="Comment on this line"
-        onClick={onClick}
-        className={cn(
-          "pressable flex size-4 items-center justify-center rounded",
-          "bg-raised text-faint ring-1 ring-hairline transition-colors duration-100 hover:text-foreground"
-        )}
-      >
-        <MessageSquarePlusIcon className="size-2.5" />
-      </button>
-    </div>
+    <button
+      type="button"
+      aria-label="Comment on this line"
+      onClick={onClick}
+      className={cn(
+        "pressable absolute top-1/2 left-1/2 flex size-4 -translate-x-1/2 -translate-y-1/2",
+        "items-center justify-center rounded bg-raised text-faint ring-1 ring-hairline",
+        "transition-colors duration-100 hover:text-foreground"
+      )}
+    >
+      <MessageSquarePlusIcon className="size-2.5" />
+    </button>
   )
 }
 

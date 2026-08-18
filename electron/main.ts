@@ -3,6 +3,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { COMMIT_PROMPT, type AgentHost } from "./host.js"
 import { breadcrumb, clearCrashes, crashesDir, installCrashReporting, listCrashes, record } from "./crash.js"
+import { installAutomation } from "./automation.js"
 import { check, installNow, installUpdates, updateState } from "./updates.js"
 import {
   attachDevServer,
@@ -134,6 +135,8 @@ async function createWindow() {
       window.reload()
     }, 400)
   })
+
+  installAutomation(window, isDev)
 
   // The agent writes a plugin with its ordinary file tools and the window
   // re-evaluates it — no IPC for it to learn, no command for the user to run.
