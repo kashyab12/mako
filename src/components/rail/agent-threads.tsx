@@ -3,6 +3,7 @@ import { formatRelative, workspaceName } from "@/lib/format"
 import { threads, useThreads } from "@/state/threads"
 import { actions } from "@/state/session"
 import { cn } from "@/lib/utils"
+import { HarnessIcon } from "@/components/ui/provider-icon"
 import { SearchIcon, XIcon } from "lucide-react"
 import type { Harness, ThreadRef } from "@/lib/types"
 
@@ -26,25 +27,8 @@ export const HARNESS_LABEL: Record<string, string> = {
   devin: "Devin",
 }
 
-/**
- * One hue per harness, used as a 6px dot. Dots, not badges: the rail is
- * dense, and thirty colored pills would shout over the titles they label.
- */
-const HARNESS_DOT: Record<string, string> = {
-  pi: "bg-emerald-400/80",
-  codex: "bg-sky-400/80",
-  claude: "bg-orange-400/80",
-  cursor: "bg-zinc-300/80",
-  grok: "bg-violet-400/80",
-  devin: "bg-blue-400/80",
-}
-
 export function harnessLabel(harness: Harness): string {
   return HARNESS_LABEL[harness] ?? harness
-}
-
-export function harnessDot(harness: Harness): string {
-  return HARNESS_DOT[harness] ?? "bg-faint"
 }
 
 export function AgentThreads() {
@@ -133,13 +117,22 @@ const ThreadRow = memo(function ThreadRow({ threadRef: ref }: { threadRef: Threa
       )}
     >
       <span className="flex items-baseline gap-2">
-        <span
-          className={cn(
-            "size-1.5 shrink-0 self-center rounded-full",
-            harnessDot(ref.harness),
-            working && "animate-pulse"
-          )}
-        />
+        {/* Where this conversation has lived: earlier harnesses dimmed and
+            tucked behind, the current one in front. One mark when it has
+            only ever been one place — which is most sessions. */}
+        <span className="flex shrink-0 items-center -space-x-1 self-center">
+          {(ref.lineage ?? []).slice(-2).map((origin, index) => (
+            <HarnessIcon
+              key={`${origin.harness}-${index}`}
+              harness={origin.harness}
+              className="size-3 opacity-40"
+            />
+          ))}
+          <HarnessIcon
+            harness={ref.harness}
+            className={cn("size-3", working && "animate-pulse")}
+          />
+        </span>
         <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground/85">
           {ref.title ?? "Untitled session"}
         </span>
@@ -151,8 +144,10 @@ const ThreadRow = memo(function ThreadRow({ threadRef: ref }: { threadRef: Threa
           </span>
         ) : null}
       </span>
-      <span className="flex items-center gap-1.5 pl-3.5 text-[11px] text-faint">
-        <span className="shrink-0">{harnessLabel(ref.harness)}</span>
+      <span className="flex items-center gap-1.5 pl-5 text-[11px] text-faint">
+        <span className="shrink-0">
+          {[...(ref.lineage ?? []).map((origin) => harnessLabel(origin.harness)), harnessLabel(ref.harness)].join(" → ")}
+        </span>
         {ref.cwd ? (
           <>
             <span className="text-faint/50">·</span>

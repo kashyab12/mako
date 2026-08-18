@@ -28,6 +28,7 @@ import {
   type ThreadEntry,
   type ThreadRef,
 } from "@mako/sessions"
+import { annotate, bindLineage, loadLineage } from "./lineage.js"
 import type { HostEvent } from "./shared.js"
 
 /** Refs sent to the renderer per push. Nobody scrolls ten years of history. */
@@ -43,6 +44,7 @@ let pushTimer: NodeJS.Timeout | null = null
 export function installThreads(send: (event: HostEvent) => void): void {
   emit = send
   void (async () => {
+    await loadLineage()
     catalog = defaultCatalog({
       cachePath: join(app.getPath("userData"), "threads-catalog.json"),
       devinAccounts: await devinAccounts(),
@@ -50,7 +52,11 @@ export function installThreads(send: (event: HostEvent) => void): void {
     await catalog.scan()
     push()
     catalog.startWatching()
-    catalog.onEvent(() => schedulePush())
+    catalog.onEvent((event) => {
+      // A new session may be the one a continuation is waiting to claim.
+      if (event.type === "added") bindLineage(event.ref)
+      schedulePush()
+    })
   })()
 }
 
@@ -93,11 +99,12 @@ export function stopThreads(): void {
 }
 
 export function listThreads(filter: { cwd?: string; harness?: string } = {}): ThreadRef[] {
-  return catalog?.list(filter).slice(0, LIST_CAP) ?? []
+  return (catalog?.list(filter).slice(0, LIST_CAP) ?? []).map(annotate)
 }
 
 export async function openThread(path: string): Promise<Thread | null> {
-  return catalog?.open(path) ?? null
+  const thread = await (catalog?.open(path) ?? null)
+  return thread ? { ...thread, ref: annotate(thread.ref) } : null
 }
 
 /**

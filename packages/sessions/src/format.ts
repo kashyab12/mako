@@ -52,6 +52,19 @@ export type ThreadEntry =
   | { kind: "event"; at?: string; label: string; detail?: string }
 
 /**
+ * Where a conversation has been before it got here.
+ *
+ * A session continued across harnesses keeps its identity: a thread that
+ * began on Devin and moved to Claude Code is one conversation wearing two
+ * marks, not two unrelated sessions. The chain lists earlier lives oldest
+ * first; the ref's own harness is the current one and is not repeated here.
+ */
+export interface ThreadOrigin {
+  harness: Harness
+  title?: string
+}
+
+/**
  * The cheap identity of a session: everything a list needs, nothing a
  * transcript needs. Built from at most the head and tail of a native file, so
  * cataloguing a thousand sessions stays a moment, not a minute.
@@ -69,6 +82,8 @@ export interface ThreadRef {
   updatedAt?: string
   /** Bytes of the native store — a cheap staleness check and a size hint. */
   bytes?: number
+  /** Earlier harnesses this conversation lived on, oldest first. */
+  lineage?: ThreadOrigin[]
 }
 
 /** A full conversation: the identity plus every entry, in order. */

@@ -57,6 +57,24 @@ const Mistral: Mark = (props) => (
   </svg>
 )
 
+const Cursor: Mark = (props) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+    <path d="M12 2 2.5 7.5v9L12 22l9.5-5.5v-9L12 2Zm0 2.1 7 4.05L12 12 5 8.15l7-4.05ZM4.5 9.4l6.6 3.8v6.9l-6.6-3.8V9.4Zm8.4 10.7v-6.9l6.6-3.8v6.9l-6.6 3.8Z" />
+  </svg>
+)
+
+const Devin: Mark = (props) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+    <path d="M3 4.5 12 9l9-4.5-9 7.5-9-7.5Zm0 7L12 16l9-4.5-9 7.5-9-7.5Z" opacity="0.95" />
+  </svg>
+)
+
+const Pi: Mark = (props) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+    <path d="M4 6.2C4.9 5 6.4 4.6 8 4.6h12V7h-2.6v9.6c0 1 .5 1.4 1.2 1.4.5 0 .9-.1 1.3-.4l.1 2c-.6.4-1.5.6-2.3.6-2 0-3.3-1.1-3.3-3.3V7h-4.1v12h-3V7h-.9c-1 0-1.7.3-2.3 1.2L4 6.2Z" />
+  </svg>
+)
+
 /** Marks by Pi provider id, with the tint each brand is recognised by. */
 const MARKS: Record<string, { mark: Mark; tint: string }> = {
   anthropic: { mark: Anthropic, tint: "#D97757" },
@@ -70,6 +88,56 @@ const MARKS: Record<string, { mark: Mark; tint: string }> = {
   meta: { mark: Meta, tint: "#0866FF" },
   mistral: { mark: Mistral, tint: "#FA520F" },
   openrouter: { mark: Mistral, tint: "currentColor" },
+}
+
+/**
+ * Marks by *harness* — the tool a session belongs to, as distinct from the
+ * model provider a message was priced by. Codex wears OpenAI's mark and
+ * Claude Code wears Anthropic's because that is how people recognise them;
+ * Cursor, Devin, Grok and Pi wear their own.
+ */
+const HARNESS_MARKS: Record<string, { mark: Mark; tint: string }> = {
+  pi: { mark: Pi, tint: "#34D399" },
+  codex: { mark: OpenAI, tint: "currentColor" },
+  claude: { mark: Anthropic, tint: "#D97757" },
+  cursor: { mark: Cursor, tint: "currentColor" },
+  grok: { mark: XAI, tint: "currentColor" },
+  devin: { mark: Devin, tint: "#4E8DF6" },
+}
+
+/** A harness's mark, sized by the caller. Falls back to initials. */
+export function HarnessIcon({
+  harness,
+  className,
+  tinted = true,
+}: {
+  harness: string
+  className?: string
+  tinted?: boolean
+}) {
+  const found = HARNESS_MARKS[harness.toLowerCase()]
+  if (!found) {
+    return (
+      <span
+        className={cn(
+          "inline-flex shrink-0 items-center justify-center rounded-[3px] bg-foreground/10",
+          "text-[7px] font-bold tracking-tight text-muted-foreground uppercase",
+          className
+        )}
+        aria-hidden
+      >
+        {harness.slice(0, 2)}
+      </span>
+    )
+  }
+  const Mark = found.mark
+  return (
+    <Mark
+      className={cn("shrink-0", className)}
+      style={tinted && found.tint !== "currentColor" ? { color: found.tint } : undefined}
+      aria-hidden
+    />
+  )
 }
 
 /**

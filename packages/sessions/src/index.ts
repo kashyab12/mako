@@ -14,6 +14,7 @@ export {
   type Harness,
   type Thread,
   type ThreadEntry,
+  type ThreadOrigin,
   type ThreadRef,
   type TurnUsage,
 } from "./format.js"

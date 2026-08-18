@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { harnessDot, harnessLabel } from "@/components/rail/agent-threads"
+import { harnessLabel } from "@/components/rail/agent-threads"
+import { HarnessIcon } from "@/components/ui/provider-icon"
 import { threads, useThreads } from "@/state/threads"
 import { formatRelative } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -57,11 +58,22 @@ export function ThreadViewer() {
     >
       <div className="glass-panel flex max-h-[86vh] w-full max-w-[52rem] flex-col overflow-hidden rounded-xl">
         <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-hairline px-4">
-          <span className={cn("size-2 shrink-0 rounded-full", harnessDot(ref.harness))} />
+          {/* The conversation's whole life: earlier harnesses dimmed behind
+              the one it lives on now. */}
+          <span className="flex shrink-0 items-center -space-x-1">
+            {(ref.lineage ?? []).map((origin, index) => (
+              <HarnessIcon
+                key={`${origin.harness}-${index}`}
+                harness={origin.harness}
+                className="size-3.5 opacity-40"
+              />
+            ))}
+            <HarnessIcon harness={ref.harness} className="size-3.5" />
+          </span>
           <div className="min-w-0 flex-1">
             <p className="truncate text-[13px] font-medium">{ref.title ?? "Untitled session"}</p>
             <p className="truncate text-[10.5px] text-faint">
-              {harnessLabel(ref.harness)}
+              {[...(ref.lineage ?? []).map((origin) => harnessLabel(origin.harness)), harnessLabel(ref.harness)].join(" → ")}
               {ref.model ? ` · ${ref.model}` : ""}
               {ref.cwd ? ` · ${ref.cwd}` : ""}
               {ref.updatedAt ? ` · ${formatRelative(ref.updatedAt)}` : ""}
@@ -144,7 +156,7 @@ function ContinueMenu() {
             }}
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] text-foreground/90 transition-colors hover:bg-raised"
           >
-            <span className={cn("size-1.5 rounded-full", harnessDot(target))} />
+            <HarnessIcon harness={target} className="size-3.5" />
             {harnessLabel(target)}
           </button>
         ))}

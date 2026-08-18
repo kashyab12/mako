@@ -7,6 +7,7 @@ export type {
   Harness,
   Thread,
   ThreadEntry,
+  ThreadOrigin,
   ThreadRef,
   TurnUsage,
 } from "@mako/sessions"

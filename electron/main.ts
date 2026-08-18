@@ -31,6 +31,7 @@ import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunCh
 import { HostPool } from "./pool.js"
 import { followThread, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, sendRemote, stopThreads, unfollowThread } from "./threads.js"
 import { abortNative, bindDrivers, freshHarnesses, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
+import { chainOf, expectLineage } from "./lineage.js"
 import { listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
 import type { BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
 
@@ -360,6 +361,9 @@ function bindIpc() {
   handle("pi:thread-continue-with", async (_e, path: string, harness: string, instruction?: string) => {
     const [thread, handoff] = await Promise.all([openThread(path), handoffFor(path, instruction)])
     if (!thread || !handoff) throw new Error("This session could not be read for continuation")
+    // The conversation keeps its identity across the move: when the new
+    // session's store appears, it inherits the chain and the title.
+    expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
     return startFresh(harness, thread.ref.cwd, handoff)
   })
   handle("pi:thread-run", (_e, path: string) => threadRun(path))
@@ -382,8 +386,13 @@ function bindIpc() {
   handle("pi:thread-continue", async (_e, path: string, instruction?: string) => {
     const [thread, handoff] = await Promise.all([openThread(path), handoffFor(path, instruction)])
     if (!thread || !handoff) throw new Error("This session could not be read for continuation")
+    expectLineage("pi", thread.ref.cwd, chainOf(thread.ref))
     const live = await ready()
     const tab = await live.open(thread.ref.cwd ? { cwd: thread.ref.cwd } : {})
+    // The conversation's name travels with it — the tab is the same thread,
+    // one harness over, and should say so rather than titling itself from
+    // the handoff preamble.
+    if (thread.ref.title) live.active.setName(thread.ref.title)
     await live.active.prompt(handoff)
     return tab
   })

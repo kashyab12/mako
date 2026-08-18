@@ -397,9 +397,12 @@ export function installMockBridge() {
       { harness: "codex", nativeId: "cx-1", path: "/mock/codex.jsonl", cwd: "/Users/you/api", title: "Trace the flaky webhook retry", model: "gpt-5.2-codex", updatedAt: new Date(Date.now() - 1_200_000).toISOString(), startedAt: new Date(Date.now() - 5_200_000).toISOString(), bytes: 20_000 },
       { harness: "claude", nativeId: "cl-1", path: "/mock/claude.jsonl", cwd: "/Users/you/mako", title: "Refactor the composer focus handling", model: "claude-opus-5", updatedAt: new Date(Date.now() - 4_800_000).toISOString(), startedAt: new Date(Date.now() - 9_800_000).toISOString(), bytes: 48_000 },
       { harness: "cursor", nativeId: "cu-1", path: "/mock/cursor.db", cwd: "/Users/you/site", title: "Make the pricing table responsive", updatedAt: new Date(Date.now() - 86_000_000).toISOString(), startedAt: new Date(Date.now() - 90_000_000).toISOString(), bytes: 12_000 },
+      { harness: "claude", nativeId: "cl-2", path: "/mock/claude-2.jsonl", cwd: "/Users/you/api", title: "Ship the billing webhooks", model: "claude-opus-5", updatedAt: new Date(Date.now() - 600_000).toISOString(), startedAt: new Date(Date.now() - 2_000_000).toISOString(), bytes: 9_000, lineage: [{ harness: "devin", title: "Ship the billing webhooks" }] },
     ],
     openThread: async (path: string) => ({
-      ref: { harness: "codex", nativeId: "cx-1", path, cwd: "/Users/you/api", title: "Trace the flaky webhook retry", model: "gpt-5.2-codex", updatedAt: new Date().toISOString() },
+      ref: path.includes("claude-2")
+        ? { harness: "claude" as const, nativeId: "cl-2", path, cwd: "/Users/you/api", title: "Ship the billing webhooks", model: "claude-opus-5", updatedAt: new Date().toISOString(), lineage: [{ harness: "devin" as const, title: "Ship the billing webhooks" }] }
+        : { harness: "codex" as const, nativeId: "cx-1", path, cwd: "/Users/you/api", title: "Trace the flaky webhook retry", model: "gpt-5.2-codex", updatedAt: new Date().toISOString() },
       entries: [
         { kind: "user", text: "The webhook retry is flaky under load — trace it." },
         { kind: "assistant", blocks: [
