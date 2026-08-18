@@ -26,6 +26,8 @@ interface AcpState {
   blocks: AcpBlock[]
   permission: AcpPermissionRequest | null
   starting: boolean
+  /** Typed while the agent was working; sent the moment it goes quiet. */
+  queued: string | null
 }
 
 export const acpStore = createStore<AcpState>({
@@ -33,14 +35,21 @@ export const acpStore = createStore<AcpState>({
   blocks: [],
   permission: null,
   starting: false,
+  queued: null,
 })
 export const useAcp = createHook(acpStore)
 
 export function applyAcpSession(session: AcpSessionState) {
-  const current = acpStore.get().session
+  const { session: current, queued } = acpStore.get()
   if (!current || current.id !== session.id) return
   acpStore.set({ session })
   if (session.status === "failed" && session.error) toast.error(session.error)
+  // A message typed mid-turn goes the moment the agent goes quiet — that is
+  // what queueing promised.
+  if (current.status === "running" && session.status === "ready" && queued) {
+    acpStore.set({ queued: null })
+    void acp.send(queued)
+  }
 }
 
 export function applyAcpUpdate(id: string, update: AcpUpdate) {
@@ -133,11 +142,20 @@ export const acp = {
   async send(text: string) {
     const { session } = acpStore.get()
     if (!session || !hasBridge()) return
+    if (session.status === "running") {
+      // Not lost, not an error: it goes next.
+      acpStore.set({ queued: text })
+      return
+    }
     try {
       await getPi().acpPrompt(session.id, text)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     }
+  },
+
+  unqueue() {
+    acpStore.set({ queued: null })
   },
 
   answerPermission(optionId: string | null) {
@@ -162,6 +180,6 @@ export const acp = {
   close() {
     const { session } = acpStore.get()
     if (session && hasBridge()) void getPi().acpClose(session.id)
-    acpStore.set({ session: null, blocks: [], permission: null })
+    acpStore.set({ session: null, blocks: [], permission: null, queued: null })
   },
 }

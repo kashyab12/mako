@@ -14,6 +14,10 @@
  * validates its own tool shapes on replay (paired ids, parseable inputs,
  * known names), and a foreign session cannot satisfy Claude's rules with
  * Codex's tools. Text carries the same information and replays anywhere.
+ *
+ * Verified for all three targets on real data: Pi's SessionManager opens
+ * the emitted file; Claude Code and Codex both resume emitted sessions and
+ * answer questions about the history from memory.
  */
 
 import { randomUUID } from "node:crypto"
@@ -69,6 +73,9 @@ function flatten(entries: ThreadEntry[]): Message[] {
   }
   // Every store expects the conversation to open with a user message.
   while (messages.length > 0 && messages[0]?.role !== "user") messages.shift()
+  if (messages.length === 0) {
+    throw new Error("This conversation has no replayable turns")
+  }
   return messages
 }
 
@@ -166,6 +173,60 @@ export async function emitPiSession(
   const stamp = startedAt.replace(/[:.]/g, "-")
   const path = join(dir, `${stamp}_${sessionId}.jsonl`)
   await writeFile(path, `${lines.join("\n")}\n`, "utf8")
+  return { sessionId, path }
+}
+
+/**
+ * Write a thread into Codex's rollout store, resumable with
+ * `codex exec resume <id>` — which replays the message items into context.
+ */
+export async function emitCodexSession(
+  thread: Thread,
+  options: { cwd?: string; home?: string } = {}
+): Promise<EmitResult> {
+  const cwd = options.cwd ?? thread.ref.cwd ?? homedir()
+  const home = options.home ?? homedir()
+  const sessionId = randomUUID()
+  const now = new Date()
+  const iso = now.toISOString()
+  const dir = join(
+    home,
+    ".codex",
+    "sessions",
+    String(now.getFullYear()),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0")
+  )
+  await mkdir(dir, { recursive: true })
+
+  const lines: string[] = [
+    JSON.stringify({
+      timestamp: iso,
+      type: "session_meta",
+      // cli_version is required by Codex's session-meta schema; without it
+      // the resume machinery refuses the file outright.
+      payload: { id: sessionId, timestamp: iso, cwd, originator: "mako", cli_version: "0.147.0", source: "exec" },
+    }),
+  ]
+  for (const message of flatten(thread.entries)) {
+    lines.push(
+      JSON.stringify({
+        timestamp: message.at ?? iso,
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: message.role,
+          content: [
+            { type: message.role === "user" ? "input_text" : "output_text", text: message.text },
+          ],
+        },
+      })
+    )
+  }
+
+  const stamp = iso.slice(0, 19).replace(/:/g, "-")
+  const path = join(dir, `rollout-${stamp}-${sessionId}.jsonl`)
+  await writeFile(path, lines.join("\n") + "\n", "utf8")
   return { sessionId, path }
 }
 

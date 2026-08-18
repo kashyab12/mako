@@ -273,19 +273,34 @@ function Permission() {
 
 function Composer() {
   const session = useAcp((state) => state.session)
+  const queued = useAcp((state) => state.queued)
   const [draft, setDraft] = useState("")
   if (!session) return null
   const running = session.status === "running"
 
   const send = () => {
     const text = draft.trim()
-    if (!text || running) return
+    if (!text) return
     setDraft("")
     void acp.send(text)
   }
 
   return (
     <div className="shrink-0 border-t border-hairline px-3 py-2.5">
+      {queued ? (
+        <p className="flex items-center gap-1.5 pb-1.5 text-[11px] text-faint">
+          <span className="min-w-0 truncate">
+            Queued: <span className="text-muted-foreground">{queued}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => acp.unqueue()}
+            className="shrink-0 text-faint underline-offset-2 hover:text-foreground hover:underline"
+          >
+            discard
+          </button>
+        </p>
+      ) : null}
       <div className="flex items-end gap-2">
         <textarea
           value={draft}
@@ -297,19 +312,28 @@ function Composer() {
             }
           }}
           rows={1}
-          placeholder={running ? "Working — Enter to queue is not a thing yet; Stop first" : "Message the agent"}
-          disabled={running}
-          className="max-h-32 min-h-8 w-full flex-1 resize-none rounded-md bg-surface px-2.5 py-1.5 text-[12.5px] leading-relaxed text-foreground placeholder:text-faint focus:ring-1 focus:ring-hairline focus:outline-none disabled:opacity-60"
+          placeholder={running ? "Working — Enter queues this for the next turn" : "Message the agent"}
+          className="max-h-32 min-h-8 w-full flex-1 resize-none rounded-md bg-surface px-2.5 py-1.5 text-[12.5px] leading-relaxed text-foreground placeholder:text-faint focus:ring-1 focus:ring-hairline focus:outline-none"
         />
         {running ? (
-          <button
-            type="button"
-            onClick={() => acp.cancel()}
-            className="pressable flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-hairline px-2.5 text-[11.5px] text-muted-foreground hover:text-foreground"
-          >
-            <SquareIcon className="size-3" />
-            Stop
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={send}
+              disabled={!draft.trim()}
+              className="pressable flex h-8 shrink-0 items-center rounded-md border border-hairline px-2.5 text-[11.5px] text-muted-foreground hover:text-foreground disabled:opacity-40"
+            >
+              Queue
+            </button>
+            <button
+              type="button"
+              onClick={() => acp.cancel()}
+              className="pressable flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-hairline px-2.5 text-[11.5px] text-muted-foreground hover:text-foreground"
+            >
+              <SquareIcon className="size-3" />
+              Stop
+            </button>
+          </>
         ) : (
           <button
             type="button"

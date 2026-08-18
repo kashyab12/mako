@@ -29,7 +29,7 @@ import {
 } from "./devserver.js"
 import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunChecks, type CreatePullOptions } from "./github.js"
 import { HostPool } from "./pool.js"
-import { devinAccountsMasked, emitThreadAsClaude, emitThreadAsPi, followThread, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, saveDevinAccounts, sendRemote, stopThreads, unfollowThread } from "./threads.js"
+import { devinAccountsMasked, emitThreadAsClaude, emitThreadAsCodex, emitThreadAsPi, followThread, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, saveDevinAccounts, sendRemote, stopThreads, unfollowThread } from "./threads.js"
 import { abortNative, bindDrivers, freshHarnesses, harnessAvailability, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
 import { bindLineageDirect, chainOf, expectLineage } from "./lineage.js"
 import { acpCancel, acpClose, acpHarnesses, acpPrompt, acpRespondPermission, acpSetMode, acpStart, acpState, bindAcp, stopAcp } from "./acp.js"
@@ -360,12 +360,22 @@ function bindIpc() {
    * reaches the rail through the watcher, like any session anything starts.
    */
   handle("pi:thread-continue-with", async (_e, path: string, harness: string, instruction?: string) => {
+    // Harnesses whose stores we can write get the real thing: the thread
+    // emitted as a *native* session in their format, instantly replyable —
+    // no tokens spent until someone actually says something.
+    if (harness === "claude" || harness === "codex") {
+      const materialized =
+        harness === "claude" ? await emitThreadAsClaude(path) : await emitThreadAsCodex(path)
+      if (!materialized) throw new Error("This session could not be read for continuation")
+      bindLineageDirect(materialized.sessionPath, chainOf(materialized.thread.ref))
+      return { kind: "emitted" as const, path: materialized.sessionPath }
+    }
+    // The rest take the universal transcript as the first prompt of a fresh
+    // headless session, surfaced by the watcher when its store appears.
     const [thread, handoff] = await Promise.all([openThread(path), handoffFor(path, instruction)])
     if (!thread || !handoff) throw new Error("This session could not be read for continuation")
-    // The conversation keeps its identity across the move: when the new
-    // session's store appears, it inherits the chain and the title.
     expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
-    return startFresh(harness, thread.ref.cwd, handoff)
+    return { kind: "spawned" as const, run: startFresh(harness, thread.ref.cwd, handoff) }
   })
   handle("pi:devin-accounts", () => devinAccountsMasked())
   handle("pi:devin-accounts-save", (_e, accounts: Array<{ name: string; apiKey: string }>) =>

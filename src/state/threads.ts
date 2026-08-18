@@ -137,7 +137,20 @@ export const threads = {
     if (harness === "pi") return this.continueHere(ref)
     if (!hasBridge()) return false
     try {
-      await getPi().continueThreadWith(ref.path, harness)
+      const result = await getPi().continueThreadWith(ref.path, harness)
+      if (result.kind === "emitted") {
+        // The conversation now exists natively in the target's store. Open
+        // it in the viewer — instantly replyable, nothing spent yet.
+        const thread = await getPi().openThread(result.path)
+        if (thread) {
+          threadsStore.set({ viewing: thread, run: null })
+          void getPi().followThread(result.path, thread.ref.bytes ?? 0)
+          toast(`Now a native ${label} session`, {
+            description: "Same conversation, new harness. Reply below to set it working.",
+          })
+          return true
+        }
+      }
       threadsStore.set({ viewing: null, run: null })
       toast(`${label} picked up the conversation`, {
         description: `Working in ${ref.cwd ?? "its workspace"} — it will appear under Agents.`,

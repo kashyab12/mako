@@ -16,7 +16,7 @@
  *     costs one positional read of only the appended bytes per flush.
  */
 
-import { watch, type FSWatcher } from "node:fs"
+import { existsSync, watch, type FSWatcher } from "node:fs"
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
 import type { Thread, ThreadEntry, ThreadRef } from "./format.js"
@@ -56,11 +56,15 @@ const REMOTE_POLL_MS = 90_000
 /** Faster, while someone is actually looking at a remote thread. */
 const REMOTE_FOLLOW_MS = 15_000
 
+/** Rescan cadence where recursive watching is unavailable. Stat-only. */
+const POLL_FALLBACK_MS = 30_000
+
 export class SessionCatalog {
   private providers: SessionProvider[]
   private remotes: RemoteSource[] = []
   private remoteRefs = new Map<string, ThreadRef>()
   private remoteTimer: NodeJS.Timeout | null = null
+  private pollTimer: NodeJS.Timeout | null = null
   private byPath = new Map<string, CacheEntry>()
   private cachePath?: string
   private cacheLoaded = false
@@ -95,9 +99,11 @@ export class SessionCatalog {
 
   /**
    * Reconcile the catalog with disk. Returns every known session, newest
-   * first. Emits nothing — scan is for building state; watch is for changes.
+   * first. By default emits nothing — scan is for building state; watch is
+   * for changes — but the polling fallback (platforms without recursive
+   * watch) passes `emitChanges` so its rescans behave like watch events.
    */
-  async scan(): Promise<ThreadRef[]> {
+  async scan(options: { emitChanges?: boolean } = {}): Promise<ThreadRef[]> {
     await this.loadCache()
     const seen = new Set<string>()
     await Promise.all(
@@ -110,6 +116,9 @@ export class SessionCatalog {
             if (cached && cached.bytes === file.bytes && cached.mtimeMs === file.mtimeMs) return
             const ref = await provider.peek(file).catch(() => null)
             this.byPath.set(file.path, { bytes: file.bytes, mtimeMs: file.mtimeMs, ref })
+            if (options.emitChanges && ref) {
+              this.emit({ type: cached?.ref ? "updated" : "added", ref })
+            }
           })
         )
       })
@@ -153,8 +162,10 @@ export class SessionCatalog {
   startWatching(): void {
     if (this.watchers.length > 0) return
     this.armRemotePolling()
+    let unwatchable = false
     for (const provider of this.providers) {
       for (const root of provider.roots()) {
+        if (!existsSync(root)) continue // Not installed: nothing to watch.
         try {
           const watcher = watch(root, { recursive: true }, (_event, filename) => {
             if (!filename) return
@@ -163,9 +174,17 @@ export class SessionCatalog {
           watcher.on("error", () => {})
           this.watchers.push(watcher)
         } catch {
-          // A harness that is not installed has no root to watch.
+          // Recursive watching is unavailable on some platforms and network
+          // volumes. Those roots fall back to the polling rescan below.
+          unwatchable = true
         }
       }
+    }
+    if (unwatchable && !this.pollTimer) {
+      this.pollTimer = setInterval(() => {
+        void this.scan({ emitChanges: true })
+      }, POLL_FALLBACK_MS)
+      this.pollTimer.unref?.()
     }
   }
 
@@ -205,6 +224,10 @@ export class SessionCatalog {
     if (this.remoteTimer) {
       clearInterval(this.remoteTimer)
       this.remoteTimer = null
+    }
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer)
+      this.pollTimer = null
     }
     for (const timer of this.pending.values()) clearTimeout(timer)
     this.pending.clear()

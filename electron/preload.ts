@@ -47,7 +47,9 @@ const api = {
   resumableHarnesses: () => invoke<string[]>("pi:thread-resumable"),
   continueTargets: () => invoke<string[]>("pi:thread-continue-targets"),
   continueThreadWith: (path: string, harness: string, instruction?: string) =>
-    invoke<ThreadRunState>("pi:thread-continue-with", path, harness, instruction),
+    invoke<
+      { kind: "emitted"; path: string } | { kind: "spawned"; run: ThreadRunState }
+    >("pi:thread-continue-with", path, harness, instruction),
   threadRun: (path: string) => invoke<ThreadRunState | null>("pi:thread-run", path),
   resumeThread: (path: string, prompt: string) => invoke<ThreadRunState>("pi:thread-resume", path, prompt),
   abortThreadRun: (path: string) => invoke<void>("pi:thread-abort-run", path),

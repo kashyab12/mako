@@ -22,6 +22,7 @@ import { app } from "electron"
 import {
   defaultCatalog,
   emitClaudeSession,
+  emitCodexSession,
   emitPiSession,
   renderTranscript,
   type DevinAccount,
@@ -206,6 +207,16 @@ export async function emitThreadAsClaude(
   const thread = await openThread(path)
   if (!thread) return null
   const emitted = await emitClaudeSession(thread)
+  return { thread, sessionId: emitted.sessionId, sessionPath: emitted.path }
+}
+
+/** Materialize a thread as a native Codex rollout, resumable by id. */
+export async function emitThreadAsCodex(
+  path: string
+): Promise<{ thread: Thread; sessionId: string; sessionPath: string } | null> {
+  const thread = await openThread(path)
+  if (!thread) return null
+  const emitted = await emitCodexSession(thread)
   return { thread, sessionId: emitted.sessionId, sessionPath: emitted.path }
 }
 

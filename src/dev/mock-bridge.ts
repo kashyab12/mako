@@ -430,7 +430,10 @@ export function installMockBridge() {
     acpCancel: async () => {},
     acpClose: async () => {},
     continueTargets: async () => ["pi", "codex", "claude", "cursor", "grok"],
-    continueThreadWith: async (_path: string, harness: string) => ({ path: `fresh:${harness}:1`, harness, status: "running" as const }),
+    continueThreadWith: async (_path: string, harness: string) =>
+      harness === "claude" || harness === "codex"
+        ? { kind: "emitted" as const, path: `/mock/emitted-${harness}.jsonl` }
+        : { kind: "spawned" as const, run: { path: `fresh:${harness}:1`, harness, status: "running" as const } },
     threadRun: async () => null,
     resumeThread: async (path: string) => ({ path, harness: "codex", status: "running" as const }),
     abortThreadRun: async () => {},
