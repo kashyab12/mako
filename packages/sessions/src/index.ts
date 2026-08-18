@@ -19,7 +19,7 @@ export {
   type TurnUsage,
 } from "./format.js"
 export { SessionCatalog, type CatalogEvent, type RemoteSource } from "./catalog.js"
-export { connectDaemon, daemonSocketPath, pingDaemon, serveCatalog, type DaemonClient, type DaemonStats } from "./daemon.js"
+export { connectDaemon, daemonSocketPath, pingDaemon, PROTOCOL_VERSION, serveCatalog, type DaemonClient, type DaemonStats } from "./daemon.js"
 export { renderTranscript, type TranscriptOptions } from "./transcript.js"
 export { emitClaudeSession, emitCodexSession, emitCursorSession, emitGrokSession, emitPiSession, type EmitResult } from "./emit.js"
 export { type NativeFile, type SessionProvider } from "./providers/types.js"

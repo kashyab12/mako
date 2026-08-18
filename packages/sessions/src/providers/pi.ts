@@ -107,7 +107,10 @@ export class PiProvider implements SessionProvider {
         continue
       }
       if (!ref) continue
-      if (line.type === "model_change" && typeof line.modelId === "string") ref.model = line.modelId
+      if (line.type === "model_change") {
+        if (typeof line.modelId === "string") ref.model = line.modelId
+        if (typeof line.provider === "string") ref.modelProvider = line.provider
+      }
       if (!ref.title && line.type === "message" && line.message?.role === "user") {
         ref.title = titleFrom(plainText(line.message.content))
         if (ref.title) break

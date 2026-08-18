@@ -84,6 +84,12 @@ export interface ThreadRef {
   bytes?: number
   /** Earlier harnesses this conversation lived on, oldest first. */
   lineage?: ThreadOrigin[]
+  /**
+   * The provider behind the model, when the harness records one. Pi sessions
+   * driven by the pi-devin provider carry "devin" here — which is how a
+   * Devin-local conversation announces itself without being a new harness.
+   */
+  modelProvider?: string
 }
 
 /** A full conversation: the identity plus every entry, in order. */

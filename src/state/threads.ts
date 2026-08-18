@@ -68,6 +68,8 @@ export const useThreads = createHook(threadsStore)
 
 /** A just-started conversation waiting for its session file to appear. */
 let pendingOpen: { harness: string; cwd: string; since: number } | null = null
+/** The composer harness to give back when the viewer closes. */
+let harnessBeforeViewing: string | null = null
 let knownPaths = new Set<string>()
 
 export function applyThreads(list: ThreadRef[]) {
@@ -182,7 +184,18 @@ export const threads = {
       const thread = await getPi().openThread(ref.path)
       if (!thread) throw new Error("This session could not be read")
       const run = await getPi().threadRun(ref.path).catch(() => null)
-      threadsStore.set({ viewing: thread, viewingBusy: false, run })
+      // The composer adopts this conversation: its agent picker shows the
+      // harness that owns the session, and switching it moves the
+      // conversation on the next send. No separate "move" ceremony.
+      if (harnessBeforeViewing === null) {
+        harnessBeforeViewing = threadsStore.get().composerHarness
+      }
+      threadsStore.set({
+        viewing: thread,
+        viewingBusy: false,
+        run,
+        composerHarness: thread.ref.harness === "pi" ? "pi" : thread.ref.harness,
+      })
       // Live from here: the agent writing this session — in whatever app —
       // keeps appending, and those entries belong on screen.
       void getPi().followThread(ref.path, thread.ref.bytes ?? 0)
@@ -193,7 +206,13 @@ export const threads = {
   },
 
   closeViewer() {
-    threadsStore.set({ viewing: null, run: null })
+    const restore = harnessBeforeViewing
+    harnessBeforeViewing = null
+    threadsStore.set({
+      viewing: null,
+      run: null,
+      ...(restore !== null ? { composerHarness: restore } : {}),
+    })
     if (hasBridge()) void getPi().unfollowThread()
   },
 
@@ -211,6 +230,48 @@ export const threads = {
       applyThreadRun(run)
       threadsStore.set({ run })
       return true
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+      return false
+    }
+  },
+
+  /**
+   * Reply through a *different* harness: the move IS the reply. The
+   * conversation becomes a native session at the destination — emitted
+   * into its store when we can write it, spawned from the transcript when
+   * we cannot — and the message goes out as its first turn there.
+   */
+  async moveAndSend(ref: ThreadRef, harness: string, prompt: string): Promise<boolean> {
+    if (!hasBridge()) return false
+    if (harness === "pi") {
+      const moved = await this.continueHere(ref)
+      if (!moved) return false
+      if (prompt.trim()) {
+        const { actions } = await import("@/state/session")
+        return Boolean(await actions.send(prompt))
+      }
+      return true
+    }
+    try {
+      const result = await withConversion(ref.harness, harness, ref.title, () =>
+        getPi().continueThreadWith(ref.path, harness, prompt)
+      )
+      if (result.kind === "emitted") {
+        const thread = await getPi().openThread(result.path)
+        if (thread) {
+          threadsStore.set({ viewing: thread, run: null })
+          void getPi().followThread(result.path, thread.ref.bytes ?? 0)
+          return this.reply(thread.ref, prompt)
+        }
+      } else if (result.kind === "spawned") {
+        // The prompt rode along as part of the handoff; the new session
+        // opens itself when the watcher sees its first write.
+        pendingOpen = { harness, cwd: ref.cwd ?? "", since: Date.now() }
+        threadsStore.set({ viewing: null, run: null })
+        return true
+      }
+      return false
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
       return false

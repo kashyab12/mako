@@ -23,6 +23,7 @@ import { join } from "node:path"
 import { app } from "electron"
 import {
   connectDaemon,
+  PROTOCOL_VERSION,
   defaultCatalog,
   DevinRemote,
   emitClaudeSession,
@@ -92,6 +93,14 @@ export function installThreads(send: (event: HostEvent) => void): void {
 async function connectViaDaemon(): Promise<boolean> {
   try {
     const client = await connectDaemon()
+    if (client.stats.version < PROTOCOL_VERSION) {
+      // An older daemon serves refs shaped for its own vintage. Retire it
+      // and report no daemon — the caller spawns a fresh one.
+      await client.retire().catch(() => {})
+      client.close()
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      return false
+    }
     daemon = client
     mirror.clear()
     for (const ref of await client.list()) mirror.set(ref.path, ref)

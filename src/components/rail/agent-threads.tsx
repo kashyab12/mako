@@ -33,6 +33,15 @@ export const HARNESS_LABEL: Record<string, string> = {
   devin: "Devin",
 }
 
+/**
+ * What a session should read as. A Pi session whose model comes from the
+ * pi-devin provider is a Devin-local conversation — it wears Devin's mark
+ * and counts under Devin's chip, because that is who was answering.
+ */
+export function displayHarness(ref: ThreadRef): string {
+  return ref.harness === "pi" && ref.modelProvider === "devin" ? "devin" : ref.harness
+}
+
 export function harnessLabel(harness: Harness): string {
   return HARNESS_LABEL[harness] ?? harness
 }
@@ -59,7 +68,7 @@ export function AgentThreads() {
       all.map((ref) => ({
         ref,
         haystack:
-          `${ref.title ?? ""} ${ref.cwd ?? ""} ${harnessLabel(ref.harness)} ${ref.model ?? ""}`.toLowerCase(),
+          `${ref.title ?? ""} ${ref.cwd ?? ""} ${harnessLabel(displayHarness(ref))} ${ref.model ?? ""}`.toLowerCase(),
       })),
     [all]
   )
@@ -73,7 +82,7 @@ export function AgentThreads() {
   const counts = useMemo(() => {
     const byHarness = new Map<string, number>()
     for (const entry of scoped) {
-      byHarness.set(entry.ref.harness, (byHarness.get(entry.ref.harness) ?? 0) + 1)
+      byHarness.set(displayHarness(entry.ref), (byHarness.get(displayHarness(entry.ref)) ?? 0) + 1)
     }
     return byHarness
   }, [scoped])
@@ -84,7 +93,7 @@ export function AgentThreads() {
     const matched = scoped
       .filter(
         (entry) =>
-          (!active || active.has(entry.ref.harness)) &&
+          (!active || active.has(displayHarness(entry.ref))) &&
           (!needle || entry.haystack.includes(needle))
       )
       .map((entry) => entry.ref)
@@ -394,7 +403,7 @@ const ThreadRow = memo(function ThreadRow({ threadRef: ref }: { threadRef: Threa
               className="size-3 opacity-40"
             />
           ))}
-          <HarnessIcon harness={ref.harness} className={cn("size-3", working && "animate-pulse")} />
+          <HarnessIcon harness={displayHarness(ref)} className={cn("size-3", working && "animate-pulse")} />
         </span>
         <span
           className={cn(
@@ -431,7 +440,7 @@ const ThreadRow = memo(function ThreadRow({ threadRef: ref }: { threadRef: Threa
       </span>
       <span className="flex items-center gap-1.5 pl-5 text-[11px] text-faint">
         <span className="shrink-0">
-          {[...(ref.lineage ?? []).map((origin) => harnessLabel(origin.harness)), harnessLabel(ref.harness)].join(" → ")}
+          {[...(ref.lineage ?? []).map((origin) => harnessLabel(origin.harness)), harnessLabel(displayHarness(ref))].join(" → ")}
         </span>
         {scope === "all" && ref.cwd ? (
           <>

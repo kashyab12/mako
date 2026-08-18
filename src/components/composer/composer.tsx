@@ -192,7 +192,10 @@ export function Composer() {
           await acp.send(full)
           ok = true
         } else if (viewingRef) {
-          ok = await threads.reply(viewingRef, full)
+          ok =
+            harness === viewingRef.harness
+              ? await threads.reply(viewingRef, full)
+              : await threads.moveAndSend(viewingRef, harness, full)
         } else if (harness === "claude" || harness === "cursor") {
           ok = await acp.startFresh(harness, meta?.cwd ?? "", full)
         } else {
@@ -283,7 +286,9 @@ export function Composer() {
       ? `${HARNESS_TITLES[liveHarness] ?? liveHarness} is working — Enter queues your message`
       : `Reply — ${HARNESS_TITLES[liveHarness] ?? liveHarness} answers live`
     : routedHarness
-      ? `Reply — ${HARNESS_TITLES[routedHarness] ?? routedHarness} answers`
+      ? newHarness !== routedHarness
+        ? `Reply — moves this conversation to ${HARNESS_TITLES[newHarness] ?? newHarness}`
+        : `Reply — ${HARNESS_TITLES[routedHarness] ?? routedHarness} answers`
       : newHarness !== "pi"
         ? `Ask ${HARNESS_TITLES[newHarness] ?? newHarness} for a change`
         : status.streaming
@@ -572,38 +577,38 @@ function ComposerRouting() {
     )
   }
 
-  if (viewing) {
-    return (
-      <span className="flex h-7 items-center gap-1.5 rounded-md bg-raised px-2 text-[11.5px] text-foreground/85">
-        <HarnessIcon harness={viewing.harness} className="size-3.5" />
-        {HARNESS_TITLES[viewing.harness] ?? viewing.harness}
-        {run?.status === "running" ? (
-          <button
-            type="button"
-            onClick={() => void threads.abortReply(viewing)}
-            className="pressable ml-1 rounded px-1 text-[10.5px] text-faint hover:text-foreground"
-          >
-            working — stop
-          </button>
-        ) : null}
-      </span>
-    )
-  }
-
+  const moving = viewing && harness !== viewing.harness
   return (
     <>
       <AgentPicker />
       {harness === "pi" ? (
-        <>
-          <ModelPicker />
-          <EffortPicker />
-        </>
+        viewing ? null : (
+          <>
+            <ModelPicker />
+            <EffortPicker />
+          </>
+        )
       ) : (
         <>
           <ForeignModelPicker harness={harness} />
           <ForeignEffortPicker harness={harness} />
         </>
       )}
+      {viewing && run?.status === "running" ? (
+        <button
+          type="button"
+          onClick={() => void threads.abortReply(viewing)}
+          className="pressable flex h-7 items-center gap-1.5 rounded-md bg-raised px-2 text-[11px] text-faint hover:text-foreground"
+        >
+          <span className="size-1.5 animate-pulse rounded-full bg-emerald-400/90" />
+          working — stop
+        </button>
+      ) : null}
+      {moving ? (
+        <span className="flex h-7 items-center gap-1 rounded-md bg-brand-soft px-2 text-[10.5px] font-medium text-brand">
+          moves here on send
+        </span>
+      ) : null}
     </>
   )
 }

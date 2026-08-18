@@ -51,7 +51,13 @@ interface Frame {
   harness?: string
 }
 
-const PROTOCOL_VERSION = 1
+/**
+ * Bumped when the wire *data* changes shape, not just the ops — a ref that
+ * grew a field counts, because a stale daemon would keep serving refs
+ * without it forever. Clients that see an older daemon retire it and let a
+ * fresh one take the socket.
+ */
+export const PROTOCOL_VERSION = 2
 
 /** Serve one catalog over the socket. Resolves once listening. */
 export async function serveCatalog(
@@ -131,6 +137,13 @@ export async function serveCatalog(
             reply(frame.id, true, null)
             return
           }
+          case "retire": {
+            // A newer client wants this vintage gone. Answer, then leave —
+            // the socket frees, and the successor takes over the watchers.
+            reply(frame.id, true, null)
+            setTimeout(() => process.exit(0), 100)
+            return
+          }
           case "unfollow": {
             const mine = follows.get(socket)
             if (frame.path) {
@@ -175,6 +188,8 @@ export interface DaemonClient {
   open(path: string): Promise<Thread | null>
   follow(path: string, fromByte: number): Promise<void>
   unfollow(path?: string): Promise<void>
+  /** Ask the daemon to exit — used to replace an older vintage. */
+  retire(): Promise<void>
   onEvent(
     listener: (event:
       | { event: "added" | "updated"; ref: ThreadRef }
@@ -269,6 +284,7 @@ export async function connectDaemon(
     open: (path) => request({ op: "open", path }),
     follow: (path, fromByte) => request({ op: "follow", path, fromByte }),
     unfollow: (path) => request({ op: "unfollow", path }),
+    retire: () => request({ op: "retire" }),
     onEvent: (listener) => {
       eventListeners.add(listener as (event: never) => void)
       return () => eventListeners.delete(listener as (event: never) => void)
