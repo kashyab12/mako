@@ -62,18 +62,17 @@ export function AgentPicker() {
 
 function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void }) {
   const [available, setAvailable] = useState<Record<string, boolean>>({ pi: true })
-  const [remotes, setRemotes] = useState<string[]>([])
   const [tuning, setTuning] = useState<Tuning | null>(null)
+  const hasDevinModels = sessionStore.get().models.some((model) => model.provider === "devin")
   const chosen = useThreads((state) => state.composerTuning[selected] ?? {})
 
   useEffect(() => {
     if (!hasBridge()) return
     void getPi().harnessAvailability().then(setAvailable).catch(() => {})
-    void getPi().resumableHarnesses().then((list) => setRemotes(list.filter((h) => h === "devin"))).catch(() => {})
   }, [])
 
   useEffect(() => {
-    if (!hasBridge() || selected === "pi" || selected === "devin") {
+    if (!hasBridge() || selected === "pi") {
       setTuning(null)
       return
     }
@@ -85,11 +84,34 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
   }, [selected])
 
   const choices = ORDER.filter(
-    (harness) => available[harness] || (harness === "devin" && remotes.includes("devin"))
+    (harness) => available[harness] || (harness === "devin" && hasDevinModels)
   )
   const devinMissing = !choices.includes("devin")
 
-  const pick = (harness: string) => threadsStore.set({ composerHarness: harness })
+  const pick = (harness: string) => {
+    // Devin means one thing here: Devin's models answering locally through
+    // Pi — streaming, steerable, in this folder. Picking it selects a devin
+    // model in Pi's own picker and gets out of the way.
+    if (harness === "devin") {
+      const models = sessionStore.get().models
+      const current = sessionStore.get().meta?.model
+      const devinModels = models.filter((model) => model.provider === "devin")
+      if (devinModels.length === 0) {
+        toast.error("No Devin models in Pi's list", {
+          description: "The pi-devin provider supplies them — check it is installed and signed in.",
+        })
+        return
+      }
+      threadsStore.set({ composerHarness: "pi" })
+      if (current?.provider !== "devin") {
+        const first = devinModels[0]
+        if (first) void actions.setModel(first.provider, first.id)
+      }
+      onDone()
+      return
+    }
+    threadsStore.set({ composerHarness: harness })
+  }
   const tune = (patch: Partial<{ model?: string; effort?: string; fast?: boolean }>) => {
     const all = threadsStore.get().composerTuning
     threadsStore.set({ composerTuning: { ...all, [selected]: { ...all[selected], ...patch } } })
@@ -119,7 +141,7 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
           {devinMissing ? (
             <span
               className="inline-flex h-6 items-center gap-1.5 rounded bg-raised/50 px-2 text-[11px] text-faint/60"
-              title="Add a Devin service key in Settings → Agents"
+              title="Devin's models arrive through the pi-devin provider — install and sign in, and this lights up"
             >
               <HarnessIcon harness="devin" className="size-3" tinted={false} />
               Devin
@@ -134,8 +156,6 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
             Pi answers in this tab, streaming, steerable mid-turn. Its model and
             reasoning live in the pickers beside this one.
           </p>
-        ) : selected === "devin" ? (
-          <DevinModes onDone={onDone} />
         ) : tuning === null ? (
           <p className="shimmer px-2 py-4 text-[11.5px]">Reading what {harnessLabel(selected)} offers…</p>
         ) : (
@@ -153,78 +173,12 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
         <span>
           {selected === "pi"
             ? "Native to this tab"
-            : selected === "devin"
-              ? "Runs in Devin's cloud"
-              : selected === "claude" || selected === "cursor"
-                ? "Runs live in this workspace"
-                : "Runs in this workspace, streaming in"}
+            : selected === "claude" || selected === "cursor"
+              ? "Runs live in this workspace"
+              : "Runs in this workspace, streaming in"}
         </span>
         <span>Every conversation lands in Threads</span>
       </div>
-    </div>
-  )
-}
-
-/**
- * Devin, both ways.
- *
- * Local is Devin's models answering right here — Pi runs the tab with a
- * devin-provider model, streaming and steerable, exactly the mode this app
- * already uses them in. Cloud is a real Devin session at app.devin.ai,
- * started from the prompt, no folder involved. Two rows, because they are
- * two genuinely different things and pretending otherwise would confuse
- * both.
- */
-function DevinModes({ onDone }: { onDone: () => void }) {
-  const chooseLocal = () => {
-    const models = sessionStore.get().models
-    const current = sessionStore.get().meta?.model
-    const devinModels = models.filter((model) => model.provider === "devin")
-    if (devinModels.length === 0) {
-      toast.error("No Devin models in Pi's list", {
-        description: "The pi-devin provider supplies them — check it is installed and signed in.",
-      })
-      return
-    }
-    threadsStore.set({ composerHarness: "pi" })
-    if (current?.provider !== "devin") {
-      const pick = devinModels[0]
-      if (pick) void actions.setModel(pick.provider, pick.id)
-    }
-    onDone()
-  }
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={chooseLocal}
-        className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors duration-100 hover:bg-raised"
-      >
-        <HarnessIcon harness="devin" className="mt-0.5 size-4 shrink-0" />
-        <span className="min-w-0 flex-1">
-          <span className="block text-[12.5px] font-medium">Local — through Pi</span>
-          <span className="block text-[11px] leading-snug text-faint">
-            Devin's models answer right here: streaming, steerable, in this
-            folder. Picks a devin model in Pi's own picker.
-          </span>
-        </span>
-      </button>
-      <button
-        type="button"
-        onClick={onDone}
-        className="flex w-full items-start gap-2 rounded-md bg-raised px-2 py-2 text-left"
-      >
-        <HarnessIcon harness="devin" className="mt-0.5 size-4 shrink-0" />
-        <span className="min-w-0 flex-1">
-          <span className="block text-[12.5px] font-medium">Cloud — a Devin session</span>
-          <span className="block text-[11px] leading-snug text-faint">
-            A real session at app.devin.ai, started from your prompt. It works
-            in its own environment and appears in Threads as it goes.
-          </span>
-        </span>
-        <CheckIcon className="mt-1 size-3.5 shrink-0 text-brand" />
-      </button>
     </div>
   )
 }
