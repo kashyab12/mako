@@ -184,6 +184,6 @@ API, so a plugin can add or replace any of it. See `AGENTS.md`.
 
 `ignore/` is gitignored study material. Don't import from it.
 
-If Anthropic returns `Invalid signature in thinking block`, Pi is replaying a
-thinking block the API won't accept — common after a mid-session model switch.
-Start a new session, or turn thinking off. Not a Mako bug.
+If you see `Invalid signature in thinking block`, a reasoning block from before
+a mid-session model switch is being replayed and the provider will not take it.
+Start a new session, or turn thinking off.
