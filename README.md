@@ -2,8 +2,8 @@
 
 <img src="mako-icons/dark/logomark-1024.png" width="88" align="right" alt="" />
 
-Run coding agents on your own machine, several at once, and see what they
-change before you keep it.
+A fast desktop for the [Pi coding agent](https://github.com/earendil-works/pi-coding-agent).
+Run several at once, and see what they change before you keep it.
 
 ## Run
 
