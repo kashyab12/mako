@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Exchange } from "@/components/transcript/exchange"
+import { NAVIGATOR_WIDTH, TurnNavigator } from "@/components/transcript/turn-navigator"
 import { harnessLabel } from "@/components/rail/agent-threads"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { threads, useThreads } from "@/state/threads"
@@ -93,12 +94,40 @@ export function ThreadViewer() {
 function Conversation() {
   const thread = useThreads((state) => state.viewing)
   const scroller = useRef<HTMLDivElement | null>(null)
+  const pane = useRef<HTMLDivElement | null>(null)
   const stick = useRef(true)
+  const [activeTurn, setActiveTurn] = useState<string | null>(null)
 
   const exchanges = useMemo(
     () => (thread ? toExchanges(threadToMessages(thread.entries)) : []),
     [thread]
   )
+
+  // Which turn is in view — the navigator's cursor. Same observer the
+  // native transcript uses: costs nothing while entries stream in.
+  useEffect(() => {
+    const node = scroller.current
+    if (!node) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0]
+        const id = visible?.target.getAttribute("data-exchange")
+        if (id) setActiveTurn(id)
+      },
+      { root: node, rootMargin: "-10% 0px -70% 0px", threshold: 0 }
+    )
+    for (const element of node.querySelectorAll("[data-exchange]")) observer.observe(element)
+    return () => observer.disconnect()
+  }, [exchanges.length])
+
+  const jump = (id: string) => {
+    stick.current = false
+    scroller.current
+      ?.querySelector(`[data-exchange="${CSS.escape(id)}"]`)
+      ?.scrollIntoView({ block: "start", behavior: "smooth" })
+  }
 
   // A conversation opens at its end — that is where the conversation is.
   // Before paint, so the reader never sees the top flash by; and pinned
@@ -128,25 +157,29 @@ function Conversation() {
   }, [exchanges.length, thread?.entries.length])
 
   return (
-    <div
-      ref={scroller}
-      onScroll={(event) => {
-        const node = event.currentTarget
-        stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80
-      }}
-      className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
-    >
-      {exchanges.length === 0 ? (
-        <p className="pt-12 text-center text-[12px] text-faint">
-          This session has no readable conversation.
-        </p>
-      ) : (
-        <div className="mx-auto flex w-full max-w-[760px] flex-col gap-7 px-6 py-6">
-          {exchanges.map((exchange) => (
-            <Exchange key={exchange.id} exchange={exchange} />
-          ))}
-        </div>
-      )}
+    <div ref={pane} className="relative flex min-h-0 flex-1">
+      <div
+        ref={scroller}
+        onScroll={(event) => {
+          const node = event.currentTarget
+          stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80
+        }}
+        style={{ paddingRight: NAVIGATOR_WIDTH }}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+      >
+        {exchanges.length === 0 ? (
+          <p className="pt-12 text-center text-[12px] text-faint">
+            This session has no readable conversation.
+          </p>
+        ) : (
+          <div className="mx-auto flex w-full max-w-[760px] flex-col gap-7 px-6 py-6">
+            {exchanges.map((exchange) => (
+              <Exchange key={exchange.id} exchange={exchange} />
+            ))}
+          </div>
+        )}
+      </div>
+      <TurnNavigator exchanges={exchanges} activeId={activeTurn} onJump={jump} paneRef={pane} />
     </div>
   )
 }

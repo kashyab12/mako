@@ -117,48 +117,56 @@ export function FirstRun() {
         </button>
       </div>
 
+      {/* One line per step; the hint rides only on the next thing to do.
+          This list shares the opening screen with the suggestions — it must
+          fit under them, not scroll them away. */}
       <div className="flex flex-col">
-        {STEPS.map((step) => (
-          <div
-            key={step.id}
-            className={cn(
-              "flex items-start gap-2.5 border-b border-hairline py-2 last:border-b-0",
-              complete[step.id] && "opacity-45"
-            )}
-          >
-            <span
+        {STEPS.map((step) => {
+          const isNext = remaining[0]?.id === step.id
+          return (
+            <div
+              key={step.id}
               className={cn(
-                "mt-[3px] flex size-3.5 shrink-0 items-center justify-center rounded-full",
-                complete[step.id] ? "bg-foreground text-background" : "ring-1 ring-hairline"
+                "flex items-center gap-2.5 py-[5px]",
+                complete[step.id] && "opacity-45"
               )}
             >
-              {complete[step.id] ? <CheckIcon className="size-2.5" /> : null}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p
+              <span
                 className={cn(
-                  "text-[12.5px]",
-                  complete[step.id] ? "text-faint line-through" : "text-foreground/90"
+                  "flex size-3.5 shrink-0 items-center justify-center rounded-full",
+                  complete[step.id] ? "bg-foreground text-background" : "ring-1 ring-hairline"
                 )}
               >
-                {step.title}
-              </p>
-              <p className="mt-0.5 text-[11px] leading-snug text-faint">{step.hint}</p>
-            </div>
-            {step.keys ? (
-              <span className="mt-[1px] flex shrink-0 gap-0.5">
-                {formatChord(step.keys).map((key) => (
-                  <kbd
-                    key={key}
-                    className="rounded border border-hairline bg-raised px-1 text-[10px] text-faint"
-                  >
-                    {key}
-                  </kbd>
-                ))}
+                {complete[step.id] ? <CheckIcon className="size-2.5" /> : null}
               </span>
-            ) : null}
-          </div>
-        ))}
+              <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                <span
+                  className={cn(
+                    "shrink-0 text-[12.5px]",
+                    complete[step.id] ? "text-faint line-through" : "text-foreground/90"
+                  )}
+                >
+                  {step.title}
+                </span>
+                {isNext ? (
+                  <span className="truncate text-[11px] text-faint">{step.hint}</span>
+                ) : null}
+              </span>
+              {step.keys ? (
+                <span className="flex shrink-0 gap-0.5">
+                  {formatChord(step.keys).map((key) => (
+                    <kbd
+                      key={key}
+                      className="rounded border border-hairline bg-raised px-1 text-[10px] text-faint"
+                    >
+                      {key}
+                    </kbd>
+                  ))}
+                </span>
+              ) : null}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

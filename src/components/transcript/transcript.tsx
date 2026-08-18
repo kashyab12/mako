@@ -267,7 +267,7 @@ function EmptyTranscript() {
 
   return (
     <div className="flex min-h-full justify-center px-6">
-      <div className="my-auto w-full max-w-[460px] py-10">
+      <div className="my-auto w-full max-w-[460px] py-8">
         <div className="flex items-center gap-3.5">
           <MakoMark className="size-8 shrink-0 text-foreground/85" />
           <div className="min-w-0">

@@ -436,6 +436,13 @@ export function installMockBridge() {
           { type: "tool", name: "shell", input: "rg 'retry' src/queue", output: "src/queue/consumer.ts:42" },
           { type: "text", text: "The retry drops the idempotency key on the second attempt. Fixing." },
         ] },
+        { kind: "user", text: "Does the dead-letter queue see these?" },
+        { kind: "assistant", blocks: [{ type: "text", text: "No — they retry forever. Adding a cap of 5 with backoff." }] },
+        { kind: "user", text: "Ship it with a regression test please." },
+        { kind: "assistant", blocks: [
+          { type: "tool", name: "shell", input: "npm test -- retry", output: "12 passing" },
+          { type: "text", text: "Capped retries with jittered backoff, test locks the idempotency key." },
+        ] },
       ],
     }),
     continueThread: async () => {
