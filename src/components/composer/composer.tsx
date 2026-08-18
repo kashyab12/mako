@@ -346,7 +346,7 @@ export function Composer() {
             void attach([...event.dataTransfer.files])
           }}
           className={cn(
-            "surface-glass lit-edge relative rounded-xl bg-surface ring-1 transition-[box-shadow] duration-150",
+            "surface-glass lit-edge relative rounded-2xl bg-surface ring-1 transition-[box-shadow] duration-150",
             dragging ? "ring-foreground/40" : focused ? "ring-border" : "ring-hairline"
           )}
         >
@@ -412,8 +412,7 @@ export function Composer() {
             />
           </div>
 
-          <div className="mt-0.5 flex items-center gap-1 border-t border-hairline/60 px-1.5 py-1.5">
-            <ComposerRouting />
+          <div className="flex items-center gap-1 px-1.5 pb-1.5">
             <IconAction
               label="Reference a file"
               keys={["@"]}
@@ -459,23 +458,20 @@ export function Composer() {
         </div>
 
         {/*
-         * One quiet line, and only while the composer is empty. A permanent
-         * row of key chips reads as clutter the moment you have learned them,
-         * which is after the first session.
+         * The context line, below the field the way Cursor keeps its branch
+         * and machine: who answers, on what model, at what effort — read
+         * without opening anything, changed without leaving the keyboard's
+         * neighborhood. The key hints share the line and yield while typing.
          */}
-        <div
-          className={cn(
-            "mt-1.5 flex h-4 items-center px-1 text-[10.5px] text-faint",
-            "transition-opacity duration-200",
-            draft || focused ? "opacity-0" : "opacity-100"
-          )}
-        >
-          <span>
-            <span className="font-mono text-faint/80">@</span> files ·{" "}
-            <span className="font-mono text-faint/80">$</span> skills ·{" "}
-            <span className="font-mono text-faint/80">/</span> commands
-          </span>
-          <span className="ml-auto flex items-center gap-1">
+        <div className="mt-1.5 flex min-h-7 items-center gap-1 px-1">
+          <ComposerRouting />
+          <span
+            className={cn(
+              "ml-auto flex items-center gap-1 text-[10.5px] text-faint",
+              "transition-opacity duration-200",
+              draft || focused ? "opacity-0" : "opacity-100"
+            )}
+          >
             <Keys keys={formatChord(status.streaming ? "mod+enter" : "mod+k")} />
             {status.streaming ? "queue" : "commands"}
           </span>
