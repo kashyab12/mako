@@ -9,10 +9,12 @@ change before you keep it.
 
 ```bash
 npm install
-npm run desktop      # Electron against your real ~/.pi/agent
+npm run desktop
 ```
 
-UI work without an agent:
+That is it — it uses whatever agent and models you already have set up.
+
+To work on the interface without an agent running:
 
 ```bash
 npm run dev
