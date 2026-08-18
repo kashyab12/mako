@@ -83,6 +83,8 @@ const api = {
   saveDevinAccounts: (accounts: Array<{ name: string; apiKey: string }>) =>
     invoke<void>("pi:devin-accounts-save", accounts),
   harnessAvailability: () => invoke<Record<string, boolean>>("pi:harness-availability"),
+  daemonStatus: () =>
+    invoke<{ pid: number; startedAt: number; sessions: number } | null>("pi:daemon-status"),
 
   /* Tabs. Session-scoped calls below always address the active tab. */
   openTab: (options?: { cwd?: string; sessionPath?: string }) =>

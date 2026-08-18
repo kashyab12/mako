@@ -261,6 +261,7 @@ function shortPath(path: string): string {
  */
 function Agents() {
   const [availability, setAvailability] = useState<Record<string, boolean> | null>(null)
+  const [daemon, setDaemon] = useState<{ pid: number; startedAt: number; sessions: number } | null>(null)
   const [accounts, setAccounts] = useState<Array<{ name: string; key: string }>>([])
   const [name, setName] = useState("")
   const [apiKey, setApiKey] = useState("")
@@ -270,6 +271,7 @@ function Agents() {
     if (!hasBridge()) return
     void getPi().harnessAvailability().then(setAvailability).catch(() => setAvailability({}))
     void getPi().devinAccounts().then(setAccounts).catch(() => setAccounts([]))
+    void getPi().daemonStatus().then(setDaemon).catch(() => setDaemon(null))
   }, [])
   useEffect(load, [load])
 
@@ -296,9 +298,17 @@ function Agents() {
   return (
     <Section title="Agents">
       <p className="pb-3 text-[12px] leading-relaxed text-muted-foreground">
-        Every agent whose sessions appear under the rail's Agents tab, and
-        whether its CLI is on this machine. Installing a CLI is all it takes —
-        sessions are found and watched automatically.
+        Every agent whose sessions appear in the Threads rail, and whether its
+        CLI is on this machine. Installing a CLI is all it takes — sessions
+        are found and watched automatically.
+      </p>
+      <p className="mb-3 flex items-center gap-1.5 rounded-md bg-surface px-2.5 py-1.5 text-[11px] text-faint">
+        <span
+          className={cn("size-1.5 rounded-full", daemon ? "bg-emerald-400/90" : "bg-faint/50")}
+        />
+        {daemon
+          ? `Sync daemon running — ${daemon.sessions} sessions watched, up since ${formatRelative(new Date(daemon.startedAt).toISOString())}, syncing even with the app closed`
+          : "Sync daemon not running — the app is watching sessions itself while open"}
       </p>
       <div className="flex flex-col">
         {HARNESSES.map((entry) => (

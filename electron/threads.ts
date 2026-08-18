@@ -15,18 +15,24 @@
  * the conversation, and that is what this hands over.
  */
 
+import { spawn } from "node:child_process"
+import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { app } from "electron"
 import {
+  connectDaemon,
   defaultCatalog,
+  DevinRemote,
   emitClaudeSession,
   emitCodexSession,
   emitCursorSession,
   emitGrokSession,
   emitPiSession,
   renderTranscript,
+  type DaemonClient,
+  type DaemonStats,
   type DevinAccount,
   type SessionCatalog,
   type Thread,
@@ -43,26 +49,34 @@ const LIST_CAP = 600
 const PUSH_DEBOUNCE_MS = 300
 
 let catalog: SessionCatalog | null = null
+let daemon: DaemonClient | null = null
+/** Daemon mode's synchronous view: filled once, patched by events. */
+const mirror = new Map<string, ThreadRef>()
+let devinSender: DevinRemote | null = null
 let emit: (event: HostEvent) => void = () => {}
 let pushTimer: NodeJS.Timeout | null = null
 
+/**
+ * Prefer the daemon; run locally only when it cannot exist.
+ *
+ * The daemon owns the watchers and the always-warm cache, so the app's
+ * "scan" becomes one socket round-trip — and sync keeps happening while no
+ * window is open, which is the entire point of having one. The app spawns
+ * it if it is not running (as this process's own runtime in Node mode — no
+ * second Node ships for forty lines) and exactly one survives, because the
+ * daemon exits quietly when another already answers.
+ */
 export function installThreads(send: (event: HostEvent) => void): void {
   emit = send
   void (async () => {
     try {
       await loadLineage()
-      catalog = defaultCatalog({
-        cachePath: join(app.getPath("userData"), "threads-catalog.json"),
-        devinAccounts: await devinAccounts(),
-      })
-      await catalog.scan()
-      push()
-      catalog.startWatching()
-      catalog.onEvent((event) => {
-        // A new session may be the one a continuation is waiting to claim.
-        if (event.type === "added") bindLineage(event.ref)
-        schedulePush()
-      })
+      devinSender = new DevinRemote(await devinAccounts())
+      if (await connectViaDaemon()) return
+      spawnDaemon()
+      await new Promise((resolve) => setTimeout(resolve, 2500))
+      if (await connectViaDaemon()) return
+      await runLocalCatalog()
     } catch (error) {
       // A catalog that failed to build must say so — an empty rail with no
       // explanation reads as "the feature is broken", which it would be.
@@ -75,9 +89,82 @@ export function installThreads(send: (event: HostEvent) => void): void {
   })()
 }
 
-/** Whether the first scan has finished — the renderer's retry asks this. */
+async function connectViaDaemon(): Promise<boolean> {
+  try {
+    const client = await connectDaemon()
+    daemon = client
+    mirror.clear()
+    for (const ref of await client.list()) mirror.set(ref.path, ref)
+    push()
+    client.onEvent((event) => {
+      if (event.event === "added" || event.event === "updated") {
+        mirror.set(event.ref.path, event.ref)
+        if (event.event === "added") bindLineage(event.ref)
+        schedulePush()
+      } else if (event.event === "removed") {
+        mirror.delete(event.path)
+        schedulePush()
+      } else if (event.event === "entries") {
+        emit({ type: "thread-entries", path: event.path, entries: event.entries, replace: event.replace })
+      }
+    })
+    client.onClose(() => {
+      // The daemon died underneath us; carry on locally rather than blank.
+      daemon = null
+      void runLocalCatalog().catch(() => {})
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function spawnDaemon(): void {
+  const script = join(
+    app.getAppPath(),
+    "node_modules",
+    "@mako",
+    "sessions",
+    "dist",
+    "daemon-main.js"
+  )
+  if (!existsSync(script)) return
+  try {
+    const child = spawn(process.execPath, [script], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      detached: true,
+      stdio: "ignore",
+    })
+    child.unref()
+  } catch {
+    // The local catalog covers it.
+  }
+}
+
+async function runLocalCatalog(): Promise<void> {
+  if (catalog) return
+  catalog = defaultCatalog({
+    cachePath: join(app.getPath("userData"), "threads-catalog.json"),
+    devinAccounts: await devinAccounts(),
+  })
+  await catalog.scan()
+  push()
+  catalog.startWatching()
+  catalog.onEvent((event) => {
+    // A new session may be the one a continuation is waiting to claim.
+    if (event.type === "added") bindLineage(event.ref)
+    schedulePush()
+  })
+}
+
+/** Whether a source is serving — the renderer's retry asks this. */
 export function threadsReady(): boolean {
-  return catalog !== null
+  return daemon !== null || catalog !== null
+}
+
+/** For the settings surface: is the daemon doing the work, and since when. */
+export function daemonStatus(): DaemonStats | null {
+  return daemon?.stats ?? null
 }
 
 /**
@@ -133,29 +220,42 @@ export async function saveDevinAccounts(accounts: DevinAccount[]): Promise<void>
 
 /** Whether a path belongs to a remote source (and can be replied to by it). */
 export async function sendRemote(path: string, message: string): Promise<boolean> {
-  const remote = catalog?.remoteFor(path)
-  if (!remote?.send) return false
-  await remote.send(path, message)
+  // Sending needs only the account key, not the catalog, so it works the
+  // same whichever process owns the watchers.
+  if (!devinSender?.configured || !devinSender.owns(path)) return false
+  await devinSender.send(path, message)
   return true
 }
 
 /** Harnesses whose sessions are remote and replyable through their API. */
 export function remoteHarnesses(): string[] {
-  return catalog?.remoteHarnesses() ?? []
+  return devinSender?.configured ? ["devin"] : []
 }
 
 export function stopThreads(): void {
   catalog?.stop()
   catalog = null
+  daemon?.close()
+  daemon = null
+  mirror.clear()
   if (pushTimer) clearTimeout(pushTimer)
 }
 
 export function listThreads(filter: { cwd?: string; harness?: string } = {}): ThreadRef[] {
-  return (catalog?.list(filter).slice(0, LIST_CAP) ?? []).map(annotate)
+  const refs = daemon
+    ? [...mirror.values()]
+        .filter(
+          (ref) =>
+            (!filter.cwd || ref.cwd === filter.cwd) &&
+            (!filter.harness || ref.harness === filter.harness)
+        )
+        .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
+    : (catalog?.list(filter) ?? [])
+  return refs.slice(0, LIST_CAP).map(annotate)
 }
 
 export async function openThread(path: string): Promise<Thread | null> {
-  const thread = await (catalog?.open(path) ?? null)
+  const thread = daemon ? await daemon.open(path) : await (catalog?.open(path) ?? null)
   return thread ? { ...thread, ref: annotate(thread.ref) } : null
 }
 
@@ -170,6 +270,12 @@ let unfollow: (() => void) | null = null
 
 export function followThread(path: string, fromByte: number): void {
   unfollow?.()
+  if (daemon) {
+    const client = daemon
+    void client.follow(path, fromByte).catch(() => {})
+    unfollow = () => void client.unfollow(path).catch(() => {})
+    return
+  }
   unfollow =
     catalog?.follow(path, fromByte, (entries: ThreadEntry[], replaced: boolean) => {
       emit({ type: "thread-entries", path, entries, replace: replaced })
