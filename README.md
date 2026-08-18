@@ -56,7 +56,7 @@ the window is, files in play, and every skill on one line each — open one to
 read it.
 
 **Sidebar** — wears the project's GitHub avatar, so several open workspaces are
-told apart by their logo rather than by identical folder icons. Scope to this project or every project Pi has run in; group by
+told apart by their logo rather than by identical folder icons. Scope to this project or every project you have worked in; group by
 date or project. Search reaches project names, so typing a repo name finds
 sessions inside it.
 
