@@ -22,6 +22,7 @@ import {
   renderHandoff,
   type SessionCatalog,
   type Thread,
+  type ThreadEntry,
   type ThreadRef,
 } from "@mako/sessions"
 import type { HostEvent } from "./shared.js"
@@ -60,6 +61,28 @@ export function listThreads(filter: { cwd?: string; harness?: string } = {}): Th
 
 export async function openThread(path: string): Promise<Thread | null> {
   return catalog?.open(path) ?? null
+}
+
+/**
+ * Live entries for the thread open in the viewer.
+ *
+ * One follow at a time: the viewer shows one conversation, and a second
+ * follow request supersedes the first. Entries appended to the native file —
+ * by whatever app is writing it — stream to the renderer as they land.
+ */
+let unfollow: (() => void) | null = null
+
+export function followThread(path: string, fromByte: number): void {
+  unfollow?.()
+  unfollow =
+    catalog?.follow(path, fromByte, (entries: ThreadEntry[]) => {
+      emit({ type: "thread-entries", path, entries })
+    }) ?? null
+}
+
+export function unfollowThread(): void {
+  unfollow?.()
+  unfollow = null
 }
 
 /**

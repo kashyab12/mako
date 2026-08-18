@@ -40,6 +40,8 @@ const api = {
   openThread: (path: string) => invoke<Thread | null>("pi:thread-open", path),
   continueThread: (path: string, instruction?: string) =>
     invoke<TabSnapshot>("pi:thread-continue", path, instruction),
+  followThread: (path: string, fromByte: number) => invoke<void>("pi:thread-follow", path, fromByte),
+  unfollowThread: () => invoke<void>("pi:thread-unfollow"),
 
   /* Tabs. Session-scoped calls below always address the active tab. */
   openTab: (options?: { cwd?: string; sessionPath?: string }) =>

@@ -412,6 +412,8 @@ export function installMockBridge() {
     continueThread: async () => {
       throw new Error("The browser mock cannot open tabs")
     },
+    followThread: async () => {},
+    unfollowThread: async () => {},
     usage: async () => ({
       total: { cost: 36.63, input: 2_400_000, output: 180_000, cacheRead: 9_100_000, cacheWrite: 210_000, messages: 285 },
       days: [], models: [], projects: [], sessions: 12, truncated: false,

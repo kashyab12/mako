@@ -28,7 +28,7 @@ import { viewer, viewerStore } from "@/state/viewer"
 import { applyUpdate, updates } from "@/state/updates"
 import { automations } from "@/state/automations"
 import { applyDevServer } from "@/state/devserver"
-import { applyThreads, threads } from "@/state/threads"
+import { applyThreadEntries, applyThreads, threads } from "@/state/threads"
 import { applyAutomations, noteAutomationRun } from "@/state/automations"
 import { toast } from "sonner"
 
@@ -193,6 +193,9 @@ function applyToActive(event: HostEvent) {
       break
     case "threads":
       applyThreads(event.threads)
+      break
+    case "thread-entries":
+      applyThreadEntries(event.path, event.entries)
       break
     case "automation-run":
       noteAutomationRun(event.run)

@@ -10,7 +10,7 @@ export type {
   ThreadRef,
   TurnUsage,
 } from "@mako/sessions"
-import type { ThreadRef as CatalogThreadRef } from "@mako/sessions"
+import type { ThreadEntry as CatalogThreadEntry, ThreadRef as CatalogThreadRef } from "@mako/sessions"
 
 /**
  * The wire contract between the Electron host and the renderer.
@@ -255,6 +255,8 @@ export type HostEventBody =
    * machine — from any app — was created or grew. Window-wide.
    */
   | { type: "threads"; threads: CatalogThreadRef[] }
+  /** New entries appended to the thread the viewer is following. */
+  | { type: "thread-entries"; path: string; entries: CatalogThreadEntry[] }
 
 /**
  * Every event says which tab it came from.

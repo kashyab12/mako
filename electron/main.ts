@@ -29,7 +29,7 @@ import {
 } from "./devserver.js"
 import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunChecks, type CreatePullOptions } from "./github.js"
 import { HostPool } from "./pool.js"
-import { handoffFor, installThreads, listThreads, openThread, stopThreads } from "./threads.js"
+import { followThread, handoffFor, installThreads, listThreads, openThread, stopThreads, unfollowThread } from "./threads.js"
 import { listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
 import type { BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
 
@@ -347,6 +347,8 @@ function bindIpc() {
   /* Cross-harness threads: every agent's sessions on this machine. */
   handle("pi:threads", (_e, filter?: { cwd?: string; harness?: string }) => listThreads(filter))
   handle("pi:thread-open", (_e, path: string) => openThread(path))
+  handle("pi:thread-follow", (_e, path: string, fromByte: number) => followThread(path, fromByte))
+  handle("pi:thread-unfollow", () => unfollowThread())
   /**
    * Continue a foreign session here: a new tab in the thread's working
    * directory, opened with the conversation as its first prompt. Pi threads
