@@ -7,7 +7,7 @@ import { tokenize } from "@/lib/mentions"
 import { pairTools } from "@/lib/tools"
 import { formatTime, textOf } from "@/lib/format"
 import { responseText, type Exchange as ExchangeData } from "@/lib/exchanges"
-import { actions } from "@/state/session"
+import { actions, useSession } from "@/state/session"
 import { usePrefs } from "@/state/prefs"
 import { cn } from "@/lib/utils"
 import type { PiMessage } from "@/lib/types"
@@ -16,6 +16,8 @@ import {
   CheckIcon,
   ChevronRightIcon,
   CopyIcon,
+  GitForkIcon,
+  PencilIcon,
   RotateCcwIcon,
   TriangleAlertIcon,
 } from "lucide-react"
@@ -64,6 +66,21 @@ function Prompt({ message }: { message: PiMessage }) {
   const text = textOf(message.blocks)
   // References the user typed read back as the chips they were written as.
   const segments = useMemo(() => tokenize(text), [text])
+  // Edit and Fork exist only where the session tree knows this message —
+  // native conversations. A foreign transcript's synthetic ids stay quiet.
+  const node = useSession((state) => {
+    const found = state.tree.find((entry) => entry.id === message.id)
+    return found ? { id: found.id, parentId: found.parentId } : null
+  })
+
+  const editHere = async () => {
+    // Rewind the conversation to just before this prompt, then hand the
+    // words back for editing. Nothing is lost: the turns that followed
+    // stay reachable as a branch in History.
+    if (!node) return
+    if (node.parentId) await actions.navigate(node.parentId)
+    window.dispatchEvent(new CustomEvent("pi:compose", { detail: text }))
+  }
 
   return (
     <div className="group/prompt relative">
@@ -94,6 +111,28 @@ function Prompt({ message }: { message: PiMessage }) {
           <RotateCcwIcon className="size-3" />
           Reuse
         </button>
+        {node ? (
+          <>
+            <button
+              type="button"
+              title="Rewind to here and re-ask — later turns stay reachable in History"
+              onClick={() => void editHere()}
+              className="pressable flex items-center gap-1 rounded px-1 hover:text-foreground"
+            >
+              <PencilIcon className="size-3" />
+              Edit
+            </button>
+            <button
+              type="button"
+              title="Branch from this point into a new tab — both lines stay open"
+              onClick={() => void actions.fork(message.id)}
+              className="pressable flex items-center gap-1 rounded px-1 hover:text-foreground"
+            >
+              <GitForkIcon className="size-3" />
+              Fork
+            </button>
+          </>
+        ) : null}
       </div>
     </div>
   )
