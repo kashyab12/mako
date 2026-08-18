@@ -174,7 +174,8 @@ export function Composer() {
       const liveSession = acpStore.get().session
       const viewingRef = threadsStore.get().viewing?.ref
       const harness = threadsStore.get().composerHarness
-      if ((liveSession || viewingRef || harness !== "pi") && !mode) {
+      const nativeHarness = harness === "pi" || harness === "devin"
+      if ((liveSession || viewingRef || !nativeHarness) && !mode) {
         const paths = attachments.items
           .map((item) => item.stagedPath)
           .filter((path): path is string => Boolean(path))
@@ -196,6 +197,9 @@ export function Composer() {
             harness === viewingRef.harness
               ? await threads.reply(viewingRef, full)
               : await threads.moveAndSend(viewingRef, harness, full)
+        } else if (nativeHarness) {
+          // Unreachable by construction, but the router stays total.
+          ok = false
         } else if (harness === "claude" || harness === "cursor") {
           ok = await acp.startFresh(harness, meta?.cwd ?? "", full)
         } else {
@@ -289,11 +293,13 @@ export function Composer() {
       ? newHarness !== routedHarness
         ? `Reply — moves this conversation to ${HARNESS_TITLES[newHarness] ?? newHarness}`
         : `Reply — ${HARNESS_TITLES[routedHarness] ?? routedHarness} answers`
-      : newHarness !== "pi"
+      : newHarness !== "pi" && newHarness !== "devin"
         ? `Ask ${HARNESS_TITLES[newHarness] ?? newHarness} for a change`
         : status.streaming
           ? "Steer the current turn…"
-          : "Ask for a change"
+          : newHarness === "devin"
+            ? "Ask Devin for a change"
+            : "Ask for a change"
 
   return (
     <div className="shrink-0 px-6 pt-1 pb-4">
@@ -581,7 +587,7 @@ function ComposerRouting() {
   return (
     <>
       <AgentPicker />
-      {harness === "pi" ? (
+      {harness === "pi" || harness === "devin" ? (
         viewing ? null : (
           <>
             <ModelPicker />

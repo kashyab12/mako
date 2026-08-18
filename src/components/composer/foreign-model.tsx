@@ -3,7 +3,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Eyebrow } from "@/components/ui/kit"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { harnessLabel } from "@/components/rail/agent-threads"
-import { threadsStore, useThreads } from "@/state/threads"
+import { MODEL_DEFAULTS, setComposerTuning, useThreads } from "@/state/threads"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
 import { CheckIcon, ChevronDownIcon } from "lucide-react"
@@ -28,20 +28,20 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
   useEffect(() => {
     if (!hasBridge()) return
     setModels([])
-    setFallback("")
+    // Mako holds its own sensible default per harness; the engine's answer,
+    // when it comes, refines it. The trigger never reads as a blank.
+    setFallback(MODEL_DEFAULTS[harness] ?? "")
     void getPi()
       .harnessTuning(harness)
       .then((tuning) => {
-        setFallback(tuning.defaultModel)
-        setModels(tuning.models.filter((model) => model !== tuning.defaultModel))
+        const fallbackModel = tuning.defaultModel || MODEL_DEFAULTS[harness] || ""
+        setFallback(fallbackModel)
+        setModels(tuning.models.filter((model) => model !== fallbackModel))
       })
-      .catch(() => setModels([]))
+      .catch(() => {})
   }, [harness])
 
-  const set = (model?: string) => {
-    const all = threadsStore.get().composerTuning
-    threadsStore.set({ composerTuning: { ...all, [harness]: { ...all[harness], model } } })
-  }
+  const set = (model?: string) => setComposerTuning(harness, { model })
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

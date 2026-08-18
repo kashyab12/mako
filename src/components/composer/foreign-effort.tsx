@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { threadsStore, useThreads } from "@/state/threads"
+import { setComposerTuning, useThreads } from "@/state/threads"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
 import { CheckIcon, ZapIcon } from "lucide-react"
@@ -46,10 +46,8 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
 
   if (!tuning || (tuning.efforts.length === 0 && !tuning.fast)) return null
 
-  const set = (patch: Partial<{ effort?: string; fast?: boolean }>) => {
-    const all = threadsStore.get().composerTuning
-    threadsStore.set({ composerTuning: { ...all, [harness]: { ...all[harness], ...patch } } })
-  }
+  const set = (patch: Partial<{ effort?: string; fast?: boolean }>) =>
+    setComposerTuning(harness, patch)
 
   const label = chosen.fast ? "fast" : (chosen.effort ?? "effort")
 

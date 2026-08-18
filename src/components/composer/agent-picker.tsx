@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { harnessLabel } from "@/components/rail/agent-threads"
-import { threadsStore, useThreads } from "@/state/threads"
+import { MODEL_DEFAULTS, setComposerHarness, useThreads } from "@/state/threads"
 import { actions, store as sessionStore, useSession } from "@/state/session"
 import { toast } from "sonner"
 import { getPi, hasBridge } from "@/lib/bridge"
@@ -13,24 +13,13 @@ import { CheckIcon, ChevronDownIcon } from "lucide-react"
  * Who answers. One question, one panel.
  *
  * Each agent is a full row: its mark in a tile, its name, and the model it
- * would use right now — Pi's row shows the model actually selected, the
- * others show their harness's own default until the model picker beside
- * this one says otherwise. No chips, no filler prose: the rows themselves
- * are the information. Devin is a row too, and picking it means Devin's
- * models answering locally through Pi — it flips the selection and gets
- * out of the way.
+ * would use right now — the user's saved choice, or Mako's own sensible
+ * default. Five hands, one bar: Claude Code, Codex, Cursor, Grok, Devin.
+ * Devin runs local, natively in this tab. No filler prose — the rows are
+ * the information, and every row earns the same treatment.
  */
 
-const ORDER = ["pi", "claude", "codex", "cursor", "grok", "devin"]
-
-const HOW: Record<string, string> = {
-  pi: "Native to this tab",
-  claude: "Live in this workspace",
-  cursor: "Live in this workspace",
-  codex: "Streams into Threads",
-  grok: "Streams into Threads",
-  devin: "Devin's models, through Pi",
-}
+const ORDER = ["claude", "codex", "cursor", "grok", "devin"]
 
 export function AgentPicker() {
   const [open, setOpen] = useState(false)
@@ -95,26 +84,27 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
   const devinMissing = !choices.includes("devin")
 
   const modelFor = (harness: string): string | undefined => {
-    if (harness === "pi") return piModel ? piModel.id : undefined
-    if (harness === "devin") return devinModel?.id
-    return tuning[harness]?.model ?? defaults[harness]
+    if (harness === "devin") {
+      return piModel?.provider === "devin" ? piModel.id : (devinModel?.id ?? MODEL_DEFAULTS.devin)
+    }
+    return tuning[harness]?.model ?? defaults[harness] ?? MODEL_DEFAULTS[harness]
   }
 
   const pick = (harness: string) => {
-    // Devin means one thing here: Devin's models answering locally through
-    // Pi — streaming, steerable, in this folder. Picking it selects a devin
-    // model in Pi's own picker and gets out of the way.
+    // Devin runs local: its models answer natively in this tab — streaming,
+    // steerable, in this folder. Picking it points the engine at a Devin
+    // model and gets out of the way.
     if (harness === "devin") {
       const models = sessionStore.get().models
       const current = sessionStore.get().meta?.model
       const devinModels = models.filter((model) => model.provider === "devin")
       if (devinModels.length === 0) {
-        toast.error("No Devin models in Pi's list", {
+        toast.error("No Devin models available", {
           description: "The pi-devin provider supplies them — check it is installed and signed in.",
         })
         return
       }
-      threadsStore.set({ composerHarness: "pi" })
+      setComposerHarness("devin")
       if (current?.provider !== "devin") {
         const first = devinModels[0]
         if (first) void actions.setModel(first.provider, first.id)
@@ -122,13 +112,13 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
       onDone()
       return
     }
-    threadsStore.set({ composerHarness: harness })
+    setComposerHarness(harness)
   }
 
   return (
     <div className="max-h-[21rem] overflow-y-auto overscroll-contain">
       {choices.map((harness) => {
-        const active = harness !== "devin" && selected === harness
+        const active = selected === harness
         const model = modelFor(harness)
         return (
           <button
@@ -150,18 +140,17 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
               <HarnessIcon harness={harness} className="size-3.5" tinted={active} />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="flex items-baseline gap-2">
-                <span
-                  className={cn(
-                    "text-[12.5px]",
-                    active ? "font-medium text-foreground" : "text-foreground/90"
-                  )}
-                >
-                  {harnessLabel(harness)}
-                </span>
-                <span className="truncate font-mono text-[10.5px] text-faint">{model ?? ""}</span>
+              <span
+                className={cn(
+                  "block text-[12.5px]",
+                  active ? "font-medium text-foreground" : "text-foreground/90"
+                )}
+              >
+                {harnessLabel(harness)}
               </span>
-              <span className="mt-px block text-[10.5px] text-faint/80">{HOW[harness]}</span>
+              <span className="mt-px block truncate font-mono text-[10.5px] text-faint">
+                {model ?? ""}
+              </span>
             </span>
             {active ? <CheckIcon className="size-3.5 shrink-0 text-brand" /> : null}
           </button>

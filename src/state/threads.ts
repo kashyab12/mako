@@ -1,4 +1,5 @@
 import { createHook, createStore } from "@/state/store"
+import { prefsStore, setPref } from "@/state/prefs"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { toast } from "sonner"
 
@@ -61,10 +62,46 @@ export const threadsStore = createStore<ThreadsState>({
   run: null,
   running: {},
   converting: null,
-  composerHarness: "pi",
-  composerTuning: {},
+  // Mako fronts the harnesses; Pi is the engine room, not a choice on the
+  // menu. The last-used agent comes back across launches.
+  composerHarness: prefsStore.get().composerHarness ?? "claude",
+  composerTuning: prefsStore.get().composerTuning,
 })
 export const useThreads = createHook(threadsStore)
+
+/** The composer's agent, remembered across launches. */
+export function setComposerHarness(harness: string) {
+  threadsStore.set({ composerHarness: harness })
+  setPref("composerHarness", harness)
+}
+
+/**
+ * A harness's model/effort/fast choice — kept in Mako's own state, so what
+ * the user picked for Codex is still picked tomorrow, whatever any CLI
+ * thinks its default is.
+ */
+export function setComposerTuning(
+  harness: string,
+  patch: Partial<{ model?: string; effort?: string; fast?: boolean }>
+) {
+  const all = threadsStore.get().composerTuning
+  const next = { ...all, [harness]: { ...all[harness], ...patch } }
+  threadsStore.set({ composerTuning: next })
+  setPref("composerTuning", next)
+}
+
+/**
+ * Sensible defaults Mako itself holds, per harness — shown and used when a
+ * CLI has not said otherwise. Reading a harness's real default is nice;
+ * never needing it is better.
+ */
+export const MODEL_DEFAULTS: Record<string, string> = {
+  claude: "opus",
+  codex: "gpt-5.3-codex",
+  cursor: "auto",
+  grok: "grok-4.6",
+  devin: "devin",
+}
 
 /** A just-started conversation waiting for its session file to appear. */
 let pendingOpen: { harness: string; cwd: string; since: number } | null = null
@@ -194,7 +231,7 @@ export const threads = {
         viewing: thread,
         viewingBusy: false,
         run,
-        composerHarness: thread.ref.harness === "pi" ? "pi" : thread.ref.harness,
+        composerHarness: thread.ref.harness === "pi" ? "devin" : thread.ref.harness,
       })
       // Live from here: the agent writing this session — in whatever app —
       // keeps appending, and those entries belong on screen.
@@ -244,11 +281,16 @@ export const threads = {
    */
   async moveAndSend(ref: ThreadRef, harness: string, prompt: string): Promise<boolean> {
     if (!hasBridge()) return false
-    if (harness === "pi") {
+    if (harness === "pi" || harness === "devin") {
       const moved = await this.continueHere(ref)
       if (!moved) return false
+      const { actions, store } = await import("@/state/session")
+      if (harness === "devin") {
+        const devin = store.get().models.find((model) => model.provider === "devin")
+        const current = store.get().meta?.model
+        if (devin && current?.provider !== "devin") await actions.setModel(devin.provider, devin.id)
+      }
       if (prompt.trim()) {
-        const { actions } = await import("@/state/session")
         return Boolean(await actions.send(prompt))
       }
       return true

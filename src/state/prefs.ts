@@ -51,6 +51,10 @@ export interface Prefs {
   pinnedThreads: string[]
   /** Harnesses shown in the Agents rail. Empty means all of them. */
   agentHarnessFilter: string[]
+  /** The composer's chosen agent, kept across launches. */
+  composerHarness?: string
+  /** Per-harness model/effort/fast choices — Mako's own memory of them. */
+  composerTuning: Record<string, { model?: string; effort?: string; fast?: boolean }>
   /** Overrides the host's default commit-drafting prompt. */
   commitPrompt?: string
 }
@@ -84,6 +88,7 @@ const defaults: Prefs = {
   onboardedSteps: [],
   pinnedThreads: [],
   agentHarnessFilter: [],
+  composerTuning: {},
 }
 
 function load(): Prefs {
