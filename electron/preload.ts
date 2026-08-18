@@ -7,6 +7,7 @@ import type {
   GitCommitEntry,
   GitDiff,
   GitHubStatus,
+  ListeningPort,
   GitStatus,
   HostEvent,
   ModelInfo,
@@ -102,6 +103,7 @@ const api = {
   rerunChecks: () => invoke<void>("pi:rerun-checks"),
   repoAvatar: (repo: string) => invoke<string | undefined>("pi:repo-avatar", repo),
 
+  ports: () => invoke<ListeningPort[]>("pi:ports"),
   devScripts: () => invoke<string[]>("pi:dev-scripts"),
   devState: () => invoke<DevServerState>("pi:dev-state"),
   devStart: (script: string) => invoke<DevServerState>("pi:dev-start", script),

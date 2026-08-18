@@ -82,6 +82,15 @@ do quietly — and stopping it kills the whole process group, so nothing is left
 holding a port. The server's own output is one click away, and opens itself
 when the server dies.
 
+## Ports
+
+The preview lists everything listening on the machine, with the ones that look
+like development servers first and the background machinery every Mac runs
+filtered out. Click one to preview it. The remote half of port forwarding needs
+a container to forward from and there is not one; this is the half that gets
+used anyway, when the agent starts a backend on one port and a front end on
+another.
+
 ## Reviewing what the agent wrote
 
 Hover a line in the diff and comment on it, the way you would on a pull

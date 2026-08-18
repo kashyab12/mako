@@ -186,6 +186,8 @@ function Setup() {
         </div>
       ) : null}
 
+      <Ports />
+
       <div className="flex w-full max-w-[22rem] items-center gap-1.5">
         <input
           value={url}
@@ -199,6 +201,58 @@ function Setup() {
         <Action tone="ghost" disabled={!url.trim()} onClick={() => void dev.attach(url.trim())}>
           Attach
         </Action>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Everything listening on this machine.
+ *
+ * The remote half of "port forwarding" needs a container to forward from, and
+ * there is not one. This is the half that gets used regardless: the agent
+ * started a backend on one port and a front end on another, and you want to
+ * look at either without going to find out which is which.
+ *
+ * Nothing is hidden for being unrecognised — the whole point is finding the
+ * server you did not expect — but the ones that look like development servers
+ * sort first, and the machinery every Mac runs is filtered out entirely.
+ */
+function Ports() {
+  const ports = useDev((state) => state.ports)
+  if (ports.length === 0) return null
+
+  return (
+    <div className="w-full max-w-[22rem]">
+      <div className="flex items-center gap-2 pb-1">
+        <span className="text-[10.5px] text-faint">Listening now</span>
+        <button
+          type="button"
+          onClick={() => void dev.scan()}
+          className="pressable ml-auto rounded px-1 text-[10.5px] text-faint hover:text-foreground"
+        >
+          Rescan
+        </button>
+      </div>
+      <div className="flex flex-col gap-0.5">
+        {ports.slice(0, 8).map((entry) => (
+          <button
+            key={entry.port}
+            type="button"
+            onClick={() => void dev.attach(entry.url)}
+            title={`${entry.command} · pid ${entry.pid}${entry.loopbackOnly ? " · loopback only" : ""}`}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md px-2 py-1 text-left",
+              "transition-colors duration-100 hover:bg-raised"
+            )}
+          >
+            <span className="tabular shrink-0 text-[11.5px] text-foreground/85">{entry.port}</span>
+            <span className="min-w-0 flex-1 truncate text-[11px] text-faint">{entry.command}</span>
+            {entry.likely ? (
+              <span className="shrink-0 text-[10px] text-added">dev</span>
+            ) : null}
+          </button>
+        ))}
       </div>
     </div>
   )

@@ -278,6 +278,19 @@ export interface UpdateState {
   error?: string
 }
 
+/** A process listening on a TCP port, as far as `lsof` can see. */
+export interface ListeningPort {
+  port: number
+  pid: number
+  /** The owning process name, which is usually enough to recognise it. */
+  command: string
+  url: string
+  /** Bound only to loopback, so nothing else on the network can reach it. */
+  loopbackOnly: boolean
+  /** Looks like a development server rather than background machinery. */
+  likely: boolean
+}
+
 /**
  * The project's dev server, as far as this app knows.
  *

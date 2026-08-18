@@ -13,6 +13,7 @@ export type {
   GitFile,
   GitFileStatus,
   GitStatus,
+  ListeningPort,
   GitHubStatus,
   CheckSummary,
   PullRequest,

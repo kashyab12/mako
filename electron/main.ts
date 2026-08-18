@@ -5,6 +5,7 @@ import { COMMIT_PROMPT, type AgentHost } from "./host.js"
 import { breadcrumb, clearCrashes, crashesDir, installCrashReporting, listCrashes, record } from "./crash.js"
 import { installAutomation } from "./automation.js"
 import { check, installNow, installUpdates, updateState } from "./updates.js"
+import { listPorts } from "./ports.js"
 import {
   attachDevServer,
   bindDevServer,
@@ -323,6 +324,7 @@ function bindIpc() {
   handle("pi:rerun-checks", () => withHost((h) => rerunChecks(h.workspace)))
   handle("pi:repo-avatar", (_e, repo: string) => withHost((h) => repoAvatar(h.workspace, repo)))
 
+  handle("pi:ports", () => listPorts())
   handle("pi:dev-scripts", () => withHost((h) => devScripts(h.workspace)))
   handle("pi:dev-state", () => devServerState())
   handle("pi:dev-start", (_e, script: string) => withHost((h) => startDevServer(h.workspace, script)))

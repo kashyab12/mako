@@ -1,6 +1,6 @@
 import { createHook, createStore } from "@/state/store"
 import { getPi, hasBridge } from "@/lib/bridge"
-import type { DevServerState } from "@/lib/types"
+import type { DevServerState, ListeningPort } from "@/lib/types"
 
 /**
  * The dev server, mirrored from the host.
@@ -13,11 +13,19 @@ import type { DevServerState } from "@/lib/types"
 interface Store extends DevServerState {
   /** npm scripts this project has that look like servers. */
   scripts: string[]
+  /** Everything listening on this machine, so any of it can be previewed. */
+  ports: ListeningPort[]
   /** Bumped to make the preview reload without recreating the view. */
   reloads: number
 }
 
-export const devStore = createStore<Store>({ status: "idle", lines: [], scripts: [], reloads: 0 })
+export const devStore = createStore<Store>({
+  status: "idle",
+  lines: [],
+  scripts: [],
+  ports: [],
+  reloads: 0,
+})
 export const useDev = createHook(devStore)
 
 export function applyDevServer(next: DevServerState) {
@@ -33,6 +41,21 @@ export const dev = {
     ])
     if (state) devStore.set(state)
     devStore.set({ scripts })
+    void dev.scan()
+  },
+
+  /**
+   * What is listening right now.
+   *
+   * Read on demand rather than watched. Ports change when a server starts or
+   * stops, which is a thing you do, not a thing that happens to you — so the
+   * moments worth re-reading are exactly the moments the pane is opened or
+   * the button is pressed.
+   */
+  async scan() {
+    if (!hasBridge()) return
+    const ports = await getPi().ports().catch(() => [])
+    devStore.set({ ports })
   },
 
   async start(script: string) {
