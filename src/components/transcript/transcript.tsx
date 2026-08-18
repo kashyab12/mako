@@ -111,7 +111,7 @@ export function Transcript() {
   // Layout effect so the pin happens in the same frame the content grew —
   // otherwise the reader sees a one-frame jump on every token.
   useLayoutEffect(() => {
-    if (pinned.current) {
+    if (pinned.current && exchanges.length > 0) {
       const node = viewport.current
       if (node) node.scrollTop = node.scrollHeight
     }
@@ -119,11 +119,14 @@ export function Transcript() {
 
   // A different session is a different reading position: start at the end, and
   // back at a small window — carrying an expanded one across would make every
-  // switch after a deep scroll slow again.
+  // switch after a deep scroll slow again. An *empty* session starts at the
+  // top: its screen is an opening, and landing mid-list reads as broken.
   useEffect(() => {
     pinned.current = true
     setLimit(INITIAL_TURNS)
-    scrollToEnd()
+    if (exchanges.length > 0) scrollToEnd()
+    else requestAnimationFrame(() => viewport.current?.scrollTo({ top: 0 }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, scrollToEnd])
 
   /*
@@ -263,8 +266,8 @@ function EmptyTranscript() {
   const model = useSession((state) => state.meta?.model?.name)
 
   return (
-    <div className="flex h-full items-center justify-center px-6">
-      <div className="w-full max-w-[460px] pb-16">
+    <div className="flex min-h-full justify-center px-6">
+      <div className="my-auto w-full max-w-[460px] py-10">
         <div className="flex items-center gap-3.5">
           <MakoMark className="size-8 shrink-0 text-foreground/85" />
           <div className="min-w-0">

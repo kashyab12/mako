@@ -10,6 +10,7 @@ import {
   ChevronRightIcon,
   FolderIcon,
   FolderOpenIcon,
+  FolderPlusIcon,
   ListFilterIcon,
   PinIcon,
   SearchIcon,
@@ -163,13 +164,13 @@ export function AgentThreads() {
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3">
-        {matched.length === 0 ? (
+        {!loaded && matched.length === 0 ? (
+          <RailSkeleton />
+        ) : matched.length === 0 ? (
           <p className="px-3 pt-8 text-center text-[11.5px] leading-relaxed text-faint">
-            {loaded
-              ? searchActive || filter.length > 0
-                ? "Nothing matches."
-                : "No conversations yet — from any agent."
-              : "Looking through every agent's sessions…"}
+            {searchActive || filter.length > 0
+              ? "Nothing matches."
+              : "No conversations yet — from any agent."}
           </p>
         ) : searchActive ? (
           <div className="pt-1">
@@ -211,6 +212,40 @@ export function AgentThreads() {
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * The catalog warming up, drawn as the thing it is about to become: two
+ * folder groups, a few rows each. Bars breathe together on one slow pulse
+ * and stagger their widths so the shape reads as content, not as stripes.
+ */
+function RailSkeleton() {
+  const widths = [72, 54, 63, 78, 48]
+  return (
+    <div className="animate-pulse pt-1" aria-hidden>
+      {[0, 1].map((group) => (
+        <div key={group} className="pb-2">
+          <div className="flex h-7 items-center gap-1.5 px-1.5">
+            <span className="size-3.5 rounded-[4px] bg-raised" />
+            <span
+              className="h-2.5 rounded-full bg-raised"
+              style={{ width: group === 0 ? 64 : 88 }}
+            />
+          </div>
+          {widths.slice(0, group === 0 ? 4 : 3).map((width, row) => (
+            <div key={row} className="flex h-7 items-center gap-2 pl-[26px] pr-2">
+              <span className="size-3 rounded-full bg-raised" />
+              <span
+                className="h-2.5 rounded-full bg-raised"
+                style={{ width: `${width}%`, opacity: 1 - (group * 4 + row) * 0.09 }}
+              />
+              <span className="ml-auto h-2 w-6 rounded-full bg-raised opacity-60" />
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   )
 }
@@ -280,6 +315,15 @@ function RailHeader({
         <SearchIcon className="size-3.5" />
       </button>
       <HarnessFilter counts={counts} filter={filter} />
+      <button
+        type="button"
+        aria-label="Open a folder"
+        title="Open a folder"
+        onClick={() => void actions.pickWorkspace()}
+        className="pressable rounded-md p-1.5 text-faint transition-colors duration-100 hover:bg-raised hover:text-foreground"
+      >
+        <FolderPlusIcon className="size-3.5" />
+      </button>
     </div>
   )
 }

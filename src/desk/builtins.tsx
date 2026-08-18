@@ -1,10 +1,11 @@
-import { GitCompareIcon, HistoryIcon, LayersIcon } from "lucide-react"
+import { FilesIcon, GitCompareIcon, HistoryIcon, LayersIcon } from "lucide-react"
 import {
   registerInspectorPanel,
   registerToolView,
   type ToolCall,
 } from "@/extend/slots"
 import { ChangesPanel } from "@/components/inspector/changes-lazy"
+import { FileTree } from "@/components/rail/file-tree"
 import { ContextPanel } from "@/components/inspector/context-panel"
 import { HistoryPanel } from "@/components/inspector/history-panel"
 import { BashBody, EditBody, WriteBody } from "@/components/transcript/tool-views"
@@ -39,6 +40,13 @@ export function installBuiltins(): () => void {
       icon: HistoryIcon,
       render: HistoryPanel,
       order: 2,
+    }),
+    registerInspectorPanel({
+      id: "files",
+      label: "Files",
+      icon: FilesIcon,
+      render: FileTree,
+      order: 3,
     }),
 
     registerToolView("bash", {
