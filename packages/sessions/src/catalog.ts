@@ -45,7 +45,7 @@ export class SessionCatalog {
   private watchers: FSWatcher[] = []
   private pending = new Map<string, NodeJS.Timeout>()
   private listeners = new Set<(event: CatalogEvent) => void>()
-  private follows = new Map<string, Set<(entries: ThreadEntry[]) => void>>()
+  private follows = new Map<string, Set<(entries: ThreadEntry[], replaced: boolean) => void>>()
   private followOffsets = new Map<string, number>()
 
   constructor(providers: SessionProvider[], options: { cachePath?: string } = {}) {
@@ -131,11 +131,17 @@ export class SessionCatalog {
   }
 
   /**
-   * Live entries for one open thread. The first callback fires only for
-   * bytes appended after `fromByte` (pass 0 to replay the whole file on the
-   * first change). Returns an unsubscribe.
+   * Live entries for one open thread. For append-only stores the callback
+   * receives only what was appended after `fromByte`; for stores that
+   * rewrite in place (Cursor's SQLite) it receives the whole translated
+   * conversation with `replaced` set, and the caller swaps rather than
+   * appends. Returns an unsubscribe.
    */
-  follow(path: string, fromByte: number, onEntries: (entries: ThreadEntry[]) => void): () => void {
+  follow(
+    path: string,
+    fromByte: number,
+    onEntries: (entries: ThreadEntry[], replaced: boolean) => void
+  ): () => void {
     const set = this.follows.get(path) ?? new Set()
     set.add(onEntries)
     this.follows.set(path, set)
@@ -203,7 +209,8 @@ export class SessionCatalog {
     if (ref) this.emit({ type: cached?.ref ? "updated" : "added", ref })
 
     const followers = this.follows.get(path)
-    if (followers && followers.size > 0 && provider.tail) {
+    if (!followers || followers.size === 0) return
+    if (provider.tail) {
       const from = this.followOffsets.get(path) ?? 0
       const { entries, nextByte } = await provider.tail(path, from).catch(() => ({
         entries: [] as ThreadEntry[],
@@ -211,7 +218,13 @@ export class SessionCatalog {
       }))
       this.followOffsets.set(path, nextByte)
       if (entries.length > 0) {
-        for (const follower of followers) follower(entries)
+        for (const follower of followers) follower(entries, false)
+      }
+    } else {
+      // The store rewrites in place; the honest live view is a re-read.
+      const thread = await provider.read(path).catch(() => null)
+      if (thread) {
+        for (const follower of followers) follower(thread.entries, true)
       }
     }
   }

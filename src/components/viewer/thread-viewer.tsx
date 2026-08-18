@@ -101,7 +101,82 @@ export function ThreadViewer() {
             thread.entries.map((entry, index) => <Entry key={index} entry={entry} />)
           )}
         </div>
+
+        <Reply />
       </div>
+    </div>
+  )
+}
+
+/**
+ * The next message, sent through the harness that owns this session.
+ *
+ * The CLI runs headlessly in the thread's working directory and writes its
+ * native store as it works — the same store this viewer is tailing — so the
+ * reply streams into the transcript above exactly as if it had been typed in
+ * a terminal. This is continuation *with* the original agent; the header's
+ * "Continue here" remains the way to bring the conversation to this one.
+ */
+function Reply() {
+  const thread = useThreads((state) => state.viewing)
+  const resumable = useThreads((state) => state.resumable)
+  const run = useThreads((state) => state.run)
+  const [draft, setDraft] = useState("")
+
+  if (!thread || !resumable.includes(thread.ref.harness)) return null
+  const running = run?.status === "running"
+  const label = harnessLabel(thread.ref.harness)
+
+  const send = () => {
+    const text = draft.trim()
+    if (!text || running) return
+    setDraft("")
+    void threads.reply(thread.ref, text)
+  }
+
+  return (
+    <div className="shrink-0 border-t border-hairline px-3 py-2.5">
+      <div className="flex items-end gap-2">
+        <textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault()
+              send()
+            }
+          }}
+          rows={1}
+          placeholder={running ? `${label} is working…` : `Reply with ${label}`}
+          disabled={running}
+          className="max-h-32 min-h-8 w-full flex-1 resize-none rounded-md bg-surface px-2.5 py-1.5 text-[12.5px] leading-relaxed text-foreground placeholder:text-faint focus:ring-1 focus:ring-hairline focus:outline-none disabled:opacity-60"
+        />
+        {running ? (
+          <button
+            type="button"
+            onClick={() => void threads.abortReply(thread.ref)}
+            className="pressable flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-hairline px-2.5 text-[11.5px] text-muted-foreground hover:text-foreground"
+          >
+            <Loader2Icon className="size-3 animate-spin" />
+            Stop
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={send}
+            disabled={!draft.trim()}
+            className="pressable flex h-8 shrink-0 items-center rounded-md border border-hairline px-2.5 text-[11.5px] text-muted-foreground hover:text-foreground disabled:opacity-40"
+          >
+            Send
+          </button>
+        )}
+      </div>
+      {run?.status === "failed" && run.error ? (
+        <p className="pt-1.5 text-[10.5px] text-red-400">{run.error}</p>
+      ) : null}
+      <p className="pt-1.5 text-[10px] text-faint">
+        Runs {label} headlessly in {thread.ref.cwd ?? "its workspace"} with tool approvals on.
+      </p>
     </div>
   )
 }

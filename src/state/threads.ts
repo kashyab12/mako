@@ -1,7 +1,7 @@
 import { createHook, createStore } from "@/state/store"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { toast } from "sonner"
-import type { Thread, ThreadEntry, ThreadRef } from "@/lib/types"
+import type { Thread, ThreadEntry, ThreadRef, ThreadRunState } from "@/lib/types"
 
 /**
  * Every coding agent's sessions on this machine — not just this app's.
@@ -19,6 +19,10 @@ interface ThreadsState {
   viewing: Thread | null
   viewingBusy: boolean
   continuing: string | null
+  /** Harnesses whose CLI can be driven headlessly from here. */
+  resumable: string[]
+  /** The native run for the viewed thread, if one was started. */
+  run: ThreadRunState | null
 }
 
 export const threadsStore = createStore<ThreadsState>({
@@ -27,6 +31,8 @@ export const threadsStore = createStore<ThreadsState>({
   viewing: null,
   viewingBusy: false,
   continuing: null,
+  resumable: [],
+  run: null,
 })
 export const useThreads = createHook(threadsStore)
 
@@ -34,20 +40,30 @@ export function applyThreads(threads: ThreadRef[]) {
   threadsStore.set({ threads, loaded: true })
 }
 
+/** A native run started, finished, or failed for the viewed thread. */
+export function applyThreadRun(run: ThreadRunState) {
+  const { viewing } = threadsStore.get()
+  if (viewing && viewing.ref.path === run.path) threadsStore.set({ run })
+  if (run.status === "failed" && run.error) toast.error(run.error)
+}
+
 /** Entries appended — by whatever app is writing — to the viewed thread. */
-export function applyThreadEntries(path: string, entries: ThreadEntry[]) {
+export function applyThreadEntries(path: string, entries: ThreadEntry[], replace?: boolean) {
   const { viewing } = threadsStore.get()
   if (!viewing || viewing.ref.path !== path) return
   threadsStore.set({
-    viewing: { ...viewing, entries: [...viewing.entries, ...entries] },
+    viewing: { ...viewing, entries: replace ? entries : [...viewing.entries, ...entries] },
   })
 }
 
 export const threads = {
   async load() {
     if (!hasBridge()) return
-    const list = await getPi().threads().catch((): ThreadRef[] => [])
-    threadsStore.set({ threads: list, loaded: true })
+    const [list, resumable] = await Promise.all([
+      getPi().threads().catch((): ThreadRef[] => []),
+      getPi().resumableHarnesses().catch((): string[] => []),
+    ])
+    threadsStore.set({ threads: list, loaded: true, resumable })
   },
 
   /** Open a foreign session read-only, translated to the canonical shape. */
@@ -57,7 +73,8 @@ export const threads = {
     try {
       const thread = await getPi().openThread(ref.path)
       if (!thread) throw new Error("This session could not be read")
-      threadsStore.set({ viewing: thread, viewingBusy: false })
+      const run = await getPi().threadRun(ref.path).catch(() => null)
+      threadsStore.set({ viewing: thread, viewingBusy: false, run })
       // Live from here: the agent writing this session — in whatever app —
       // keeps appending, and those entries belong on screen.
       void getPi().followThread(ref.path, thread.ref.bytes ?? 0)
@@ -68,8 +85,28 @@ export const threads = {
   },
 
   closeViewer() {
-    threadsStore.set({ viewing: null })
+    threadsStore.set({ viewing: null, run: null })
     if (hasBridge()) void getPi().unfollowThread()
+  },
+
+  /**
+   * Send the next message through the harness that owns this session. The
+   * reply streams back through the file tail — the same path a terminal run
+   * takes — so nothing here waits on the process.
+   */
+  async reply(ref: ThreadRef, prompt: string) {
+    if (!hasBridge()) return
+    try {
+      const run = await getPi().resumeThread(ref.path, prompt)
+      threadsStore.set({ run })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    }
+  },
+
+  async abortReply(ref: ThreadRef) {
+    if (!hasBridge()) return
+    await getPi().abortThreadRun(ref.path).catch(() => {})
   },
 
   /**

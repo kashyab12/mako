@@ -75,8 +75,8 @@ let unfollow: (() => void) | null = null
 export function followThread(path: string, fromByte: number): void {
   unfollow?.()
   unfollow =
-    catalog?.follow(path, fromByte, (entries: ThreadEntry[]) => {
-      emit({ type: "thread-entries", path, entries })
+    catalog?.follow(path, fromByte, (entries: ThreadEntry[], replaced: boolean) => {
+      emit({ type: "thread-entries", path, entries, replace: replaced })
     }) ?? null
 }
 

@@ -12,6 +12,14 @@ export type {
 } from "@mako/sessions"
 import type { ThreadEntry as CatalogThreadEntry, ThreadRef as CatalogThreadRef } from "@mako/sessions"
 
+/** One headless run of a thread's own CLI, keyed by the thread's path. */
+export interface ThreadRunState {
+  path: string
+  harness: string
+  status: "running" | "done" | "failed" | "stopped"
+  error?: string
+}
+
 /**
  * The wire contract between the Electron host and the renderer.
  *
@@ -256,7 +264,9 @@ export type HostEventBody =
    */
   | { type: "threads"; threads: CatalogThreadRef[] }
   /** New entries appended to the thread the viewer is following. */
-  | { type: "thread-entries"; path: string; entries: CatalogThreadEntry[] }
+  | { type: "thread-entries"; path: string; entries: CatalogThreadEntry[]; replace?: boolean }
+  /** A native resume (the thread's own CLI) started, finished, or failed. */
+  | { type: "thread-run"; run: ThreadRunState }
 
 /**
  * Every event says which tab it came from.

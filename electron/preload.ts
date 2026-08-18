@@ -19,6 +19,7 @@ import type {
   SessionSummary,
   Thread,
   ThreadRef,
+  ThreadRunState,
   StagedFile,
   TabSnapshot,
   ThinkingLevel,
@@ -42,6 +43,10 @@ const api = {
     invoke<TabSnapshot>("pi:thread-continue", path, instruction),
   followThread: (path: string, fromByte: number) => invoke<void>("pi:thread-follow", path, fromByte),
   unfollowThread: () => invoke<void>("pi:thread-unfollow"),
+  resumableHarnesses: () => invoke<string[]>("pi:thread-resumable"),
+  threadRun: (path: string) => invoke<ThreadRunState | null>("pi:thread-run", path),
+  resumeThread: (path: string, prompt: string) => invoke<ThreadRunState>("pi:thread-resume", path, prompt),
+  abortThreadRun: (path: string) => invoke<void>("pi:thread-abort-run", path),
 
   /* Tabs. Session-scoped calls below always address the active tab. */
   openTab: (options?: { cwd?: string; sessionPath?: string }) =>

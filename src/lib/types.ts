@@ -4,6 +4,7 @@ export type {
   Thread,
   ThreadEntry,
   ThreadRef,
+  ThreadRunState,
   TurnUsage,
   Automation,
   AutomationRun,

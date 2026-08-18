@@ -414,6 +414,10 @@ export function installMockBridge() {
     },
     followThread: async () => {},
     unfollowThread: async () => {},
+    resumableHarnesses: async () => ["codex", "claude", "cursor", "grok"],
+    threadRun: async () => null,
+    resumeThread: async (path: string) => ({ path, harness: "codex", status: "running" as const }),
+    abortThreadRun: async () => {},
     usage: async () => ({
       total: { cost: 36.63, input: 2_400_000, output: 180_000, cacheRead: 9_100_000, cacheWrite: 210_000, messages: 285 },
       days: [], models: [], projects: [], sessions: 12, truncated: false,

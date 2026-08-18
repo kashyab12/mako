@@ -30,6 +30,7 @@ import {
 import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunChecks, type CreatePullOptions } from "./github.js"
 import { HostPool } from "./pool.js"
 import { followThread, handoffFor, installThreads, listThreads, openThread, stopThreads, unfollowThread } from "./threads.js"
+import { abortNative, bindDrivers, resumableHarnesses, resumeNative, stopDrivers, threadRun } from "./drivers.js"
 import { listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
 import type { BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
 
@@ -349,6 +350,14 @@ function bindIpc() {
   handle("pi:thread-open", (_e, path: string) => openThread(path))
   handle("pi:thread-follow", (_e, path: string, fromByte: number) => followThread(path, fromByte))
   handle("pi:thread-unfollow", () => unfollowThread())
+  handle("pi:thread-resumable", () => resumableHarnesses())
+  handle("pi:thread-run", (_e, path: string) => threadRun(path))
+  handle("pi:thread-resume", async (_e, path: string, prompt: string) => {
+    const thread = await openThread(path)
+    if (!thread) throw new Error("This session could not be read")
+    return resumeNative(thread.ref, prompt)
+  })
+  handle("pi:thread-abort-run", (_e, path: string) => abortNative(path))
   /**
    * Continue a foreign session here: a new tab in the thread's working
    * directory, opened with the conversation as its first prompt. Pi threads
@@ -417,6 +426,7 @@ app.whenReady().then(async () => {
   await createWindow()
   installUpdates(emit)
   installThreads(emit)
+  bindDrivers(emit)
   bindDevServer(emit)
   bindAutomations(emit, async (cwd, prompt) => {
     const live = await ready()
@@ -435,6 +445,7 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   stopWatching()
   stopThreads()
+  stopDrivers()
   // The dev server is in its own process group and will not die with us.
   void stopDevServer()
   void pool.dispose()
