@@ -3,7 +3,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Eyebrow } from "@/components/ui/kit"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { harnessLabel } from "@/components/rail/agent-threads"
-import { MODEL_DEFAULTS, setComposerTuning, useThreads } from "@/state/threads"
+import { harnessDefault, rememberHarnessDefault, setComposerTuning, useThreads } from "@/state/threads"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
 import { CheckIcon, ChevronDownIcon } from "lucide-react"
@@ -28,13 +28,17 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
   useEffect(() => {
     if (!hasBridge()) return
     setModels([])
-    // Mako holds its own sensible default per harness; the engine's answer,
-    // when it comes, refines it. The trigger never reads as a blank.
-    setFallback(MODEL_DEFAULTS[harness] ?? "")
+    // The last real answer, remembered — the engine's fresh read replaces
+    // it the moment it lands. Nothing here is ever invented.
+    setFallback(harnessDefault(harness).model ?? "")
     void getPi()
       .harnessTuning(harness)
       .then((tuning) => {
-        const fallbackModel = tuning.defaultModel || MODEL_DEFAULTS[harness] || ""
+        const fallbackModel = tuning.defaultModel || harnessDefault(harness).model || ""
+        rememberHarnessDefault(harness, {
+          model: tuning.defaultModel || undefined,
+          effort: tuning.defaultEffort,
+        })
         setFallback(fallbackModel)
         setModels(tuning.models.filter((model) => model !== fallbackModel))
       })
@@ -58,7 +62,7 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
           )}
         >
           <HarnessIcon harness={harness} className="size-3.5" />
-          <span className="truncate font-mono text-[11.5px]">{chosen ?? (fallback || "model")}</span>
+          <span className="truncate font-mono text-[11.5px]">{chosen ?? (fallback || "default")}</span>
           <ChevronDownIcon className="size-3 shrink-0 text-faint/70" />
         </button>
       </PopoverTrigger>

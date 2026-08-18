@@ -57,7 +57,7 @@ interface Frame {
  * without it forever. Clients that see an older daemon retire it and let a
  * fresh one take the socket.
  */
-export const PROTOCOL_VERSION = 2
+export const PROTOCOL_VERSION = 3
 
 /** Serve one catalog over the socket. Resolves once listening. */
 export async function serveCatalog(

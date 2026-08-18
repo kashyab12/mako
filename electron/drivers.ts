@@ -133,6 +133,84 @@ const FRESH: Record<string, (prompt: string, options: FreshOptions) => ResumeCom
 }
 
 /** What each harness's CLI actually accepts, for the composer to offer. */
+/**
+ * What each harness would do if launched with no flags at all — read from
+ * its own config files, because that is where the truth lives. Users change
+ * these in the CLIs; a hardcoded guess rots the day they do. Cached briefly:
+ * config files change at human speed, tuning popovers open at UI speed.
+ */
+export interface HarnessDefaults {
+  model?: string
+  effort?: string
+  fast?: boolean
+}
+
+let defaultsCache: { at: number; value: Record<string, HarnessDefaults> } | null = null
+
+export async function readHarnessDefaults(): Promise<Record<string, HarnessDefaults>> {
+  if (defaultsCache && Date.now() - defaultsCache.at < 15_000) return defaultsCache.value
+  const { readFile } = await import("node:fs/promises")
+  const { homedir } = await import("node:os")
+  const { join } = await import("node:path")
+  const home = homedir()
+  const value: Record<string, HarnessDefaults> = {}
+
+  // Codex: ~/.codex/config.toml — `model = "…"`, `model_reasoning_effort = "…"`.
+  try {
+    const toml = await readFile(join(home, ".codex", "config.toml"), "utf8")
+    const model = /^\s*model\s*=\s*"([^"]+)"/m.exec(toml)?.[1]
+    const effort = /^\s*model_reasoning_effort\s*=\s*"([^"]+)"/m.exec(toml)?.[1]
+    value.codex = { model, effort }
+  } catch { value.codex = {} }
+
+  // Claude Code: ~/.claude/settings.json — `model`.
+  try {
+    const settings = JSON.parse(await readFile(join(home, ".claude", "settings.json"), "utf8")) as {
+      model?: string
+    }
+    value.claude = { model: settings.model }
+  } catch { value.claude = {} }
+
+  // Cursor: ~/.cursor/cli-config.json — `model.modelId`.
+  try {
+    const config = JSON.parse(await readFile(join(home, ".cursor", "cli-config.json"), "utf8")) as {
+      model?: { modelId?: string }
+    }
+    value.cursor = { model: config.model?.modelId }
+  } catch { value.cursor = {} }
+
+  // Grok: ~/.grok/models_cache.json — a dict of models, each carrying its
+  // own reasoning_effort. First visible model is the CLI's own ordering.
+  try {
+    const cache = JSON.parse(
+      await readFile(join(home, ".grok", "models_cache.json"), "utf8")
+    ) as { models?: Record<string, { info?: { hidden?: boolean; reasoning_effort?: string } }> }
+    const entries = Object.entries(cache.models ?? {}).filter(([, m]) => !m.info?.hidden)
+    const first = entries[0]
+    value.grok = { model: first?.[0], effort: first?.[1]?.info?.reasoning_effort ?? undefined }
+  } catch { value.grok = {} }
+
+  defaultsCache = { at: Date.now(), value }
+  return value
+}
+
+/** Grok's model list, from its own cache — the CLI's truth, not ours. */
+export async function grokModels(): Promise<string[]> {
+  try {
+    const { readFile } = await import("node:fs/promises")
+    const { homedir } = await import("node:os")
+    const { join } = await import("node:path")
+    const cache = JSON.parse(
+      await readFile(join(homedir(), ".grok", "models_cache.json"), "utf8")
+    ) as { models?: Record<string, { info?: { hidden?: boolean } }> }
+    return Object.entries(cache.models ?? {})
+      .filter(([, m]) => !m.info?.hidden)
+      .map(([id]) => id)
+  } catch {
+    return []
+  }
+}
+
 export const HARNESS_TUNING: Record<
   string,
   { efforts: string[]; fast: boolean; curatedModels: string[]; defaultModel: string }

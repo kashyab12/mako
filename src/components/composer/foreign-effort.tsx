@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { setComposerTuning, useThreads } from "@/state/threads"
+import { harnessDefault, rememberHarnessDefault, setComposerTuning, useThreads } from "@/state/threads"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
 import { CheckIcon, ZapIcon } from "lucide-react"
@@ -28,6 +28,7 @@ const DESCRIPTIONS: Record<string, string> = {
 interface Tuning {
   efforts: string[]
   fast: boolean
+  defaultEffort?: string
 }
 
 export function ForeignEffortPicker({ harness }: { harness: string }) {
@@ -40,8 +41,16 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
     setTuning(null)
     void getPi()
       .harnessTuning(harness)
-      .then((next) => setTuning({ efforts: next.efforts, fast: next.fast }))
-      .catch(() => setTuning({ efforts: [], fast: false }))
+      .then((next) => {
+        setTuning({ efforts: next.efforts, fast: next.fast, defaultEffort: next.defaultEffort })
+        rememberHarnessDefault(harness, {
+          model: next.defaultModel || undefined,
+          effort: next.defaultEffort,
+        })
+      })
+      .catch(() =>
+        setTuning({ efforts: [], fast: false, defaultEffort: harnessDefault(harness).effort })
+      )
   }, [harness])
 
   if (!tuning || (tuning.efforts.length === 0 && !tuning.fast)) return null
@@ -49,7 +58,8 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
   const set = (patch: Partial<{ effort?: string; fast?: boolean }>) =>
     setComposerTuning(harness, patch)
 
-  const label = chosen.fast ? "fast" : (chosen.effort ?? "effort")
+  const fallbackEffort = tuning?.defaultEffort ?? harnessDefault(harness).effort
+  const label = chosen.fast ? "fast" : (chosen.effort ?? fallbackEffort ?? "effort")
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -67,7 +77,7 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
           {chosen.fast ? (
             <ZapIcon className="size-3 animate-[fast-alive_1.6s_ease-in-out_infinite] fill-caution text-caution" />
           ) : (
-            <Gauge filled={rankOf(chosen.effort, tuning.efforts)} />
+            <Gauge filled={rankOf(chosen.effort ?? fallbackEffort, tuning.efforts)} />
           )}
           <span className="capitalize">{label}</span>
         </button>
@@ -112,11 +122,15 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
             !chosen.effort && !chosen.fast && "bg-raised"
           )}
         >
-          <Gauge filled={0} className="mt-[3px]" />
+          <Gauge filled={rankOf(fallbackEffort, tuning.efforts)} className="mt-[3px]" />
           <span className="min-w-0 flex-1">
-            <span className="block text-[12.5px] font-medium">Default</span>
+            <span className="block text-[12.5px] font-medium">
+              Default{fallbackEffort ? <span className="ml-1.5 font-normal text-faint capitalize">{fallbackEffort}</span> : null}
+            </span>
             <span className="block text-[11px] leading-snug text-faint">
-              Whatever the harness would pick itself.
+              {fallbackEffort
+                ? "From the harness's own config."
+                : "Whatever the harness would pick itself."}
             </span>
           </span>
           {!chosen.effort && !chosen.fast ? (

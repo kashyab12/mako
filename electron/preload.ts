@@ -59,7 +59,13 @@ const api = {
     options?: { model?: string; effort?: string; fast?: boolean }
   ) => invoke<{ run: ThreadRunState | null; cwd: string }>("pi:harness-start", harness, prompt, options),
   harnessTuning: (harness: string) =>
-    invoke<{ models: string[]; efforts: string[]; fast: boolean; defaultModel: string }>(
+    invoke<{
+      models: string[]
+      efforts: string[]
+      fast: boolean
+      defaultModel: string
+      defaultEffort?: string
+    }>(
       "pi:harness-tuning",
       harness
     ),

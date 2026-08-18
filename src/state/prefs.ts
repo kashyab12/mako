@@ -55,6 +55,8 @@ export interface Prefs {
   composerHarness?: string
   /** Per-harness model/effort/fast choices — Mako's own memory of them. */
   composerTuning: Record<string, { model?: string; effort?: string; fast?: boolean }>
+  /** Each harness's own defaults as last read from its config — never invented. */
+  harnessDefaults: Record<string, { model?: string; effort?: string }>
   /** Overrides the host's default commit-drafting prompt. */
   commitPrompt?: string
 }
@@ -89,6 +91,7 @@ const defaults: Prefs = {
   pinnedThreads: [],
   agentHarnessFilter: [],
   composerTuning: {},
+  harnessDefaults: {},
 }
 
 function load(): Prefs {

@@ -91,16 +91,23 @@ export function setComposerTuning(
 }
 
 /**
- * Sensible defaults Mako itself holds, per harness — shown and used when a
- * CLI has not said otherwise. Reading a harness's real default is nice;
- * never needing it is better.
+ * Each harness's own defaults, as last read from its config files by the
+ * engine and remembered here — never invented. Until the first read lands
+ * there is simply no name to show, and honesty beats a wrong model id.
  */
-export const MODEL_DEFAULTS: Record<string, string> = {
-  claude: "opus",
-  codex: "gpt-5.3-codex",
-  cursor: "auto",
-  grok: "grok-4.6",
-  devin: "devin",
+export function harnessDefault(harness: string): { model?: string; effort?: string } {
+  return prefsStore.get().harnessDefaults[harness] ?? {}
+}
+
+export function rememberHarnessDefault(
+  harness: string,
+  next: { model?: string; effort?: string }
+) {
+  if (!next.model && !next.effort) return
+  const all = prefsStore.get().harnessDefaults
+  const current = all[harness]
+  if (current?.model === next.model && current?.effort === next.effort) return
+  setPref("harnessDefaults", { ...all, [harness]: next })
 }
 
 /** A just-started conversation waiting for its session file to appear. */

@@ -34,6 +34,7 @@ import { SessionCatalog } from "./catalog.js"
 import { CodexProvider } from "./providers/codex.js"
 import { CursorProvider } from "./providers/cursor.js"
 import { GrokProvider } from "./providers/grok.js"
+import { DevinLocalProvider } from "./providers/devin-local.js"
 import { ClaudeProvider } from "./providers/claude.js"
 import { PiProvider } from "./providers/pi.js"
 
@@ -44,7 +45,14 @@ export function defaultCatalog(
   options: { cachePath?: string; devinAccounts?: DevinAccount[] } = {}
 ): SessionCatalog {
   const catalog = new SessionCatalog(
-    [new PiProvider(), new CodexProvider(), new ClaudeProvider(), new CursorProvider(), new GrokProvider()],
+    [
+      new PiProvider(),
+      new CodexProvider(),
+      new ClaudeProvider(),
+      new CursorProvider(),
+      new GrokProvider(),
+      new DevinLocalProvider(),
+    ],
     options
   )
   const devin = new DevinRemote(options.devinAccounts ?? [])

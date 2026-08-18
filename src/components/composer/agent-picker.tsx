@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { harnessLabel } from "@/components/rail/agent-threads"
-import { MODEL_DEFAULTS, setComposerHarness, useThreads } from "@/state/threads"
+import { harnessDefault, setComposerHarness, useThreads } from "@/state/threads"
 import { actions, store as sessionStore, useSession } from "@/state/session"
 import { toast } from "sonner"
 import { getPi, hasBridge } from "@/lib/bridge"
@@ -85,9 +85,9 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
 
   const modelFor = (harness: string): string | undefined => {
     if (harness === "devin") {
-      return piModel?.provider === "devin" ? piModel.id : (devinModel?.id ?? MODEL_DEFAULTS.devin)
+      return piModel?.provider === "devin" ? piModel.id : devinModel?.id
     }
-    return tuning[harness]?.model ?? defaults[harness] ?? MODEL_DEFAULTS[harness]
+    return tuning[harness]?.model ?? defaults[harness] ?? harnessDefault(harness).model
   }
 
   const pick = (harness: string) => {

@@ -31,7 +31,7 @@ import {
 import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunChecks, type CreatePullOptions } from "./github.js"
 import { HostPool } from "./pool.js"
 import { daemonStatus, devinAccountsMasked, startDevin, emitThreadAs, emitThreadAsClaude, emitThreadAsPi, followThread, threadsReady, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, saveDevinAccounts, sendRemote, stopThreads, unfollowThread } from "./threads.js"
-import { abortNative, bindDrivers, freshHarnesses, harnessAvailability, HARNESS_TUNING, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
+import { abortNative, bindDrivers, freshHarnesses, grokModels, harnessAvailability, HARNESS_TUNING, readHarnessDefaults, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
 import { bindLineageDirect, chainOf, expectLineage } from "./lineage.js"
 import { accountUsage, captureAccount, listAccounts, removeAccount, selectAccount } from "./accounts.js"
 import { daemonLoginEnabled, setDaemonLogin } from "./daemon-login.js"
@@ -484,21 +484,27 @@ function bindIpc() {
    * actually used (from the catalog, most recent first) ahead of a curated
    * floor, plus the CLI's real tuning surface.
    */
-  handle("pi:harness-tuning", (_e, harness: string) => {
+  handle("pi:harness-tuning", async (_e, harness: string) => {
     const tuning = HARNESS_TUNING[harness]
     if (!tuning) return { models: [], efforts: [], fast: false, defaultModel: "" }
+    // The default is whatever the CLI itself would do: read from its own
+    // config files, refreshed as they change. The curated list is only a
+    // floor under what this machine has actually run.
+    const defaults = (await readHarnessDefaults())[harness] ?? {}
     const seen: string[] = []
     for (const ref of listThreads({ harness })) {
       const model = ref.model
       if (model && !model.includes("·") && !seen.includes(model)) seen.push(model)
       if (seen.length >= 8) break
     }
-    const models = [...seen, ...tuning.curatedModels.filter((model) => !seen.includes(model))]
+    const curated = harness === "grok" ? await grokModels() : tuning.curatedModels
+    const models = [...seen, ...curated.filter((model) => !seen.includes(model))]
     return {
       models: models.slice(0, 12),
       efforts: tuning.efforts,
       fast: tuning.fast,
-      defaultModel: tuning.defaultModel,
+      defaultModel: defaults.model ?? tuning.defaultModel,
+      defaultEffort: defaults.effort,
     }
   })
 
