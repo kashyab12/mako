@@ -158,7 +158,8 @@ export const threads = {
     if (!hasBridge()) return false
     threadsStore.set({ continuing: ref.path })
     try {
-      await getPi().continueThread(ref.path, instruction)
+      void instruction
+      await getPi().continueThread(ref.path)
       threadsStore.set({ continuing: null, viewing: null })
       return true
     } catch (error) {

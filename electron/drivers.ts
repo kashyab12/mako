@@ -91,6 +91,31 @@ export function resumableHarnesses(): string[] {
   return Object.keys(RESUME)
 }
 
+/** Which harness CLIs exist on this machine, by actually looking. */
+export async function harnessAvailability(): Promise<Record<string, boolean>> {
+  const { execFile } = await import("node:child_process")
+  const { promisify } = await import("node:util")
+  const run = promisify(execFile)
+  const commands: Record<string, string> = {
+    codex: "codex",
+    claude: "claude",
+    cursor: "cursor-agent",
+    grok: "agent",
+  }
+  const out: Record<string, boolean> = { pi: true }
+  await Promise.all(
+    Object.entries(commands).map(async ([harness, command]) => {
+      try {
+        await run("which", [command])
+        out[harness] = true
+      } catch {
+        out[harness] = false
+      }
+    })
+  )
+  return out
+}
+
 export function freshHarnesses(): string[] {
   return Object.keys(FRESH)
 }

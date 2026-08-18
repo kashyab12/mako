@@ -21,7 +21,9 @@ import { join } from "node:path"
 import { app } from "electron"
 import {
   defaultCatalog,
-  renderHandoff,
+  emitClaudeSession,
+  emitPiSession,
+  renderTranscript,
   type DevinAccount,
   type SessionCatalog,
   type Thread,
@@ -79,6 +81,38 @@ async function devinAccounts(): Promise<DevinAccount[]> {
   }
 }
 
+/** The configured Devin accounts, keys masked for display. */
+export async function devinAccountsMasked(): Promise<Array<{ name: string; key: string }>> {
+  const accounts = await devinAccounts()
+  return accounts.map((account) => ({
+    name: account.name,
+    key: `apk_…${account.apiKey.slice(-4)}`,
+  }))
+}
+
+/**
+ * Replace the Devin accounts and rebuild the catalog around them. The scan
+ * after a rebuild is warm — unchanged files are stat-only — so this costs a
+ * moment, not a rescan of the world.
+ */
+export async function saveDevinAccounts(accounts: DevinAccount[]): Promise<void> {
+  // The renderer never sees real keys, so an unchanged account arrives as
+  // the sentinel "__keep__" and keeps the key already on disk.
+  const existing = await devinAccounts()
+  const resolved = accounts.flatMap((account) => {
+    if (account.apiKey !== "__keep__") return [account]
+    const kept = existing.find((entry) => entry.name === account.name)
+    return kept ? [kept] : []
+  })
+  const { mkdir, writeFile } = await import("node:fs/promises")
+  const dir = join(homedir(), ".mako")
+  await mkdir(dir, { recursive: true })
+  await writeFile(join(dir, "devin.json"), JSON.stringify({ accounts: resolved }, null, 2) + "\n", "utf8")
+  const send = emit
+  stopThreads()
+  installThreads(send)
+}
+
 /** Whether a path belongs to a remote source (and can be replied to by it). */
 export async function sendRemote(path: string, message: string): Promise<boolean> {
   const remote = catalog?.remoteFor(path)
@@ -129,24 +163,50 @@ export function unfollowThread(): void {
   unfollow = null
 }
 
+const HARNESS_NAMES: Record<string, string> = {
+  pi: "Pi",
+  codex: "Codex",
+  claude: "Claude Code",
+  cursor: "Cursor",
+  grok: "Grok",
+  devin: "Devin",
+}
+
 /**
- * The thread rendered for continuation elsewhere, ready to be the first
- * prompt of a new session.
+ * The thread rendered for continuation elsewhere: the full universal
+ * transcript, newest turn first, with orders to read all of it. Used for
+ * harnesses whose native store we cannot yet write; the ones we can write
+ * get the real thing via the emitters below.
  */
 export async function handoffFor(path: string, instruction?: string): Promise<string | null> {
   const thread = await catalog?.open(path)
   if (!thread) return null
-  const names: Record<string, string> = {
-    pi: "Pi",
-    codex: "Codex",
-    claude: "Claude Code",
-    cursor: "Cursor",
-    grok: "Grok",
-  }
-  return renderHandoff(thread, {
-    from: names[thread.ref.harness] ?? thread.ref.harness,
+  return renderTranscript(thread, {
+    from: HARNESS_NAMES[thread.ref.harness] ?? thread.ref.harness,
     ...(instruction ? { instruction } : {}),
   })
+}
+
+/**
+ * Materialize a thread as a *native Pi session* — the deepest continuation:
+ * the emitted file opens like any Pi session, full history in the
+ * transcript and in context, no handoff preamble anywhere.
+ */
+export async function emitThreadAsPi(path: string): Promise<{ thread: Thread; sessionPath: string } | null> {
+  const thread = await openThread(path)
+  if (!thread) return null
+  const emitted = await emitPiSession(thread)
+  return { thread, sessionPath: emitted.path }
+}
+
+/** Materialize a thread as a native Claude Code session, resumable by id. */
+export async function emitThreadAsClaude(
+  path: string
+): Promise<{ thread: Thread; sessionId: string; sessionPath: string } | null> {
+  const thread = await openThread(path)
+  if (!thread) return null
+  const emitted = await emitClaudeSession(thread)
+  return { thread, sessionId: emitted.sessionId, sessionPath: emitted.path }
 }
 
 function schedulePush(): void {

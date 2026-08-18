@@ -102,24 +102,28 @@ function reduce(blocks: AcpBlock[], update: AcpUpdate): AcpBlock[] {
 
 export const acp = {
   /**
-   * Open a thread's own agent, interactively. A Claude Code thread loads the
-   * *same* session — real interactive resume, not a transcript handoff; other
-   * harnesses start fresh in the thread's folder with the handoff as the
-   * opening message.
+   * Open any thread's conversation, interactively.
+   *
+   * A Claude Code thread loads its *own* session over ACP — the same
+   * session, live. A Cursor thread does the same through Cursor's native
+   * ACP. Everything else is first written into Claude Code's store as a
+   * native session — the emitter, not a handoff — and then loaded, so a
+   * conversation that began on Codex or Grok or Devin is picked up by an
+   * agent that remembers it.
    */
-  async openInteractive(ref: ThreadRef, options: { handoff?: string } = {}) {
+  async openInteractive(ref: ThreadRef) {
     if (!hasBridge()) return
     acpStore.set({ starting: true, blocks: [], permission: null })
     try {
-      const resume = ref.harness === "claude" ? ref.nativeId : undefined
-      const session = await getPi().acpStart(ref.harness === "claude" || ref.harness === "cursor" ? ref.harness : "claude", ref.cwd ?? "", {
-        ...(resume ? { resume } : {}),
-        title: ref.title,
-      })
-      acpStore.set({ session, starting: false })
-      if (!resume && options.handoff) {
-        await getPi().acpPrompt(session.id, options.handoff)
+      let harness = ref.harness
+      let resume = ref.nativeId
+      if (ref.harness !== "claude" && ref.harness !== "cursor") {
+        const emitted = await getPi().emitThreadToClaude(ref.path)
+        harness = "claude"
+        resume = emitted.sessionId
       }
+      const session = await getPi().acpStart(harness, ref.cwd ?? "", { resume, title: ref.title })
+      acpStore.set({ session, starting: false })
     } catch (error) {
       acpStore.set({ starting: false })
       toast.error(error instanceof Error ? error.message : String(error))

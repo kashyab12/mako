@@ -94,6 +94,12 @@ export function bindLineage(ref: ThreadRef): boolean {
   return true
 }
 
+/** A continuation whose file we created ourselves binds without guessing. */
+export function bindLineageDirect(path: string, chain: ThreadOrigin[]): void {
+  state.byPath[path] = chain
+  scheduleSave()
+}
+
 /** Decorate a ref with its lineage, inheriting the title where it should. */
 export function annotate(ref: ThreadRef): ThreadRef {
   const chain = state.byPath[ref.path]
@@ -103,10 +109,11 @@ export function annotate(ref: ThreadRef): ThreadRef {
   // the handoff preamble ("You are continuing a conversation…"), which is
   // provenance, not a name — the title it had before is the one that means
   // anything to the person who started it.
-  const title =
-    inherited && (!ref.title || ref.title.startsWith("You are continuing a conversation"))
-      ? inherited
-      : ref.title
+  const preamble =
+    ref.title?.startsWith("You are continuing a conversation") ||
+    ref.title?.startsWith("# Continuing a conversation") ||
+    ref.title?.startsWith("Continuing a conversation")
+  const title = inherited && (!ref.title || preamble) ? inherited : ref.title
   return { ...ref, lineage: chain, title }
 }
 

@@ -29,9 +29,9 @@ import {
 } from "./devserver.js"
 import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunChecks, type CreatePullOptions } from "./github.js"
 import { HostPool } from "./pool.js"
-import { followThread, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, sendRemote, stopThreads, unfollowThread } from "./threads.js"
-import { abortNative, bindDrivers, freshHarnesses, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
-import { chainOf, expectLineage } from "./lineage.js"
+import { devinAccountsMasked, emitThreadAsClaude, emitThreadAsPi, followThread, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, saveDevinAccounts, sendRemote, stopThreads, unfollowThread } from "./threads.js"
+import { abortNative, bindDrivers, freshHarnesses, harnessAvailability, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
+import { bindLineageDirect, chainOf, expectLineage } from "./lineage.js"
 import { acpCancel, acpClose, acpHarnesses, acpPrompt, acpRespondPermission, acpSetMode, acpStart, acpState, bindAcp, stopAcp } from "./acp.js"
 import { listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
 import type { BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
@@ -367,6 +367,12 @@ function bindIpc() {
     expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
     return startFresh(harness, thread.ref.cwd, handoff)
   })
+  handle("pi:devin-accounts", () => devinAccountsMasked())
+  handle("pi:devin-accounts-save", (_e, accounts: Array<{ name: string; apiKey: string }>) =>
+    saveDevinAccounts(accounts)
+  )
+  handle("pi:harness-availability", () => harnessAvailability())
+
   /* Interactive foreign agents over ACP. */
   handle("pi:acp-harnesses", () => acpHarnesses())
   handle("pi:acp-start", (_e, harness: string, cwd: string, options?: { resume?: string; title?: string }) =>
@@ -398,18 +404,28 @@ function bindIpc() {
    * directory, opened with the conversation as its first prompt. Pi threads
    * never take this path — they open natively through `pi:open-tab`.
    */
-  handle("pi:thread-continue", async (_e, path: string, instruction?: string) => {
-    const [thread, handoff] = await Promise.all([openThread(path), handoffFor(path, instruction)])
-    if (!thread || !handoff) throw new Error("This session could not be read for continuation")
-    expectLineage("pi", thread.ref.cwd, chainOf(thread.ref))
+  handle("pi:thread-continue", async (_e, path: string) => {
+    // The deepest form: the thread becomes a *native Pi session* — emitted
+    // into Pi's own store and opened like any other, full history in the
+    // transcript and in context. No handoff preamble, and nothing runs
+    // until the user actually says something.
+    const materialized = await emitThreadAsPi(path)
+    if (!materialized) throw new Error("This session could not be read for continuation")
+    bindLineageDirect(materialized.sessionPath, chainOf(materialized.thread.ref))
     const live = await ready()
-    const tab = await live.open(thread.ref.cwd ? { cwd: thread.ref.cwd } : {})
-    // The conversation's name travels with it — the tab is the same thread,
-    // one harness over, and should say so rather than titling itself from
-    // the handoff preamble.
-    if (thread.ref.title) live.active.setName(thread.ref.title)
-    await live.active.prompt(handoff)
+    const tab = await live.open({
+      ...(materialized.thread.ref.cwd ? { cwd: materialized.thread.ref.cwd } : {}),
+      sessionPath: materialized.sessionPath,
+    })
+    if (materialized.thread.ref.title) live.active.setName(materialized.thread.ref.title)
     return tab
+  })
+  /** The thread as a native Claude Code session, for interactive resume. */
+  handle("pi:thread-emit-claude", async (_e, path: string) => {
+    const materialized = await emitThreadAsClaude(path)
+    if (!materialized) throw new Error("This session could not be read for continuation")
+    bindLineageDirect(materialized.sessionPath, chainOf(materialized.thread.ref))
+    return { sessionId: materialized.sessionId }
   })
 
   handle("pi:automations", () => automationList())

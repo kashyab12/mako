@@ -40,8 +40,8 @@ const api = {
   /* Cross-harness threads: every coding agent's sessions on this machine. */
   threads: (filter?: { cwd?: string; harness?: string }) => invoke<ThreadRef[]>("pi:threads", filter),
   openThread: (path: string) => invoke<Thread | null>("pi:thread-open", path),
-  continueThread: (path: string, instruction?: string) =>
-    invoke<TabSnapshot>("pi:thread-continue", path, instruction),
+  continueThread: (path: string) => invoke<TabSnapshot>("pi:thread-continue", path),
+  emitThreadToClaude: (path: string) => invoke<{ sessionId: string }>("pi:thread-emit-claude", path),
   followThread: (path: string, fromByte: number) => invoke<void>("pi:thread-follow", path, fromByte),
   unfollowThread: () => invoke<void>("pi:thread-unfollow"),
   resumableHarnesses: () => invoke<string[]>("pi:thread-resumable"),
@@ -62,6 +62,12 @@ const api = {
   acpSetMode: (id: string, modeId: string) => invoke<void>("pi:acp-mode", id, modeId),
   acpCancel: (id: string) => invoke<void>("pi:acp-cancel", id),
   acpClose: (id: string) => invoke<void>("pi:acp-close", id),
+
+  /* The Agents settings section. */
+  devinAccounts: () => invoke<Array<{ name: string; key: string }>>("pi:devin-accounts"),
+  saveDevinAccounts: (accounts: Array<{ name: string; apiKey: string }>) =>
+    invoke<void>("pi:devin-accounts-save", accounts),
+  harnessAvailability: () => invoke<Record<string, boolean>>("pi:harness-availability"),
 
   /* Tabs. Session-scoped calls below always address the active tab. */
   openTab: (options?: { cwd?: string; sessionPath?: string }) =>

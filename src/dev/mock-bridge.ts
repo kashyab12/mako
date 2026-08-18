@@ -415,6 +415,10 @@ export function installMockBridge() {
     continueThread: async () => {
       throw new Error("The browser mock cannot open tabs")
     },
+    emitThreadToClaude: async () => ({ sessionId: "mock-claude-session" }),
+    devinAccounts: async () => [{ name: "work", key: "apk_…f3a1" }],
+    saveDevinAccounts: async () => {},
+    harnessAvailability: async () => ({ pi: true, codex: true, claude: true, cursor: true, grok: false }),
     followThread: async () => {},
     unfollowThread: async () => {},
     resumableHarnesses: async () => ["codex", "claude", "cursor", "grok"],

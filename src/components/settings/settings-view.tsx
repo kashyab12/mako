@@ -9,6 +9,7 @@ import { updates, useUpdates } from "@/state/updates"
 import { automations, useAutomations } from "@/state/automations"
 import type { CrashReport } from "../../../electron/crash.ts"
 import type { UsageSummary } from "@/lib/types"
+import { HarnessIcon } from "@/components/ui/provider-icon"
 import { RotateCcwIcon, XIcon } from "lucide-react"
 
 const SECTIONS = [
@@ -16,6 +17,7 @@ const SECTIONS = [
   { id: "transcript", label: "Transcript" },
   { id: "commits", label: "Commit messages" },
   { id: "usage", label: "Usage" },
+  { id: "agents", label: "Agents" },
   { id: "automations", label: "Automations" },
   { id: "updates", label: "Updates" },
   { id: "diagnostics", label: "Diagnostics" },
@@ -92,6 +94,7 @@ export function SettingsView() {
           {section === "transcript" ? <Transcript /> : null}
           {section === "commits" ? <CommitPrompt fallback={defaultPrompt} /> : null}
           {section === "usage" ? <Usage /> : null}
+          {section === "agents" ? <Agents /> : null}
           {section === "automations" ? <Automations /> : null}
           {section === "updates" ? <Updates /> : null}
           {section === "diagnostics" ? <Diagnostics /> : null}
@@ -244,6 +247,139 @@ function shortPath(path: string): string {
  * agent on this machine is a decision made here, and cloning a repository must
  * never make it for you.
  */
+/**
+ * The harnesses this machine can host, and the accounts that need keys.
+ *
+ * The CLI rows are detection, not configuration — a CLI on the PATH is
+ * connected, and there is nothing else to set up. Devin is the exception:
+ * its sessions live behind an API, so it takes accounts — several, each with
+ * its own service key from app.devin.ai settings, kept in ~/.mako/devin.json
+ * and never displayed back beyond the last four characters.
+ */
+function Agents() {
+  const [availability, setAvailability] = useState<Record<string, boolean> | null>(null)
+  const [accounts, setAccounts] = useState<Array<{ name: string; key: string }>>([])
+  const [name, setName] = useState("")
+  const [apiKey, setApiKey] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(() => {
+    if (!hasBridge()) return
+    void getPi().harnessAvailability().then(setAvailability).catch(() => setAvailability({}))
+    void getPi().devinAccounts().then(setAccounts).catch(() => setAccounts([]))
+  }, [])
+  useEffect(load, [load])
+
+  const save = async (next: Array<{ name: string; apiKey: string }>) => {
+    setSaving(true)
+    try {
+      await getPi().saveDevinAccounts(next)
+      load()
+      setName("")
+      setApiKey("")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const HARNESSES = [
+    { id: "pi", name: "Pi", how: "built in" },
+    { id: "codex", name: "Codex", how: "codex CLI" },
+    { id: "claude", name: "Claude Code", how: "claude CLI" },
+    { id: "cursor", name: "Cursor", how: "cursor-agent CLI" },
+    { id: "grok", name: "Grok", how: "agent CLI" },
+  ]
+
+  return (
+    <Section title="Agents">
+      <p className="pb-3 text-[12px] leading-relaxed text-muted-foreground">
+        Every agent whose sessions appear under the rail's Agents tab, and
+        whether its CLI is on this machine. Installing a CLI is all it takes —
+        sessions are found and watched automatically.
+      </p>
+      <div className="flex flex-col">
+        {HARNESSES.map((entry) => (
+          <div key={entry.id} className="flex items-center gap-2.5 border-b border-hairline py-2 last:border-b-0">
+            <HarnessIcon harness={entry.id} className="size-4" />
+            <span className="min-w-0 flex-1 text-[12.5px]">{entry.name}</span>
+            <span className="text-[11px] text-faint">{entry.how}</span>
+            {availability === null ? (
+              <span className="shimmer w-14 text-right text-[11px] text-faint">…</span>
+            ) : availability[entry.id] ? (
+              <span className="text-[11px] text-emerald-400/90">connected</span>
+            ) : (
+              <span className="text-[11px] text-faint">not found</span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <Eyebrow className="pt-6 pb-2">Devin accounts</Eyebrow>
+      <p className="pb-3 text-[11.5px] leading-relaxed text-faint">
+        Devin's sessions live in its cloud, so each account needs a service
+        key — from app.devin.ai settings, starting with <code>apk_</code>. The
+        CLI's own login covers a different surface and cannot list sessions.
+      </p>
+      {accounts.map((account) => (
+        <div key={account.name} className="flex items-center gap-2.5 border-b border-hairline py-2">
+          <HarnessIcon harness="devin" className="size-4" />
+          <span className="min-w-0 flex-1 text-[12.5px]">{account.name}</span>
+          <span className="font-mono text-[11px] text-faint">{account.key}</span>
+          <button
+            type="button"
+            onClick={() =>
+              void save(
+                accounts.filter((entry) => entry.name !== account.name).map((entry) => ({
+                  name: entry.name,
+                  // Removal keeps the others: the host re-reads the real keys
+                  // from disk and drops only this name.
+                  apiKey: "__keep__",
+                }))
+              )
+            }
+            className="pressable rounded p-1 text-faint hover:text-foreground"
+            aria-label={`Remove ${account.name}`}
+          >
+            <XIcon className="size-3.5" />
+          </button>
+        </div>
+      ))}
+      <div className="flex items-end gap-2 pt-3">
+        <label className="flex min-w-0 flex-col gap-1 text-[11px] text-faint">
+          Name
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="work"
+            className="h-7 w-28 rounded-md bg-surface px-2 text-[12px] text-foreground placeholder:text-faint focus:ring-1 focus:ring-hairline focus:outline-none"
+          />
+        </label>
+        <label className="flex min-w-0 flex-1 flex-col gap-1 text-[11px] text-faint">
+          Service key
+          <input
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+            placeholder="apk_…"
+            type="password"
+            className="h-7 w-full rounded-md bg-surface px-2 font-mono text-[12px] text-foreground placeholder:text-faint focus:ring-1 focus:ring-hairline focus:outline-none"
+          />
+        </label>
+        <Action
+          disabled={saving || !name.trim() || !apiKey.trim()}
+          onClick={() =>
+            void save([
+              ...accounts.map((entry) => ({ name: entry.name, apiKey: "__keep__" })),
+              { name: name.trim(), apiKey: apiKey.trim() },
+            ])
+          }
+        >
+          Add account
+        </Action>
+      </div>
+    </Section>
+  )
+}
+
 function Automations() {
   const list = useAutomations((state) => state.list)
   const recent = useAutomations((state) => state.recent)

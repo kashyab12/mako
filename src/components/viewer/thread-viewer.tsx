@@ -129,7 +129,11 @@ export function ThreadViewer() {
 function LiveButton() {
   const thread = useThreads((state) => state.viewing)
   const acpable = useThreads((state) => state.acpable)
-  if (!thread || !acpable.includes(thread.ref.harness)) return null
+  // Claude and Cursor threads go live as themselves; every other harness's
+  // conversation is emitted into Claude Code's store as a native session
+  // first — so Live works on any thread, and the agent that answers has the
+  // history in memory, not in a pasted preamble.
+  if (!thread || acpable.length === 0) return null
   return (
     <button
       type="button"
