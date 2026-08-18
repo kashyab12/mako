@@ -1,27 +1,33 @@
-import { memo, useDeferredValue, useMemo, useState } from "react"
-import { bucketFor, formatRelative, workspaceName } from "@/lib/format"
+import { memo, useDeferredValue, useMemo, useRef, useState } from "react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { formatRelative, workspaceName } from "@/lib/format"
 import { threads, useThreads } from "@/state/threads"
 import { actions, useSession } from "@/state/session"
 import { setPref, togglePinned, usePrefs } from "@/state/prefs"
 import { cn } from "@/lib/utils"
 import { HarnessIcon } from "@/components/ui/provider-icon"
-import { ChevronRightIcon, PinIcon, SearchIcon, XIcon } from "lucide-react"
+import {
+  ChevronRightIcon,
+  FolderIcon,
+  FolderOpenIcon,
+  ListFilterIcon,
+  PinIcon,
+  SearchIcon,
+  XIcon,
+} from "lucide-react"
 import type { Harness, ThreadRef } from "@/lib/types"
 
 /**
- * The threads rail: every agent's conversations, one list.
+ * The threads rail: every agent's conversations, arranged the way work is —
+ * by folder, most alive first.
  *
- * There used to be two lists — this app's own sessions under "Threads" and
- * everyone else's under "Agents" — which was the architecture showing
- * through. Nobody thinks of their conversations by which binary wrote the
- * file; they think of *this project's threads*. So: one list, scoped to the
- * project by default, every harness in it, each row wearing its mark. Pi
- * rows open natively in a tab; other harnesses open in the viewer, from
- * which the conversation goes anywhere.
- *
- * Scope is a single toggle: this project, or everywhere. Opening a different
- * project changes what "this project" means and the list follows — nothing
- * is imported, because nothing was ever anywhere else.
+ * The current workspace leads and shows its freshest threads; other folders
+ * follow by recency, each holding a handful of rows and a quiet "More" for
+ * the rest; folders gone cold collapse to a single line. No chips, no
+ * toggles, no permanent search box — search and the harness filter live
+ * behind two small glyphs in the header and take space only while in use.
+ * A row is one line: the harness's mark, the title, and how long ago. The
+ * marks carry the multi-harness story; everything else stays out of the way.
  */
 
 export const HARNESS_LABEL: Record<string, string> = {
@@ -46,23 +52,34 @@ export function harnessLabel(harness: Harness): string {
   return HARNESS_LABEL[harness] ?? harness
 }
 
-const BUCKET_ORDER = ["Pinned", "Today", "Yesterday", "This week", "This month", "Earlier"]
+/** Rows a folder shows before "More": generous for the folder being worked. */
+const LEAD_ROWS = 5
+const REST_ROWS = 3
+/** Folders quiet longer than this start out collapsed. */
+const COLD_MS = 7 * 24 * 3600_000
+
+interface Folder {
+  key: string
+  name: string
+  cwd: string | null
+  refs: ThreadRef[]
+  current: boolean
+  latest: string
+}
 
 export function AgentThreads() {
   const [query, setQuery] = useState("")
+  const [searching, setSearching] = useState(false)
+  const [showAll, setShowAll] = useState<Record<string, boolean>>({})
   const deferred = useDeferredValue(query)
   const all = useThreads((state) => state.threads)
   const loaded = useThreads((state) => state.loaded)
   const filter = usePrefs((prefs) => prefs.agentHarnessFilter)
   const pinned = usePrefs((prefs) => prefs.pinnedThreads)
-  const scope = usePrefs((prefs) => prefs.railScope)
-  const groupBy = usePrefs((prefs) => prefs.railGroupBy)
   const collapsed = usePrefs((prefs) => prefs.collapsedGroups)
   const cwd = useSession((state) => state.meta?.cwd)
 
-  // The haystack is built once per catalog push, not once per keystroke —
-  // lowering six hundred titles on every character is the difference between
-  // instant and merely fast.
+  // The haystack is built once per catalog push, not once per keystroke.
   const indexed = useMemo(
     () =>
       all.map((ref) => ({
@@ -73,111 +90,230 @@ export function AgentThreads() {
     [all]
   )
 
-  const scoped = useMemo(
-    () =>
-      scope === "workspace" && cwd ? indexed.filter((entry) => entry.ref.cwd === cwd) : indexed,
-    [cwd, indexed, scope]
-  )
-
   const counts = useMemo(() => {
     const byHarness = new Map<string, number>()
-    for (const entry of scoped) {
-      byHarness.set(displayHarness(entry.ref), (byHarness.get(displayHarness(entry.ref)) ?? 0) + 1)
+    for (const entry of indexed) {
+      const harness = displayHarness(entry.ref)
+      byHarness.set(harness, (byHarness.get(harness) ?? 0) + 1)
     }
     return byHarness
-  }, [scoped])
+  }, [indexed])
 
-  const groups = useMemo(() => {
+  const matched = useMemo(() => {
     const needle = deferred.trim().toLowerCase()
     const active = filter.length > 0 ? new Set(filter) : null
-    const matched = scoped
+    return indexed
       .filter(
         (entry) =>
           (!active || active.has(displayHarness(entry.ref))) &&
           (!needle || entry.haystack.includes(needle))
       )
       .map((entry) => entry.ref)
+  }, [deferred, filter, indexed])
 
-    if (needle) {
-      return {
-        total: matched.length,
-        sections: [
-          [`${matched.length} match${matched.length === 1 ? "" : "es"}`, matched] as const,
-        ],
-      }
-    }
-
+  const held = useMemo(() => {
     const set = new Set(pinned)
-    const held = matched.filter((ref) => set.has(ref.path))
-    held.sort((a, b) => pinned.indexOf(a.path) - pinned.indexOf(b.path))
-    const rest = matched.filter((ref) => !set.has(ref.path))
+    const list = matched.filter((ref) => set.has(ref.path))
+    list.sort((a, b) => pinned.indexOf(a.path) - pinned.indexOf(b.path))
+    return list
+  }, [matched, pinned])
 
-    const byBucket = new Map<string, ThreadRef[]>()
-    if (held.length > 0) byBucket.set("Pinned", held)
-    for (const ref of rest) {
-      const label =
-        groupBy === "project" && scope === "all"
-          ? ref.cwd
-            ? workspaceName(ref.cwd)
-            : "No folder"
-          : ref.updatedAt
-            ? bucketFor(ref.updatedAt)
-            : "Earlier"
-      const list = byBucket.get(label)
+  const folders = useMemo<Folder[]>(() => {
+    const set = new Set(pinned)
+    const byCwd = new Map<string, ThreadRef[]>()
+    for (const ref of matched) {
+      if (set.has(ref.path)) continue
+      const key = ref.cwd ?? ""
+      const list = byCwd.get(key)
       if (list) list.push(ref)
-      else byBucket.set(label, [ref])
+      else byCwd.set(key, [ref])
     }
-    const sections =
-      groupBy === "project" && scope === "all"
-        ? // Pinned first, then projects by their most recent activity.
-          [...byBucket.entries()].sort((a, b) => {
-            if (a[0] === "Pinned") return -1
-            if (b[0] === "Pinned") return 1
-            return (b[1][0]?.updatedAt ?? "").localeCompare(a[1][0]?.updatedAt ?? "")
-          })
-        : [...byBucket.entries()].sort((a, b) => orderOf(a[0]) - orderOf(b[0]))
-    return { total: matched.length, sections }
-  }, [deferred, filter, groupBy, pinned, scope, scoped])
+    const result: Folder[] = [...byCwd.entries()].map(([key, refs]) => {
+      refs.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
+      return {
+        key: key || "~",
+        name: key ? workspaceName(key) : "No folder",
+        cwd: key || null,
+        refs,
+        current: Boolean(cwd) && key === cwd,
+        latest: refs[0]?.updatedAt ?? "",
+      }
+    })
+    result.sort((a, b) => {
+      if (a.current !== b.current) return a.current ? -1 : 1
+      return b.latest.localeCompare(a.latest)
+    })
+    return result
+  }, [cwd, matched, pinned])
+
+  const searchActive = Boolean(deferred.trim())
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-1 px-2 pt-2 pb-1">
-        <div className="relative min-w-0 flex-1">
-          <SearchIcon className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-faint" />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape" && query) {
-                event.stopPropagation()
-                setQuery("")
-              }
-            }}
-            placeholder={scope === "workspace" ? "Search this project's threads" : "Search every thread"}
-            className="h-7 w-full rounded-md bg-surface pr-6 pl-7 text-[11.5px] text-foreground placeholder:text-faint transition-shadow duration-150 focus:ring-1 focus:ring-hairline focus:outline-none"
-          />
-          {query ? (
-            <button
-              type="button"
-              aria-label="Clear search"
-              onClick={() => setQuery("")}
-              className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-0.5 text-faint hover:text-foreground"
-            >
-              <XIcon className="size-3" />
-            </button>
-          ) : null}
-        </div>
-        <ScopeToggle scope={scope} />
-        {scope === "all" ? <GroupToggle groupBy={groupBy} /> : null}
-      </div>
+      <RailHeader
+        searching={searching}
+        query={query}
+        onQuery={setQuery}
+        onToggleSearch={(next) => {
+          setSearching(next)
+          if (!next) setQuery("")
+        }}
+        counts={counts}
+        filter={filter}
+      />
 
-      {/* One chip per harness with sessions in scope, with its count.
-          Click narrows; click again widens. Several can be on at once. */}
-      <div className="flex shrink-0 flex-wrap items-center gap-1 px-2 pb-1.5">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3">
+        {matched.length === 0 ? (
+          <p className="px-3 pt-8 text-center text-[11.5px] leading-relaxed text-faint">
+            {loaded
+              ? searchActive || filter.length > 0
+                ? "Nothing matches."
+                : "No conversations yet — from any agent."
+              : "Looking through every agent's sessions…"}
+          </p>
+        ) : searchActive ? (
+          <div className="pt-1">
+            {matched.slice(0, 80).map((ref) => (
+              <ThreadRow key={ref.path} threadRef={ref} showFolder />
+            ))}
+          </div>
+        ) : (
+          <>
+            {held.length > 0 ? (
+              <section className="pt-1 pb-2">
+                <p className="flex h-7 items-center gap-1.5 px-1.5 text-[10.5px] font-medium text-faint">
+                  <PinIcon className="size-3 fill-current opacity-60" />
+                  Pinned
+                </p>
+                {held.map((ref) => (
+                  <ThreadRow key={ref.path} threadRef={ref} showFolder />
+                ))}
+              </section>
+            ) : null}
+            {folders.map((folder) => (
+              <FolderSection
+                key={folder.key}
+                folder={folder}
+                collapsed={collapsed.includes(`ws:${folder.key}`)}
+                onToggle={() => {
+                  const key = `ws:${folder.key}`
+                  setPref(
+                    "collapsedGroups",
+                    collapsed.includes(key)
+                      ? collapsed.filter((entry) => entry !== key)
+                      : [...collapsed, key]
+                  )
+                }}
+                showingAll={Boolean(showAll[folder.key])}
+                onShowAll={(next) => setShowAll((prev) => ({ ...prev, [folder.key]: next }))}
+              />
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The rail's one header line: an eyebrow, and two glyphs that expand into
+ * search and the harness filter only when wanted. While searching, the whole
+ * line becomes the input — space is spent on what is being done.
+ */
+function RailHeader({
+  searching,
+  query,
+  onQuery,
+  onToggleSearch,
+  counts,
+  filter,
+}: {
+  searching: boolean
+  query: string
+  onQuery: (value: string) => void
+  onToggleSearch: (next: boolean) => void
+  counts: Map<string, number>
+  filter: string[]
+}) {
+  const input = useRef<HTMLInputElement | null>(null)
+
+  if (searching) {
+    return (
+      <div className="flex h-9 shrink-0 items-center gap-1 px-2 pt-1.5">
+        <SearchIcon className="ml-1.5 size-3.5 shrink-0 text-faint" />
+        <input
+          ref={input}
+          autoFocus
+          value={query}
+          onChange={(event) => onQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.stopPropagation()
+              onToggleSearch(false)
+            }
+          }}
+          placeholder="Search every thread"
+          className="h-7 min-w-0 flex-1 bg-transparent px-1.5 text-[12px] text-foreground placeholder:text-faint focus:outline-none"
+        />
+        <button
+          type="button"
+          aria-label="Close search"
+          onClick={() => onToggleSearch(false)}
+          className="pressable rounded p-1 text-faint hover:text-foreground"
+        >
+          <XIcon className="size-3" />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-9 shrink-0 items-center px-2 pt-1.5">
+      <span className="px-1.5 text-[10.5px] font-medium tracking-wide text-faint">Workspaces</span>
+      <span className="flex-1" />
+      <button
+        type="button"
+        aria-label="Search threads"
+        onClick={() => onToggleSearch(true)}
+        className="pressable rounded-md p-1.5 text-faint transition-colors duration-100 hover:bg-raised hover:text-foreground"
+      >
+        <SearchIcon className="size-3.5" />
+      </button>
+      <HarnessFilter counts={counts} filter={filter} />
+    </div>
+  )
+}
+
+/**
+ * The harness filter, folded into one glyph. The popover lists each agent
+ * with sessions and its count; picking narrows the rail, and the glyph
+ * carries a dot while any narrowing is on so filtered never looks empty.
+ */
+function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter: string[] }) {
+  const [open, setOpen] = useState(false)
+  const on = filter.length > 0
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Filter by agent"
+          className={cn(
+            "pressable relative rounded-md p-1.5 transition-colors duration-100 hover:bg-raised",
+            on ? "text-foreground" : "text-faint hover:text-foreground"
+          )}
+        >
+          <ListFilterIcon className="size-3.5" />
+          {on ? (
+            <span className="absolute top-1 right-1 size-1.5 rounded-full bg-brand" />
+          ) : null}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" sideOffset={6} className="w-52 p-1">
         {[...counts.entries()]
           .sort((a, b) => b[1] - a[1])
           .map(([harness, count]) => {
-            const on = filter.includes(harness)
+            const active = filter.includes(harness)
             return (
               <button
                 key={harness}
@@ -185,191 +321,154 @@ export function AgentThreads() {
                 onClick={() =>
                   setPref(
                     "agentHarnessFilter",
-                    on ? filter.filter((entry) => entry !== harness) : [...filter, harness]
+                    active ? filter.filter((entry) => entry !== harness) : [...filter, harness]
                   )
                 }
                 className={cn(
-                  "pressable flex h-6 items-center gap-1.5 rounded-full border px-2 text-[10.5px] transition-colors duration-150",
-                  on
-                    ? "border-foreground/40 bg-raised text-foreground"
-                    : "border-hairline text-faint hover:border-foreground/20 hover:text-muted-foreground"
+                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors duration-100",
+                  active ? "bg-raised text-foreground" : "text-foreground/85 hover:bg-raised/60"
                 )}
               >
-                <HarnessIcon harness={harness} className="size-3" tinted={on} />
-                {harnessLabel(harness)}
-                <span className="tabular text-[9.5px] opacity-70">{count}</span>
+                <HarnessIcon harness={harness} className="size-3.5" tinted={active} />
+                <span className="flex-1">{harnessLabel(harness)}</span>
+                <span className="tabular text-[10.5px] text-faint">{count}</span>
               </button>
             )
           })}
-        {filter.length > 0 ? (
+        {on ? (
           <button
             type="button"
-            onClick={() => setPref("agentHarnessFilter", [])}
-            className="pressable h-6 rounded-full px-1.5 text-[10.5px] text-faint hover:text-foreground"
+            onClick={() => {
+              setPref("agentHarnessFilter", [])
+              setOpen(false)
+            }}
+            className="mt-0.5 flex w-full items-center justify-center rounded-md border-t border-hairline px-2 py-1.5 text-[11px] text-faint hover:text-foreground"
           >
-            clear
+            Show every agent
           </button>
         ) : null}
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2">
-        {groups.total === 0 ? (
-          <p className="px-2 pt-6 text-center text-[11.5px] leading-relaxed text-faint">
-            {loaded
-              ? deferred || filter.length > 0
-                ? "Nothing matches."
-                : scope === "workspace"
-                  ? "No threads in this project yet — from any agent."
-                  : "No sessions found from any agent yet."
-              : "Looking through every agent's sessions…"}
-          </p>
-        ) : (
-          groups.sections.map(([label, refs]) => (
-            <Group
-              key={label}
-              label={label}
-              refs={refs}
-              collapsible={!deferred.trim()}
-              collapsed={collapsed.includes(`agents:${label}`)}
-              onToggle={() => {
-                const key = `agents:${label}`
-                setPref(
-                  "collapsedGroups",
-                  collapsed.includes(key)
-                    ? collapsed.filter((entry) => entry !== key)
-                    : [...collapsed, key]
-                )
-              }}
-            />
-          ))
-        )}
-      </div>
-    </div>
-  )
-}
-
-function orderOf(label: string): number {
-  const at = BUCKET_ORDER.indexOf(label)
-  return at === -1 ? BUCKET_ORDER.length : at
-}
-
-/** Everywhere-view grouping: by when, or by which project. */
-function GroupToggle({ groupBy }: { groupBy: string }) {
-  const byProject = groupBy === "project"
-  return (
-    <button
-      type="button"
-      title={byProject ? "Group by date" : "Group by project"}
-      onClick={() => setPref("railGroupBy", byProject ? "date" : "project")}
-      className={cn(
-        "flex h-7 shrink-0 items-center rounded-md bg-surface px-1.5 text-[10.5px] transition-colors duration-150",
-        byProject ? "text-foreground" : "text-faint hover:text-muted-foreground"
-      )}
-    >
-      {byProject ? "Folders" : "Dates"}
-    </button>
-  )
-}
-
-/** This project, or everywhere. One word each; the rail is narrow. */
-function ScopeToggle({ scope }: { scope: "workspace" | "all" }) {
-  return (
-    <div className="flex h-7 shrink-0 items-center rounded-md bg-surface p-0.5">
-      {(
-        [
-          ["workspace", "Project"],
-          ["all", "All"],
-        ] as const
-      ).map(([value, label]) => (
-        <button
-          key={value}
-          type="button"
-          onClick={() => setPref("railScope", value)}
-          className={cn(
-            "rounded-[5px] px-1.5 text-[10.5px] transition-colors duration-150",
-            scope === value
-              ? "bg-raised text-foreground"
-              : "text-faint hover:text-muted-foreground"
-          )}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 
 /**
- * A date group that opens and closes smoothly.
- *
- * The collapse animates through CSS grid rows — 1fr to 0fr — which is the
- * one way to animate to an unknown height without measuring it. 200ms
- * ease-out, because this happens at the user's hand and should answer
- * instantly.
+ * One folder of conversations. The current workspace opens wide; recent
+ * folders show a few; cold folders rest as a single line. "More" unfolds
+ * the tail in place — the grid-rows trick animates to unknown heights.
  */
-function Group({
-  label,
-  refs,
-  collapsible,
+function FolderSection({
+  folder,
   collapsed,
   onToggle,
+  showingAll,
+  onShowAll,
 }: {
-  label: string
-  refs: readonly ThreadRef[]
-  collapsible: boolean
+  folder: Folder
   collapsed: boolean
   onToggle: () => void
+  showingAll: boolean
+  onShowAll: (next: boolean) => void
 }) {
-  const down = collapsible && collapsed
+  // A cold folder starts closed, a warm one open; the stored flag means
+  // "the user flipped this one from its default", so both kinds remember.
+  const cold =
+    !folder.current && folder.latest !== "" && Date.now() - Date.parse(folder.latest) > COLD_MS
+  const closed = collapsed ? !cold : cold
+
+  const lead = folder.current ? LEAD_ROWS : REST_ROWS
+  const visible = showingAll ? folder.refs : folder.refs.slice(0, lead)
+  const hidden = folder.refs.length - visible.length
+
   return (
-    <div className="pb-0.5">
+    <section className="pb-1">
       <button
         type="button"
-        onClick={collapsible ? onToggle : undefined}
-        className="sticky top-0 z-10 flex w-full items-center gap-1 rounded-sm bg-background/85 px-1.5 py-1.5 backdrop-blur-sm"
+        onClick={onToggle}
+        className="group/folder flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 text-left transition-colors duration-100 hover:bg-raised/50"
       >
-        {collapsible ? (
-          <ChevronRightIcon
-            className={cn(
-              "size-3 shrink-0 text-faint/70 transition-transform duration-200 ease-out",
-              !down && "rotate-90"
-            )}
-          />
-        ) : null}
-        <span className="text-[10.5px] font-medium tracking-wide text-faint">{label}</span>
-        <span className="tabular ml-auto pr-1 text-[10px] text-faint/60">{refs.length}</span>
+        {closed ? (
+          <FolderIcon className="size-3.5 shrink-0 text-faint" />
+        ) : (
+          <FolderOpenIcon className="size-3.5 shrink-0 text-faint" />
+        )}
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-[12px]",
+            folder.current ? "font-medium text-foreground" : "text-foreground/80"
+          )}
+        >
+          {folder.name}
+        </span>
+        <span className="tabular pr-0.5 text-[10px] text-faint/60 opacity-0 transition-opacity duration-100 group-hover/folder:opacity-100">
+          {folder.refs.length}
+        </span>
+        <ChevronRightIcon
+          className={cn(
+            "size-3 shrink-0 text-faint/50 transition-transform duration-200 ease-out",
+            !closed && "rotate-90"
+          )}
+        />
       </button>
       <div
         className={cn(
           "grid transition-[grid-template-rows] duration-200 ease-out",
-          down ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
+          closed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
         )}
       >
         <div className="min-h-0 overflow-hidden">
-          {refs.map((ref) => (
-            <ThreadRow key={ref.path} threadRef={ref} />
+          {visible.map((ref) => (
+            <ThreadRow key={ref.path} threadRef={ref} indent />
           ))}
+          {hidden > 0 ? (
+            <button
+              type="button"
+              onClick={() => onShowAll(true)}
+              className="flex h-6 w-full items-center rounded-md pl-8 text-left text-[11px] text-faint transition-colors duration-100 hover:bg-raised/50 hover:text-muted-foreground"
+            >
+              More
+              <span className="tabular ml-1 text-[10px] text-faint/60">{hidden}</span>
+            </button>
+          ) : showingAll && folder.refs.length > lead ? (
+            <button
+              type="button"
+              onClick={() => onShowAll(false)}
+              className="flex h-6 w-full items-center rounded-md pl-8 text-left text-[11px] text-faint transition-colors duration-100 hover:bg-raised/50 hover:text-muted-foreground"
+            >
+              Less
+            </button>
+          ) : null}
         </div>
       </div>
-    </div>
+    </section>
   )
 }
 
-const ThreadRow = memo(function ThreadRow({ threadRef: ref }: { threadRef: ThreadRef }) {
+const ThreadRow = memo(function ThreadRow({
+  threadRef: ref,
+  indent,
+  showFolder,
+}: {
+  threadRef: ThreadRef
+  indent?: boolean
+  showFolder?: boolean
+}) {
   // A thread whose CLI is being driven from here right now wears a pulse —
   // the same promise a tab's dot makes: something is working behind this row.
   const working = useThreads((state) => Boolean(state.running[ref.path]))
   const isPinned = usePrefs((prefs) => prefs.pinnedThreads.includes(ref.path))
   const active = useSession((state) => state.meta?.sessionFile === ref.path)
-  const scope = usePrefs((prefs) => prefs.railScope)
+  const viewingPath = useThreads((state) => state.viewing?.ref.path)
 
   const open = (inNewTab: boolean) => {
     // Pi sessions are this app's own: open them natively, with full fidelity
-    // and a live agent. Everything else opens translated, read-only, with
-    // every continuation one click away.
+    // and a live agent. Everything else opens translated, live through the
+    // file tail, with every continuation one send away.
     if (ref.harness === "pi") void actions.openSession(ref.path, { inNewTab })
     else void threads.view(ref)
   }
+
+  const lit = active || viewingPath === ref.path
 
   return (
     <button
@@ -378,82 +477,74 @@ const ThreadRow = memo(function ThreadRow({ threadRef: ref }: { threadRef: Threa
       onAuxClick={(event) => {
         if (event.button === 1) open(true)
       }}
-      title={ref.cwd ? `${ref.cwd}\n⌘-click to open in a new tab` : undefined}
-      data-active={active || undefined}
+      title={[
+        ref.title ?? "Untitled session",
+        [...(ref.lineage ?? []).map((origin) => harnessLabel(origin.harness)), harnessLabel(displayHarness(ref))].join(" → "),
+        ref.model,
+        ref.cwd,
+      ]
+        .filter(Boolean)
+        .join("\n")}
+      data-active={lit || undefined}
       className={cn(
-        "group relative flex h-[42px] w-full flex-col justify-center gap-0.5 rounded-md px-2 text-left",
+        "group flex h-7 w-full items-center gap-2 rounded-md pr-1.5 text-left",
+        indent ? "pl-[26px]" : "pl-1.5",
         "transition-colors duration-100 hover:bg-raised data-active:bg-raised"
       )}
     >
+      {/* Where this conversation has lived: earlier harnesses dimmed and
+          tucked behind, the current one in front. One mark when it has
+          only ever been one place — which is most sessions. */}
+      <span className="flex shrink-0 items-center -space-x-1">
+        {(ref.lineage ?? []).slice(-1).map((origin, index) => (
+          <HarnessIcon
+            key={`${origin.harness}-${index}`}
+            harness={origin.harness}
+            className="size-3 opacity-40"
+          />
+        ))}
+        <HarnessIcon
+          harness={displayHarness(ref)}
+          className={cn("size-3", working && "animate-pulse")}
+        />
+      </span>
       <span
         className={cn(
-          "absolute top-2 bottom-2 left-0 w-0.5 rounded-full bg-foreground transition-opacity duration-150",
-          active ? "opacity-70" : "opacity-0"
+          "min-w-0 flex-1 truncate text-[12.5px]",
+          lit ? "font-medium text-foreground" : "text-foreground/85"
         )}
-      />
-      <span className="flex items-baseline gap-2">
-        {/* Where this conversation has lived: earlier harnesses dimmed and
-            tucked behind, the current one in front. One mark when it has
-            only ever been one place — which is most sessions. */}
-        <span className="flex shrink-0 items-center -space-x-1 self-center">
-          {(ref.lineage ?? []).slice(-2).map((origin, index) => (
-            <HarnessIcon
-              key={`${origin.harness}-${index}`}
-              harness={origin.harness}
-              className="size-3 opacity-40"
-            />
-          ))}
-          <HarnessIcon harness={displayHarness(ref)} className={cn("size-3", working && "animate-pulse")} />
-        </span>
-        <span
-          className={cn(
-            "min-w-0 flex-1 truncate text-[12.5px]",
-            active ? "font-medium text-foreground" : "text-foreground/85"
-          )}
-        >
-          {ref.title ?? "Untitled session"}
-        </span>
-        <span
-          role="button"
-          tabIndex={-1}
-          aria-label={isPinned ? "Unpin" : "Pin"}
-          onClick={(event) => {
-            event.stopPropagation()
-            togglePinned(ref.path)
-          }}
-          className={cn(
-            "shrink-0 self-center rounded p-0.5 transition-opacity duration-150",
-            isPinned
-              ? "text-foreground/70"
-              : "text-faint opacity-0 group-hover:opacity-100 hover:text-foreground"
-          )}
-        >
-          <PinIcon className={cn("size-3", isPinned && "fill-current")} />
-        </span>
-        {working ? (
-          <span className="shrink-0 text-[10.5px] text-faint">working…</span>
-        ) : ref.updatedAt ? (
-          <span className="tabular shrink-0 text-[10.5px] text-faint">
-            {formatRelative(ref.updatedAt)}
-          </span>
-        ) : null}
+      >
+        {ref.title ?? "Untitled session"}
       </span>
-      <span className="flex items-center gap-1.5 pl-5 text-[11px] text-faint">
-        <span className="shrink-0">
-          {[...(ref.lineage ?? []).map((origin) => harnessLabel(origin.harness)), harnessLabel(displayHarness(ref))].join(" → ")}
+      {showFolder && ref.cwd ? (
+        <span className="max-w-[6rem] shrink-0 truncate text-[10px] text-faint/70">
+          {workspaceName(ref.cwd)}
         </span>
-        {scope === "all" && ref.cwd ? (
-          <>
-            <span className="text-faint/50">·</span>
-            <span className="min-w-0 truncate">{workspaceName(ref.cwd)}</span>
-          </>
-        ) : ref.model ? (
-          <>
-            <span className="text-faint/50">·</span>
-            <span className="min-w-0 truncate">{ref.model}</span>
-          </>
-        ) : null}
+      ) : null}
+      <span
+        role="button"
+        tabIndex={-1}
+        aria-label={isPinned ? "Unpin" : "Pin"}
+        onClick={(event) => {
+          event.stopPropagation()
+          togglePinned(ref.path)
+        }}
+        className={cn(
+          "shrink-0 rounded p-0.5 transition-opacity duration-150",
+          isPinned
+            ? "text-foreground/70"
+            : "text-faint opacity-0 group-hover:opacity-100 hover:text-foreground"
+        )}
+      >
+        <PinIcon className={cn("size-3", isPinned && "fill-current")} />
       </span>
+      {working ? (
+        <span className="shrink-0 text-[10px] text-faint">working…</span>
+      ) : ref.updatedAt ? (
+        <span className="tabular shrink-0 text-[10px] text-faint">
+          {formatRelative(ref.updatedAt)}
+        </span>
+      ) : null}
     </button>
   )
 })
