@@ -7,6 +7,7 @@ import { togglePref, usePrefs } from "@/state/prefs"
 import { MakoMark } from "@/components/ui/mako-mark"
 import { workspaceName } from "@/lib/format"
 import { search } from "@/state/search"
+import { github, useGitHub } from "@/state/github"
 import { cn } from "@/lib/utils"
 import {
   ChevronsUpDownIcon,
@@ -139,19 +140,41 @@ export function TitleBar() {
   )
 }
 
-/** The folder the agent is pointed at, and the control for changing it. */
+/**
+ * The folder the agent is pointed at, and the control for changing it.
+ *
+ * When the folder is a GitHub project it wears that project's avatar instead
+ * of a folder glyph. With several windows or several workspaces open, the
+ * logo is what you actually recognise — a folder icon is the same folder icon
+ * everywhere, which makes it decoration rather than information.
+ */
 function WorkspaceButton({ cwd }: { cwd?: string }) {
+  const avatar = useGitHub((state) => state.avatar)
+  const repo = useGitHub((state) => state.status?.repo)
+
+  useEffect(() => {
+    void github.ensureStatus()
+  }, [cwd])
+
   return (
     <button
       type="button"
       onClick={() => void actions.pickWorkspace()}
-      title={`${cwd ?? ""}\nOpen a different folder`}
+      title={`${repo ?? cwd ?? ""}\nOpen a different folder`}
       className={cn(
         "no-drag pressable group flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5",
         "transition-colors duration-100 hover:bg-raised"
       )}
     >
-      <FolderIcon className="size-3.5 shrink-0 text-faint" />
+      {avatar ? (
+        <img
+          src={avatar}
+          alt=""
+          className="size-4 shrink-0 rounded-[4px] ring-1 ring-hairline"
+        />
+      ) : (
+        <FolderIcon className="size-3.5 shrink-0 text-faint" />
+      )}
       <span className="truncate text-[12.5px] font-semibold">{workspaceName(cwd)}</span>
       <ChevronsUpDownIcon className="size-3 shrink-0 text-faint opacity-0 transition-opacity duration-120 group-hover:opacity-100" />
     </button>

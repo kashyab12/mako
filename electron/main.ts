@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import { COMMIT_PROMPT, type AgentHost } from "./host.js"
 import { breadcrumb, clearCrashes, crashesDir, installCrashReporting, listCrashes, record } from "./crash.js"
 import { check, installNow, installUpdates, updateState } from "./updates.js"
-import { createPull, githubStatus, listPulls, pullForBranch, rerunChecks, type CreatePullOptions } from "./github.js"
+import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunChecks, type CreatePullOptions } from "./github.js"
 import { HostPool } from "./pool.js"
 import { listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
 import type { BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
@@ -305,6 +305,7 @@ function bindIpc() {
     withHost((h) => createPull(h.workspace, options))
   )
   handle("pi:rerun-checks", () => withHost((h) => rerunChecks(h.workspace)))
+  handle("pi:repo-avatar", (_e, repo: string) => withHost((h) => repoAvatar(h.workspace, repo)))
 
   handle("pi:update-state", () => updateState())
   handle("pi:check-updates", () => check())

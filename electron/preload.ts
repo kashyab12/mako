@@ -99,6 +99,7 @@ const api = {
   createPull: (options: { title: string; body: string; base?: string; draft?: boolean }) =>
     invoke<PullRequest | null>("pi:create-pull", options),
   rerunChecks: () => invoke<void>("pi:rerun-checks"),
+  repoAvatar: (repo: string) => invoke<string | undefined>("pi:repo-avatar", repo),
 
   updateState: () => invoke<UpdateState>("pi:update-state"),
   checkUpdates: () => invoke<UpdateState>("pi:check-updates"),

@@ -51,9 +51,12 @@ is a disclosure, not a wall of text. A tick per question down the right edge
 jumps between turns, or step with ⌘↑ / ⌘↓.
 
 **Inspector** — the working diff, what the agent has in context right now, and
-your turns as rewind points.
+your turns as rewind points. Context is one screen: model and price, how full
+the window is, files in play, and every skill on one line each — open one to
+read it.
 
-**Sidebar** — scope to this project or every project Pi has run in; group by
+**Sidebar** — wears the project's GitHub avatar, so several open workspaces are
+told apart by their logo rather than by identical folder icons. Scope to this project or every project Pi has run in; group by
 date or project. Search reaches project names, so typing a repo name finds
 sessions inside it.
 

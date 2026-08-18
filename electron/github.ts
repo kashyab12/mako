@@ -1,4 +1,7 @@
+import { app } from "electron"
 import { execFile } from "node:child_process"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { join } from "node:path"
 import { promisify } from "node:util"
 import type { PullRequest, GitHubStatus, CheckSummary, ReviewSummary } from "./shared.js"
 
@@ -239,6 +242,46 @@ export async function createPull(cwd: string, options: CreatePullOptions): Promi
   if (options.draft) args.push("--draft")
   await gh(cwd, args)
   return pullForBranch(cwd)
+}
+
+/**
+ * The project's avatar, as a data URL.
+ *
+ * Fetched here and cached to disk rather than pointed at from an `<img>` in
+ * the renderer. Two reasons: it works offline after the first look, and the
+ * window makes no network request of its own — everything Mako sends to
+ * GitHub goes through one file, which is the only way that claim stays
+ * checkable.
+ *
+ * Failure is silent and returns nothing. A missing logo is a folder icon; it
+ * is not worth a toast, a retry, or a line in a crash report.
+ */
+export async function repoAvatar(cwd: string, repo: string): Promise<string | undefined> {
+  const owner = repo.split("/")[0]
+  if (!owner) return undefined
+
+  const dir = join(app.getPath("userData"), "avatars")
+  const file = join(dir, `${owner.replace(/[^\w.-]/g, "-")}.png`)
+  try {
+    return `data:image/png;base64,${(await readFile(file)).toString("base64")}`
+  } catch {
+    // Not cached yet.
+  }
+
+  try {
+    const url = (await gh(cwd, ["api", `repos/${repo}`, "--jq", ".owner.avatar_url"])).trim()
+    if (!url.startsWith("https://")) return undefined
+    const response = await fetch(`${url}${url.includes("?") ? "&" : "?"}s=128`)
+    if (!response.ok) return undefined
+    const bytes = Buffer.from(await response.arrayBuffer())
+    // A logo is a few kilobytes; anything much larger is not one.
+    if (bytes.length > 512_000) return undefined
+    await mkdir(dir, { recursive: true })
+    await writeFile(file, bytes)
+    return `data:image/png;base64,${bytes.toString("base64")}`
+  } catch {
+    return undefined
+  }
 }
 
 /** Ask GitHub to re-run whatever failed, rather than making the user leave. */

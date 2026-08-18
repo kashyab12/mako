@@ -19,14 +19,14 @@ import type {
  */
 
 const MODELS: ModelInfo[] = [
-  m("anthropic", "claude-opus-5", "Claude Opus 5", 1_000_000, 64_000, true, 5e-6, 25e-6, true),
-  m("anthropic", "claude-sonnet-5", "Claude Sonnet 5", 400_000, 64_000, true, 3e-6, 15e-6, true),
-  m("anthropic", "claude-haiku-4-5", "Claude Haiku 4.5", 200_000, 32_000, false, 8e-7, 4e-6, true),
-  m("openai", "gpt-5.2", "GPT-5.2", 400_000, 100_000, true, 1.25e-6, 10e-6, true),
-  m("openai", "o5-mini", "o5-mini", 200_000, 65_000, true, 1.1e-6, 4.4e-6, false),
-  m("google", "gemini-3-pro", "Gemini 3 Pro", 2_000_000, 65_000, true, 1.25e-6, 10e-6, true),
-  m("deepseek", "deepseek-v4", "DeepSeek V4", 128_000, 8_000, true, 2.7e-7, 1.1e-6, false),
-  m("zai", "glm-5", "GLM-5", 200_000, 32_000, true, 6e-7, 2.2e-6, false),
+  m("anthropic", "claude-opus-5", "Claude Opus 5", 1_000_000, 64_000, true, 5, 25, true),
+  m("anthropic", "claude-sonnet-5", "Claude Sonnet 5", 400_000, 64_000, true, 3, 15, true),
+  m("anthropic", "claude-haiku-4-5", "Claude Haiku 4.5", 200_000, 32_000, false, 0.8, 4, true),
+  m("openai", "gpt-5.2", "GPT-5.2", 400_000, 100_000, true, 1.25, 10, true),
+  m("openai", "o5-mini", "o5-mini", 200_000, 65_000, true, 1.1, 4.4, false),
+  m("google", "gemini-3-pro", "Gemini 3 Pro", 2_000_000, 65_000, true, 1.25, 10, true),
+  m("deepseek", "deepseek-v4", "DeepSeek V4", 128_000, 8_000, true, 0.27, 1.1, false),
+  m("zai", "glm-5", "GLM-5", 200_000, 32_000, true, 0.6, 2.2, false),
 ]
 
 function m(
@@ -391,6 +391,7 @@ export function installMockBridge() {
     pullRequests: async () => [],
     createPull: async () => null,
     rerunChecks: async () => {},
+    repoAvatar: async () => undefined,
     openUrl: async () => {},
     updateState: async () => ({ status: "unsupported" as const, version: "0.0.0-mock" }),
     checkUpdates: async () => ({ status: "unsupported" as const, version: "0.0.0-mock" }),

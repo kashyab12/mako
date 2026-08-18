@@ -62,10 +62,19 @@ export function formatCost(value: number) {
 }
 
 /** Model pricing arrives per-token; humans read per-million. */
-export function formatRate(perToken: number) {
-  if (!perToken) return "—"
-  const perMillion = perToken * 1_000_000
-  return perMillion >= 10 ? `$${perMillion.toFixed(0)}` : `$${perMillion.toFixed(2)}`
+/**
+ * A model's price, which arrives already denominated per million tokens.
+ *
+ * It used to multiply by a million on the way in, on the assumption that the
+ * catalog quoted per-token. It does not — Opus at $5/Mtok was rendering as
+ * "$5000000 per Mtok", which is the sort of number that makes a whole panel
+ * look untrustworthy.
+ */
+export function formatRate(perMillion: number) {
+  if (!perMillion) return "—"
+  if (perMillion >= 100) return `$${perMillion.toFixed(0)}`
+  if (perMillion >= 1) return `$${perMillion.toFixed(2)}`
+  return `$${perMillion.toFixed(3)}`
 }
 
 export function formatContextWindow(tokens: number) {

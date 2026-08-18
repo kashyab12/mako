@@ -5,6 +5,7 @@ import { fileDir, fileName, formatContextWindow, formatRate, formatTokens } from
 import { getPi } from "@/lib/bridge"
 import { actions, shallowEqual, useSession } from "@/state/session"
 import { cn } from "@/lib/utils"
+import type { SkillSummary } from "@/lib/types"
 import {
   BookOpenIcon,
   ChevronRightIcon,
@@ -78,7 +79,7 @@ function Budget() {
         <span className="tabular">{usage.percent == null ? "" : `${Math.round(percent)}%`}</span>
       </div>
 
-      {usage.stats ? (
+      {usage.stats && usage.stats.total > 0 ? (
         <div className="mt-2 grid grid-cols-3 gap-2 border-t border-hairline pt-2">
           <Stat label="in" value={formatTokens(usage.stats.input)} />
           <Stat label="out" value={formatTokens(usage.stats.output)} />
@@ -175,43 +176,86 @@ const FileRow = memo(function FileRow({
 /* skills                                                              */
 /* ------------------------------------------------------------------ */
 
+/**
+ * What the agent can reach for.
+ *
+ * One line per skill. Skill descriptions are written to be read by a model —
+ * they are long, they repeat their own trigger conditions, and there can be
+ * twenty of them. Rendered in full they were the entire panel: a wall of grey
+ * prose that buried the two sections anyone actually consults. The name is
+ * what you scan for; the description is what you read once, on purpose.
+ */
 function Skills() {
   const skills = useSession((state) => state.capabilities.skills)
+  const [open, setOpen] = useState<string>()
   if (skills.length === 0) return null
 
   return (
     <Section title="Skills" count={skills.length}>
       {skills.map((skill) => (
-        <div
+        <SkillRow
           key={skill.name}
-          className="group rounded-md px-1.5 py-1.5 transition-colors duration-100 hover:bg-raised"
-        >
-          <div className="flex items-center gap-1.5">
-            <BookOpenIcon className="size-3 shrink-0 text-faint" />
-            <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-foreground/90">
-              ${skill.name}
-            </span>
-            <button
-              type="button"
-              title={`Insert $${skill.name} into the composer`}
-              onClick={() =>
-                window.dispatchEvent(
-                  new CustomEvent("pi:insert", { detail: `$${skill.name} ` })
-                )
-              }
-              className="pressable shrink-0 rounded px-1 text-[10px] text-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-foreground"
-            >
-              use
-            </button>
-          </div>
-          <p className="mt-0.5 pl-[18px] text-[10.5px] leading-snug text-faint">
-            {skill.description}
-          </p>
-        </div>
+          skill={skill}
+          open={open === skill.name}
+          onToggle={() => setOpen(open === skill.name ? undefined : skill.name)}
+        />
       ))}
     </Section>
   )
 }
+
+const SkillRow = memo(function SkillRow({
+  skill,
+  open,
+  onToggle,
+}: {
+  skill: SkillSummary
+  open: boolean
+  onToggle: () => void
+}) {
+  return (
+    <div className="group contain-turn [contain-intrinsic-size:auto_24px]">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors duration-100 hover:bg-raised"
+      >
+        <BookOpenIcon className="size-3 shrink-0 text-faint" />
+        <span className="shrink-0 text-[11.5px] text-foreground/90">
+          <span className="text-faint">$</span>
+          {skill.name}
+        </span>
+        {/* The description trails the name on the same line and is cut by the
+            panel edge, so it hints at what this is without ever costing a
+            second row. Opening one is a deliberate act. */}
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-[10.5px] text-faint",
+            open && "opacity-0"
+          )}
+        >
+          {skill.description}
+        </span>
+        <span
+          role="presentation"
+          title={`Insert $${skill.name} into the composer`}
+          onClick={(event) => {
+            event.stopPropagation()
+            window.dispatchEvent(new CustomEvent("pi:insert", { detail: `$${skill.name} ` }))
+          }}
+          className="pressable shrink-0 rounded px-1 text-[10px] text-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-foreground"
+        >
+          use
+        </span>
+      </button>
+      {open ? (
+        <p className="animate-thread px-1.5 pt-0.5 pb-1.5 pl-[26px] text-[11px] leading-relaxed text-muted-foreground">
+          {skill.description}
+        </p>
+      ) : null}
+    </div>
+  )
+})
 
 /* ------------------------------------------------------------------ */
 /* tools                                                               */
