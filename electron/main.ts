@@ -32,6 +32,7 @@ import { HostPool } from "./pool.js"
 import { devinAccountsMasked, emitThreadAsClaude, emitThreadAsCodex, emitThreadAsPi, followThread, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, saveDevinAccounts, sendRemote, stopThreads, unfollowThread } from "./threads.js"
 import { abortNative, bindDrivers, freshHarnesses, harnessAvailability, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
 import { bindLineageDirect, chainOf, expectLineage } from "./lineage.js"
+import { accountUsage, captureAccount, listAccounts, removeAccount, selectAccount } from "./accounts.js"
 import { acpCancel, acpClose, acpHarnesses, acpPrompt, acpRespondPermission, acpSetMode, acpStart, acpState, bindAcp, stopAcp } from "./acp.js"
 import { listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
 import type { BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
@@ -377,6 +378,21 @@ function bindIpc() {
     expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
     return { kind: "spawned" as const, run: startFresh(harness, thread.ref.cwd, handoff) }
   })
+  /* Harness accounts: several logins per CLI, Orca-style isolated homes. */
+  handle("pi:accounts", () => listAccounts())
+  handle("pi:account-capture", (_e, harness: "claude" | "codex", name: string) =>
+    captureAccount(harness, name)
+  )
+  handle("pi:account-select", (_e, harness: "claude" | "codex", name: string | null) =>
+    selectAccount(harness, name)
+  )
+  handle("pi:account-remove", (_e, harness: "claude" | "codex", name: string) =>
+    removeAccount(harness, name)
+  )
+  handle("pi:account-usage", (_e, harness: "claude" | "codex", name: string) =>
+    accountUsage(harness, name)
+  )
+
   handle("pi:devin-accounts", () => devinAccountsMasked())
   handle("pi:devin-accounts-save", (_e, accounts: Array<{ name: string; apiKey: string }>) =>
     saveDevinAccounts(accounts)

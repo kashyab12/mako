@@ -25,6 +25,7 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import type { ThreadRef } from "@mako/sessions"
+import { accountEnv } from "./accounts.js"
 import type { HostEvent, ThreadRunState } from "./shared.js"
 
 interface ResumeCommand {
@@ -143,7 +144,7 @@ export function threadRun(path: string): ThreadRunState | null {
  * processes is corruption, not concurrency. The returned state is also
  * pushed as events as it changes.
  */
-export function resumeNative(ref: ThreadRef, prompt: string): ThreadRunState {
+export async function resumeNative(ref: ThreadRef, prompt: string): Promise<ThreadRunState> {
   const existing = runs.get(ref.path)
   if (existing && existing.state.status === "running") return existing.state
 
@@ -161,24 +162,30 @@ export function resumeNative(ref: ThreadRef, prompt: string): ThreadRunState {
  */
 let freshCounter = 0
 
-export function startFresh(harness: string, cwd: string | undefined, prompt: string): ThreadRunState {
+export async function startFresh(
+  harness: string,
+  cwd: string | undefined,
+  prompt: string
+): Promise<ThreadRunState> {
   const make = FRESH[harness]
   if (!make) throw new Error(`A new ${harness} session cannot be started from here`)
   return launch(`fresh:${harness}:${++freshCounter}`, harness, cwd, make(prompt))
 }
 
-function launch(
+async function launch(
   key: string,
   harness: string,
   workingDir: string | undefined,
   resume: ResumeCommand
-): ThreadRunState {
+): Promise<ThreadRunState> {
   const { command, args } = resume
   const cwd = workingDir && existsSync(workingDir) ? workingDir : homedir()
+  // The selected account decides who pays for this run.
+  const env = await accountEnv(harness, process.env)
   const child = spawn(command, args, {
     cwd,
     stdio: ["ignore", "pipe", "pipe"],
-    env: process.env,
+    env,
   })
 
   const state: ThreadRunState = { path: key, harness, status: "running" }

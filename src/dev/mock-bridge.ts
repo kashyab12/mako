@@ -416,6 +416,21 @@ export function installMockBridge() {
       throw new Error("The browser mock cannot open tabs")
     },
     emitThreadToClaude: async () => ({ sessionId: "mock-claude-session" }),
+    accounts: async () => [
+      { harness: "claude" as const, name: "default", dir: "~/.claude", active: true },
+      { harness: "claude" as const, name: "work", dir: "~/.mako/accounts/claude/work", active: false },
+      { harness: "codex" as const, name: "default", dir: "~/.codex", active: false },
+      { harness: "codex" as const, name: "personal", dir: "~/.mako/accounts/codex/personal", active: true },
+    ],
+    captureAccount: async () => {},
+    selectAccount: async () => {},
+    removeAccount: async () => {},
+    accountUsage: async (harness: string, name: string) =>
+      harness === "codex"
+        ? { status: "ok" as const, plan: "pro", session: { usedPercent: 34, windowMinutes: 300, resetsAt: Date.now() + 3_600_000 }, weekly: { usedPercent: 92, windowMinutes: 10_080, resetsAt: Date.now() + 4 * 86_400_000 } }
+        : name === "default"
+          ? { status: "stale-token" as const, detail: "Refreshes the next time Claude Code runs" }
+          : { status: "ok" as const, session: { usedPercent: 12, windowMinutes: 300, resetsAt: Date.now() + 9_000_000 }, weekly: { usedPercent: 55, windowMinutes: 10_080, resetsAt: Date.now() + 2 * 86_400_000 } },
     devinAccounts: async () => [{ name: "work", key: "apk_…f3a1" }],
     saveDevinAccounts: async () => {},
     harnessAvailability: async () => ({ pi: true, codex: true, claude: true, cursor: true, grok: false }),

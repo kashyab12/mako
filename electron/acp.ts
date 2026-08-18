@@ -31,6 +31,7 @@ import {
   type RequestPermissionRequest,
   type SessionNotification,
 } from "@agentclientprotocol/sdk"
+import { accountEnv } from "./accounts.js"
 import type { AcpPermissionRequest, AcpSessionState, AcpUpdate, HostEvent } from "./shared.js"
 
 interface AgentSpec {
@@ -105,8 +106,9 @@ export async function acpStart(
 
   // The nested-session guard: Claude Code refuses to start inside another
   // Claude Code. Mako is not one, but it may have been *launched from* one,
-  // and the variable would be inherited.
-  const env = { ...process.env }
+  // and the variable would be inherited. The selected account's config home
+  // rides in the same way it does for headless runs.
+  const env = await accountEnv(harness, process.env)
   delete env.CLAUDECODE
   delete env.CLAUDE_CODE_ENTRYPOINT
 

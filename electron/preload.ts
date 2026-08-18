@@ -30,6 +30,7 @@ import type {
 } from "./shared.js"
 
 import type { CrashReport } from "./crash.js"
+import type { AccountUsage, HarnessAccount } from "./accounts.js"
 
 const invoke = <T>(channel: string, ...args: unknown[]) =>
   ipcRenderer.invoke(channel, ...args) as Promise<T>
@@ -64,6 +65,17 @@ const api = {
   acpSetMode: (id: string, modeId: string) => invoke<void>("pi:acp-mode", id, modeId),
   acpCancel: (id: string) => invoke<void>("pi:acp-cancel", id),
   acpClose: (id: string) => invoke<void>("pi:acp-close", id),
+
+  /* Harness accounts: several logins per CLI. */
+  accounts: () => invoke<HarnessAccount[]>("pi:accounts"),
+  captureAccount: (harness: "claude" | "codex", name: string) =>
+    invoke<void>("pi:account-capture", harness, name),
+  selectAccount: (harness: "claude" | "codex", name: string | null) =>
+    invoke<void>("pi:account-select", harness, name),
+  removeAccount: (harness: "claude" | "codex", name: string) =>
+    invoke<void>("pi:account-remove", harness, name),
+  accountUsage: (harness: "claude" | "codex", name: string) =>
+    invoke<AccountUsage>("pi:account-usage", harness, name),
 
   /* The Agents settings section. */
   devinAccounts: () => invoke<Array<{ name: string; key: string }>>("pi:devin-accounts"),

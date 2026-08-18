@@ -314,6 +314,8 @@ function Agents() {
         ))}
       </div>
 
+      <HarnessAccounts />
+
       <Eyebrow className="pt-6 pb-2">Devin accounts</Eyebrow>
       <p className="pb-3 text-[11.5px] leading-relaxed text-faint">
         Devin's sessions live in its cloud, so each account needs a service
@@ -377,6 +379,175 @@ function Agents() {
         </Action>
       </div>
     </Section>
+  )
+}
+
+/**
+ * Several logins per CLI, switchable — the Orca mechanism: each captured
+ * account is an isolated config home selected by env var at spawn, with
+ * everything except credentials symlinked back to the real home, so skills
+ * and sessions stay identical across accounts. Usage windows come from the
+ * providers' own endpoints; a bar near full is the reason to switch.
+ */
+function HarnessAccounts() {
+  const [accounts, setAccounts] = useState<
+    Array<{ harness: "claude" | "codex"; name: string; active: boolean }>
+  >([])
+  const [usage, setUsage] = useState<Record<string, { status: string; plan?: string; detail?: string; session?: { usedPercent: number; resetsAt: number | null } | null; weekly?: { usedPercent: number; resetsAt: number | null } | null }>>({})
+  const [capturing, setCapturing] = useState<"claude" | "codex" | null>(null)
+  const [captureName, setCaptureName] = useState("")
+
+  const load = useCallback(() => {
+    if (!hasBridge()) return
+    void getPi()
+      .accounts()
+      .then((list) => {
+        setAccounts(list)
+        for (const account of list) {
+          void getPi()
+            .accountUsage(account.harness, account.name)
+            .then((value) => setUsage((prev) => ({ ...prev, [`${account.harness}:${account.name}`]: value })))
+            .catch(() => {})
+        }
+      })
+      .catch(() => setAccounts([]))
+  }, [])
+  useEffect(load, [load])
+
+  const capture = async () => {
+    if (!capturing || !captureName.trim()) return
+    try {
+      await getPi().captureAccount(capturing, captureName.trim())
+      setCapturing(null)
+      setCaptureName("")
+      load()
+    } catch (error) {
+      window.alert?.(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  return (
+    <>
+      {(["claude", "codex"] as const).map((harness) => {
+        const rows = accounts.filter((account) => account.harness === harness)
+        if (rows.length === 0) return null
+        return (
+          <div key={harness}>
+            <Eyebrow className="pt-6 pb-2">
+              {harness === "claude" ? "Claude Code accounts" : "Codex accounts"}
+            </Eyebrow>
+            <p className="pb-2 text-[11.5px] leading-relaxed text-faint">
+              Sign into another account with the CLI, capture it here, switch
+              back — every run uses whichever account is selected. Skills and
+              sessions are shared across all of them; only the login differs.
+            </p>
+            {rows.map((account) => {
+              const stats = usage[`${harness}:${account.name}`]
+              return (
+                <div key={account.name} className="flex items-center gap-2.5 border-b border-hairline py-2 last:border-b-0">
+                  <input
+                    type="radio"
+                    name={`account-${harness}`}
+                    checked={account.active}
+                    onChange={() =>
+                      void getPi()
+                        .selectAccount(harness, account.name === "default" ? null : account.name)
+                        .then(load)
+                    }
+                    className="size-3 accent-current"
+                  />
+                  <span className="w-24 min-w-0 truncate text-[12.5px]">{account.name}</span>
+                  <span className="min-w-0 flex-1">
+                    {stats?.status === "ok" ? (
+                      <span className="flex items-center gap-2">
+                        <UsageBar label="5h" window={stats.session} />
+                        <UsageBar label="wk" window={stats.weekly} />
+                        {stats.plan ? <span className="text-[10px] text-faint">{stats.plan}</span> : null}
+                      </span>
+                    ) : stats ? (
+                      <span className="text-[10.5px] text-faint">
+                        {stats.status === "stale-token"
+                          ? (stats.detail ?? "token stale")
+                          : stats.status === "missing-credentials"
+                            ? "no login captured"
+                            : (stats.detail ?? "usage unavailable")}
+                      </span>
+                    ) : (
+                      <span className="shimmer text-[10.5px] text-faint">…</span>
+                    )}
+                  </span>
+                  {account.name !== "default" ? (
+                    <button
+                      type="button"
+                      aria-label={`Remove ${account.name}`}
+                      onClick={() => void getPi().removeAccount(harness, account.name).then(load)}
+                      className="pressable rounded p-1 text-faint hover:text-foreground"
+                    >
+                      <XIcon className="size-3.5" />
+                    </button>
+                  ) : null}
+                </div>
+              )
+            })}
+            {capturing === harness ? (
+              <div className="flex items-end gap-2 pt-2">
+                <input
+                  value={captureName}
+                  onChange={(event) => setCaptureName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void capture()
+                  }}
+                  placeholder="account name, e.g. work"
+                  className="h-7 w-44 rounded-md bg-surface px-2 text-[12px] text-foreground placeholder:text-faint focus:ring-1 focus:ring-hairline focus:outline-none"
+                />
+                <Action disabled={!captureName.trim()} onClick={() => void capture()}>
+                  Capture current login
+                </Action>
+                <Action onClick={() => setCapturing(null)}>Cancel</Action>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setCapturing(harness)}
+                className="pressable pt-2 text-[11.5px] text-faint underline-offset-2 hover:text-foreground hover:underline"
+              >
+                Capture the current {harness === "claude" ? "Claude Code" : "Codex"} login as an account…
+              </button>
+            )}
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
+/** One window as a small bar: full is the signal, exact digits on hover. */
+function UsageBar({
+  label,
+  window: win,
+}: {
+  label: string
+  window?: { usedPercent: number; resetsAt: number | null } | null
+}) {
+  if (!win) return null
+  const used = Math.max(0, Math.min(100, win.usedPercent))
+  return (
+    <span
+      className="flex items-center gap-1"
+      title={`${used}% used${win.resetsAt ? ` · resets ${formatRelative(new Date(win.resetsAt).toISOString())}` : ""}`}
+    >
+      <span className="text-[10px] text-faint">{label}</span>
+      <span className="h-1.5 w-16 overflow-hidden rounded-full bg-raised">
+        <span
+          className={cn(
+            "block h-full rounded-full",
+            used >= 90 ? "bg-red-400/80" : used >= 70 ? "bg-amber-300/80" : "bg-emerald-400/70"
+          )}
+          style={{ width: `${used}%` }}
+        />
+      </span>
+      <span className="tabular text-[10px] text-faint">{Math.round(used)}%</span>
+    </span>
   )
 }
 
