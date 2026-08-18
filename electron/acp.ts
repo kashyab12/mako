@@ -191,12 +191,14 @@ export async function acpStart(
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
     })
-    const session = options.resume
-      ? await live.connection
-          .loadSession?.({ sessionId: options.resume, cwd: workingDir, mcpServers: [] })
-          .then(() => ({ sessionId: options.resume as string, modes: undefined }))
-          .catch(async () => live.connection.newSession({ cwd: workingDir, mcpServers: [] }))
-      : await live.connection.newSession({ cwd: workingDir, mcpServers: [] })
+    const canLoad = typeof live.connection.loadSession === "function"
+    const session =
+      options.resume && canLoad
+        ? await live.connection
+            .loadSession({ sessionId: options.resume, cwd: workingDir, mcpServers: [] })
+            .then(() => ({ sessionId: options.resume as string, modes: undefined }))
+            .catch(async () => live.connection.newSession({ cwd: workingDir, mcpServers: [] }))
+        : await live.connection.newSession({ cwd: workingDir, mcpServers: [] })
     if (!session) throw new Error("The agent did not open a session")
     live.sessionId = session.sessionId
     const modes = (session as { modes?: { availableModes?: Array<{ id: string; name: string }>; currentModeId?: string } }).modes

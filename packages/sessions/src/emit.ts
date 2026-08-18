@@ -289,7 +289,9 @@ export async function emitCursorSession(
   thread: Thread,
   options: { cwd?: string; home?: string } = {}
 ): Promise<EmitResult> {
-  const sqlite = (await import("node:sqlite")) as {
+  const sqlite = (await import("node:sqlite").catch(() => {
+    throw new Error("Writing Cursor sessions needs Node's built-in SQLite (Node 22.5+)")
+  })) as {
     DatabaseSync: new (path: string) => {
       exec(sql: string): void
       prepare(sql: string): { run(...args: unknown[]): unknown }

@@ -75,9 +75,24 @@ The layer under this is [`@mako/sessions`](packages/sessions) — a dependency-f
 library that reads every harness's native store into one canonical format,
 catalogs them incrementally (a thousand unchanged sessions cost a thousand
 stats and zero reads), and streams gigabyte-sized files in fixed-size chunks.
+It also *writes* every store: a conversation can be emitted as a native
+session in any harness's own format — a real Pi session file, a Claude
+project, a Codex rollout, a Grok session directory, a Cursor SQLite store —
+which the target's ordinary resume machinery then loads with the full history
+in context. Continuation is not a pasted summary; the receiving agent
+remembers the conversation, because as far as its harness can tell, it had it.
 Devin accounts go in `~/.mako/devin.json` as
 `{ "accounts": [{ "name": "work", "apiKey": "apk_…" }] }` — several at once,
 each session's path naming the account it came from.
+
+**Accounts** — several logins per CLI, switchable in Settings → Agents.
+Each captured account is an isolated config home selected by environment
+variable at spawn (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), with everything except
+credentials symlinked back to the real home — so skills and sessions are
+identical across accounts, and the only thing that changes is who pays.
+Usage comes from the providers' own endpoints: five-hour and weekly windows
+per account, and a quiet suggestion when the active one is nearly spent and
+another has headroom. Nothing ever switches by itself.
 
 ⌘K reaches every command, model, and session. ⌘P opens a file by name. **⌘/**
 shows what every region is for and every key that does something — generated

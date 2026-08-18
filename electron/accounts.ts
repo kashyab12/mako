@@ -183,6 +183,18 @@ export async function captureAccount(harness: AccountHarness, name: string): Pro
 
   // Everything else is the same home, by reference. Sessions land in the
   // one watched store; a skill added under any account exists under all.
+  await ensureLinks(harness, dir)
+}
+
+/**
+ * Point the account home's shared entries at the real home. Re-run at every
+ * spawn, because a skills directory created *after* capture should appear
+ * under every account the moment it exists — nine existsSync calls is the
+ * whole cost.
+ */
+async function ensureLinks(harness: AccountHarness, dir: string): Promise<void> {
+  const spec = SHARED[harness]
+  const realHome = join(homedir(), spec.home)
   for (const link of spec.links) {
     const target = join(realHome, link)
     const at = join(dir, link)
@@ -225,6 +237,7 @@ export async function accountEnv(harness: string, base: NodeJS.ProcessEnv): Prom
     if (name) {
       const dir = join(accountsRoot(), harness, name)
       if (existsSync(dir)) {
+        await ensureLinks(harness, dir)
         if (harness === "claude") env.CLAUDE_CONFIG_DIR = dir
         else env.CODEX_HOME = dir
       }
@@ -260,7 +273,15 @@ async function claudeUsage(dir: string, isDefault: boolean): Promise<AccountUsag
       ? await readKeychain("Claude Code-credentials")
       : await readKeychain(scopedClaudeService(dir))
   }
-  const token = raw ? (JSON.parse(raw) as { claudeAiOauth?: { accessToken?: string } })?.claudeAiOauth?.accessToken : null
+  let token: string | null = null
+  try {
+    token = raw
+      ? ((JSON.parse(raw) as { claudeAiOauth?: { accessToken?: string } })?.claudeAiOauth
+          ?.accessToken ?? null)
+      : null
+  } catch {
+    // A corrupt credentials file reads as no credentials, not a crash.
+  }
   if (!token) return { status: "missing-credentials" }
   try {
     const response = await fetch("https://api.anthropic.com/api/oauth/usage", {
