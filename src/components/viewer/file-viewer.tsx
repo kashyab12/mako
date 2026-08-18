@@ -38,7 +38,27 @@ export function FileViewer() {
     return () => window.removeEventListener("keydown", onKey)
   }, [path])
 
+  const diff = useViewer((state) => state.diff)
+
   if (!path) return null
+
+  if (diff) {
+    return (
+      <div className="absolute inset-0 z-20 flex min-h-0 flex-col bg-background">
+        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-hairline px-2.5">
+          <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted-foreground">
+            {diff.title}
+          </span>
+          <IconAction label="Close (Esc)" size="xs" onClick={() => viewer.close()}>
+            <XIcon />
+          </IconAction>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto">
+          <CenterDiff diff={diff.diff} />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="absolute inset-0 z-20 flex min-h-0 flex-col bg-background">
@@ -91,3 +111,50 @@ export function FileViewer() {
   )
 }
 
+
+
+/**
+ * The diff engine, loaded only when a diff actually opens here — it carries
+ * a syntax-highlighting runtime that has no business in the boot path.
+ */
+const LazyDiff = lazy(async () => {
+  const [{ MultiFileDiff, Virtualizer }, { prefsStore }] = await Promise.all([
+    import("@pierre/diffs/react"),
+    import("@/state/prefs"),
+  ])
+  function Center({ diff }: { diff: import("@/lib/types").GitDiff }) {
+    const theme = prefsStore.get().theme
+    if (diff.binary || (!diff.oldFile && !diff.newFile)) {
+      return (
+        <p className="p-4 text-[12px] text-faint">
+          {diff.binary ? "Binary file — no text diff." : "No text content to compare."}
+        </p>
+      )
+    }
+    return (
+      <Virtualizer className="min-h-full">
+        <MultiFileDiff
+          {...(diff.oldFile && diff.newFile
+            ? { oldFile: diff.oldFile, newFile: diff.newFile }
+            : diff.newFile
+              ? { oldFile: null, newFile: diff.newFile }
+              : { oldFile: diff.oldFile!, newFile: null })}
+          options={{
+            themeType: theme === "light" ? "light" : "dark",
+            // Split view: the center stage is wide enough to earn it.
+            diffStyle: "split",
+          }}
+        />
+      </Virtualizer>
+    )
+  }
+  return { default: Center }
+})
+
+function CenterDiff({ diff }: { diff: import("@/lib/types").GitDiff }) {
+  return (
+    <Suspense fallback={<p className="shimmer p-4 text-[12px]">Loading diff…</p>}>
+      <LazyDiff diff={diff} />
+    </Suspense>
+  )
+}

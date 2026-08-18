@@ -30,7 +30,7 @@ import {
 } from "./devserver.js"
 import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunChecks, type CreatePullOptions } from "./github.js"
 import { HostPool } from "./pool.js"
-import { devinAccountsMasked, emitThreadAs, emitThreadAsClaude, emitThreadAsPi, followThread, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, saveDevinAccounts, sendRemote, stopThreads, unfollowThread } from "./threads.js"
+import { devinAccountsMasked, emitThreadAs, emitThreadAsClaude, emitThreadAsPi, followThread, threadsReady, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, saveDevinAccounts, sendRemote, stopThreads, unfollowThread } from "./threads.js"
 import { abortNative, bindDrivers, freshHarnesses, harnessAvailability, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
 import { bindLineageDirect, chainOf, expectLineage } from "./lineage.js"
 import { accountUsage, captureAccount, listAccounts, removeAccount, selectAccount } from "./accounts.js"
@@ -388,7 +388,10 @@ function bindIpc() {
   handle("pi:usage", () => usageSummary(join(getAgentDir(), "sessions")))
 
   /* Cross-harness threads: every agent's sessions on this machine. */
-  handle("pi:threads", (_e, filter?: { cwd?: string; harness?: string }) => listThreads(filter))
+  handle("pi:threads", (_e, filter?: { cwd?: string; harness?: string }) => ({
+    ready: threadsReady(),
+    threads: listThreads(filter),
+  }))
   handle("pi:thread-open", (_e, path: string) => openThread(path))
   handle("pi:thread-follow", (_e, path: string, fromByte: number) => followThread(path, fromByte))
   handle("pi:thread-unfollow", () => unfollowThread())

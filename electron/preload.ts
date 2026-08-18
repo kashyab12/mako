@@ -39,7 +39,8 @@ const api = {
   boot: () => invoke<BootPayload>("pi:boot"),
 
   /* Cross-harness threads: every coding agent's sessions on this machine. */
-  threads: (filter?: { cwd?: string; harness?: string }) => invoke<ThreadRef[]>("pi:threads", filter),
+  threads: (filter?: { cwd?: string; harness?: string }) =>
+    invoke<{ ready: boolean; threads: ThreadRef[] }>("pi:threads", filter),
   openThread: (path: string) => invoke<Thread | null>("pi:thread-open", path),
   continueThread: (path: string) => invoke<TabSnapshot>("pi:thread-continue", path),
   emitThreadToClaude: (path: string) => invoke<{ sessionId: string }>("pi:thread-emit-claude", path),

@@ -315,6 +315,7 @@ export const actions = {
       void updates.load()
       void automations.load()
       void threads.load()
+      threads.watchFocus()
     } catch (error) {
       store.set({ phase: "detached", fault: error instanceof Error ? error.message : String(error) })
     }

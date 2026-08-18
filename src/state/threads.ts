@@ -99,16 +99,34 @@ export async function withConversion<T>(
   }
 }
 
+let focusRefetch = false
+
 export const threads = {
+  /** Re-ask on window focus: cheap, and heals any missed push for good. */
+  watchFocus() {
+    if (focusRefetch || typeof window === "undefined") return
+    focusRefetch = true
+    window.addEventListener("focus", () => void this.load())
+  },
+
   async load() {
     if (!hasBridge()) return
-    const [list, resumable, targets, acpable] = await Promise.all([
-      getPi().threads().catch((): ThreadRef[] => []),
+    const [result, resumable, targets, acpable] = await Promise.all([
+      getPi()
+        .threads()
+        .catch(() => ({ ready: false, threads: [] as ThreadRef[] })),
       getPi().resumableHarnesses().catch((): string[] => []),
       getPi().continueTargets().catch((): string[] => []),
       getPi().acpHarnesses().catch((): string[] => []),
     ])
-    threadsStore.set({ threads: list, loaded: true, resumable, targets, acpable })
+    threadsStore.set({ threads: result.threads, loaded: result.ready, resumable, targets, acpable })
+    // The catalog scans for a moment at boot, and its "here is the list"
+    // push can fire while the window is still loading — a lossy first
+    // handshake. Retrying until the host says ready is what makes the rail
+    // reliable rather than usually-fine.
+    if (!result.ready) {
+      setTimeout(() => void this.load(), 1500)
+    }
   },
 
   /** Open a foreign session read-only, translated to the canonical shape. */

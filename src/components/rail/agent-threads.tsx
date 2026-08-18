@@ -47,6 +47,7 @@ export function AgentThreads() {
   const filter = usePrefs((prefs) => prefs.agentHarnessFilter)
   const pinned = usePrefs((prefs) => prefs.pinnedThreads)
   const scope = usePrefs((prefs) => prefs.railScope)
+  const groupBy = usePrefs((prefs) => prefs.railGroupBy)
   const collapsed = usePrefs((prefs) => prefs.collapsedGroups)
   const cwd = useSession((state) => state.meta?.cwd)
 
@@ -105,14 +106,29 @@ export function AgentThreads() {
     const byBucket = new Map<string, ThreadRef[]>()
     if (held.length > 0) byBucket.set("Pinned", held)
     for (const ref of rest) {
-      const label = ref.updatedAt ? bucketFor(ref.updatedAt) : "Earlier"
+      const label =
+        groupBy === "project" && scope === "all"
+          ? ref.cwd
+            ? workspaceName(ref.cwd)
+            : "No folder"
+          : ref.updatedAt
+            ? bucketFor(ref.updatedAt)
+            : "Earlier"
       const list = byBucket.get(label)
       if (list) list.push(ref)
       else byBucket.set(label, [ref])
     }
-    const sections = [...byBucket.entries()].sort((a, b) => orderOf(a[0]) - orderOf(b[0]))
+    const sections =
+      groupBy === "project" && scope === "all"
+        ? // Pinned first, then projects by their most recent activity.
+          [...byBucket.entries()].sort((a, b) => {
+            if (a[0] === "Pinned") return -1
+            if (b[0] === "Pinned") return 1
+            return (b[1][0]?.updatedAt ?? "").localeCompare(a[1][0]?.updatedAt ?? "")
+          })
+        : [...byBucket.entries()].sort((a, b) => orderOf(a[0]) - orderOf(b[0]))
     return { total: matched.length, sections }
-  }, [deferred, filter, pinned, scoped])
+  }, [deferred, filter, groupBy, pinned, scope, scoped])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -143,6 +159,7 @@ export function AgentThreads() {
           ) : null}
         </div>
         <ScopeToggle scope={scope} />
+        {scope === "all" ? <GroupToggle groupBy={groupBy} /> : null}
       </div>
 
       {/* One chip per harness with sessions in scope, with its count.
@@ -225,6 +242,24 @@ export function AgentThreads() {
 function orderOf(label: string): number {
   const at = BUCKET_ORDER.indexOf(label)
   return at === -1 ? BUCKET_ORDER.length : at
+}
+
+/** Everywhere-view grouping: by when, or by which project. */
+function GroupToggle({ groupBy }: { groupBy: string }) {
+  const byProject = groupBy === "project"
+  return (
+    <button
+      type="button"
+      title={byProject ? "Group by date" : "Group by project"}
+      onClick={() => setPref("railGroupBy", byProject ? "date" : "project")}
+      className={cn(
+        "flex h-7 shrink-0 items-center rounded-md bg-surface px-1.5 text-[10.5px] transition-colors duration-150",
+        byProject ? "text-foreground" : "text-faint hover:text-muted-foreground"
+      )}
+    >
+      {byProject ? "Folders" : "Dates"}
+    </button>
+  )
 }
 
 /** This project, or everywhere. One word each; the rail is narrow. */

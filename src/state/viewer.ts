@@ -1,6 +1,6 @@
 import { createHook, createStore } from "@/state/store"
 import { getPi, hasBridge } from "@/lib/bridge"
-import type { FileContents } from "@/lib/types"
+import type { FileContents, GitDiff } from "@/lib/types"
 
 /**
  * The file open for reading, if any.
@@ -25,6 +25,8 @@ export interface ViewerState {
    * arrives after the open: whoever renders it scrolls once it exists.
    */
   line?: number
+  /** A diff on the center stage instead of a file, when set. */
+  diff?: { title: string; diff: GitDiff }
 }
 
 export const viewerStore = createStore<ViewerState>({ loading: false })
@@ -37,11 +39,34 @@ export const viewer = {
   async open(path: string, line?: number) {
     if (!hasBridge()) return
     const mine = ++generation
-    viewerStore.set({ path, line, loading: true, error: undefined, file: undefined })
+    viewerStore.set({ path, line, loading: true, error: undefined, file: undefined, diff: undefined })
     try {
       const file = await getPi().readFile(path)
       if (mine !== generation) return
       viewerStore.set({ file, loading: false })
+    } catch (error) {
+      if (mine !== generation) return
+      viewerStore.set({
+        loading: false,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  },
+
+  /**
+   * A diff, center stage. The inspector's pane is a few hundred pixels wide
+   * — fine for glancing, wrong for reading a commit — so a diff opened from
+   * history takes the transcript's space the way a file does, split view
+   * and all, and Escape gives it back.
+   */
+  async openDiff(title: string, load: () => Promise<GitDiff>) {
+    if (!hasBridge()) return
+    const mine = ++generation
+    viewerStore.set({ path: title, loading: true, error: undefined, file: undefined, diff: undefined })
+    try {
+      const diff = await load()
+      if (mine !== generation) return
+      viewerStore.set({ diff: { title, diff }, loading: false })
     } catch (error) {
       if (mine !== generation) return
       viewerStore.set({
@@ -59,6 +84,7 @@ export const viewer = {
       loading: false,
       error: undefined,
       line: undefined,
+      diff: undefined,
     })
   },
 

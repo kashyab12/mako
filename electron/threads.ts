@@ -49,20 +49,35 @@ let pushTimer: NodeJS.Timeout | null = null
 export function installThreads(send: (event: HostEvent) => void): void {
   emit = send
   void (async () => {
-    await loadLineage()
-    catalog = defaultCatalog({
-      cachePath: join(app.getPath("userData"), "threads-catalog.json"),
-      devinAccounts: await devinAccounts(),
-    })
-    await catalog.scan()
-    push()
-    catalog.startWatching()
-    catalog.onEvent((event) => {
-      // A new session may be the one a continuation is waiting to claim.
-      if (event.type === "added") bindLineage(event.ref)
-      schedulePush()
-    })
+    try {
+      await loadLineage()
+      catalog = defaultCatalog({
+        cachePath: join(app.getPath("userData"), "threads-catalog.json"),
+        devinAccounts: await devinAccounts(),
+      })
+      await catalog.scan()
+      push()
+      catalog.startWatching()
+      catalog.onEvent((event) => {
+        // A new session may be the one a continuation is waiting to claim.
+        if (event.type === "added") bindLineage(event.ref)
+        schedulePush()
+      })
+    } catch (error) {
+      // A catalog that failed to build must say so — an empty rail with no
+      // explanation reads as "the feature is broken", which it would be.
+      emit({
+        type: "notice",
+        level: "error",
+        message: `The thread catalog failed to start: ${error instanceof Error ? error.message : String(error)}`,
+      })
+    }
   })()
+}
+
+/** Whether the first scan has finished — the renderer's retry asks this. */
+export function threadsReady(): boolean {
+  return catalog !== null
 }
 
 /**
