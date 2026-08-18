@@ -136,6 +136,10 @@ const api = {
     invoke<void>("pi:git-commit", message, options),
   gitPush: () => invoke<void>("pi:git-push"),
   gitLog: (limit?: number) => invoke<GitCommitEntry[]>("pi:git-log", limit),
+  gitCommitFiles: (hash: string) =>
+    invoke<Array<{ path: string; status: import("./shared.js").GitFileStatus; insertions: number; deletions: number; binary: boolean }>>("pi:git-commit-files", hash),
+  gitCommitFileDiff: (hash: string, path: string) =>
+    invoke<GitDiff>("pi:git-commit-file-diff", hash, path),
   generateCommitMessage: (prompt?: string) =>
     invoke<string>("pi:git-generate-message", prompt),
   stageFile: (name: string, base64: string) =>

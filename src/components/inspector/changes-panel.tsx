@@ -8,6 +8,7 @@ import { PullRequestCard } from "@/components/inspector/pull-request"
 import { Slot } from "@/extend/slot"
 import { actions, useSession } from "@/state/session"
 import { getPi } from "@/lib/bridge"
+import { GitLog } from "@/components/inspector/git-log"
 import { buildFileTree, type TreeRow } from "@/lib/file-tree"
 import { cn } from "@/lib/utils"
 import { prefsStore, setPref, togglePref, usePrefs } from "@/state/prefs"
@@ -22,6 +23,7 @@ import {
   PlusIcon,
   RefreshCwIcon,
   XIcon,
+  RotateCcwIcon,
 } from "lucide-react"
 
 /**
@@ -60,6 +62,8 @@ export function ChangesPanel() {
   const autoOpenDiff = usePrefs((prefs) => prefs.autoOpenDiff)
   const [selected, setSelected] = useState<string>()
   const [diff, setDiff] = useState<GitDiff>()
+  /** A file from history rather than the working tree, when set. */
+  const [commitPick, setCommitPick] = useState<{ hash: string; path: string } | null>(null)
 
   const rows = useMemo(() => buildFileTree(files, collapsed), [collapsed, files])
   const staged = useMemo(() => files.filter((file) => file.staged).length, [files])
@@ -67,14 +71,16 @@ export function ChangesPanel() {
   // With the diff pane closed the list is the whole panel, so nothing is
   // "selected" and no file contents are fetched at all.
   const active = autoOpenDiff ? (files.find((file) => file.path === selected) ?? files[0]) : undefined
-  const path = active?.path
+  const path = commitPick ? commitPick.path : active?.path
   const ready = diff !== undefined && diff.path === path
 
   useEffect(() => {
     if (!path) return
     let cancelled = false
-    void getPi()
-      .gitDiff(path)
+    const fetching = commitPick
+      ? getPi().gitCommitFileDiff(commitPick.hash, commitPick.path)
+      : getPi().gitDiff(path)
+    void fetching
       .then((next) => {
         if (!cancelled) setDiff(next)
       })
@@ -84,7 +90,14 @@ export function ChangesPanel() {
     return () => {
       cancelled = true
     }
-  }, [path])
+  }, [path, commitPick])
+
+  // Picking a commit file opens the diff pane even if it was closed — a
+  // click that visibly does nothing is a bug report waiting to be typed.
+  const pickCommitFile = useCallback((hash: string, filePath: string) => {
+    setCommitPick({ hash, path: filePath })
+    if (!prefsStore.get().autoOpenDiff) togglePref("autoOpenDiff")
+  }, [])
 
   const allComments = useReview((state) => state.comments)
   const draft = useReview((state) => state.draft)
@@ -153,6 +166,8 @@ export function ChangesPanel() {
             }
           />
         </div>
+        {/* A clean tree is exactly when history is the interesting part. */}
+        <CommitsSection onPickFile={pickCommitFile} picked={commitPick} defaultOpen />
         {/* Still here on a clean tree — a branch you have finished committing
             is exactly when you want to open the pull request. */}
         <PullRequestCard />
@@ -212,8 +227,11 @@ export function ChangesPanel() {
             <FileRow
               key={row.key}
               row={row}
-              active={active?.path === row.file.path}
-              onSelect={setSelected}
+              active={!commitPick && active?.path === row.file.path}
+              onSelect={(next) => {
+                setCommitPick(null)
+                setSelected(next)
+              }}
               onToggleStage={toggleStage}
             />
           )
@@ -226,8 +244,13 @@ export function ChangesPanel() {
               you want gone is the thing your pointer is already over. */}
           <div className="flex h-6 shrink-0 items-center gap-2 px-2.5">
             <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-faint">
-              {active?.path ?? ""}
+              {commitPick ? `${commitPick.hash.slice(0, 7)} · ${commitPick.path}` : (active?.path ?? "")}
             </span>
+            {commitPick ? (
+              <IconAction label="Back to the working tree" size="xs" onClick={() => setCommitPick(null)}>
+                <RotateCcwIcon />
+              </IconAction>
+            ) : null}
             <IconAction
               label="Close the diff"
               size="xs"
@@ -263,7 +286,7 @@ export function ChangesPanel() {
                 // owns its own click.
                 enableGutterUtility: true,
               }}
-              lineAnnotations={annotations}
+              lineAnnotations={commitPick ? [] : annotations}
               renderAnnotation={(annotation) => (
                 <Annotation
                   path={path ?? ""}
@@ -293,9 +316,51 @@ export function ChangesPanel() {
         </div>
       ) : null}
 
+      <CommitsSection onPickFile={pickCommitFile} picked={commitPick} />
       <ReviewBar />
       <CommitBox staged={staged} total={files.length} />
       <PullRequestCard />
+    </div>
+  )
+}
+
+/**
+ * The repository's commits, folded under the working tree.
+ *
+ * This is where commits belong — beside the changes that will become the
+ * next one — rather than in a separate tab someone has to know about. Each
+ * commit opens into its files; each file opens its diff in the same surface
+ * the working tree uses.
+ */
+function CommitsSection({
+  onPickFile,
+  picked,
+  defaultOpen = false,
+}: {
+  onPickFile: (hash: string, path: string) => void
+  picked: { hash: string; path: string } | null
+  defaultOpen?: boolean
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  const hasRepo = useSession((state) => Boolean(state.git?.root))
+  if (!hasRepo) return null
+  return (
+    <div className={cn("flex min-h-0 shrink-0 flex-col border-t border-hairline", open && "max-h-[38%]")}>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex h-7 shrink-0 items-center gap-1.5 px-2.5 text-[10.5px] text-faint transition-colors hover:text-muted-foreground"
+      >
+        <ChevronRightIcon
+          className={cn("size-3 transition-transform duration-200 ease-out", open && "rotate-90")}
+        />
+        Commits
+      </button>
+      {open ? (
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <GitLog onPickFile={onPickFile} picked={picked} />
+        </div>
+      ) : null}
     </div>
   )
 }

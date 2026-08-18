@@ -1207,6 +1207,64 @@ export class AgentHost {
     }
   }
 
+  /**
+   * One commit, as the files it touched.
+   *
+   * `diff-tree` twice — numstat for the counts, name-status for what
+   * happened — because git offers no single porcelain that carries both.
+   */
+  async gitCommitFiles(
+    hash: string
+  ): Promise<Array<{ path: string; status: GitFileStatus; insertions: number; deletions: number; binary: boolean }>> {
+    const root = await this.requireRoot()
+    const [numstat, names] = await Promise.all([
+      git(root, ["diff-tree", "--no-commit-id", "--numstat", "-r", "--root", hash]),
+      git(root, ["diff-tree", "--no-commit-id", "--name-status", "-r", "--root", "-M", hash]),
+    ])
+    const statusOf = new Map<string, GitFileStatus>()
+    for (const line of names.split("\n")) {
+      const parts = line.split("\t")
+      const code = parts[0]?.[0]
+      // A rename carries two paths; the new one is what the list shows.
+      const path = parts[parts.length - 1]
+      if (!code || !path) continue
+      statusOf.set(
+        path,
+        code === "A" ? "added" : code === "D" ? "deleted" : code === "R" ? "renamed" : "modified"
+      )
+    }
+    const files: Array<{ path: string; status: GitFileStatus; insertions: number; deletions: number; binary: boolean }> = []
+    for (const line of numstat.split("\n")) {
+      const [added, removed, ...rest] = line.split("\t")
+      const path = rest.join("\t")
+      if (!path) continue
+      const binary = added === "-"
+      files.push({
+        path: path.includes(" => ") ? (path.split(" => ").pop() as string).replace(/}$/, "") : path,
+        status: statusOf.get(path) ?? "modified",
+        insertions: binary ? 0 : Number(added) || 0,
+        deletions: binary ? 0 : Number(removed) || 0,
+        binary,
+      })
+    }
+    return files
+  }
+
+  /** A file as one commit changed it: parent's version against the commit's. */
+  async gitCommitFileDiff(hash: string, path: string): Promise<GitDiff> {
+    const root = await this.requireRoot()
+    const [before, after] = await Promise.all([
+      git(root, ["show", `${hash}^:${path}`]).catch(() => null),
+      git(root, ["show", `${hash}:${path}`]).catch(() => null),
+    ])
+    return {
+      path,
+      binary: before === null && after === null,
+      oldFile: before == null ? null : { name: path, contents: before },
+      newFile: after == null ? null : { name: path, contents: after },
+    }
+  }
+
   /* -------------------------------------------------- git operations */
 
   /**

@@ -1,4 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron"
+import { watch } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { COMMIT_PROMPT, type AgentHost } from "./host.js"
@@ -132,7 +133,11 @@ async function createWindow() {
     },
   })
 
-  window.once("ready-to-show", () => window?.show())
+  window.once("ready-to-show", () => {
+    // Full working area, not a floating rectangle someone has to drag out.
+    window?.maximize()
+    window?.show()
+  })
 
   // Renderer console output, in the terminal you started the app from.
   //
@@ -160,6 +165,32 @@ async function createWindow() {
   })
 
   installAutomation(window, isDev)
+
+  // Answer "is the app I am looking at current?" without guessing: in dev,
+  // the compiled main process is watched, and the moment a rebuild lands on
+  // disk the window says so. The renderer hot-reloads through Vite; the main
+  // process cannot, and pretending otherwise is how stale builds get
+  // debugged for an hour.
+  if (isDev) {
+    try {
+      const compiled = join(__dirname, "main.js")
+      let told = false
+      const buildWatcher = watch(compiled, () => {
+        if (told) return
+        told = true
+        setTimeout(() => {
+          emit({
+            type: "notice",
+            level: "info",
+            message: "Mako's engine was rebuilt — restart the app to run the new version.",
+          })
+        }, 500)
+      })
+      window.once("closed", () => buildWatcher.close())
+    } catch {
+      // Watching our own build is best-effort.
+    }
+  }
 
   // The agent writes a plugin with its ordinary file tools and the window
   // re-evaluates it — no IPC for it to learn, no command for the user to run.
@@ -309,6 +340,10 @@ function bindIpc() {
   )
   handle("pi:git-push", () => withHost((h) => h.gitPush()))
   handle("pi:git-log", (_e, limit?: number) => withHost((h) => h.gitLog(limit)))
+  handle("pi:git-commit-files", (_e, hash: string) => withHost((h) => h.gitCommitFiles(hash)))
+  handle("pi:git-commit-file-diff", (_e, hash: string, path: string) =>
+    withHost((h) => h.gitCommitFileDiff(hash, path))
+  )
   handle("pi:git-generate-message", (_e, prompt?: string) =>
     withHost((h) => h.generateCommitMessage(prompt))
   )

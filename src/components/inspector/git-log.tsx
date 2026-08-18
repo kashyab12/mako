@@ -4,23 +4,50 @@ import { getPi } from "@/lib/bridge"
 import { formatRelative } from "@/lib/format"
 import { useSession } from "@/state/session"
 import { cn } from "@/lib/utils"
-import type { GitCommitEntry } from "@/lib/types"
-import { GitCommitHorizontalIcon } from "lucide-react"
+import type { GitCommitEntry, GitFileStatus } from "@/lib/types"
+import { ChevronRightIcon, GitCommitHorizontalIcon } from "lucide-react"
 
 /**
- * Commit history for the current repository.
+ * Commit history, openable.
  *
- * Read on demand and re-read whenever the working tree changes, which is the
- * cheapest way to stay correct: a commit made here, in a terminal, or by the
- * agent all move the same status, and all three should refresh this list.
+ * A commit row expands into the files it touched — fetched the first time it
+ * opens, kept after — and each file is a click from its diff: the parent's
+ * version against the commit's, in the same diff surface the working tree
+ * uses. History you can only read is a list; history you can open is a tool.
  */
-export function GitLog() {
+
+interface CommitFile {
+  path: string
+  status: GitFileStatus
+  insertions: number
+  deletions: number
+  binary: boolean
+}
+
+const GLYPH: Record<string, { glyph: string; tone: string }> = {
+  added: { glyph: "A", tone: "text-added" },
+  modified: { glyph: "M", tone: "text-caution" },
+  deleted: { glyph: "D", tone: "text-removed" },
+  renamed: { glyph: "R", tone: "text-foreground/70" },
+  untracked: { glyph: "U", tone: "text-added" },
+}
+
+export function GitLog({
+  onPickFile,
+  picked,
+}: {
+  /** Present when a diff surface is attached; absent renders read-only. */
+  onPickFile?: (hash: string, path: string) => void
+  picked?: { hash: string; path: string } | null
+}) {
   const files = useSession((state) => state.git?.files.length ?? 0)
   const branch = useSession((state) => state.git?.branch)
   const root = useSession((state) => state.git?.root)
   const ahead = useSession((state) => state.git?.ahead ?? 0)
 
   const [commits, setCommits] = useState<GitCommitEntry[] | null>(null)
+  const [open, setOpen] = useState<string | null>(null)
+  const [filesByHash, setFilesByHash] = useState<Record<string, CommitFile[]>>({})
 
   useEffect(() => {
     if (!root) return
@@ -39,6 +66,17 @@ export function GitLog() {
     // `files` participates so the list refreshes after a commit lands.
   }, [root, files, branch])
 
+  const toggle = (hash: string) => {
+    const next = open === hash ? null : hash
+    setOpen(next)
+    if (next && !filesByHash[next]) {
+      void getPi()
+        .gitCommitFiles(next)
+        .then((list) => setFilesByHash((prev) => ({ ...prev, [next]: list })))
+        .catch(() => setFilesByHash((prev) => ({ ...prev, [next]: [] })))
+    }
+  }
+
   if (!root) return null
   if (commits === null) {
     return <p className="shimmer px-2.5 py-2 text-[11.5px]">Reading history…</p>
@@ -55,45 +93,107 @@ export function GitLog() {
 
   return (
     <div className="py-1">
-      {commits.map((commit, index) => (
-        <div
-          key={commit.hash}
-          className="contain-turn group flex gap-2 px-2.5 py-1 [contain-intrinsic-size:auto_38px]"
-        >
-          <span className="relative flex w-3 shrink-0 justify-center">
-            {index < commits.length - 1 ? (
-              <span className="absolute top-3.5 bottom-[-4px] w-px bg-hairline" />
-            ) : null}
-            <span
-              className={cn(
-                "relative z-10 mt-[7px] size-1.5 rounded-full",
-                // Unpushed commits are the ones still under your control.
-                index < ahead ? "bg-caution" : "bg-foreground/30"
-              )}
-            />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="flex items-baseline gap-2">
-              <span className="min-w-0 flex-1 truncate text-[12px] text-foreground/85">
-                {commit.subject}
+      {commits.map((commit, index) => {
+        const expanded = open === commit.hash
+        const commitFiles = filesByHash[commit.hash]
+        return (
+          <div key={commit.hash}>
+            <button
+              type="button"
+              onClick={() => toggle(commit.hash)}
+              className="contain-turn group flex w-full gap-2 rounded-md px-2.5 py-1 text-left transition-colors duration-100 hover:bg-raised/60 [contain-intrinsic-size:auto_38px]"
+            >
+              <span className="relative flex w-3 shrink-0 justify-center">
+                {index < commits.length - 1 ? (
+                  <span className="absolute top-3.5 bottom-[-4px] w-px bg-hairline" />
+                ) : null}
+                <span
+                  className={cn(
+                    "relative z-10 mt-[7px] size-1.5 rounded-full",
+                    // Unpushed commits are the ones still under your control.
+                    index < ahead ? "bg-caution" : "bg-foreground/30"
+                  )}
+                />
               </span>
-              <span className="tabular shrink-0 text-[10px] text-faint">
-                {formatRelative(commit.date)}
-              </span>
-            </span>
-            <span className="flex items-center gap-2 text-[10px] text-faint">
-              <span className="font-mono">{commit.shortHash}</span>
-              <span className="truncate">{commit.author}</span>
-              {commit.insertions || commit.deletions ? (
-                <span className="tabular ml-auto shrink-0">
-                  <span className="text-added">+{commit.insertions}</span>{" "}
-                  <span className="text-removed">−{commit.deletions}</span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-baseline gap-2">
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-foreground/85">
+                    {commit.subject}
+                  </span>
+                  <span className="tabular shrink-0 text-[10px] text-faint">
+                    {formatRelative(commit.date)}
+                  </span>
                 </span>
-              ) : null}
-            </span>
-          </span>
-        </div>
-      ))}
+                <span className="flex items-center gap-2 text-[10px] text-faint">
+                  <ChevronRightIcon
+                    className={cn(
+                      "size-2.5 shrink-0 transition-transform duration-200 ease-out",
+                      expanded && "rotate-90"
+                    )}
+                  />
+                  <span className="font-mono">{commit.shortHash}</span>
+                  <span className="truncate">{commit.author}</span>
+                  {commit.insertions || commit.deletions ? (
+                    <span className="tabular ml-auto shrink-0">
+                      <span className="text-added">+{commit.insertions}</span>{" "}
+                      <span className="text-removed">−{commit.deletions}</span>
+                    </span>
+                  ) : null}
+                </span>
+              </span>
+            </button>
+
+            <div
+              className={cn(
+                "grid transition-[grid-template-rows] duration-200 ease-out",
+                expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+              )}
+            >
+              <div className="min-h-0 overflow-hidden">
+                {expanded ? (
+                  commitFiles === undefined ? (
+                    <p className="shimmer py-1 pl-10 text-[10.5px]">Reading the commit…</p>
+                  ) : commitFiles.length === 0 ? (
+                    <p className="py-1 pl-10 text-[10.5px] text-faint">Nothing readable in it.</p>
+                  ) : (
+                    commitFiles.map((file) => {
+                      const mark = GLYPH[file.status] ?? GLYPH.modified
+                      const active = picked?.hash === commit.hash && picked.path === file.path
+                      return (
+                        <button
+                          key={file.path}
+                          type="button"
+                          disabled={!onPickFile}
+                          onClick={() => onPickFile?.(commit.hash, file.path)}
+                          data-active={active || undefined}
+                          className={cn(
+                            "flex w-full items-center gap-2 rounded py-[3px] pr-2.5 pl-10 text-left",
+                            "transition-colors duration-100 data-active:bg-raised",
+                            onPickFile && "hover:bg-raised/60"
+                          )}
+                        >
+                          <span className={cn("w-2.5 shrink-0 text-[9.5px] font-semibold", mark?.tone)}>
+                            {mark?.glyph}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-foreground/80">
+                            {file.path}
+                          </span>
+                          {!file.binary ? (
+                            <span className="tabular shrink-0 text-[9.5px] text-faint">
+                              <span className="text-added">+{file.insertions}</span>{" "}
+                              <span className="text-removed">−{file.deletions}</span>
+                            </span>
+                          ) : null}
+                        </button>
+                      )
+                    })
+                  )
+                ) : null}
+              </div>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

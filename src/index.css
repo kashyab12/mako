@@ -426,9 +426,15 @@
  * fall onto.
  */
 [data-glass="on"] .transcript-field {
-  background-image:
-    radial-gradient(120% 60% at 50% 0%, color-mix(in oklch, var(--foreground) 3.5%, transparent), transparent 70%),
-    linear-gradient(to bottom, transparent 60%, color-mix(in oklch, var(--foreground) 2%, transparent));
+  /* Top-lit only. A bottom lightening here met the composer's flat
+     background as a visible seam — the transcript appeared to cut off into
+     black. One light source, fading to nothing, and the two regions read as
+     one surface. */
+  background-image: radial-gradient(
+    120% 60% at 50% 0%,
+    color-mix(in oklch, var(--foreground) 3.5%, transparent),
+    transparent 70%
+  );
 }
 
 /* A card that should read as sitting on the surface rather than cut into it. */

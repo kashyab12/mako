@@ -365,6 +365,16 @@ export function installMockBridge() {
     gitUnstageAll: async () => {},
     gitCommit: async () => {},
     gitPush: async () => {},
+    gitCommitFiles: async () => [
+      { path: "src/state/store.ts", status: "modified" as const, insertions: 41, deletions: 3, binary: false },
+      { path: "src/components/rail/session-rail.tsx", status: "modified" as const, insertions: 12, deletions: 9, binary: false },
+    ],
+    gitCommitFileDiff: async (_hash: string, path: string) => ({
+      path,
+      binary: false,
+      oldFile: { name: path, contents: "const before = 1\n" },
+      newFile: { name: path, contents: "const after = 2\n" },
+    }),
     gitLog: async () => [
       { hash: "a1", shortHash: "a1b2c3d", subject: "Reconcile message identity across host updates", author: "You", date: new Date(Date.now() - 3_600_000).toISOString(), files: 3, insertions: 88, deletions: 12 },
       { hash: "b2", shortHash: "e4f5a6b", subject: "Group the transcript by exchange", author: "You", date: new Date(Date.now() - 9_000_000).toISOString(), files: 6, insertions: 240, deletions: 190 },

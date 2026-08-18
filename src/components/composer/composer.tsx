@@ -330,7 +330,7 @@ export function Composer() {
               className={cn(
                 // No max-height and no scrolling of its own — the wrapper owns
                 // both, so the painted layer behind it stays in register.
-                "relative block w-full resize-none overflow-hidden bg-transparent px-3 pt-2.5 pb-1",
+                "relative block min-h-[84px] w-full resize-none overflow-hidden bg-transparent px-3 pt-2.5 pb-1",
                 "font-sans text-[13.5px] leading-[1.55] placeholder:text-faint focus:outline-none",
                 // Transparent glyphs let the overlay show through; the caret
                 // and selection stay native and visible.
