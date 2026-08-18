@@ -175,7 +175,9 @@ function Reply() {
         <p className="pt-1.5 text-[10.5px] text-red-400">{run.error}</p>
       ) : null}
       <p className="pt-1.5 text-[10px] text-faint">
-        Runs {label} headlessly in {thread.ref.cwd ?? "its workspace"} with tool approvals on.
+        {thread.ref.harness === "devin"
+          ? "Sends to the running Devin session in the cloud."
+          : `Runs ${label} headlessly in ${thread.ref.cwd ?? "its workspace"} with tool approvals on.`}
       </p>
     </div>
   )

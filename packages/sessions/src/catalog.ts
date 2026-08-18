@@ -22,6 +22,20 @@ import { dirname } from "node:path"
 import type { Thread, ThreadEntry, ThreadRef } from "./format.js"
 import type { NativeFile, SessionProvider } from "./providers/types.js"
 
+/**
+ * A store that lives behind an API rather than on this disk (Devin). Same
+ * shapes, listed by request instead of by walking directories, and kept
+ * fresh by polling — the only watching a remote store offers.
+ */
+export interface RemoteSource {
+  harness: string
+  displayName: string
+  owns(path: string): boolean
+  list(): Promise<ThreadRef[]>
+  read(path: string): Promise<Thread | null>
+  send?(path: string, message: string): Promise<void>
+}
+
 export type CatalogEvent =
   | { type: "added"; ref: ThreadRef }
   | { type: "updated"; ref: ThreadRef }
@@ -36,8 +50,17 @@ interface CacheEntry {
 const WATCH_DEBOUNCE_MS = 200
 const CACHE_SAVE_DEBOUNCE_MS = 2000
 
+/** How often remote sources are re-listed while watching. */
+const REMOTE_POLL_MS = 90_000
+
+/** Faster, while someone is actually looking at a remote thread. */
+const REMOTE_FOLLOW_MS = 15_000
+
 export class SessionCatalog {
   private providers: SessionProvider[]
+  private remotes: RemoteSource[] = []
+  private remoteRefs = new Map<string, ThreadRef>()
+  private remoteTimer: NodeJS.Timeout | null = null
   private byPath = new Map<string, CacheEntry>()
   private cachePath?: string
   private cacheLoaded = false
@@ -51,6 +74,21 @@ export class SessionCatalog {
   constructor(providers: SessionProvider[], options: { cachePath?: string } = {}) {
     this.providers = providers
     this.cachePath = options.cachePath
+  }
+
+  /** Register a remote store. Included in every scan and poll from then on. */
+  addRemote(remote: RemoteSource): void {
+    this.remotes.push(remote)
+  }
+
+  /** The remote that owns a path, for callers that need to send through it. */
+  remoteFor(path: string): RemoteSource | null {
+    return this.remotes.find((remote) => remote.owns(path)) ?? null
+  }
+
+  /** Harness names served by remote sources (replyable through their API). */
+  remoteHarnesses(): string[] {
+    return [...new Set(this.remotes.map((remote) => remote.harness))]
   }
 
   /* ------------------------------------------------------------ scanning */
@@ -80,23 +118,28 @@ export class SessionCatalog {
       if (!seen.has(path)) this.byPath.delete(path)
     }
     this.scheduleSave()
+    await this.pollRemotes()
     return this.list()
   }
 
   /** The known sessions, newest first, optionally narrowed to a workspace. */
   list(filter: { cwd?: string; harness?: string } = {}): ThreadRef[] {
     const refs: ThreadRef[] = []
-    for (const entry of this.byPath.values()) {
-      if (!entry.ref) continue
-      if (filter.harness && entry.ref.harness !== filter.harness) continue
-      if (filter.cwd && entry.ref.cwd !== filter.cwd) continue
-      refs.push(entry.ref)
+    const admit = (ref: ThreadRef | null) => {
+      if (!ref) return
+      if (filter.harness && ref.harness !== filter.harness) return
+      if (filter.cwd && ref.cwd !== filter.cwd) return
+      refs.push(ref)
     }
+    for (const entry of this.byPath.values()) admit(entry.ref)
+    for (const ref of this.remoteRefs.values()) admit(ref)
     return refs.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
   }
 
-  /** Full translation of one session, via whichever provider owns its path. */
+  /** Full translation of one session, via whichever store owns its path. */
   async open(path: string): Promise<Thread | null> {
+    const remote = this.remoteFor(path)
+    if (remote) return remote.read(path)
     const provider = this.ownerOf(path)
     return provider ? provider.read(path) : null
   }
@@ -109,6 +152,7 @@ export class SessionCatalog {
    */
   startWatching(): void {
     if (this.watchers.length > 0) return
+    this.armRemotePolling()
     for (const provider of this.providers) {
       for (const root of provider.roots()) {
         try {
@@ -158,6 +202,10 @@ export class SessionCatalog {
   stop(): void {
     for (const watcher of this.watchers) watcher.close()
     this.watchers = []
+    if (this.remoteTimer) {
+      clearInterval(this.remoteTimer)
+      this.remoteTimer = null
+    }
     for (const timer of this.pending.values()) clearTimeout(timer)
     this.pending.clear()
     if (this.saveTimer) {
@@ -165,6 +213,52 @@ export class SessionCatalog {
       this.saveTimer = null
       void this.saveCache()
     }
+  }
+
+  /* ------------------------------------------------------------ remotes */
+
+  /**
+   * Re-list every remote source and emit what moved. `updatedAt` is the
+   * change signal a remote offers — there is no mtime to stat — so a ref
+   * whose stamp moved is an update and a new path is an addition.
+   */
+  private async pollRemotes(): Promise<void> {
+    if (this.remotes.length === 0) return
+    await Promise.all(
+      this.remotes.map(async (remote) => {
+        const refs = await remote.list().catch((): ThreadRef[] => [])
+        for (const ref of refs) {
+          const previous = this.remoteRefs.get(ref.path)
+          this.remoteRefs.set(ref.path, ref)
+          if (!previous) this.emit({ type: "added", ref })
+          else if (previous.updatedAt !== ref.updatedAt) this.emit({ type: "updated", ref })
+        }
+      })
+    )
+    // A followed remote thread refreshes wholesale — polling is its only tail.
+    for (const [path, followers] of this.follows) {
+      const remote = this.remoteFor(path)
+      if (!remote || followers.size === 0) continue
+      const thread = await remote.read(path).catch(() => null)
+      if (thread) {
+        for (const follower of followers) follower(thread.entries, true)
+      }
+    }
+  }
+
+  private armRemotePolling(): void {
+    if (this.remoteTimer || this.remotes.length === 0) return
+    let ticks = 0
+    this.remoteTimer = setInterval(() => {
+      ticks += 1
+      const followingRemote = [...this.follows.keys()].some((path) => this.remoteFor(path))
+      // The full re-list runs on the slow cadence; the fast cadence exists
+      // only while someone is actually looking at a remote thread.
+      if (followingRemote || ticks % Math.round(REMOTE_POLL_MS / REMOTE_FOLLOW_MS) === 0) {
+        void this.pollRemotes()
+      }
+    }, REMOTE_FOLLOW_MS)
+    this.remoteTimer.unref?.()
   }
 
   /* ------------------------------------------------------------ internals */

@@ -15,11 +15,14 @@
  * the conversation, and that is what this hands over.
  */
 
+import { readFile } from "node:fs/promises"
+import { homedir } from "node:os"
 import { join } from "node:path"
 import { app } from "electron"
 import {
   defaultCatalog,
   renderHandoff,
+  type DevinAccount,
   type SessionCatalog,
   type Thread,
   type ThreadEntry,
@@ -39,14 +42,48 @@ let pushTimer: NodeJS.Timeout | null = null
 
 export function installThreads(send: (event: HostEvent) => void): void {
   emit = send
-  catalog = defaultCatalog({
-    cachePath: join(app.getPath("userData"), "threads-catalog.json"),
-  })
-  void catalog.scan().then(() => {
+  void (async () => {
+    catalog = defaultCatalog({
+      cachePath: join(app.getPath("userData"), "threads-catalog.json"),
+      devinAccounts: await devinAccounts(),
+    })
+    await catalog.scan()
     push()
-    catalog?.startWatching()
-    catalog?.onEvent(() => schedulePush())
-  })
+    catalog.startWatching()
+    catalog.onEvent(() => schedulePush())
+  })()
+}
+
+/**
+ * Devin accounts, from `~/.mako/devin.json`:
+ *
+ *     { "accounts": [{ "name": "work", "apiKey": "apk_…" }] }
+ *
+ * A service key from app.devin.ai settings — the CLI's own credentials
+ * authenticate a different surface and cannot list sessions. No file, no
+ * Devin: the source simply is not registered.
+ */
+async function devinAccounts(): Promise<DevinAccount[]> {
+  try {
+    const raw = await readFile(join(homedir(), ".mako", "devin.json"), "utf8")
+    const parsed = JSON.parse(raw) as { accounts?: DevinAccount[] }
+    return Array.isArray(parsed.accounts) ? parsed.accounts : []
+  } catch {
+    return []
+  }
+}
+
+/** Whether a path belongs to a remote source (and can be replied to by it). */
+export async function sendRemote(path: string, message: string): Promise<boolean> {
+  const remote = catalog?.remoteFor(path)
+  if (!remote?.send) return false
+  await remote.send(path, message)
+  return true
+}
+
+/** Harnesses whose sessions are remote and replyable through their API. */
+export function remoteHarnesses(): string[] {
+  return catalog?.remoteHarnesses() ?? []
 }
 
 export function stopThreads(): void {

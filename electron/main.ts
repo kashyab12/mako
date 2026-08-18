@@ -29,7 +29,7 @@ import {
 } from "./devserver.js"
 import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunChecks, type CreatePullOptions } from "./github.js"
 import { HostPool } from "./pool.js"
-import { followThread, handoffFor, installThreads, listThreads, openThread, stopThreads, unfollowThread } from "./threads.js"
+import { followThread, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, sendRemote, stopThreads, unfollowThread } from "./threads.js"
 import { abortNative, bindDrivers, resumableHarnesses, resumeNative, stopDrivers, threadRun } from "./drivers.js"
 import { listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
 import type { BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
@@ -350,9 +350,14 @@ function bindIpc() {
   handle("pi:thread-open", (_e, path: string) => openThread(path))
   handle("pi:thread-follow", (_e, path: string, fromByte: number) => followThread(path, fromByte))
   handle("pi:thread-unfollow", () => unfollowThread())
-  handle("pi:thread-resumable", () => resumableHarnesses())
+  handle("pi:thread-resumable", () => [...resumableHarnesses(), ...remoteHarnesses()])
   handle("pi:thread-run", (_e, path: string) => threadRun(path))
   handle("pi:thread-resume", async (_e, path: string, prompt: string) => {
+    // A remote session (Devin) takes the message through its API and keeps
+    // working in the cloud; the follow poll streams what it does next.
+    if (await sendRemote(path, prompt)) {
+      return { path, harness: "devin", status: "done" as const }
+    }
     const thread = await openThread(path)
     if (!thread) throw new Error("This session could not be read")
     return resumeNative(thread.ref, prompt)
