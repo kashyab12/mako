@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { ModelPicker } from "@/components/composer/model-picker"
+import { HarnessPicker } from "@/components/composer/harness-picker"
 import { EffortPicker } from "@/components/composer/effort-picker"
 import { MentionMenu, type MentionKind } from "@/components/composer/mention-menu"
 import { AttachmentStrip } from "@/components/composer/attachments"
@@ -10,6 +11,7 @@ import { Slot } from "@/extend/slot"
 import { formatChord } from "@/extend/commands"
 import { mentionAt, replaceMention, type ActiveMention } from "@/lib/mentions"
 import { actions, shallowEqual, useSession } from "@/state/session"
+import { threads, threadsStore, useThreads } from "@/state/threads"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import {
@@ -156,6 +158,26 @@ export function Composer() {
     async (mode?: "steer" | "followUp") => {
       const text = draft.trim()
       if (!text && attachments.items.length === 0) return
+
+      // A foreign harness answers new conversations headlessly in this
+      // workspace; the conversation opens here when its first write lands.
+      // Steering and follow-ups belong to the native agent — a foreign
+      // one-shot has no mid-turn to steer.
+      const harness = threadsStore.get().composerHarness
+      if (harness !== "pi" && !mode) {
+        if (!text) {
+          toast.error("Foreign agents need words", {
+            description: "Attachments only work with the native agent so far.",
+          })
+          return
+        }
+        const previousDraft = draft
+        update("")
+        setMention(null)
+        const ok = await threads.startNew(harness, text)
+        if (!ok) update(previousDraft)
+        return
+      }
 
       // The agent rejects a prompt outright when no model is selected. Catching
       // it here rather than letting it round-trip means the draft is never
@@ -340,8 +362,11 @@ export function Composer() {
           </div>
 
           <div className="mt-0.5 flex items-center gap-1 border-t border-hairline/60 px-1.5 py-1.5">
-            <ModelPicker />
-            <EffortPicker />
+            <HarnessPicker />
+            <PiOnly>
+              <ModelPicker />
+              <EffortPicker />
+            </PiOnly>
             <IconAction
               label="Reference a file"
               keys={["@"]}
@@ -461,4 +486,12 @@ function Banner({ text }: { text: string }) {
       {text}
     </div>
   )
+}
+
+
+/** Pi-specific controls hide when another harness will answer. */
+function PiOnly({ children }: { children: React.ReactNode }) {
+  const harness = useThreads((state) => state.composerHarness)
+  if (harness !== "pi") return null
+  return <>{children}</>
 }

@@ -69,22 +69,29 @@ const RESUME: Record<string, (nativeId: string, prompt: string) => ResumeCommand
  * message of a fresh session in the same working directory, and the watcher
  * surfaces that session in the rail the moment its store appears.
  */
-const FRESH: Record<string, (prompt: string) => ResumeCommand> = {
-  codex: (prompt) => ({
+const FRESH: Record<string, (prompt: string, model?: string) => ResumeCommand> = {
+  codex: (prompt, model) => ({
     command: "codex",
-    args: ["exec", prompt, "--sandbox", "workspace-write", "--skip-git-repo-check"],
+    args: [
+      "exec",
+      prompt,
+      "--sandbox",
+      "workspace-write",
+      "--skip-git-repo-check",
+      ...(model ? ["-m", model] : []),
+    ],
   }),
-  claude: (prompt) => ({
+  claude: (prompt, model) => ({
     command: "claude",
-    args: ["-p", prompt, "--dangerously-skip-permissions"],
+    args: ["-p", prompt, "--dangerously-skip-permissions", ...(model ? ["--model", model] : [])],
   }),
-  cursor: (prompt) => ({
+  cursor: (prompt, model) => ({
     command: "cursor-agent",
-    args: ["-p", prompt, "--force"],
+    args: ["-p", prompt, "--force", ...(model ? ["--model", model] : [])],
   }),
-  grok: (prompt) => ({
+  grok: (prompt, model) => ({
     command: "agent",
-    args: ["-p", prompt, "--always-approve"],
+    args: ["-p", prompt, "--always-approve", ...(model ? ["--model", model] : [])],
   }),
 }
 
@@ -165,11 +172,12 @@ let freshCounter = 0
 export async function startFresh(
   harness: string,
   cwd: string | undefined,
-  prompt: string
+  prompt: string,
+  model?: string
 ): Promise<ThreadRunState> {
   const make = FRESH[harness]
   if (!make) throw new Error(`A new ${harness} session cannot be started from here`)
-  return launch(`fresh:${harness}:${++freshCounter}`, harness, cwd, make(prompt))
+  return launch(`fresh:${harness}:${++freshCounter}`, harness, cwd, make(prompt, model))
 }
 
 async function launch(

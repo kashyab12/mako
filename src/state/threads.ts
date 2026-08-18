@@ -1,6 +1,18 @@
 import { createHook, createStore } from "@/state/store"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { toast } from "sonner"
+
+const HARNESS_NAMES: Record<string, string> = {
+  pi: "Pi",
+  codex: "Codex",
+  claude: "Claude Code",
+  cursor: "Cursor",
+  grok: "Grok",
+  devin: "Devin",
+}
+function harnessLabelOf(harness: string): string {
+  return HARNESS_NAMES[harness] ?? harness
+}
 import type { Thread, ThreadEntry, ThreadRef, ThreadRunState } from "@/lib/types"
 
 /**
@@ -31,6 +43,8 @@ interface ThreadsState {
   running: Record<string, boolean>
   /** A translation in flight: one conversation becoming another harness's. */
   converting: { from: string; to: string; title?: string; done: boolean } | null
+  /** The composer's chosen harness for new conversations. */
+  composerHarness: string
 }
 
 export const threadsStore = createStore<ThreadsState>({
@@ -45,11 +59,36 @@ export const threadsStore = createStore<ThreadsState>({
   run: null,
   running: {},
   converting: null,
+  composerHarness: "pi",
 })
 export const useThreads = createHook(threadsStore)
 
-export function applyThreads(threads: ThreadRef[]) {
-  threadsStore.set({ threads, loaded: true })
+/** A just-started conversation waiting for its session file to appear. */
+let pendingOpen: { harness: string; cwd: string; since: number } | null = null
+let knownPaths = new Set<string>()
+
+export function applyThreads(list: ThreadRef[]) {
+  threadsStore.set({ threads: list, loaded: true })
+  // A conversation started from the composer opens itself the moment the
+  // harness writes its session file — the watcher sees it, the list updates,
+  // and this picks it out by harness, folder, and birth time.
+  if (pendingOpen) {
+    const target = pendingOpen
+    const candidate = list.find(
+      (ref) =>
+        !knownPaths.has(ref.path) &&
+        ref.harness === target.harness &&
+        ref.cwd === target.cwd &&
+        (!ref.startedAt || Date.parse(ref.startedAt) >= target.since - 60_000)
+    )
+    if (candidate) {
+      pendingOpen = null
+      void threads.view(candidate)
+    } else if (Date.now() - target.since > 5 * 60_000) {
+      pendingOpen = null
+    }
+  }
+  knownPaths = new Set(list.map((ref) => ref.path))
 }
 
 /** A native run started, finished, or failed, on any thread. */
@@ -176,6 +215,27 @@ export const threads = {
   async abortReply(ref: ThreadRef) {
     if (!hasBridge()) return
     await getPi().abortThreadRun(ref.path).catch(() => {})
+  },
+
+  /**
+   * A new conversation on another harness, straight from the composer. The
+   * CLI runs headlessly in the active workspace; when its session file
+   * appears, the conversation opens here and the reply bar carries the next
+   * turn. Same chat column, different agent — which is the whole idea.
+   */
+  async startNew(harness: string, prompt: string, model?: string) {
+    if (!hasBridge()) return false
+    try {
+      const { cwd } = await getPi().startHarness(harness, prompt, model)
+      pendingOpen = { harness, cwd, since: Date.now() }
+      toast(`${harnessLabelOf(harness)} is on it`, {
+        description: "The conversation opens here as soon as its first write lands.",
+      })
+      return true
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+      return false
+    }
   },
 
   /**

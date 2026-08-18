@@ -458,6 +458,13 @@ function bindIpc() {
   handle("pi:acp-cancel", (_e, id: string) => acpCancel(id))
   handle("pi:acp-close", (_e, id: string) => acpClose(id))
 
+  /** A new conversation on another harness, from the main composer. */
+  handle("pi:harness-start", async (_e, harness: string, prompt: string, model?: string) => {
+    const live = await ready()
+    const cwd = live.active.workspace
+    return { run: await startFresh(harness, cwd, prompt, model), cwd }
+  })
+
   handle("pi:thread-run", (_e, path: string) => threadRun(path))
   handle("pi:thread-resume", async (_e, path: string, prompt: string) => {
     // A remote session (Devin) takes the message through its API and keeps

@@ -478,6 +478,7 @@ export function installMockBridge() {
         ? { kind: "emitted" as const, path: `/mock/emitted-${harness}.jsonl` }
         : { kind: "spawned" as const, run: { path: `fresh:${harness}:1`, harness, status: "running" as const } },
     threadRun: async () => null,
+    startHarness: async (harness: string) => ({ run: { path: `fresh:${harness}:1`, harness, status: "running" as const }, cwd: "/Users/you/mako" }),
     resumeThread: async (path: string) => ({ path, harness: "codex", status: "running" as const }),
     abortThreadRun: async () => {},
     usage: async () => ({

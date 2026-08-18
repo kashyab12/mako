@@ -128,6 +128,7 @@ export function AppShell() {
                 {/* Over the conversation column only. The rail stays reachable,
                     so you can walk the tree with a file already open. */}
                 <FileViewer />
+                <ThreadViewer />
                 <SearchView />
               </>
             )}
@@ -196,7 +197,6 @@ export function AppShell() {
       </div>
       <CommandPalette />
       <Guide />
-      <ThreadViewer />
       <AcpPanel />
       <ConversionOverlay />
     </TooltipProvider>
