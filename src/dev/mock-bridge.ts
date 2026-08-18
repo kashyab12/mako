@@ -453,6 +453,8 @@ export function installMockBridge() {
     saveDevinAccounts: async () => {},
     harnessAvailability: async () => ({ pi: true, codex: true, claude: true, cursor: true, grok: false }),
     daemonStatus: async () => ({ pid: 4242, startedAt: Date.now() - 7_200_000, sessions: 414 }),
+    daemonLogin: async () => false,
+    setDaemonLogin: async () => {},
     followThread: async () => {},
     unfollowThread: async () => {},
     resumableHarnesses: async () => ["codex", "claude", "cursor", "grok"],

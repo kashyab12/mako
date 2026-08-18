@@ -34,6 +34,7 @@ import { daemonStatus, devinAccountsMasked, emitThreadAs, emitThreadAsClaude, em
 import { abortNative, bindDrivers, freshHarnesses, harnessAvailability, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
 import { bindLineageDirect, chainOf, expectLineage } from "./lineage.js"
 import { accountUsage, captureAccount, listAccounts, removeAccount, selectAccount } from "./accounts.js"
+import { daemonLoginEnabled, setDaemonLogin } from "./daemon-login.js"
 import { acpCancel, acpClose, acpHarnesses, acpPrompt, acpRespondPermission, acpSetMode, acpStart, acpState, bindAcp, stopAcp } from "./acp.js"
 import { deletePlugin, listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
 import type { BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
@@ -439,6 +440,8 @@ function bindIpc() {
   )
   handle("pi:harness-availability", () => harnessAvailability())
   handle("pi:daemon-status", () => daemonStatus())
+  handle("pi:daemon-login", () => daemonLoginEnabled())
+  handle("pi:daemon-login-set", (_e, enabled: boolean) => setDaemonLogin(enabled))
 
   /* Interactive foreign agents over ACP. */
   handle("pi:acp-harnesses", () => acpHarnesses())

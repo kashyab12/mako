@@ -85,6 +85,8 @@ const api = {
   harnessAvailability: () => invoke<Record<string, boolean>>("pi:harness-availability"),
   daemonStatus: () =>
     invoke<{ pid: number; startedAt: number; sessions: number } | null>("pi:daemon-status"),
+  daemonLogin: () => invoke<boolean>("pi:daemon-login"),
+  setDaemonLogin: (enabled: boolean) => invoke<void>("pi:daemon-login-set", enabled),
 
   /* Tabs. Session-scoped calls below always address the active tab. */
   openTab: (options?: { cwd?: string; sessionPath?: string }) =>

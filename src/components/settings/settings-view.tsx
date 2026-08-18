@@ -262,6 +262,7 @@ function shortPath(path: string): string {
 function Agents() {
   const [availability, setAvailability] = useState<Record<string, boolean> | null>(null)
   const [daemon, setDaemon] = useState<{ pid: number; startedAt: number; sessions: number } | null>(null)
+  const [loginStart, setLoginStart] = useState<boolean | null>(null)
   const [accounts, setAccounts] = useState<Array<{ name: string; key: string }>>([])
   const [name, setName] = useState("")
   const [apiKey, setApiKey] = useState("")
@@ -272,6 +273,7 @@ function Agents() {
     void getPi().harnessAvailability().then(setAvailability).catch(() => setAvailability({}))
     void getPi().devinAccounts().then(setAccounts).catch(() => setAccounts([]))
     void getPi().daemonStatus().then(setDaemon).catch(() => setDaemon(null))
+    void getPi().daemonLogin().then(setLoginStart).catch(() => setLoginStart(null))
   }, [])
   useEffect(load, [load])
 
@@ -306,9 +308,28 @@ function Agents() {
         <span
           className={cn("size-1.5 rounded-full", daemon ? "bg-emerald-400/90" : "bg-faint/50")}
         />
-        {daemon
-          ? `Sync daemon running — ${daemon.sessions} sessions watched, up since ${formatRelative(new Date(daemon.startedAt).toISOString())}, syncing even with the app closed`
-          : "Sync daemon not running — the app is watching sessions itself while open"}
+        <span className="min-w-0 flex-1">
+          {daemon
+            ? `Sync daemon running — ${daemon.sessions} sessions watched, up since ${formatRelative(new Date(daemon.startedAt).toISOString())}, syncing even with the app closed`
+            : "Sync daemon not running — the app is watching sessions itself while open"}
+        </span>
+        {loginStart !== null ? (
+          <label className="flex shrink-0 cursor-pointer items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={loginStart}
+              onChange={(event) => {
+                const next = event.target.checked
+                setLoginStart(next)
+                void getPi()
+                  .setDaemonLogin(next)
+                  .catch(() => setLoginStart(!next))
+              }}
+              className="size-3 accent-current"
+            />
+            start at login
+          </label>
+        ) : null}
       </p>
       <div className="flex flex-col">
         {HARNESSES.map((entry) => (
