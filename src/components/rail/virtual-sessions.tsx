@@ -2,6 +2,8 @@ import { memo, useRef } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { Slot } from "@/extend/slot"
 import { firstLine, formatRelative, workspaceName } from "@/lib/format"
+import { togglePinned, usePrefs } from "@/state/prefs"
+import { PinIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toggleGroupCollapsed } from "@/state/prefs"
 import type { RailRow } from "@/components/rail/rail-rows"
@@ -124,6 +126,7 @@ const RailRowItem = memo(function RailRowItem({
 }) {
   const title = session.name || firstLine(session.firstMessage, 60) || "Untitled session"
   const detail = session.name ? firstLine(session.firstMessage, 60) : `${session.messageCount} messages`
+  const isPinned = usePrefs((prefs) => prefs.pinnedThreads.includes(session.path))
 
   return (
     <button
@@ -157,6 +160,23 @@ const RailRowItem = memo(function RailRowItem({
           )}
         >
           {title}
+        </span>
+        <span
+          role="button"
+          tabIndex={-1}
+          aria-label={isPinned ? "Unpin" : "Pin"}
+          onClick={(event) => {
+            event.stopPropagation()
+            togglePinned(session.path)
+          }}
+          className={cn(
+            "shrink-0 rounded p-0.5 transition-opacity",
+            isPinned
+              ? "text-foreground/70"
+              : "text-faint opacity-0 group-hover:opacity-100 hover:text-foreground"
+          )}
+        >
+          <PinIcon className={cn("size-3", isPinned && "fill-current")} />
         </span>
         <span className="tabular shrink-0 text-[10.5px] text-faint">
           {formatRelative(session.modified)}

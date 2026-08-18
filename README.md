@@ -81,9 +81,9 @@ project, a Codex rollout, a Grok session directory, a Cursor SQLite store —
 which the target's ordinary resume machinery then loads with the full history
 in context. Continuation is not a pasted summary; the receiving agent
 remembers the conversation, because as far as its harness can tell, it had it.
-Devin accounts go in `~/.mako/devin.json` as
-`{ "accounts": [{ "name": "work", "apiKey": "apk_…" }] }` — several at once,
-each session's path naming the account it came from.
+Devin accounts are managed in **Settings → Agents** — several at once, each
+session's path naming the account it came from. (They persist in
+`~/.mako/devin.json`, which scripts may also write.)
 
 **Accounts** — several logins per CLI, switchable in Settings → Agents.
 Each captured account is an isolated config home selected by environment

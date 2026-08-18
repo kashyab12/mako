@@ -45,6 +45,10 @@ export interface Prefs {
   previewWidth: number
   /** The getting-started list is finished or dismissed, and will not return. */
   onboarded: boolean
+  /** Threads kept at the top of both rails, by session path. */
+  pinnedThreads: string[]
+  /** Harnesses shown in the Agents rail. Empty means all of them. */
+  agentHarnessFilter: string[]
   /** Overrides the host's default commit-drafting prompt. */
   commitPrompt?: string
 }
@@ -75,6 +79,8 @@ const defaults: Prefs = {
   previewOpen: false,
   previewWidth: 460,
   onboarded: false,
+  pinnedThreads: [],
+  agentHarnessFilter: [],
 }
 
 function load(): Prefs {
@@ -118,6 +124,15 @@ export function setPref<K extends keyof Prefs>(key: K, value: Prefs[K]) {
 // `-?` matters: an optional preference makes its mapped value `K | undefined`,
 // and `undefined` is not a key.
 type BooleanPref = { [K in keyof Prefs]-?: Prefs[K] extends boolean ? K : never }[keyof Prefs]
+
+/** Pin or unpin a thread by its session path, newest pin first. */
+export function togglePinned(path: string) {
+  const current = prefsStore.get().pinnedThreads
+  setPref(
+    "pinnedThreads",
+    current.includes(path) ? current.filter((entry) => entry !== path) : [path, ...current]
+  )
+}
 
 export function togglePref(key: BooleanPref) {
   prefsStore.set({ [key]: !prefsStore.get()[key] } as Pick<Prefs, typeof key>)

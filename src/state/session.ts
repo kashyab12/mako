@@ -237,6 +237,14 @@ function report(error: unknown) {
   toast.error(error instanceof Error ? error.message : String(error))
 }
 
+/** Reject after `ms`, so no await can strand the interface in a skeleton. */
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error(message)), ms)),
+  ])
+}
+
 async function guard<T>(run: () => Promise<T>): Promise<T | undefined> {
   try {
     return await run()
@@ -284,7 +292,11 @@ export const actions = {
     const pi = getPi()
     const unsubscribe = pi.onEvent(apply)
     try {
-      const boot = await pi.boot()
+      const boot = await withTimeout(
+        pi.boot(),
+        45_000,
+        "The agent host did not answer within 45 seconds. Check the terminal it was launched from, then restart."
+      )
       hydrate(boot.tabs, boot.activeTabId)
       const active = boot.tabs.find((tab) => tab.id === boot.activeTabId) ?? boot.tabs[0]
       if (!active) throw new Error("The host started without a conversation")
@@ -403,9 +415,13 @@ export const actions = {
     if (!hasBridge()) return
     store.set({ sessionsLoading: true })
     try {
-      const next = await getPi().listSessions(
-        cwd ?? store.get().meta?.cwd,
-        scope ?? prefsStore.get().railScope
+      // A list that never answers must still resolve into something the user
+      // can see and retry — an eternal skeleton is the one unacceptable
+      // outcome here.
+      const next = await withTimeout(
+        getPi().listSessions(cwd ?? store.get().meta?.cwd, scope ?? prefsStore.get().railScope),
+        20_000,
+        "Listing sessions took too long"
       )
       store.set({ sessions: next })
     } catch (error) {

@@ -29,6 +29,8 @@ interface ThreadsState {
   run: ThreadRunState | null
   /** Every live native run, by thread path — the rail's working dots. */
   running: Record<string, boolean>
+  /** A translation in flight: one conversation becoming another harness's. */
+  converting: { from: string; to: string; title?: string; done: boolean } | null
 }
 
 export const threadsStore = createStore<ThreadsState>({
@@ -42,6 +44,7 @@ export const threadsStore = createStore<ThreadsState>({
   acpable: [],
   run: null,
   running: {},
+  converting: null,
 })
 export const useThreads = createHook(threadsStore)
 
@@ -67,6 +70,33 @@ export function applyThreadEntries(path: string, entries: ThreadEntry[], replace
   threadsStore.set({
     viewing: { ...viewing, entries: replace ? entries : [...viewing.entries, ...entries] },
   })
+}
+
+/**
+ * Show the translation while it happens, and for long enough to be seen.
+ *
+ * The emitters are fast — usually under a second — which is exactly why the
+ * moment needs a floor: a conversation changing harnesses is the headline
+ * act of this app, and a flicker would read as nothing having happened.
+ */
+export async function withConversion<T>(
+  from: string,
+  to: string,
+  title: string | undefined,
+  work: () => Promise<T>
+): Promise<T> {
+  const started = Date.now()
+  threadsStore.set({ converting: { from, to, title, done: false } })
+  try {
+    const result = await work()
+    const remaining = Math.max(0, 900 - (Date.now() - started))
+    if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining))
+    threadsStore.set({ converting: { from, to, title, done: true } })
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    return result
+  } finally {
+    threadsStore.set({ converting: null })
+  }
 }
 
 export const threads = {
@@ -137,7 +167,9 @@ export const threads = {
     if (harness === "pi") return this.continueHere(ref)
     if (!hasBridge()) return false
     try {
-      const result = await getPi().continueThreadWith(ref.path, harness)
+      const result = await withConversion(ref.harness, harness, ref.title, () =>
+        getPi().continueThreadWith(ref.path, harness)
+      )
       if (result.kind === "emitted") {
         // The conversation now exists natively in the target's store. Open
         // it in the viewer — instantly replyable, nothing spent yet.
@@ -172,7 +204,7 @@ export const threads = {
     threadsStore.set({ continuing: ref.path })
     try {
       void instruction
-      await getPi().continueThread(ref.path)
+      await withConversion(ref.harness, "pi", ref.title, () => getPi().continueThread(ref.path))
       threadsStore.set({ continuing: null, viewing: null })
       return true
     } catch (error) {

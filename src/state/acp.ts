@@ -1,6 +1,7 @@
 import { createHook, createStore } from "@/state/store"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { toast } from "sonner"
+import { withConversion } from "@/state/threads"
 import type { AcpPermissionRequest, AcpSessionState, AcpUpdate, ThreadRef } from "@/lib/types"
 
 /**
@@ -127,7 +128,9 @@ export const acp = {
       let harness = ref.harness
       let resume = ref.nativeId
       if (ref.harness !== "claude" && ref.harness !== "cursor") {
-        const emitted = await getPi().emitThreadToClaude(ref.path)
+        const emitted = await withConversion(ref.harness, "claude", ref.title, () =>
+          getPi().emitThreadToClaude(ref.path)
+        )
         harness = "claude"
         resume = emitted.sessionId
       }

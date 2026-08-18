@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useMemo, useState } from "react"
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react"
 import { Action, Blank } from "@/components/ui/kit"
 import { VirtualSessions } from "@/components/rail/virtual-sessions"
 import { FileTree } from "@/components/rail/file-tree"
@@ -99,10 +99,11 @@ function Threads() {
   const groupBy = usePrefs((prefs) => prefs.railGroupBy)
   const sortBy = usePrefs((prefs) => prefs.railSortBy)
   const collapsed = usePrefs((prefs) => prefs.collapsedGroups)
+  const pinned = usePrefs((prefs) => prefs.pinnedThreads)
 
   const rows = useMemo(
-    () => buildRows({ sessions, query: deferred, groupBy, sortBy, collapsed, activeCwd: cwd }),
-    [collapsed, cwd, deferred, groupBy, sortBy, sessions]
+    () => buildRows({ sessions, query: deferred, groupBy, sortBy, collapsed, activeCwd: cwd, pinned }),
+    [collapsed, cwd, deferred, groupBy, sortBy, pinned, sessions]
   )
 
   const open = useCallback(
@@ -140,23 +141,7 @@ function Threads() {
       </div>
 
       {loading && sessions.length === 0 ? (
-        <div className="px-2.5 pt-1">
-          {SKELETON_ROWS.map((row, index) => (
-            <div
-              key={index}
-              className="flex h-[42px] flex-col justify-center gap-1.5"
-              // Staggered so the list reads as filling in rather than as one
-              // block flashing.
-              style={{ opacity: 1 - index * 0.16 }}
-            >
-              <div className="flex items-center gap-2">
-                <span className="skeleton h-2.5" style={{ width: row.title }} />
-                <span className="skeleton ml-auto h-2 w-6" />
-              </div>
-              <span className="skeleton h-2" style={{ width: row.meta }} />
-            </div>
-          ))}
-        </div>
+        <LoadingRows />
       ) : rows.length === 0 ? (
         <Blank
           icon={<MessagesSquareIcon />}
@@ -201,3 +186,52 @@ function Threads() {
   )
 }
 
+
+/**
+ * The skeleton, with an honesty deadline.
+ *
+ * A shimmer that can run forever tells the user nothing and takes the retry
+ * out of their hands. After eight seconds this one says so, and offers the
+ * retry itself — the load also times out on its own, but the person staring
+ * at the rail should never be the last to know.
+ */
+function LoadingRows() {
+  const [slow, setSlow] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), 8000)
+    return () => clearTimeout(timer)
+  }, [])
+  return (
+    <div className="px-2.5 pt-1">
+      {SKELETON_ROWS.map((row, index) => (
+        <div
+          key={index}
+          className="flex h-[42px] flex-col justify-center gap-1.5"
+          // Staggered so the list reads as filling in rather than as one
+          // block flashing.
+          style={{ opacity: 1 - index * 0.16 }}
+        >
+          <div className="flex items-center gap-2">
+            <span className="skeleton h-2.5" style={{ width: row.title }} />
+            <span className="skeleton ml-auto h-2 w-6" />
+          </div>
+          <span className="skeleton h-2" style={{ width: row.meta }} />
+        </div>
+      ))}
+      {slow ? (
+        <div className="px-1 pt-3 text-center">
+          <p className="pb-1.5 text-[11px] leading-relaxed text-faint">
+            This is taking longer than it should.
+          </p>
+          <button
+            type="button"
+            onClick={() => void actions.refreshSessions()}
+            className="pressable rounded-md border border-hairline px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            Try again
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+}

@@ -32,6 +32,7 @@ export function buildRows({
   sortBy,
   collapsed,
   activeCwd,
+  pinned = [],
 }: {
   sessions: SessionSummary[]
   query: string
@@ -39,6 +40,7 @@ export function buildRows({
   sortBy: RailSortBy
   collapsed: string[]
   activeCwd?: string
+  pinned?: string[]
 }): RailRow[] {
   const ordered = sortSessions(sessions, sortBy)
   const matched = rank(ordered, query, (session) =>
@@ -46,6 +48,24 @@ export function buildRows({
     // in that repo without first switching scope to it.
     `${session.name ?? ""} ${session.firstMessage} ${workspaceName(session.cwd)}`
   )
+
+  // Pinned rows lead, in the order they were pinned, and leave the groups
+  // below them — a pinned session in "This week" too would be a duplicate,
+  // not an emphasis. While searching, pins rank like everything else.
+  let pinnedRows: RailRow[] = []
+  let rest = matched
+  if (!query.trim() && pinned.length > 0) {
+    const set = new Set(pinned)
+    const held = matched.filter((session) => set.has(session.path))
+    if (held.length > 0) {
+      held.sort((a, b) => pinned.indexOf(a.path) - pinned.indexOf(b.path))
+      pinnedRows = [
+        { kind: "header", key: "pinned", label: "Pinned", count: held.length, collapsed: false },
+        ...held.map((session) => ({ kind: "session" as const, key: session.path, session })),
+      ]
+      rest = matched.filter((session) => !set.has(session.path))
+    }
+  }
 
   if (query.trim()) {
     return [
@@ -65,19 +85,22 @@ export function buildRows({
   }
 
   const isCollapsed = (key: string) => collapsed.includes(key)
-  const rows: RailRow[] = []
+  const rows: RailRow[] = [...pinnedRows]
 
   if (groupBy === "none") {
-    return matched.map((session) => ({
-      kind: "session" as const,
-      key: session.path,
-      session,
-    }))
+    return [
+      ...pinnedRows,
+      ...rest.map((session) => ({
+        kind: "session" as const,
+        key: session.path,
+        session,
+      })),
+    ]
   }
 
   if (groupBy === "project") {
     const groups = new Map<string, SessionSummary[]>()
-    for (const session of matched) {
+    for (const session of rest) {
       const list = groups.get(session.cwd)
       if (list) list.push(session)
       else groups.set(session.cwd, [session])
@@ -112,7 +135,7 @@ export function buildRows({
   }
 
   const buckets = new Map<string, SessionSummary[]>()
-  for (const session of matched) {
+  for (const session of rest) {
     const label = bucketFor(session.modified)
     const list = buckets.get(label)
     if (list) list.push(session)
