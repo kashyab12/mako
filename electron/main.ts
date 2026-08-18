@@ -32,6 +32,7 @@ import { HostPool } from "./pool.js"
 import { followThread, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, sendRemote, stopThreads, unfollowThread } from "./threads.js"
 import { abortNative, bindDrivers, freshHarnesses, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
 import { chainOf, expectLineage } from "./lineage.js"
+import { acpCancel, acpClose, acpHarnesses, acpPrompt, acpRespondPermission, acpSetMode, acpStart, acpState, bindAcp, stopAcp } from "./acp.js"
 import { listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
 import type { BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
 
@@ -366,6 +367,20 @@ function bindIpc() {
     expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
     return startFresh(harness, thread.ref.cwd, handoff)
   })
+  /* Interactive foreign agents over ACP. */
+  handle("pi:acp-harnesses", () => acpHarnesses())
+  handle("pi:acp-start", (_e, harness: string, cwd: string, options?: { resume?: string; title?: string }) =>
+    acpStart(harness, cwd, options)
+  )
+  handle("pi:acp-state", (_e, id: string) => acpState(id))
+  handle("pi:acp-prompt", (_e, id: string, text: string) => acpPrompt(id, text))
+  handle("pi:acp-permission", (_e, id: string, requestId: string, optionId: string | null) =>
+    acpRespondPermission(id, requestId, optionId)
+  )
+  handle("pi:acp-mode", (_e, id: string, modeId: string) => acpSetMode(id, modeId))
+  handle("pi:acp-cancel", (_e, id: string) => acpCancel(id))
+  handle("pi:acp-close", (_e, id: string) => acpClose(id))
+
   handle("pi:thread-run", (_e, path: string) => threadRun(path))
   handle("pi:thread-resume", async (_e, path: string, prompt: string) => {
     // A remote session (Devin) takes the message through its API and keeps
@@ -452,6 +467,7 @@ app.whenReady().then(async () => {
   installUpdates(emit)
   installThreads(emit)
   bindDrivers(emit)
+  bindAcp(emit)
   bindDevServer(emit)
   bindAutomations(emit, async (cwd, prompt) => {
     const live = await ready()
@@ -471,6 +487,7 @@ app.on("before-quit", () => {
   stopWatching()
   stopThreads()
   stopDrivers()
+  stopAcp()
   // The dev server is in its own process group and will not die with us.
   void stopDevServer()
   void pool.dispose()

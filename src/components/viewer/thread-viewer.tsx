@@ -3,9 +3,10 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { harnessLabel } from "@/components/rail/agent-threads"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { threads, useThreads } from "@/state/threads"
+import { acp } from "@/state/acp"
 import { formatRelative } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import { ArrowRightIcon, ChevronDownIcon, ChevronRightIcon, Loader2Icon, XIcon } from "lucide-react"
+import { ArrowRightIcon, ChevronDownIcon, ChevronRightIcon, Loader2Icon, RadioIcon, XIcon } from "lucide-react"
 import type { EntryBlock, ThreadEntry } from "@/lib/types"
 
 /**
@@ -79,6 +80,7 @@ export function ThreadViewer() {
               {ref.updatedAt ? ` · ${formatRelative(ref.updatedAt)}` : ""}
             </p>
           </div>
+          <LiveButton />
           <div className="flex shrink-0 items-center overflow-hidden rounded-md bg-foreground">
             <button
               type="button"
@@ -113,6 +115,34 @@ export function ThreadViewer() {
         <Reply />
       </div>
     </div>
+  )
+}
+
+/**
+ * Open this session with its own agent, live.
+ *
+ * The reply bar below is one headless turn; this is the real thing — the
+ * agent running as a subprocess, streaming, and asking before it acts. For a
+ * Claude Code thread it loads the *same* session, so "go interactive" is not
+ * a copy of the conversation, it is the conversation.
+ */
+function LiveButton() {
+  const thread = useThreads((state) => state.viewing)
+  const acpable = useThreads((state) => state.acpable)
+  if (!thread || !acpable.includes(thread.ref.harness)) return null
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        const ref = thread.ref
+        threads.closeViewer()
+        void acp.openInteractive(ref)
+      }}
+      className="pressable flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-hairline px-2.5 text-[11.5px] text-muted-foreground hover:text-foreground"
+    >
+      <RadioIcon className="size-3" />
+      Live
+    </button>
   )
 }
 

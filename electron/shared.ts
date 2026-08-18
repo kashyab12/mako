@@ -21,6 +21,39 @@ export interface ThreadRunState {
   error?: string
 }
 
+/* ------------------------------------------------------------------ */
+/* Interactive foreign agents (ACP)                                    */
+/* ------------------------------------------------------------------ */
+
+export interface AcpSessionState {
+  id: string
+  harness: string
+  cwd: string
+  title?: string
+  status: "starting" | "ready" | "running" | "failed" | "closed"
+  modes: Array<{ id: string; name: string }>
+  currentMode: string | null
+  lastStop?: string
+  error?: string
+}
+
+/** One streamed piece of an interactive turn, reduced for rendering. */
+export type AcpUpdate =
+  | { kind: "user"; text: string }
+  | { kind: "text"; text: string }
+  | { kind: "thinking"; text: string }
+  | { kind: "tool"; id: string; title: string; toolKind?: string; status: string }
+  | { kind: "tool-update"; id: string; title?: string; status?: string; output?: string }
+  | { kind: "plan"; entries: Array<{ content: string; status: string }> }
+
+export interface AcpPermissionRequest {
+  id: string
+  sessionId: string
+  title: string
+  kind?: string
+  options: Array<{ optionId: string; name: string; kind?: string }>
+}
+
 /**
  * The wire contract between the Electron host and the renderer.
  *
@@ -268,6 +301,12 @@ export type HostEventBody =
   | { type: "thread-entries"; path: string; entries: CatalogThreadEntry[]; replace?: boolean }
   /** A native resume (the thread's own CLI) started, finished, or failed. */
   | { type: "thread-run"; run: ThreadRunState }
+  /** An interactive (ACP) session changed state. */
+  | { type: "acp-session"; session: AcpSessionState }
+  /** One streamed piece of an interactive turn. */
+  | { type: "acp-update"; id: string; update: AcpUpdate }
+  /** The interactive agent is asking to use a tool; the user must answer. */
+  | { type: "acp-permission"; request: AcpPermissionRequest }
 
 /**
  * Every event says which tab it came from.

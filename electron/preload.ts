@@ -17,6 +17,7 @@ import type {
   SearchResults,
   SessionState,
   SessionSummary,
+  AcpSessionState,
   Thread,
   ThreadRef,
   ThreadRunState,
@@ -50,6 +51,17 @@ const api = {
   threadRun: (path: string) => invoke<ThreadRunState | null>("pi:thread-run", path),
   resumeThread: (path: string, prompt: string) => invoke<ThreadRunState>("pi:thread-resume", path, prompt),
   abortThreadRun: (path: string) => invoke<void>("pi:thread-abort-run", path),
+
+  /* Interactive foreign agents (ACP). */
+  acpHarnesses: () => invoke<string[]>("pi:acp-harnesses"),
+  acpStart: (harness: string, cwd: string, options?: { resume?: string; title?: string }) =>
+    invoke<AcpSessionState>("pi:acp-start", harness, cwd, options),
+  acpPrompt: (id: string, text: string) => invoke<void>("pi:acp-prompt", id, text),
+  acpPermission: (id: string, requestId: string, optionId: string | null) =>
+    invoke<void>("pi:acp-permission", id, requestId, optionId),
+  acpSetMode: (id: string, modeId: string) => invoke<void>("pi:acp-mode", id, modeId),
+  acpCancel: (id: string) => invoke<void>("pi:acp-cancel", id),
+  acpClose: (id: string) => invoke<void>("pi:acp-close", id),
 
   /* Tabs. Session-scoped calls below always address the active tab. */
   openTab: (options?: { cwd?: string; sessionPath?: string }) =>

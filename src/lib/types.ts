@@ -1,4 +1,7 @@
 export type {
+  AcpPermissionRequest,
+  AcpSessionState,
+  AcpUpdate,
   EntryBlock,
   Harness,
   Thread,

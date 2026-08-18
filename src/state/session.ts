@@ -29,6 +29,7 @@ import { applyUpdate, updates } from "@/state/updates"
 import { automations } from "@/state/automations"
 import { applyDevServer } from "@/state/devserver"
 import { applyThreadEntries, applyThreadRun, applyThreads, threads } from "@/state/threads"
+import { applyAcpPermission, applyAcpSession, applyAcpUpdate } from "@/state/acp"
 import { applyAutomations, noteAutomationRun } from "@/state/automations"
 import { toast } from "sonner"
 
@@ -199,6 +200,15 @@ function applyToActive(event: HostEvent) {
       break
     case "thread-run":
       applyThreadRun(event.run)
+      break
+    case "acp-session":
+      applyAcpSession(event.session)
+      break
+    case "acp-update":
+      applyAcpUpdate(event.id, event.update)
+      break
+    case "acp-permission":
+      applyAcpPermission(event.request)
       break
     case "automation-run":
       noteAutomationRun(event.run)

@@ -23,6 +23,8 @@ interface ThreadsState {
   resumable: string[]
   /** Harnesses a conversation can be continued on, "pi" first. */
   targets: string[]
+  /** Harnesses that can be driven interactively (ACP). */
+  acpable: string[]
   /** The native run for the viewed thread, if one was started. */
   run: ThreadRunState | null
   /** Every live native run, by thread path — the rail's working dots. */
@@ -37,6 +39,7 @@ export const threadsStore = createStore<ThreadsState>({
   continuing: null,
   resumable: [],
   targets: [],
+  acpable: [],
   run: null,
   running: {},
 })
@@ -69,12 +72,13 @@ export function applyThreadEntries(path: string, entries: ThreadEntry[], replace
 export const threads = {
   async load() {
     if (!hasBridge()) return
-    const [list, resumable, targets] = await Promise.all([
+    const [list, resumable, targets, acpable] = await Promise.all([
       getPi().threads().catch((): ThreadRef[] => []),
       getPi().resumableHarnesses().catch((): string[] => []),
       getPi().continueTargets().catch((): string[] => []),
+      getPi().acpHarnesses().catch((): string[] => []),
     ])
-    threadsStore.set({ threads: list, loaded: true, resumable, targets })
+    threadsStore.set({ threads: list, loaded: true, resumable, targets, acpable })
   },
 
   /** Open a foreign session read-only, translated to the canonical shape. */
