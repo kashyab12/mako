@@ -15,7 +15,14 @@ export const ReferenceOverlay = memo(function ReferenceOverlay({ text }: { text:
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute inset-0 overflow-hidden px-3 pt-2.5 pb-1 font-sans text-[13.5px] leading-[1.55] break-words whitespace-pre-wrap text-foreground"
+      // `inset-x-0 top-0` and **no** `bottom`: inside a scrolling box,
+      // `inset-0` resolves `bottom` against the *visible* height, so the
+      // painted layer was exactly one screenful tall no matter how long the
+      // draft was. Everything below that had no glyphs — and since the
+      // textarea's own text is transparent, it simply disappeared as you
+      // typed past the fold. Letting the height come from the content makes it
+      // match the textarea's scroll height, which is the whole contract.
+      className="pointer-events-none absolute inset-x-0 top-0 px-3 pt-2.5 pb-1 font-sans text-[13.5px] leading-[1.55] break-words whitespace-pre-wrap text-foreground"
     >
       {segments.map((segment, index) => {
         if (segment.kind === "text") return <span key={index}>{segment.text}</span>
