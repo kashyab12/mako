@@ -464,7 +464,7 @@ export function installMockBridge() {
     setDaemonLogin: async () => {},
     followThread: async () => {},
     unfollowThread: async () => {},
-    resumableHarnesses: async () => ["codex", "claude", "cursor", "grok"],
+    resumableHarnesses: async () => ["codex", "claude", "cursor", "grok", "devin"],
     acpHarnesses: async () => ["claude", "cursor"],
     acpStart: async (harness: string, cwd: string) => ({ id: "acp-1", harness, cwd, status: "ready" as const, modes: [{ id: "default", name: "Always Ask" }, { id: "acceptEdits", name: "Accept Edits" }], currentMode: "default" }),
     acpPrompt: async () => {},

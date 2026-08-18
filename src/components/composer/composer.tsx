@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { ModelPicker } from "@/components/composer/model-picker"
 import { AgentPicker } from "@/components/composer/agent-picker"
+import { ForeignEffortPicker } from "@/components/composer/foreign-effort"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { EffortPicker } from "@/components/composer/effort-picker"
 import { MentionMenu, type MentionKind } from "@/components/composer/mention-menu"
@@ -596,7 +597,9 @@ function ComposerRouting() {
           <ModelPicker />
           <EffortPicker />
         </>
-      ) : null}
+      ) : (
+        <ForeignEffortPicker harness={harness} />
+      )}
     </>
   )
 }

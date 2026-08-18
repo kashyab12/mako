@@ -805,3 +805,9 @@
   75% { opacity: 1; }
   100% { transform: translateX(2.2rem); opacity: 0; }
 }
+
+/* Fast mode's lightning, gently alive while it is on. */
+@keyframes fast-alive {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.65; transform: scale(0.92); }
+}

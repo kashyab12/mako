@@ -4,9 +4,11 @@ import { Eyebrow } from "@/components/ui/kit"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { harnessLabel } from "@/components/rail/agent-threads"
 import { threadsStore, useThreads } from "@/state/threads"
+import { actions, store as sessionStore } from "@/state/session"
+import { toast } from "sonner"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
-import { CheckIcon, ChevronDownIcon, ZapIcon } from "lucide-react"
+import { CheckIcon, ChevronDownIcon } from "lucide-react"
 
 /**
  * Who answers, and how — one panel, in the model picker's own language.
@@ -133,11 +135,7 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
             reasoning live in the pickers beside this one.
           </p>
         ) : selected === "devin" ? (
-          <p className="px-2 py-4 text-[11.5px] leading-relaxed text-faint">
-            Devin works in its own cloud from your prompt — no folder, no local
-            process. The session appears in Threads as it works, and replies go
-            straight to it.
-          </p>
+          <DevinModes onDone={onDone} />
         ) : tuning === null ? (
           <p className="shimmer px-2 py-4 text-[11.5px]">Reading what {harnessLabel(selected)} offers…</p>
         ) : (
@@ -163,6 +161,70 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
         </span>
         <span>Every conversation lands in Threads</span>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Devin, both ways.
+ *
+ * Local is Devin's models answering right here — Pi runs the tab with a
+ * devin-provider model, streaming and steerable, exactly the mode this app
+ * already uses them in. Cloud is a real Devin session at app.devin.ai,
+ * started from the prompt, no folder involved. Two rows, because they are
+ * two genuinely different things and pretending otherwise would confuse
+ * both.
+ */
+function DevinModes({ onDone }: { onDone: () => void }) {
+  const chooseLocal = () => {
+    const models = sessionStore.get().models
+    const current = sessionStore.get().meta?.model
+    const devinModels = models.filter((model) => model.provider === "devin")
+    if (devinModels.length === 0) {
+      toast.error("No Devin models in Pi's list", {
+        description: "The pi-devin provider supplies them — check it is installed and signed in.",
+      })
+      return
+    }
+    threadsStore.set({ composerHarness: "pi" })
+    if (current?.provider !== "devin") {
+      const pick = devinModels[0]
+      if (pick) void actions.setModel(pick.provider, pick.id)
+    }
+    onDone()
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={chooseLocal}
+        className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors duration-100 hover:bg-raised"
+      >
+        <HarnessIcon harness="devin" className="mt-0.5 size-4 shrink-0" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[12.5px] font-medium">Local — through Pi</span>
+          <span className="block text-[11px] leading-snug text-faint">
+            Devin's models answer right here: streaming, steerable, in this
+            folder. Picks a devin model in Pi's own picker.
+          </span>
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={onDone}
+        className="flex w-full items-start gap-2 rounded-md bg-raised px-2 py-2 text-left"
+      >
+        <HarnessIcon harness="devin" className="mt-0.5 size-4 shrink-0" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[12.5px] font-medium">Cloud — a Devin session</span>
+          <span className="block text-[11px] leading-snug text-faint">
+            A real session at app.devin.ai, started from your prompt. It works
+            in its own environment and appears in Threads as it goes.
+          </span>
+        </span>
+        <CheckIcon className="mt-1 size-3.5 shrink-0 text-brand" />
+      </button>
     </div>
   )
 }
@@ -217,49 +279,10 @@ function ForeignTuningBody({
         />
       </div>
 
-      {tuning.efforts.length > 0 ? (
-        <>
-          <Eyebrow className="px-1.5 pt-3 pb-1">Reasoning effort</Eyebrow>
-          <div className="flex flex-wrap gap-1 px-1.5 pb-1">
-            <EffortChip
-              label="default"
-              active={!chosen.effort}
-              onClick={() => onTune({ effort: undefined })}
-            />
-            {tuning.efforts.map((effort) => (
-              <EffortChip
-                key={effort}
-                label={effort}
-                active={chosen.effort === effort}
-                onClick={() => onTune({ effort })}
-              />
-            ))}
-          </div>
-        </>
-      ) : null}
-
-      {tuning.fast ? (
-        <>
-          <Eyebrow className="px-1.5 pt-3 pb-1">Mode</Eyebrow>
-          <button
-            type="button"
-            onClick={() => onTune({ fast: chosen.fast ? undefined : true })}
-            className={cn(
-              "mx-1.5 mb-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-100",
-              chosen.fast ? "bg-raised" : "hover:bg-raised/60"
-            )}
-          >
-            <ZapIcon className={cn("size-3.5", chosen.fast ? "fill-caution text-caution" : "text-faint")} />
-            <span className="min-w-0 flex-1">
-              <span className="block text-[12px] text-foreground/90">Fast mode</span>
-              <span className="block text-[10.5px] text-faint">
-                Quicker answers, lighter reasoning
-              </span>
-            </span>
-            {chosen.fast ? <CheckIcon className="size-3.5 text-brand" /> : null}
-          </button>
-        </>
-      ) : null}
+      <p className="px-1.5 pt-2.5 pb-1 text-[10.5px] leading-snug text-faint">
+        Reasoning effort{tuning.fast ? " and fast mode" : ""} live on the gauge
+        beside this picker — the same one Pi wears.
+      </p>
     </div>
   )
 }
@@ -305,25 +328,3 @@ function ModelRow({
   )
 }
 
-function EffortChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: string
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "pressable inline-flex h-5 items-center rounded px-1.5 text-[10.5px] font-medium transition-colors duration-100",
-        active ? "bg-brand-soft text-brand" : "bg-raised text-faint hover:text-muted-foreground"
-      )}
-    >
-      {label}
-    </button>
-  )
-}
