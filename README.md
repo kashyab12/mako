@@ -60,6 +60,25 @@ told apart by their logo rather than by identical folder icons. Scope to this
 project or every project you have worked in; group by date or project. Search
 reaches project names, so typing a repo name finds sessions inside it.
 
+**Agents** — the sidebar's third mode is every coding agent's sessions on this
+machine, not just this app's: Codex, Claude Code, Cursor, Grok, and Devin in
+one live list. Nothing imports and nothing polls — the native session stores
+are watched, so a session you start in a terminal appears here mid-turn.
+Opening one shows the conversation translated to one shape, live-tailed while
+its agent works. From there it goes anywhere: **reply** sends your next message
+through the CLI that owns the session; **continue here** brings the
+conversation into a Mako tab; the menu hands it to any *other* harness as a
+fresh session opened with the transcript. Sessions are not bound to the tool
+that started them.
+
+The layer under this is [`@mako/sessions`](packages/sessions) — a dependency-free
+library that reads every harness's native store into one canonical format,
+catalogs them incrementally (a thousand unchanged sessions cost a thousand
+stats and zero reads), and streams gigabyte-sized files in fixed-size chunks.
+Devin accounts go in `~/.mako/devin.json` as
+`{ "accounts": [{ "name": "work", "apiKey": "apk_…" }] }` — several at once,
+each session's path naming the account it came from.
+
 ⌘K reaches every command, model, and session. ⌘P opens a file by name. **⌘/**
 shows what every region is for and every key that does something — generated
 from the command registry, so it cannot drift from the app, and it includes
