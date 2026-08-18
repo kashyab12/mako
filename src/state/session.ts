@@ -399,12 +399,27 @@ export const actions = {
     if (models) store.set({ models })
   },
 
-  send(
+  /**
+   * Send a prompt. Resolves `true` only if the host accepted it.
+   *
+   * The composer clears optimistically so typing feels instant, and it can
+   * only put the draft back if it can tell success from failure — which a
+   * `void`-returning call cannot. The agent rejects a prompt outright when no
+   * model is selected or no key is available, and losing a paragraph to that
+   * is not an acceptable way to find out.
+   */
+  async send(
     text: string,
     mode?: "steer" | "followUp",
     images?: Array<{ mimeType: string; data: string }>
-  ) {
-    return guard(() => getPi().prompt(text, mode, images))
+  ): Promise<boolean> {
+    try {
+      await getPi().prompt(text, mode, images)
+      return true
+    } catch (error) {
+      report(error)
+      return false
+    }
   },
 
   abort() {

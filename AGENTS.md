@@ -98,6 +98,31 @@ before it existed: **copy belongs to the whole answer**, not to each fragment
 of a long reply, and the turn navigator needs something meaningful to jump
 between. The prompt gets its own surface so it is unmistakably the user's.
 
+## Never lose a paragraph
+
+A draft is the one thing in the desk the user made and cannot get back. Every
+other state — the diff, the tree, the token count — is recoverable by asking
+again. So the composer clears optimistically, because typing the next thing
+should be instant, and `drafts` in `composer.tsx` keeps the text per session so
+switching tabs mid-sentence costs nothing.
+
+Restoring a refused send is where this gets subtle, and the trap is timing.
+`session.prompt()` does not resolve when the prompt is *accepted*; it awaits
+`_runAgentPrompt` and the whole `continue()` loop, so an awaited `send` settles
+minutes later, when the answer is done. Restoring a draft on that promise
+overwrites the paragraph the user has since typed — losing work in the name of
+saving it — and can paint it into whatever session is on screen by then.
+Rejection is a *preflight* fact (no model, no key), so read it from Pi's
+`PromptOptions.preflightResult` and settle in one tick, while the composer is
+still provably empty. Anything that repaints the textarea later must first
+check that the draft is still empty and the session has not changed; otherwise
+leave the text in `drafts` and say so.
+
+The same rule covers the quieter losses: `buildPrompt` silently omits an
+attachment that is still `pending`, so sending mid-staging drops a file with no
+notice, and `clear()` revokes preview URLs — which is why detaching for a
+possible restore is separate from discarding for good.
+
 ## Git
 
 `ChangesPanel` stages, commits, and pushes; `commit-box.tsx` drafts messages

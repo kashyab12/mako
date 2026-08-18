@@ -11,6 +11,7 @@ import { formatChord } from "@/extend/commands"
 import { mentionAt, replaceMention, type ActiveMention } from "@/lib/mentions"
 import { actions, shallowEqual, useSession } from "@/state/session"
 import { cn } from "@/lib/utils"
+import { toast } from "sonner"
 import {
   ArrowUpIcon,
   AtSignIcon,
@@ -155,13 +156,38 @@ export function Composer() {
     async (mode?: "steer" | "followUp") => {
       const text = draft.trim()
       if (!text && attachments.items.length === 0) return
+
+      // The agent rejects a prompt outright when no model is selected. Catching
+      // it here rather than letting it round-trip means the draft is never
+      // touched, and the message names the fix instead of quoting an error.
+      if (!meta?.model) {
+        toast.error("Choose a model first", {
+          description: "Nothing was sent — your message is still here.",
+        })
+        return
+      }
+
       const built = buildPrompt(draft, attachments.items)
+
+      // Cleared before the host answers, so typing the next thing is instant —
+      // and put back verbatim if the host refuses. A prompt is rejected
+      // outright when no model is selected, and losing a paragraph to that is
+      // not an acceptable way to find out.
+      const previousDraft = draft
+      const detached = attachments.detach()
       update("")
       setMention(null)
-      attachments.clear()
-      await actions.send(built.text, mode, built.images)
+
+      const sent = await actions.send(built.text, mode, built.images)
+      if (sent) {
+        attachments.discard(detached)
+        return
+      }
+      update(previousDraft)
+      attachments.reattach(detached)
+      requestAnimationFrame(() => textarea.current?.focus())
     },
-    [attachments, draft, update]
+    [attachments, draft, meta?.model, update]
   )
 
   const pick = useCallback(
@@ -352,7 +378,7 @@ export function Composer() {
                 </IconAction>
               ) : null}
               <SendButton
-                ready={Boolean(draft.trim()) || attachments.items.length > 0}
+                ready={Boolean(meta?.model) && (Boolean(draft.trim()) || attachments.items.length > 0)}
                 steering={status.streaming}
                 onSend={() => void submit()}
               />

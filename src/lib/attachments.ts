@@ -143,7 +143,31 @@ export function useAttachments() {
     nextIndex.current = 1
   }, [])
 
-  return { items, add, remove, clear }
+  /**
+   * Take the attachments off the composer *without* destroying them.
+   *
+   * Sending clears the composer before the host has accepted anything, so it
+   * feels instant. That is only safe if a rejected send can put everything
+   * back — and `clear` revokes the preview URLs, which would restore a strip
+   * of broken images. These three let the caller hold the items until it knows
+   * which way it went.
+   */
+  const detach = useCallback((): Attachment[] => {
+    const taken = live.current
+    setItems([])
+    return taken
+  }, [])
+
+  const reattach = useCallback((taken: Attachment[]) => {
+    setItems(taken)
+  }, [])
+
+  const discard = useCallback((taken: Attachment[]) => {
+    for (const item of taken) if (item.preview) URL.revokeObjectURL(item.preview)
+    nextIndex.current = 1
+  }, [])
+
+  return { items, add, remove, clear, detach, reattach, discard }
 }
 
 async function resolve(attachment: Attachment, file: File): Promise<Attachment> {
