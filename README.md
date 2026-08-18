@@ -187,6 +187,3 @@ API, so a plugin can add or replace any of it. See `AGENTS.md`.
 If Anthropic returns `Invalid signature in thinking block`, Pi is replaying a
 thinking block the API won't accept — common after a mid-session model switch.
 Start a new session, or turn thinking off. Not a Mako bug.
-
-There was a native GPUI rewrite in `desk-rs/`; it was removed at `8c305c0` and
-is recoverable from history if it's ever worth revisiting.
