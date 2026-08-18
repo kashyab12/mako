@@ -393,9 +393,17 @@ export function installMockBridge() {
       oldFile: { name: path, contents: "const sessions = useSession((state) => state)\n" },
       newFile: { name: path, contents: "const sessions = useSession((state) => state.sessions)\n" },
     }),
-    listPlugins: async () => [],
+    listPlugins: async () => [
+      {
+        id: "thread-counter",
+        source: "export function setup(){ mako.registerSlot('rail.footer', () => React.createElement('div', { style: { padding: '6px 10px', fontSize: 10.5, opacity: 0.5 } }, 'plugin: ' + mako.threads.read().threads.length + ' threads')) }",
+      },
+      { id: "broken-example", source: "export function setup(){ throw new Error('deliberate failure for the demo') }" },
+    ],
     pluginsDir: async () => "/tmp/mako/plugins",
     writePlugin: async () => {},
+    deletePlugin: async () => {},
+    revealPlugins: async () => {},
     githubStatus: async () => ({ installed: true, authenticated: true, login: "you", repo: "you/mako", defaultBranch: "main" }),
     pullRequest: async () => null,
     pullRequests: async () => [],

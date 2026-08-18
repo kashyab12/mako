@@ -16,6 +16,8 @@ import {
   type ToolView,
 } from "@/extend/slots"
 import { actions, store, useSession } from "@/state/session"
+import { threads, threadsStore, useThreads } from "@/state/threads"
+import { toast } from "sonner"
 import { prefsStore, setPref, togglePref, usePrefs } from "@/state/prefs"
 import { Registry } from "@/extend/registry"
 
@@ -63,6 +65,10 @@ export interface MakoApi {
   /** Session state: `read()` once, `use()` to subscribe from a component. */
   session: { read: typeof store.get; use: typeof useSession; actions: typeof actions }
   prefs: { read: typeof prefsStore.get; use: typeof usePrefs; set: typeof setPref; toggle: typeof togglePref }
+  /** Every harness's threads — the meta-harness, scriptable. */
+  threads: { read: typeof threadsStore.get; use: typeof useThreads; actions: typeof threads }
+  /** Say something small without building UI for it. */
+  toast: typeof toast
 }
 
 export interface LoadedPlugin {
@@ -104,6 +110,8 @@ function apiFor(id: string): MakoApi {
     runCommand,
     session: { read: store.get, use: useSession, actions },
     prefs: { read: prefsStore.get, use: usePrefs, set: setPref, toggle: togglePref },
+    threads: { read: threadsStore.get, use: useThreads, actions: threads },
+    toast,
   }
 }
 

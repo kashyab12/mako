@@ -1,6 +1,6 @@
 import { app } from "electron"
 import { mkdirSync, watch, type FSWatcher } from "node:fs"
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises"
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
 /**
@@ -45,6 +45,14 @@ export async function writePlugin(id: string, source: string) {
   // The id is a bare name, never a path: a plugin called `../../etc/passwd`
   // must land in the plugins directory as a strange filename, not outside it.
   await writeFile(join(dir, `${safe(id)}.tsx`), source, "utf8")
+}
+
+export async function deletePlugin(id: string) {
+  await rm(join(pluginsDir(), `${safe(id)}.tsx`), { force: true })
+  // Other extensions the same plugin might have been saved under.
+  for (const extension of ["ts", "jsx", "js"]) {
+    await rm(join(pluginsDir(), `${safe(id)}.${extension}`), { force: true })
+  }
 }
 
 function safe(id: string) {

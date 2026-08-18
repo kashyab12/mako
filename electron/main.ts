@@ -35,7 +35,7 @@ import { abortNative, bindDrivers, freshHarnesses, harnessAvailability, resumabl
 import { bindLineageDirect, chainOf, expectLineage } from "./lineage.js"
 import { accountUsage, captureAccount, listAccounts, removeAccount, selectAccount } from "./accounts.js"
 import { acpCancel, acpClose, acpHarnesses, acpPrompt, acpRespondPermission, acpSetMode, acpStart, acpState, bindAcp, stopAcp } from "./acp.js"
-import { listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
+import { deletePlugin, listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
 import type { BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -355,6 +355,10 @@ function bindIpc() {
   handle("pi:list-plugins", () => listPlugins())
   handle("pi:plugins-dir", () => pluginsDir())
   handle("pi:write-plugin", (_e, id: string, source: string) => writePlugin(id, source))
+  handle("pi:delete-plugin", (_e, id: string) => deletePlugin(id))
+  handle("pi:reveal-plugins", () => {
+    void shell.openPath(pluginsDir())
+  })
 
   handle("pi:pick-folder", async () => {
     if (!window) return null

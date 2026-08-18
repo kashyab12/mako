@@ -10,6 +10,7 @@ import { automations, useAutomations } from "@/state/automations"
 import type { CrashReport } from "../../../electron/crash.ts"
 import type { UsageSummary } from "@/lib/types"
 import { HarnessIcon } from "@/components/ui/provider-icon"
+import { PluginsSection } from "@/components/settings/plugins-section"
 import { RotateCcwIcon, XIcon } from "lucide-react"
 
 const SECTIONS = [
@@ -18,6 +19,7 @@ const SECTIONS = [
   { id: "commits", label: "Commit messages" },
   { id: "usage", label: "Usage" },
   { id: "agents", label: "Agents" },
+  { id: "plugins", label: "Plugins" },
   { id: "automations", label: "Automations" },
   { id: "updates", label: "Updates" },
   { id: "diagnostics", label: "Diagnostics" },
@@ -95,6 +97,7 @@ export function SettingsView() {
           {section === "commits" ? <CommitPrompt fallback={defaultPrompt} /> : null}
           {section === "usage" ? <Usage /> : null}
           {section === "agents" ? <Agents /> : null}
+          {section === "plugins" ? <PluginsSection /> : null}
           {section === "automations" ? <Automations /> : null}
           {section === "updates" ? <Updates /> : null}
           {section === "diagnostics" ? <Diagnostics /> : null}

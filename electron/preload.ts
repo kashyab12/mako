@@ -147,6 +147,8 @@ const api = {
   listPlugins: () => invoke<Array<{ id: string; source: string }>>("pi:list-plugins"),
   pluginsDir: () => invoke<string>("pi:plugins-dir"),
   writePlugin: (id: string, source: string) => invoke<void>("pi:write-plugin", id, source),
+  deletePlugin: (id: string) => invoke<void>("pi:delete-plugin", id),
+  revealPlugins: () => invoke<void>("pi:reveal-plugins"),
 
   defaultCommitPrompt: () => invoke<string>("pi:default-commit-prompt"),
 
