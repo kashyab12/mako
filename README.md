@@ -60,7 +60,14 @@ told apart by their logo rather than by identical folder icons. Scope to this pr
 date or project. Search reaches project names, so typing a repo name finds
 sessions inside it.
 
-⌘K reaches every command, model, and session. ⌘P opens a file by name.
+⌘K reaches every command, model, and session. ⌘P opens a file by name. **⌘/**
+shows what every region is for and every key that does something — generated
+from the command registry, so it cannot drift from the app, and it includes
+anything a plugin has registered.
+
+On a first run the empty conversation carries a four-line checklist. Each line
+completes by being done rather than by being clicked, and the whole thing
+disappears for good once it is finished.
 
 ## Performance
 

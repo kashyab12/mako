@@ -307,6 +307,14 @@ const DESK_COMMANDS: DeskCommand[] = [
     run: () => togglePref("showThinking"),
   },
   {
+    id: "view.guide",
+    title: "What is where",
+    section: "View",
+    keys: "mod+/",
+    hint: "The layout, and every key that does something",
+    run: () => window.dispatchEvent(new CustomEvent("pi:guide")),
+  },
+  {
     id: "view.settings",
     title: "Settings",
     section: "View",

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Composer } from "@/components/composer/composer"
 import { CommandPalette } from "@/components/palette/command-palette"
+import { Guide } from "@/components/onboarding/guide"
 import { SettingsView } from "@/components/settings/settings-view"
 import { usePlugins } from "@/extend/use-plugins"
 import { Inspector } from "@/components/inspector/inspector"
@@ -191,6 +192,7 @@ export function AppShell() {
         ) : null}
       </div>
       <CommandPalette />
+      <Guide />
     </TooltipProvider>
   )
 }

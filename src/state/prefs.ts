@@ -43,6 +43,8 @@ export interface Prefs {
   /** The dev-server preview, beside the conversation. */
   previewOpen: boolean
   previewWidth: number
+  /** The getting-started list is finished or dismissed, and will not return. */
+  onboarded: boolean
   /** Overrides the host's default commit-drafting prompt. */
   commitPrompt?: string
 }
@@ -72,6 +74,7 @@ const defaults: Prefs = {
   autoOpenDiff: true,
   previewOpen: false,
   previewWidth: 460,
+  onboarded: false,
 }
 
 function load(): Prefs {

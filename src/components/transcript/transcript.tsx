@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Exchange } from "@/components/transcript/exchange"
 import { NAVIGATOR_WIDTH, TurnNavigator } from "@/components/transcript/turn-navigator"
 import { Slot } from "@/extend/slot"
+import { FirstRun } from "@/components/onboarding/first-run"
 import { toExchanges } from "@/lib/exchanges"
 import { foldTools } from "@/lib/tools"
 import { useSession } from "@/state/session"
@@ -292,6 +293,8 @@ function EmptyTranscript() {
             <Suggestion key={suggestion.text} suggestion={suggestion} index={index} />
           ))}
         </div>
+
+        <FirstRun />
       </div>
     </div>
   )
