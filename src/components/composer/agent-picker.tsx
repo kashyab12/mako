@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Eyebrow } from "@/components/ui/kit"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { harnessLabel } from "@/components/rail/agent-threads"
 import { threadsStore, useThreads } from "@/state/threads"
@@ -8,7 +7,7 @@ import { actions, store as sessionStore } from "@/state/session"
 import { toast } from "sonner"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
-import { CheckIcon, ChevronDownIcon } from "lucide-react"
+import { ChevronDownIcon } from "lucide-react"
 
 /**
  * Who answers, and how — one panel, in the model picker's own language.
@@ -22,12 +21,6 @@ import { CheckIcon, ChevronDownIcon } from "lucide-react"
  * and Devin as the cloud hand that needs no folder. Nothing here renders
  * an option its agent would ignore.
  */
-
-interface Tuning {
-  models: string[]
-  efforts: string[]
-  fast: boolean
-}
 
 const ORDER = ["pi", "claude", "codex", "cursor", "grok", "devin"]
 
@@ -62,26 +55,14 @@ export function AgentPicker() {
 
 function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void }) {
   const [available, setAvailable] = useState<Record<string, boolean>>({ pi: true })
-  const [tuning, setTuning] = useState<Tuning | null>(null)
   const hasDevinModels = sessionStore.get().models.some((model) => model.provider === "devin")
-  const chosen = useThreads((state) => state.composerTuning[selected] ?? {})
+
 
   useEffect(() => {
     if (!hasBridge()) return
     void getPi().harnessAvailability().then(setAvailable).catch(() => {})
   }, [])
 
-  useEffect(() => {
-    if (!hasBridge() || selected === "pi") {
-      setTuning(null)
-      return
-    }
-    setTuning(null)
-    void getPi()
-      .harnessTuning(selected)
-      .then(setTuning)
-      .catch(() => setTuning({ models: [], efforts: [], fast: false }))
-  }, [selected])
 
   const choices = ORDER.filter(
     (harness) => available[harness] || (harness === "devin" && hasDevinModels)
@@ -111,10 +92,6 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
       return
     }
     threadsStore.set({ composerHarness: harness })
-  }
-  const tune = (patch: Partial<{ model?: string; effort?: string; fast?: boolean }>) => {
-    const all = threadsStore.get().composerTuning
-    threadsStore.set({ composerTuning: { ...all, [selected]: { ...all[selected], ...patch } } })
   }
 
   return (
@@ -156,16 +133,12 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
             Pi answers in this tab, streaming, steerable mid-turn. Its model and
             reasoning live in the pickers beside this one.
           </p>
-        ) : tuning === null ? (
-          <p className="shimmer px-2 py-4 text-[11.5px]">Reading what {harnessLabel(selected)} offers…</p>
         ) : (
-          <ForeignTuningBody
-            harness={selected}
-            tuning={tuning}
-            chosen={chosen}
-            onTune={tune}
-            onDone={onDone}
-          />
+          <p className="px-2 py-4 text-[11.5px] leading-relaxed text-faint">
+            {harnessLabel(selected)} answers in this workspace, its conversation
+            right here. Model and reasoning live in the pickers beside this one
+            — the same seats Pi uses.
+          </p>
         )}
       </div>
 
@@ -183,102 +156,5 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
   )
 }
 
-function ForeignTuningBody({
-  harness,
-  tuning,
-  chosen,
-  onTune,
-  onDone,
-}: {
-  harness: string
-  tuning: Tuning
-  chosen: { model?: string; effort?: string; fast?: boolean }
-  onTune: (patch: Partial<{ model?: string; effort?: string; fast?: boolean }>) => void
-  onDone: () => void
-}) {
-  const [typed, setTyped] = useState("")
 
-  return (
-    <div>
-      <Eyebrow className="px-1.5 pt-1.5 pb-1">Model</Eyebrow>
-      <ModelRow
-        label="Harness default"
-        detail={`whatever ${harnessLabel(harness)} would pick itself`}
-        selected={!chosen.model}
-        onChoose={() => onTune({ model: undefined })}
-      />
-      {tuning.models.map((model, index) => (
-        <ModelRow
-          key={model}
-          mono
-          label={model}
-          detail={index < 3 ? "seen on this machine" : undefined}
-          selected={chosen.model === model}
-          onChoose={() => onTune({ model })}
-        />
-      ))}
-      <div className="px-1.5 pt-1">
-        <input
-          value={typed}
-          onChange={(event) => setTyped(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && typed.trim()) {
-              onTune({ model: typed.trim() })
-              setTyped("")
-              onDone()
-            }
-          }}
-          placeholder="Any model id — Enter to use it"
-          className="h-7 w-full rounded-md bg-raised px-2 font-mono text-[11.5px] placeholder:font-sans placeholder:text-faint focus:outline-none"
-        />
-      </div>
-
-      <p className="px-1.5 pt-2.5 pb-1 text-[10.5px] leading-snug text-faint">
-        Reasoning effort{tuning.fast ? " and fast mode" : ""} live on the gauge
-        beside this picker — the same one Pi wears.
-      </p>
-    </div>
-  )
-}
-
-function ModelRow({
-  label,
-  detail,
-  mono,
-  selected,
-  onChoose,
-}: {
-  label: string
-  detail?: string
-  mono?: boolean
-  selected: boolean
-  onChoose: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onChoose}
-      className={cn(
-        "flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors duration-100",
-        selected ? "bg-raised" : "hover:bg-raised/60"
-      )}
-    >
-      <span className="min-w-0 flex-1">
-        <span
-          className={cn(
-            "block truncate text-[12.5px]",
-            mono && "font-mono text-[11.5px]",
-            selected ? "font-medium text-foreground" : "text-foreground/90"
-          )}
-        >
-          {label}
-        </span>
-        {detail ? (
-          <span className="mt-0.5 block text-[10.5px] text-faint">{detail}</span>
-        ) : null}
-      </span>
-      {selected ? <CheckIcon className="size-3.5 shrink-0 text-brand" /> : null}
-    </button>
-  )
-}
 
