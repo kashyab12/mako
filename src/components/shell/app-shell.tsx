@@ -13,6 +13,7 @@ import { Divider } from "@/components/shell/divider"
 import { Transcript } from "@/components/transcript/transcript"
 import { FileViewer } from "@/components/viewer/file-viewer"
 import { SearchView } from "@/components/search/search-view"
+import { PreviewPane } from "@/components/preview/preview-pane"
 import { Action, Blank } from "@/components/ui/kit"
 import { useDeskCommands } from "@/desk/use-desk-commands"
 import { actions, store, useSession } from "@/state/session"
@@ -25,9 +26,11 @@ export function AppShell() {
   const fault = useSession((state) => state.fault)
   const railOpen = usePrefs((prefs) => prefs.railOpen)
   const inspectorOpen = usePrefs((prefs) => prefs.inspectorOpen)
+  const previewOpen = usePrefs((prefs) => prefs.previewOpen)
 
   const railRef = useRef<HTMLDivElement>(null)
   const inspectorRef = useRef<HTMLDivElement>(null)
+  const previewRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => bindTheme(), [])
 
@@ -71,6 +74,9 @@ export function AppShell() {
   }, [])
   const resizeInspector = useCallback((next: number) => {
     if (inspectorRef.current) inspectorRef.current.style.width = `${next}px`
+  }, [])
+  const resizePreview = useCallback((next: number) => {
+    if (previewRef.current) previewRef.current.style.width = `${next}px`
   }, [])
 
   return (
@@ -122,6 +128,29 @@ export function AppShell() {
               </>
             )}
           </main>
+
+          {/* The preview is a sibling of the conversation, not an overlay on
+              it: the whole point is watching the thing change while you talk
+              about it. */}
+          {previewOpen && phase !== "detached" ? (
+            <>
+              <Divider
+                side="right"
+                width={prefsStore.get().previewWidth}
+                min={320}
+                max={900}
+                onResize={resizePreview}
+                onCommit={(next) => setPref("previewWidth", next)}
+              />
+              <div
+                ref={previewRef}
+                style={{ width: prefsStore.get().previewWidth }}
+                className="flex min-h-0 shrink-0 flex-col overflow-hidden"
+              >
+                <PreviewPane />
+              </div>
+            </>
+          ) : null}
 
           {inspectorOpen ? (
             <>

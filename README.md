@@ -72,6 +72,16 @@ over the transcript when you switch to it. The session list is virtualized,
 offscreen turns are skipped with `content-visibility`, and the diff engine is
 code-split out of the boot path.
 
+## Watching it run
+
+⌘⇧P opens the project's dev server beside the conversation. It lists the npm
+scripts this project actually has rather than guessing one, or points at a
+server you already have running. Nothing starts on its own — running an
+arbitrary script because someone opened a panel is not a thing an editor should
+do quietly — and stopping it kills the whole process group, so nothing is left
+holding a port. The server's own output is one click away, and opens itself
+when the server dies.
+
 ## Reviewing what the agent wrote
 
 Hover a line in the diff and comment on it, the way you would on a pull

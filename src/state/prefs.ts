@@ -40,6 +40,9 @@ export interface Prefs {
   openDirs: string[]
   glass: boolean
   autoOpenDiff: boolean
+  /** The dev-server preview, beside the conversation. */
+  previewOpen: boolean
+  previewWidth: number
   /** Overrides the host's default commit-drafting prompt. */
   commitPrompt?: string
 }
@@ -67,6 +70,8 @@ const defaults: Prefs = {
   openDirs: [],
   glass: true,
   autoOpenDiff: true,
+  previewOpen: false,
+  previewWidth: 460,
 }
 
 function load(): Prefs {
@@ -100,9 +105,18 @@ export function setPref<K extends keyof Prefs>(key: K, value: Prefs[K]) {
   prefsStore.set({ [key]: value } as Pick<Prefs, K>)
 }
 
-export function togglePref(
-  key: "railOpen" | "inspectorOpen" | "showThinking" | "denseTools" | "glass" | "autoOpenDiff"
-) {
+/**
+ * Every preference that is a switch, derived rather than listed.
+ *
+ * The list used to be written out by hand, so adding a boolean preference and
+ * then trying to toggle it was a type error in an unrelated file — which is
+ * exactly the kind of friction that ends with someone reaching past the helper.
+ */
+// `-?` matters: an optional preference makes its mapped value `K | undefined`,
+// and `undefined` is not a key.
+type BooleanPref = { [K in keyof Prefs]-?: Prefs[K] extends boolean ? K : never }[keyof Prefs]
+
+export function togglePref(key: BooleanPref) {
   prefsStore.set({ [key]: !prefsStore.get()[key] } as Pick<Prefs, typeof key>)
 }
 

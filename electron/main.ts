@@ -4,6 +4,14 @@ import { fileURLToPath } from "node:url"
 import { COMMIT_PROMPT, type AgentHost } from "./host.js"
 import { breadcrumb, clearCrashes, crashesDir, installCrashReporting, listCrashes, record } from "./crash.js"
 import { check, installNow, installUpdates, updateState } from "./updates.js"
+import {
+  attachDevServer,
+  bindDevServer,
+  devScripts,
+  devServerState,
+  startDevServer,
+  stopDevServer,
+} from "./devserver.js"
 import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunChecks, type CreatePullOptions } from "./github.js"
 import { HostPool } from "./pool.js"
 import { listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
@@ -92,6 +100,11 @@ async function createWindow() {
       sandbox: false,
       // The transcript is long-lived; keep the renderer warm when hidden.
       backgroundThrottling: false,
+      // For the dev-server preview. A `<webview>` rather than an iframe so the
+      // previewed app runs in its own process with its own storage: it cannot
+      // reach this window, and its cookies and local storage never mix with
+      // the app's own.
+      webviewTag: true,
     },
   })
 
@@ -307,6 +320,12 @@ function bindIpc() {
   handle("pi:rerun-checks", () => withHost((h) => rerunChecks(h.workspace)))
   handle("pi:repo-avatar", (_e, repo: string) => withHost((h) => repoAvatar(h.workspace, repo)))
 
+  handle("pi:dev-scripts", () => withHost((h) => devScripts(h.workspace)))
+  handle("pi:dev-state", () => devServerState())
+  handle("pi:dev-start", (_e, script: string) => withHost((h) => startDevServer(h.workspace, script)))
+  handle("pi:dev-stop", () => stopDevServer())
+  handle("pi:dev-attach", (_e, url: string) => attachDevServer(url))
+
   handle("pi:update-state", () => updateState())
   handle("pi:check-updates", () => check())
   handle("pi:install-update", () => installNow())
@@ -345,6 +364,7 @@ app.whenReady().then(async () => {
   bindIpc()
   await createWindow()
   installUpdates(emit)
+  bindDevServer(emit)
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow()
   })
@@ -355,5 +375,7 @@ app.on("window-all-closed", () => {
 })
 
 app.on("before-quit", () => {
+  // The dev server is in its own process group and will not die with us.
+  void stopDevServer()
   void pool.dispose()
 })

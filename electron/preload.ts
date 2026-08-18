@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron"
 import type {
   BootPayload,
   Capabilities,
+  DevServerState,
   FileContents,
   GitCommitEntry,
   GitDiff,
@@ -100,6 +101,12 @@ const api = {
     invoke<PullRequest | null>("pi:create-pull", options),
   rerunChecks: () => invoke<void>("pi:rerun-checks"),
   repoAvatar: (repo: string) => invoke<string | undefined>("pi:repo-avatar", repo),
+
+  devScripts: () => invoke<string[]>("pi:dev-scripts"),
+  devState: () => invoke<DevServerState>("pi:dev-state"),
+  devStart: (script: string) => invoke<DevServerState>("pi:dev-start", script),
+  devStop: () => invoke<DevServerState>("pi:dev-stop"),
+  devAttach: (url: string) => invoke<DevServerState>("pi:dev-attach", url),
 
   updateState: () => invoke<UpdateState>("pi:update-state"),
   checkUpdates: () => invoke<UpdateState>("pi:check-updates"),

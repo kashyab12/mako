@@ -26,6 +26,7 @@ import {
 } from "@/state/tabs"
 import { viewer, viewerStore } from "@/state/viewer"
 import { applyUpdate, updates } from "@/state/updates"
+import { applyDevServer } from "@/state/devserver"
 import { toast } from "sonner"
 
 export type Phase = "booting" | "ready" | "detached"
@@ -180,6 +181,9 @@ function applyToActive(event: HostEvent) {
       break
     case "update":
       applyUpdate(event.update)
+      break
+    case "devserver":
+      applyDevServer(event.devserver)
       break
     case "notice":
       if (event.level === "error") toast.error(event.message)

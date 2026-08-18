@@ -190,6 +190,14 @@ const DESK_COMMANDS: DeskCommand[] = [
     run: () => togglePref("railOpen"),
   },
   {
+    id: "view.preview",
+    title: "Toggle the preview",
+    section: "View",
+    keys: "mod+shift+p",
+    hint: "The dev server, beside the conversation",
+    run: () => togglePref("previewOpen"),
+  },
+  {
     id: "view.toggle-diff",
     title: "Toggle the diff pane",
     section: "View",
