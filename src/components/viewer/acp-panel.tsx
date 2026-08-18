@@ -9,7 +9,6 @@ import {
   CircleIcon,
   Loader2Icon,
   ShieldQuestionIcon,
-  SquareIcon,
   XIcon,
 } from "lucide-react"
 
@@ -21,7 +20,9 @@ import {
  * they run, and when the agent wants a permission its mode does not grant,
  * the question lands here — with the agent's own options, not a yes/no we
  * invented. A Claude Code thread opened this way is the same session its CLI
- * would resume, not a copy.
+ * would resume, not a copy. The one composer below the column does the
+ * talking; this surface is the transcript, the permission question, and the
+ * agent's own modes.
  */
 
 export function AcpPanel() {
@@ -42,7 +43,7 @@ export function AcpPanel() {
 
   if (starting) {
     return (
-      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/60 backdrop-blur-[2px]">
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-background">
         <div className="flex items-center gap-2 text-[12px] text-faint">
           <Loader2Icon className="size-4 animate-spin" />
           Starting the agent…
@@ -53,38 +54,30 @@ export function AcpPanel() {
   if (!session) return null
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Interactive ${harnessLabel(session.harness)} session`}
-      className="fixed inset-0 z-[60] flex items-start justify-center bg-background/70 pt-[5vh] backdrop-blur-[2px]"
-    >
-      <div className="glass-panel flex max-h-[88vh] w-full max-w-[54rem] flex-col overflow-hidden rounded-xl">
-        <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-hairline px-4">
-          <HarnessIcon harness={session.harness} className="size-3.5" />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[13px] font-medium">
-              {session.title ?? `${harnessLabel(session.harness)}, live`}
-            </p>
-            <p className="truncate text-[10.5px] text-faint">
-              {harnessLabel(session.harness)} · interactive · {session.cwd}
-            </p>
-          </div>
-          <ModePicker />
-          <button
-            type="button"
-            aria-label="Close"
-            onClick={() => acp.close()}
-            className="pressable shrink-0 rounded p-1 text-faint hover:text-foreground"
-          >
-            <XIcon className="size-3.5" />
-          </button>
+    <div className="flex min-h-0 flex-1 flex-col bg-background">
+      <div className="flex h-11 shrink-0 items-center gap-2.5 border-b border-hairline px-3.5">
+        <HarnessIcon harness={session.harness} className="size-3.5" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[12.5px] font-medium">
+            {session.title ?? `${harnessLabel(session.harness)}, live`}
+          </p>
+          <p className="truncate text-[10.5px] text-faint">
+            {harnessLabel(session.harness)} · live · {session.cwd}
+          </p>
         </div>
-
-        <Blocks />
-        <Permission />
-        <Composer />
+        <ModePicker />
+        <button
+          type="button"
+          aria-label="Close"
+          onClick={() => acp.close()}
+          className="pressable shrink-0 rounded p-1 text-faint hover:text-foreground"
+        >
+          <XIcon className="size-3.5" />
+        </button>
       </div>
+
+      <Blocks />
+      <Permission />
     </div>
   )
 }
@@ -271,80 +264,3 @@ function Permission() {
   )
 }
 
-function Composer() {
-  const session = useAcp((state) => state.session)
-  const queued = useAcp((state) => state.queued)
-  const [draft, setDraft] = useState("")
-  if (!session) return null
-  const running = session.status === "running"
-
-  const send = () => {
-    const text = draft.trim()
-    if (!text) return
-    setDraft("")
-    void acp.send(text)
-  }
-
-  return (
-    <div className="shrink-0 border-t border-hairline px-3 py-2.5">
-      {queued ? (
-        <p className="flex items-center gap-1.5 pb-1.5 text-[11px] text-faint">
-          <span className="min-w-0 truncate">
-            Queued: <span className="text-muted-foreground">{queued}</span>
-          </span>
-          <button
-            type="button"
-            onClick={() => acp.unqueue()}
-            className="shrink-0 text-faint underline-offset-2 hover:text-foreground hover:underline"
-          >
-            discard
-          </button>
-        </p>
-      ) : null}
-      <div className="flex items-end gap-2">
-        <textarea
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault()
-              send()
-            }
-          }}
-          rows={1}
-          placeholder={running ? "Working — Enter queues this for the next turn" : "Message the agent"}
-          className="max-h-32 min-h-8 w-full flex-1 resize-none rounded-md bg-surface px-2.5 py-1.5 text-[12.5px] leading-relaxed text-foreground placeholder:text-faint focus:ring-1 focus:ring-hairline focus:outline-none"
-        />
-        {running ? (
-          <>
-            <button
-              type="button"
-              onClick={send}
-              disabled={!draft.trim()}
-              className="pressable flex h-8 shrink-0 items-center rounded-md border border-hairline px-2.5 text-[11.5px] text-muted-foreground hover:text-foreground disabled:opacity-40"
-            >
-              Queue
-            </button>
-            <button
-              type="button"
-              onClick={() => acp.cancel()}
-              className="pressable flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-hairline px-2.5 text-[11.5px] text-muted-foreground hover:text-foreground"
-            >
-              <SquareIcon className="size-3" />
-              Stop
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            onClick={send}
-            disabled={!draft.trim()}
-            className="pressable flex h-8 shrink-0 items-center rounded-md border border-hairline px-2.5 text-[11.5px] text-muted-foreground hover:text-foreground disabled:opacity-40"
-          >
-            Send
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}

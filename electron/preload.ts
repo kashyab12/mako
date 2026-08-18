@@ -57,7 +57,7 @@ const api = {
     harness: string,
     prompt: string,
     options?: { model?: string; effort?: string; fast?: boolean }
-  ) => invoke<{ run: ThreadRunState; cwd: string }>("pi:harness-start", harness, prompt, options),
+  ) => invoke<{ run: ThreadRunState | null; cwd: string }>("pi:harness-start", harness, prompt, options),
   harnessTuning: (harness: string) =>
     invoke<{ models: string[]; efforts: string[]; fast: boolean }>("pi:harness-tuning", harness),
   resumeThread: (path: string, prompt: string) => invoke<ThreadRunState>("pi:thread-resume", path, prompt),

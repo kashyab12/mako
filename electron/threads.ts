@@ -232,6 +232,14 @@ export function remoteHarnesses(): string[] {
   return devinSender?.configured ? ["devin"] : []
 }
 
+/** A new Devin cloud session from a prompt; polling surfaces it shortly. */
+export async function startDevin(prompt: string): Promise<{ sessionId: string; path: string }> {
+  if (!devinSender?.configured) {
+    throw new Error("Add a Devin service key in Settings → Agents first")
+  }
+  return devinSender.createSession(prompt)
+}
+
 export function stopThreads(): void {
   catalog?.stop()
   catalog = null

@@ -133,6 +133,24 @@ export class DevinRemote {
     }
   }
 
+  /**
+   * A new cloud session from a prompt — Devin's native "start work". Uses
+   * the first account unless one is named. Returns the ref path the catalog
+   * will list it under, so the caller can open it the moment polling sees it.
+   */
+  async createSession(prompt: string, accountName?: string): Promise<{ sessionId: string; path: string }> {
+    const account = accountName
+      ? this.accounts.find((entry) => entry.name === accountName)
+      : this.accounts[0]
+    if (!account) throw new Error("No Devin account is configured")
+    const body = (await this.request(account, "/v1/sessions", {
+      method: "POST",
+      body: JSON.stringify({ prompt }),
+    })) as { session_id?: string }
+    if (!body.session_id) throw new Error("Devin did not return a session id")
+    return { sessionId: body.session_id, path: `devin://${account.name}/${body.session_id}` }
+  }
+
   /** Devin's native resume: the message joins the running cloud session. */
   async send(path: string, message: string): Promise<void> {
     const located = this.locate(path)

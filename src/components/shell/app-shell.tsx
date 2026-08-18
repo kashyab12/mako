@@ -5,6 +5,7 @@ import { CommandPalette } from "@/components/palette/command-palette"
 import { Guide } from "@/components/onboarding/guide"
 import { ThreadViewer } from "@/components/viewer/thread-viewer"
 import { useThreads } from "@/state/threads"
+import { useAcp } from "@/state/acp"
 import { AcpPanel } from "@/components/viewer/acp-panel"
 import { ConversionOverlay } from "@/components/viewer/conversion-overlay"
 import { SettingsView } from "@/components/settings/settings-view"
@@ -197,7 +198,6 @@ export function AppShell() {
       </div>
       <CommandPalette />
       <Guide />
-      <AcpPanel />
       <ConversionOverlay />
     </TooltipProvider>
   )
@@ -211,5 +211,7 @@ export function AppShell() {
  */
 function ForeignOrNative() {
   const viewing = useThreads((state) => Boolean(state.viewing) || state.viewingBusy)
+  const live = useAcp((state) => Boolean(state.session) || state.starting)
+  if (live) return <AcpPanel />
   return viewing ? <ThreadViewer /> : <Transcript />
 }

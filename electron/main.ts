@@ -30,7 +30,7 @@ import {
 } from "./devserver.js"
 import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunChecks, type CreatePullOptions } from "./github.js"
 import { HostPool } from "./pool.js"
-import { daemonStatus, devinAccountsMasked, emitThreadAs, emitThreadAsClaude, emitThreadAsPi, followThread, threadsReady, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, saveDevinAccounts, sendRemote, stopThreads, unfollowThread } from "./threads.js"
+import { daemonStatus, devinAccountsMasked, startDevin, emitThreadAs, emitThreadAsClaude, emitThreadAsPi, followThread, threadsReady, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, saveDevinAccounts, sendRemote, stopThreads, unfollowThread } from "./threads.js"
 import { abortNative, bindDrivers, freshHarnesses, harnessAvailability, HARNESS_TUNING, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
 import { bindLineageDirect, chainOf, expectLineage } from "./lineage.js"
 import { accountUsage, captureAccount, listAccounts, removeAccount, selectAccount } from "./accounts.js"
@@ -469,6 +469,12 @@ function bindIpc() {
     ) => {
       const live = await ready()
       const cwd = live.active.workspace
+      if (harness === "devin") {
+        // Devin works in its own cloud, not this folder; polling lists the
+        // session moments after it exists.
+        await startDevin(prompt)
+        return { run: null, cwd: "" }
+      }
       return { run: await startFresh(harness, cwd, prompt, options), cwd }
     }
   )

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { ModelPicker } from "@/components/composer/model-picker"
-import { HarnessPicker } from "@/components/composer/harness-picker"
-import { ForeignTuning } from "@/components/composer/foreign-tuning"
+import { AgentPicker } from "@/components/composer/agent-picker"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { EffortPicker } from "@/components/composer/effort-picker"
 import { MentionMenu, type MentionKind } from "@/components/composer/mention-menu"
@@ -14,6 +13,7 @@ import { formatChord } from "@/extend/commands"
 import { mentionAt, replaceMention, type ActiveMention } from "@/lib/mentions"
 import { actions, shallowEqual, useSession } from "@/state/session"
 import { threads, threadsStore, useThreads } from "@/state/threads"
+import { acp, acpStore, useAcp } from "@/state/acp"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import {
@@ -161,14 +161,18 @@ export function Composer() {
       const text = draft.trim()
       if (!text && attachments.items.length === 0) return
 
-      // One composer, routed. An open foreign conversation gets the reply
-      // through its own harness; a foreign harness chosen for a new
-      // conversation starts one headlessly; Pi keeps the native path with
-      // steering and follow-ups. Attachments ride as staged file paths for
-      // foreign agents — every harness can read its own disk.
+      // One composer, routed. A live agent gets the message directly (it
+      // queues its own mid-turn sends); an open foreign conversation gets
+      // the reply through its own harness; a foreign harness chosen for a
+      // new conversation starts one — live over ACP where the harness
+      // speaks it, otherwise running in the workspace with its transcript
+      // streaming in. Pi keeps the native path with steering and
+      // follow-ups. Attachments ride as staged file paths — every agent can
+      // read its own disk.
+      const liveSession = acpStore.get().session
       const viewingRef = threadsStore.get().viewing?.ref
       const harness = threadsStore.get().composerHarness
-      if ((viewingRef || harness !== "pi") && !mode) {
+      if ((liveSession || viewingRef || harness !== "pi") && !mode) {
         const paths = attachments.items
           .map((item) => item.stagedPath)
           .filter((path): path is string => Boolean(path))
@@ -181,9 +185,17 @@ export function Composer() {
         const detached = attachments.detach()
         update("")
         setMention(null)
-        const ok = viewingRef
-          ? await threads.reply(viewingRef, full)
-          : await threads.startNew(harness, full)
+        let ok: boolean
+        if (liveSession) {
+          await acp.send(full)
+          ok = true
+        } else if (viewingRef) {
+          ok = await threads.reply(viewingRef, full)
+        } else if (harness === "claude" || harness === "cursor") {
+          ok = await acp.startFresh(harness, meta?.cwd ?? "", full)
+        } else {
+          ok = await threads.startNew(harness, full)
+        }
         if (ok) attachments.discard(detached)
         else {
           update(previousDraft)
@@ -260,15 +272,21 @@ export function Composer() {
   }
 
   const busy = status.streaming || status.compacting
+  const liveHarness = useAcp((state) => state.session?.harness ?? null)
+  const liveRunning = useAcp((state) => state.session?.status === "running")
   const routedHarness = useThreads((state) => state.viewing?.ref.harness ?? null)
   const newHarness = useThreads((state) => state.composerHarness)
-  const placeholder = routedHarness
-    ? `Reply — ${HARNESS_TITLES[routedHarness] ?? routedHarness} answers`
-    : newHarness !== "pi"
-      ? `Ask ${HARNESS_TITLES[newHarness] ?? newHarness} for a change`
-      : status.streaming
-        ? "Steer the current turn…"
-        : "Ask for a change"
+  const placeholder = liveHarness
+    ? liveRunning
+      ? `${HARNESS_TITLES[liveHarness] ?? liveHarness} is working — Enter queues your message`
+      : `Reply — ${HARNESS_TITLES[liveHarness] ?? liveHarness} answers live`
+    : routedHarness
+      ? `Reply — ${HARNESS_TITLES[routedHarness] ?? routedHarness} answers`
+      : newHarness !== "pi"
+        ? `Ask ${HARNESS_TITLES[newHarness] ?? newHarness} for a change`
+        : status.streaming
+          ? "Steer the current turn…"
+          : "Ask for a change"
 
   return (
     <div className="shrink-0 px-6 pt-1 pb-4">
@@ -529,6 +547,28 @@ function ComposerRouting() {
   const viewing = useThreads((state) => state.viewing?.ref)
   const run = useThreads((state) => state.run)
   const harness = useThreads((state) => state.composerHarness)
+  const live = useAcp((state) => state.session)
+  const queued = useAcp((state) => state.queued)
+
+  if (live) {
+    return (
+      <span className="flex h-7 items-center gap-1.5 rounded-md bg-raised px-2 text-[11.5px] text-foreground/85">
+        <HarnessIcon harness={live.harness} className="size-3.5" />
+        {HARNESS_TITLES[live.harness] ?? live.harness}
+        <span className="text-[10px] text-emerald-400/80">live</span>
+        {live.status === "running" ? (
+          <button
+            type="button"
+            onClick={() => acp.cancel()}
+            className="pressable ml-1 rounded px-1 text-[10.5px] text-faint hover:text-foreground"
+          >
+            stop
+          </button>
+        ) : null}
+        {queued ? <span className="text-[10px] text-faint">1 queued</span> : null}
+      </span>
+    )
+  }
 
   if (viewing) {
     return (
@@ -550,15 +590,13 @@ function ComposerRouting() {
 
   return (
     <>
-      <HarnessPicker />
+      <AgentPicker />
       {harness === "pi" ? (
         <>
           <ModelPicker />
           <EffortPicker />
         </>
-      ) : (
-        <ForeignTuning harness={harness} />
-      )}
+      ) : null}
     </>
   )
 }

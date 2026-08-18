@@ -142,6 +142,28 @@ export const acp = {
     }
   },
 
+  /**
+   * A brand-new live conversation: the agent starts in the workspace and the
+   * first prompt goes the moment the session is ready. This is what makes
+   * Claude Code and Cursor feel native here — streaming, interruptible,
+   * asking before they act — because they are actually running, not being
+   * shelled out to.
+   */
+  async startFresh(harness: string, cwd: string, prompt: string) {
+    if (!hasBridge()) return false
+    acpStore.set({ starting: true, blocks: [], permission: null })
+    try {
+      const session = await getPi().acpStart(harness, cwd, {})
+      acpStore.set({ session, starting: false })
+      await getPi().acpPrompt(session.id, prompt)
+      return true
+    } catch (error) {
+      acpStore.set({ starting: false })
+      toast.error(error instanceof Error ? error.message : String(error))
+      return false
+    }
+  },
+
   async send(text: string) {
     const { session } = acpStore.get()
     if (!session || !hasBridge()) return
