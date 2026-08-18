@@ -393,6 +393,10 @@ export function installMockBridge() {
     rerunChecks: async () => {},
     repoAvatar: async () => undefined,
     openUrl: async () => {},
+    usage: async () => ({
+      total: { cost: 36.63, input: 2_400_000, output: 180_000, cacheRead: 9_100_000, cacheWrite: 210_000, messages: 285 },
+      days: [], models: [], projects: [], sessions: 12, truncated: false,
+    }),
     automations: async () => [
       { id: "a1", name: "Check the schema doc", prompt: "A migration changed. Check docs/schema.md still matches.", trigger: "files" as const, paths: ["migrations/*.sql"], enabled: false },
     ],

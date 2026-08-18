@@ -21,6 +21,7 @@ import type {
   TabSnapshot,
   ThinkingLevel,
   UpdateState,
+  UsageSummary,
   WorkspaceFile,
 } from "./shared.js"
 
@@ -104,6 +105,7 @@ const api = {
   rerunChecks: () => invoke<void>("pi:rerun-checks"),
   repoAvatar: (repo: string) => invoke<string | undefined>("pi:repo-avatar", repo),
 
+  usage: () => invoke<UsageSummary>("pi:usage"),
   automations: () => invoke<Automation[]>("pi:automations"),
   saveAutomations: (next: Automation[]) => invoke<Automation[]>("pi:save-automations", next),
   setAutomationEnabled: (id: string, enabled: boolean) =>

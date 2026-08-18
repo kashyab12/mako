@@ -282,6 +282,34 @@ export interface UpdateState {
   error?: string
 }
 
+/** Tokens and money, for one slice of history. */
+export interface UsageTotals {
+  cost: number
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  messages: number
+}
+
+/**
+ * Where the money went.
+ *
+ * Spend, not billing: read from the session files, which already hold every
+ * priced message. Billing means a payment method and an account model — a
+ * server and a product decision, not something to imply with a currency
+ * symbol.
+ */
+export interface UsageSummary {
+  total: UsageTotals
+  days: Array<{ date: string } & UsageTotals>
+  models: Array<{ model: string } & UsageTotals>
+  projects: Array<{ cwd: string } & UsageTotals>
+  sessions: number
+  /** True when older sessions were left unread to keep the scan quick. */
+  truncated: boolean
+}
+
 /**
  * A saved prompt, with an optional trigger.
  *

@@ -6,6 +6,8 @@ import { breadcrumb, clearCrashes, crashesDir, installCrashReporting, listCrashe
 import { installAutomation } from "./automation.js"
 import { check, installNow, installUpdates, updateState } from "./updates.js"
 import { listPorts } from "./ports.js"
+import { usageSummary } from "./usage.js"
+import { getAgentDir } from "@earendil-works/pi-coding-agent"
 import {
   automationList,
   bindAutomations,
@@ -338,6 +340,8 @@ function bindIpc() {
   )
   handle("pi:rerun-checks", () => withHost((h) => rerunChecks(h.workspace)))
   handle("pi:repo-avatar", (_e, repo: string) => withHost((h) => repoAvatar(h.workspace, repo)))
+
+  handle("pi:usage", () => usageSummary(join(getAgentDir(), "sessions")))
 
   handle("pi:automations", () => automationList())
   handle("pi:save-automations", (_e, next: Parameters<typeof saveAutomations>[1]) =>

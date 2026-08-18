@@ -82,6 +82,14 @@ do quietly — and stopping it kills the whole process group, so nothing is left
 holding a port. The server's own output is one click away, and opens itself
 when the server dies.
 
+## Usage
+
+Settings → Usage adds up what every model has cost you, by day, by model and
+by project, read from your own session files. No account and no network: the
+numbers are already on disk. It is spend, not billing — a payment method and an
+account model are a server and a product decision, not something to imply with
+a currency symbol.
+
 ## Automations
 
 Saved prompts that can run on their own, defined in `.mako/automations.json`

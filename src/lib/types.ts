@@ -36,6 +36,8 @@ export type {
   TabSnapshot,
   ThinkingLevel,
   UpdateState,
+  UsageSummary,
+  UsageTotals,
   TokenStats,
   ToolSummary,
   TreeNode,
