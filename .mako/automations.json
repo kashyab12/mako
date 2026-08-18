@@ -1,0 +1,18 @@
+{
+  "automations": [
+    {
+      "id": "typecheck-on-source-change",
+      "name": "Typecheck after source changes",
+      "prompt": "Run `npm run typecheck` and, if it fails, fix only what it reports. Do not change anything else.",
+      "trigger": "files",
+      "paths": ["src/**/*.ts", "src/**/*.tsx", "electron/**/*.ts"]
+    },
+    {
+      "id": "changelog-on-commit",
+      "name": "Summarise the last commit",
+      "prompt": "Summarise the most recent commit in two sentences: what changed, and why it mattered.",
+      "trigger": "commit",
+      "paths": []
+    }
+  ]
+}

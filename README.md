@@ -82,6 +82,22 @@ do quietly — and stopping it kills the whole process group, so nothing is left
 holding a port. The server's own output is one click away, and opens itself
 when the server dies.
 
+## Automations
+
+Saved prompts that can run on their own, defined in `.mako/automations.json`
+so they can be committed and shared. Three triggers: **manual**, **on file
+change** (globs), and **on commit**. A run opens a background tab — it never
+takes the window, because it fired when a file changed, not when you asked.
+
+Every automation arrives switched off, and enabling is local and never written
+back: cloning a repository must not start running an agent. A file trigger
+waits a minute between runs, so an agent editing the files it watches cannot
+loop.
+
+There is deliberately no schedule trigger. An app that is closed cannot fire
+one, and an app that is open quietly running jobs against your repository is a
+surprise nobody asked for. That wants a daemon, which is a different decision.
+
 ## Ports
 
 The preview lists everything listening on the machine, with the ones that look

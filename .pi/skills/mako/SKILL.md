@@ -82,6 +82,7 @@ electron/          main process — needs a restart
   pool.ts          the open tabs: several `AgentHost`s at once, one in front.
                    Commands address the foreground tab; the rest keep running.
   automation.ts    a loopback eval endpoint for checking the UI, dev + opt-in
+  automations.ts   saved prompts and their triggers; off until switched on
   crash.ts         local-only crash reports, plus the IPC breadcrumb trail
   github.ts        pull requests and checks, through the `gh` CLI
   devserver.ts     the project's dev server: spawn, sniff its URL, kill its group

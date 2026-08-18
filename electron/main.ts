@@ -7,6 +7,17 @@ import { installAutomation } from "./automation.js"
 import { check, installNow, installUpdates, updateState } from "./updates.js"
 import { listPorts } from "./ports.js"
 import {
+  automationList,
+  bindAutomations,
+  fireAutomation,
+  loadAutomations,
+  noticeHead,
+  saveAutomations,
+  setEnabled,
+  stopWatching,
+  watchWorkspace,
+} from "./automations.js"
+import {
   attachDevServer,
   bindDevServer,
   devScripts,
@@ -50,6 +61,10 @@ const pool = new HostPool(emit)
 let starting: Promise<unknown> | null = null
 
 function emit(event: HostEvent) {
+  // Git status is recomputed after every turn and on focus, which is exactly
+  // when HEAD could have moved — so the commit trigger rides on it rather than
+  // running a watcher of its own.
+  if (event.type === "git") noticeHead(event.git.head)
   if (window?.isDestroyed()) return
   window?.webContents.send("pi:event", event)
 }
@@ -324,6 +339,14 @@ function bindIpc() {
   handle("pi:rerun-checks", () => withHost((h) => rerunChecks(h.workspace)))
   handle("pi:repo-avatar", (_e, repo: string) => withHost((h) => repoAvatar(h.workspace, repo)))
 
+  handle("pi:automations", () => automationList())
+  handle("pi:save-automations", (_e, next: Parameters<typeof saveAutomations>[1]) =>
+    withHost((h) => saveAutomations(h.workspace, next))
+  )
+  handle("pi:automation-enabled", (_e, id: string, enabled: boolean) => setEnabled(id, enabled))
+  handle("pi:run-automation", (_e, id: string) => fireAutomation(id, "manual"))
+  handle("pi:reload-automations", () => withHost((h) => loadAutomations(h.workspace)))
+
   handle("pi:ports", () => listPorts())
   handle("pi:dev-scripts", () => withHost((h) => devScripts(h.workspace)))
   handle("pi:dev-state", () => devServerState())
@@ -370,6 +393,11 @@ app.whenReady().then(async () => {
   await createWindow()
   installUpdates(emit)
   bindDevServer(emit)
+  bindAutomations(emit, async (cwd, prompt) => {
+    const live = await ready()
+    await live.runInBackground(cwd, prompt)
+  })
+  void ready().then((live) => watchWorkspace(live.active.workspace))
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow()
   })
@@ -380,6 +408,7 @@ app.on("window-all-closed", () => {
 })
 
 app.on("before-quit", () => {
+  stopWatching()
   // The dev server is in its own process group and will not die with us.
   void stopDevServer()
   void pool.dispose()

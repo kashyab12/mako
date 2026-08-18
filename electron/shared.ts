@@ -182,6 +182,8 @@ export interface GitStatus {
   cwd: string
   root?: string
   branch?: string
+  /** HEAD's commit, so a commit can be noticed without a watcher of its own. */
+  head?: string
   upstream?: string
   ahead: number
   behind: number
@@ -232,6 +234,8 @@ export type HostEventBody =
   | { type: "update"; update: UpdateState }
   /** Dev server progress. Also window-wide: there is one project. */
   | { type: "devserver"; devserver: DevServerState }
+  | { type: "automations"; automations: Automation[] }
+  | { type: "automation-run"; run: AutomationRun }
 
 /**
  * Every event says which tab it came from.
@@ -276,6 +280,30 @@ export interface UpdateState {
   progress?: number
   notes?: string
   error?: string
+}
+
+/**
+ * A saved prompt, with an optional trigger.
+ *
+ * `enabled` is local and never written to the shared file: an automation
+ * arrives from a checkout with whatever its author set, and honouring that
+ * would mean cloning a repository could start running an agent.
+ */
+export interface Automation {
+  id: string
+  name: string
+  prompt: string
+  trigger: "manual" | "files" | "commit"
+  /** Globs, for the `files` trigger. `**` crosses directories, `*` does not. */
+  paths: string[]
+  enabled: boolean
+}
+
+export interface AutomationRun {
+  id: string
+  name: string
+  reason: "manual" | "files" | "commit"
+  at: number
 }
 
 /** A process listening on a TCP port, as far as `lsof` can see. */

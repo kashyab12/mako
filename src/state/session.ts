@@ -26,7 +26,9 @@ import {
 } from "@/state/tabs"
 import { viewer, viewerStore } from "@/state/viewer"
 import { applyUpdate, updates } from "@/state/updates"
+import { automations } from "@/state/automations"
 import { applyDevServer } from "@/state/devserver"
+import { applyAutomations, noteAutomationRun } from "@/state/automations"
 import { toast } from "sonner"
 
 export type Phase = "booting" | "ready" | "detached"
@@ -185,6 +187,20 @@ function applyToActive(event: HostEvent) {
     case "devserver":
       applyDevServer(event.devserver)
       break
+    case "automations":
+      applyAutomations(event.automations)
+      break
+    case "automation-run":
+      noteAutomationRun(event.run)
+      toast(`${event.run.name} started`, {
+        description:
+          event.run.reason === "files"
+            ? "a watched file changed"
+            : event.run.reason === "commit"
+              ? "you committed"
+              : "run by hand",
+      })
+      break
     case "notice":
       if (event.level === "error") toast.error(event.message)
       else if (event.level === "success") toast.success(event.message)
@@ -265,6 +281,7 @@ export const actions = {
       })
       void actions.refreshSessions(active.session.meta.cwd)
       void updates.load()
+      void automations.load()
     } catch (error) {
       store.set({ phase: "detached", fault: error instanceof Error ? error.message : String(error) })
     }

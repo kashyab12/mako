@@ -123,6 +123,20 @@ export class HostPool {
     }
   }
 
+  /**
+   * Start a conversation in the background and give it something to do.
+   *
+   * The tab is *not* brought forward. An automation fires because a file
+   * changed, not because you asked for it this second — taking over the window
+   * mid-sentence would make the feature something people switch off. It runs
+   * behind, the strip shows it working, and it earns a dot when it finishes.
+   */
+  async runInBackground(cwd: string, prompt: string): Promise<string> {
+    const host = await this.spawn(cwd, { activate: false })
+    await host.prompt(prompt)
+    return host.id
+  }
+
   activate(id: string): boolean {
     const index = this.hosts.findIndex((host) => host.id === id)
     if (index === -1 || index === this.activeIndex) return false

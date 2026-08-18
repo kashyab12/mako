@@ -868,11 +868,12 @@ export class AgentHost {
     this.gitRoot = root
     if (!root) return { cwd: this.cwd, ahead: 0, behind: 0, files: [] }
 
-    const [branchOut, statusOut, numstatOut, cachedOut] = await Promise.all([
+    const [branchOut, statusOut, numstatOut, cachedOut, headOut] = await Promise.all([
       git(root, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => ""),
       git(root, ["status", "--porcelain=v1", "-z", "-b", "--untracked-files=all"]),
       git(root, ["diff", "--numstat", "-z", "HEAD"]).catch(() => ""),
       git(root, ["diff", "--numstat", "-z", "--cached"]).catch(() => ""),
+      git(root, ["rev-parse", "HEAD"]).catch(() => ""),
     ])
 
     // numstat -z emits "adds\tdels\tpath\0", with renames as three NUL fields.
@@ -921,6 +922,7 @@ export class AgentHost {
       cwd: this.cwd,
       root,
       branch: branchOut.trim() || undefined,
+      head: headOut.trim() || undefined,
       upstream: /\.\.\.(\S+)/.exec(header)?.[1],
       ahead: Number(/ahead (\d+)/.exec(header)?.[1] ?? 0),
       behind: Number(/behind (\d+)/.exec(header)?.[1] ?? 0),

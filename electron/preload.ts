@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron"
 import type {
+  Automation,
   BootPayload,
   Capabilities,
   DevServerState,
@@ -102,6 +103,13 @@ const api = {
     invoke<PullRequest | null>("pi:create-pull", options),
   rerunChecks: () => invoke<void>("pi:rerun-checks"),
   repoAvatar: (repo: string) => invoke<string | undefined>("pi:repo-avatar", repo),
+
+  automations: () => invoke<Automation[]>("pi:automations"),
+  saveAutomations: (next: Automation[]) => invoke<Automation[]>("pi:save-automations", next),
+  setAutomationEnabled: (id: string, enabled: boolean) =>
+    invoke<Automation[]>("pi:automation-enabled", id, enabled),
+  runAutomation: (id: string) => invoke<void>("pi:run-automation", id),
+  reloadAutomations: () => invoke<Automation[]>("pi:reload-automations"),
 
   ports: () => invoke<ListeningPort[]>("pi:ports"),
   devScripts: () => invoke<string[]>("pi:dev-scripts"),

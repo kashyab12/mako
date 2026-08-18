@@ -1,4 +1,6 @@
 export type {
+  Automation,
+  AutomationRun,
   Block,
   BlockType,
   BootPayload,
