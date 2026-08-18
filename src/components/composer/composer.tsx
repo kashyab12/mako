@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { ModelPicker } from "@/components/composer/model-picker"
 import { HarnessPicker } from "@/components/composer/harness-picker"
+import { ForeignTuning } from "@/components/composer/foreign-tuning"
+import { HarnessIcon } from "@/components/ui/provider-icon"
 import { EffortPicker } from "@/components/composer/effort-picker"
 import { MentionMenu, type MentionKind } from "@/components/composer/mention-menu"
 import { AttachmentStrip } from "@/components/composer/attachments"
@@ -159,23 +161,34 @@ export function Composer() {
       const text = draft.trim()
       if (!text && attachments.items.length === 0) return
 
-      // A foreign harness answers new conversations headlessly in this
-      // workspace; the conversation opens here when its first write lands.
-      // Steering and follow-ups belong to the native agent — a foreign
-      // one-shot has no mid-turn to steer.
+      // One composer, routed. An open foreign conversation gets the reply
+      // through its own harness; a foreign harness chosen for a new
+      // conversation starts one headlessly; Pi keeps the native path with
+      // steering and follow-ups. Attachments ride as staged file paths for
+      // foreign agents — every harness can read its own disk.
+      const viewingRef = threadsStore.get().viewing?.ref
       const harness = threadsStore.get().composerHarness
-      if (harness !== "pi" && !mode) {
-        if (!text) {
-          toast.error("Foreign agents need words", {
-            description: "Attachments only work with the native agent so far.",
-          })
-          return
-        }
+      if ((viewingRef || harness !== "pi") && !mode) {
+        const paths = attachments.items
+          .map((item) => item.stagedPath)
+          .filter((path): path is string => Boolean(path))
+        const full =
+          paths.length > 0
+            ? [text, "", "Attached files (read them from disk):", ...paths.map((path) => "- " + path)].join("\n")
+            : text
+        if (!full.trim()) return
         const previousDraft = draft
+        const detached = attachments.detach()
         update("")
         setMention(null)
-        const ok = await threads.startNew(harness, text)
-        if (!ok) update(previousDraft)
+        const ok = viewingRef
+          ? await threads.reply(viewingRef, full)
+          : await threads.startNew(harness, full)
+        if (ok) attachments.discard(detached)
+        else {
+          update(previousDraft)
+          attachments.reattach(detached)
+        }
         return
       }
 
@@ -247,6 +260,15 @@ export function Composer() {
   }
 
   const busy = status.streaming || status.compacting
+  const routedHarness = useThreads((state) => state.viewing?.ref.harness ?? null)
+  const newHarness = useThreads((state) => state.composerHarness)
+  const placeholder = routedHarness
+    ? `Reply — ${HARNESS_TITLES[routedHarness] ?? routedHarness} answers`
+    : newHarness !== "pi"
+      ? `Ask ${HARNESS_TITLES[newHarness] ?? newHarness} for a change`
+      : status.streaming
+        ? "Steer the current turn…"
+        : "Ask for a change"
 
   return (
     <div className="shrink-0 px-6 pt-1 pb-4">
@@ -345,9 +367,7 @@ export function Composer() {
                 event.preventDefault()
                 void attach(files)
               }}
-              placeholder={
-                status.streaming ? "Steer the current turn…" : "Ask for a change"
-              }
+              placeholder={placeholder}
               spellCheck={false}
               className={cn(
                 // No max-height and no scrolling of its own — the wrapper owns
@@ -362,11 +382,7 @@ export function Composer() {
           </div>
 
           <div className="mt-0.5 flex items-center gap-1 border-t border-hairline/60 px-1.5 py-1.5">
-            <HarnessPicker />
-            <PiOnly>
-              <ModelPicker />
-              <EffortPicker />
-            </PiOnly>
+            <ComposerRouting />
             <IconAction
               label="Reference a file"
               keys={["@"]}
@@ -489,9 +505,60 @@ function Banner({ text }: { text: string }) {
 }
 
 
-/** Pi-specific controls hide when another harness will answer. */
-function PiOnly({ children }: { children: React.ReactNode }) {
+
+
+
+const HARNESS_TITLES: Record<string, string> = {
+  pi: "Pi",
+  claude: "Claude Code",
+  codex: "Codex",
+  cursor: "Cursor",
+  grok: "Grok",
+  devin: "Devin",
+}
+
+/**
+ * The left half of the toolbar, routed like the box above it.
+ *
+ * An open foreign conversation locks the composer to its harness — the mark
+ * and name say so, and the run's state rides beside them. Otherwise the
+ * harness picker chooses who answers next, with Pi keeping its full model
+ * and effort pickers and foreign harnesses getting their own tuning.
+ */
+function ComposerRouting() {
+  const viewing = useThreads((state) => state.viewing?.ref)
+  const run = useThreads((state) => state.run)
   const harness = useThreads((state) => state.composerHarness)
-  if (harness !== "pi") return null
-  return <>{children}</>
+
+  if (viewing) {
+    return (
+      <span className="flex h-7 items-center gap-1.5 rounded-md bg-raised px-2 text-[11.5px] text-foreground/85">
+        <HarnessIcon harness={viewing.harness} className="size-3.5" />
+        {HARNESS_TITLES[viewing.harness] ?? viewing.harness}
+        {run?.status === "running" ? (
+          <button
+            type="button"
+            onClick={() => void threads.abortReply(viewing)}
+            className="pressable ml-1 rounded px-1 text-[10.5px] text-faint hover:text-foreground"
+          >
+            working — stop
+          </button>
+        ) : null}
+      </span>
+    )
+  }
+
+  return (
+    <>
+      <HarnessPicker />
+      {harness === "pi" ? (
+        <>
+          <ModelPicker />
+          <EffortPicker />
+        </>
+      ) : (
+        <ForeignTuning harness={harness} />
+      )}
+    </>
+  )
 }

@@ -31,7 +31,7 @@ import {
 import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunChecks, type CreatePullOptions } from "./github.js"
 import { HostPool } from "./pool.js"
 import { daemonStatus, devinAccountsMasked, emitThreadAs, emitThreadAsClaude, emitThreadAsPi, followThread, threadsReady, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, saveDevinAccounts, sendRemote, stopThreads, unfollowThread } from "./threads.js"
-import { abortNative, bindDrivers, freshHarnesses, harnessAvailability, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
+import { abortNative, bindDrivers, freshHarnesses, harnessAvailability, HARNESS_TUNING, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
 import { bindLineageDirect, chainOf, expectLineage } from "./lineage.js"
 import { accountUsage, captureAccount, listAccounts, removeAccount, selectAccount } from "./accounts.js"
 import { daemonLoginEnabled, setDaemonLogin } from "./daemon-login.js"
@@ -459,10 +459,36 @@ function bindIpc() {
   handle("pi:acp-close", (_e, id: string) => acpClose(id))
 
   /** A new conversation on another harness, from the main composer. */
-  handle("pi:harness-start", async (_e, harness: string, prompt: string, model?: string) => {
-    const live = await ready()
-    const cwd = live.active.workspace
-    return { run: await startFresh(harness, cwd, prompt, model), cwd }
+  handle(
+    "pi:harness-start",
+    async (
+      _e,
+      harness: string,
+      prompt: string,
+      options?: { model?: string; effort?: string; fast?: boolean }
+    ) => {
+      const live = await ready()
+      const cwd = live.active.workspace
+      return { run: await startFresh(harness, cwd, prompt, options), cwd }
+    }
+  )
+
+  /**
+   * What the composer can offer for a harness: models this machine has
+   * actually used (from the catalog, most recent first) ahead of a curated
+   * floor, plus the CLI's real tuning surface.
+   */
+  handle("pi:harness-tuning", (_e, harness: string) => {
+    const tuning = HARNESS_TUNING[harness]
+    if (!tuning) return { models: [], efforts: [], fast: false }
+    const seen: string[] = []
+    for (const ref of listThreads({ harness })) {
+      const model = ref.model
+      if (model && !model.includes("·") && !seen.includes(model)) seen.push(model)
+      if (seen.length >= 8) break
+    }
+    const models = [...seen, ...tuning.curatedModels.filter((model) => !seen.includes(model))]
+    return { models: models.slice(0, 12), efforts: tuning.efforts, fast: tuning.fast }
   })
 
   handle("pi:thread-run", (_e, path: string) => threadRun(path))

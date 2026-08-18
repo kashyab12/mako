@@ -53,8 +53,13 @@ const api = {
       { kind: "emitted"; path: string } | { kind: "spawned"; run: ThreadRunState }
     >("pi:thread-continue-with", path, harness, instruction),
   threadRun: (path: string) => invoke<ThreadRunState | null>("pi:thread-run", path),
-  startHarness: (harness: string, prompt: string, model?: string) =>
-    invoke<{ run: ThreadRunState; cwd: string }>("pi:harness-start", harness, prompt, model),
+  startHarness: (
+    harness: string,
+    prompt: string,
+    options?: { model?: string; effort?: string; fast?: boolean }
+  ) => invoke<{ run: ThreadRunState; cwd: string }>("pi:harness-start", harness, prompt, options),
+  harnessTuning: (harness: string) =>
+    invoke<{ models: string[]; efforts: string[]; fast: boolean }>("pi:harness-tuning", harness),
   resumeThread: (path: string, prompt: string) => invoke<ThreadRunState>("pi:thread-resume", path, prompt),
   abortThreadRun: (path: string) => invoke<void>("pi:thread-abort-run", path),
 

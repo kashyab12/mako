@@ -4,6 +4,7 @@ import { Composer } from "@/components/composer/composer"
 import { CommandPalette } from "@/components/palette/command-palette"
 import { Guide } from "@/components/onboarding/guide"
 import { ThreadViewer } from "@/components/viewer/thread-viewer"
+import { useThreads } from "@/state/threads"
 import { AcpPanel } from "@/components/viewer/acp-panel"
 import { ConversionOverlay } from "@/components/viewer/conversion-overlay"
 import { SettingsView } from "@/components/settings/settings-view"
@@ -123,12 +124,11 @@ export function AppShell() {
             ) : (
               <>
                 <TabStrip />
-                <Transcript />
+                <ForeignOrNative />
                 <Composer />
                 {/* Over the conversation column only. The rail stays reachable,
                     so you can walk the tree with a file already open. */}
                 <FileViewer />
-                <ThreadViewer />
                 <SearchView />
               </>
             )}
@@ -201,4 +201,15 @@ export function AppShell() {
       <ConversionOverlay />
     </TooltipProvider>
   )
+}
+
+
+/**
+ * The chat column's middle: the native transcript, or a foreign
+ * conversation in its place. The composer below is the same either way —
+ * one box, routed to whoever owns the open conversation.
+ */
+function ForeignOrNative() {
+  const viewing = useThreads((state) => Boolean(state.viewing) || state.viewingBusy)
+  return viewing ? <ThreadViewer /> : <Transcript />
 }

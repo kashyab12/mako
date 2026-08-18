@@ -45,6 +45,8 @@ interface ThreadsState {
   converting: { from: string; to: string; title?: string; done: boolean } | null
   /** The composer's chosen harness for new conversations. */
   composerHarness: string
+  /** Per-harness tuning chosen in the composer. */
+  composerTuning: Record<string, { model?: string; effort?: string; fast?: boolean }>
 }
 
 export const threadsStore = createStore<ThreadsState>({
@@ -60,6 +62,7 @@ export const threadsStore = createStore<ThreadsState>({
   running: {},
   converting: null,
   composerHarness: "pi",
+  composerTuning: {},
 })
 export const useThreads = createHook(threadsStore)
 
@@ -199,16 +202,18 @@ export const threads = {
    * reply streams back through the file tail — the same path a terminal run
    * takes — so nothing here waits on the process.
    */
-  async reply(ref: ThreadRef, prompt: string) {
-    if (!hasBridge()) return
+  async reply(ref: ThreadRef, prompt: string): Promise<boolean> {
+    if (!hasBridge()) return false
     try {
       const run = await getPi().resumeThread(ref.path, prompt)
       // Through the same reducer the host's events use, so the rail's
       // working dot lights immediately rather than on the first event.
       applyThreadRun(run)
       threadsStore.set({ run })
+      return true
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
+      return false
     }
   },
 
@@ -223,10 +228,11 @@ export const threads = {
    * appears, the conversation opens here and the reply bar carries the next
    * turn. Same chat column, different agent — which is the whole idea.
    */
-  async startNew(harness: string, prompt: string, model?: string) {
+  async startNew(harness: string, prompt: string) {
     if (!hasBridge()) return false
     try {
-      const { cwd } = await getPi().startHarness(harness, prompt, model)
+      const options = threadsStore.get().composerTuning[harness] ?? {}
+      const { cwd } = await getPi().startHarness(harness, prompt, options)
       pendingOpen = { harness, cwd, since: Date.now() }
       toast(`${harnessLabelOf(harness)} is on it`, {
         description: "The conversation opens here as soon as its first write lands.",

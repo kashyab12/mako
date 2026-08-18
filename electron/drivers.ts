@@ -69,8 +69,29 @@ const RESUME: Record<string, (nativeId: string, prompt: string) => ResumeCommand
  * message of a fresh session in the same working directory, and the watcher
  * surfaces that session in the rail the moment its store appears.
  */
-const FRESH: Record<string, (prompt: string, model?: string) => ResumeCommand> = {
-  codex: (prompt, model) => ({
+export interface FreshOptions {
+  model?: string
+  /** Reasoning effort, in the harness's own vocabulary. */
+  effort?: string
+  /** Cursor's fast mode; expressed as a bracket parameter on the model. */
+  fast?: boolean
+}
+
+/**
+ * Cursor takes tuning as bracket parameters on the model itself —
+ * `sonnet-4.5[effort=high,fast=true]` — so its options fold into one flag.
+ */
+function cursorModel(options: FreshOptions): string | undefined {
+  const params: string[] = []
+  if (options.effort) params.push(`effort=${options.effort}`)
+  if (options.fast !== undefined) params.push(`fast=${options.fast}`)
+  if (!options.model && params.length === 0) return undefined
+  const base = options.model ?? "auto"
+  return params.length > 0 ? `${base}[${params.join(",")}]` : base
+}
+
+const FRESH: Record<string, (prompt: string, options: FreshOptions) => ResumeCommand> = {
+  codex: (prompt, options) => ({
     command: "codex",
     args: [
       "exec",
@@ -78,21 +99,65 @@ const FRESH: Record<string, (prompt: string, model?: string) => ResumeCommand> =
       "--sandbox",
       "workspace-write",
       "--skip-git-repo-check",
-      ...(model ? ["-m", model] : []),
+      ...(options.model ? ["-m", options.model] : []),
+      ...(options.effort ? ["-c", `model_reasoning_effort="${options.effort}"`] : []),
     ],
   }),
-  claude: (prompt, model) => ({
+  claude: (prompt, options) => ({
     command: "claude",
-    args: ["-p", prompt, "--dangerously-skip-permissions", ...(model ? ["--model", model] : [])],
+    args: [
+      "-p",
+      prompt,
+      "--dangerously-skip-permissions",
+      ...(options.model ? ["--model", options.model] : []),
+      ...(options.effort ? ["--effort", options.effort] : []),
+    ],
   }),
-  cursor: (prompt, model) => ({
-    command: "cursor-agent",
-    args: ["-p", prompt, "--force", ...(model ? ["--model", model] : [])],
-  }),
-  grok: (prompt, model) => ({
+  cursor: (prompt, options) => {
+    const model = cursorModel(options)
+    return {
+      command: "cursor-agent",
+      args: ["-p", prompt, "--force", ...(model ? ["--model", model] : [])],
+    }
+  },
+  grok: (prompt, options) => ({
     command: "agent",
-    args: ["-p", prompt, "--always-approve", ...(model ? ["--model", model] : [])],
+    args: [
+      "-p",
+      prompt,
+      "--always-approve",
+      ...(options.model ? ["--model", options.model] : []),
+      ...(options.effort ? ["--reasoning-effort", options.effort] : []),
+    ],
   }),
+}
+
+/** What each harness's CLI actually accepts, for the composer to offer. */
+export const HARNESS_TUNING: Record<
+  string,
+  { efforts: string[]; fast: boolean; curatedModels: string[] }
+> = {
+  claude: {
+    // --effort low is the fast lever; max is the slow, thorough one.
+    efforts: ["low", "medium", "high", "xhigh", "max"],
+    fast: false,
+    curatedModels: ["opus", "sonnet", "haiku"],
+  },
+  codex: {
+    efforts: ["minimal", "low", "medium", "high", "xhigh"],
+    fast: false,
+    curatedModels: ["gpt-5.3-codex", "gpt-5.2-codex", "gpt-5.2"],
+  },
+  cursor: {
+    efforts: ["low", "medium", "high"],
+    fast: true,
+    curatedModels: ["auto", "gpt-5.2", "sonnet-4.5-thinking", "opus-4.5"],
+  },
+  grok: {
+    efforts: ["low", "medium", "high"],
+    fast: false,
+    curatedModels: ["grok-4.6", "grok-code"],
+  },
 }
 
 export function resumableHarnesses(): string[] {
@@ -173,11 +238,11 @@ export async function startFresh(
   harness: string,
   cwd: string | undefined,
   prompt: string,
-  model?: string
+  options: FreshOptions = {}
 ): Promise<ThreadRunState> {
   const make = FRESH[harness]
   if (!make) throw new Error(`A new ${harness} session cannot be started from here`)
-  return launch(`fresh:${harness}:${++freshCounter}`, harness, cwd, make(prompt, model))
+  return launch(`fresh:${harness}:${++freshCounter}`, harness, cwd, make(prompt, options))
 }
 
 async function launch(

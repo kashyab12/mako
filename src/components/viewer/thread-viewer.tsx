@@ -8,7 +8,6 @@ import { acp } from "@/state/acp"
 import { toExchanges } from "@/lib/exchanges"
 import { threadToMessages } from "@/lib/foreign-thread"
 import { formatRelative } from "@/lib/format"
-import { cn } from "@/lib/utils"
 import { ArrowRightIcon, ChevronDownIcon, Loader2Icon, RadioIcon, XIcon } from "lucide-react"
 
 /**
@@ -18,9 +17,9 @@ import { ArrowRightIcon, ChevronDownIcon, Loader2Icon, RadioIcon, XIcon } from "
  * popup — and renders through the same prompt cards, markdown prose, and
  * tool rows every native conversation uses, because a conversation is a
  * conversation and only the mark in the corner should say where it
- * happened. The reply bar at the bottom continues the *same* session
- * through its own harness; the header holds the ways it can move. X or
- * Escape gives the chat back.
+ * happened. The one composer below routes to this session's own harness
+ * while it is open; the header holds Live and the Move menu. X or Escape
+ * gives the native chat back.
  */
 
 export function ThreadViewer() {
@@ -42,7 +41,7 @@ export function ThreadViewer() {
 
   if (busy) {
     return (
-      <div className="absolute inset-0 z-30 flex items-center justify-center bg-background">
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-background">
         <Loader2Icon className="size-5 animate-spin text-faint" />
       </div>
     )
@@ -51,7 +50,7 @@ export function ThreadViewer() {
   const { ref } = thread
 
   return (
-    <div className="absolute inset-0 z-30 flex min-h-0 flex-col bg-background">
+    <div className="flex min-h-0 flex-1 flex-col bg-background">
       <div className="flex h-11 shrink-0 items-center gap-2.5 border-b border-hairline px-3.5">
         <span className="flex shrink-0 items-center -space-x-1">
           {(ref.lineage ?? []).map((origin, index) => (
@@ -72,25 +71,7 @@ export function ThreadViewer() {
           </p>
         </div>
         <LiveButton />
-        <div className="flex shrink-0 items-center overflow-hidden rounded-md bg-foreground">
-          <button
-            type="button"
-            disabled={continuing === ref.path}
-            onClick={() => void threads.continueHere(ref)}
-            className={cn(
-              "pressable flex h-7 items-center gap-1.5 px-2.5 text-[11.5px] font-medium text-background",
-              "transition-opacity hover:opacity-90 disabled:opacity-50"
-            )}
-          >
-            {continuing === ref.path ? (
-              <Loader2Icon className="size-3 animate-spin" />
-            ) : (
-              <ArrowRightIcon className="size-3" />
-            )}
-            Continue here
-          </button>
-          <ContinueMenu />
-        </div>
+        <MoveMenu busy={continuing === ref.path} />
         <button
           type="button"
           aria-label="Close"
@@ -102,7 +83,6 @@ export function ThreadViewer() {
       </div>
 
       <Conversation />
-      <Reply />
     </div>
   )
 }
@@ -182,35 +162,50 @@ function LiveButton() {
   )
 }
 
+
 /**
- * Every place this conversation can go next.
+ * Where this conversation can move, said plainly.
  *
- * "Continue here" is the primary because this app is where the button lives;
- * the menu holds the rest of the matrix — any harness whose store we can
- * write receives the conversation as a native session. The thread's own
- * harness is not offered: the reply bar below continues the *same* session.
+ * One menu instead of a split button whose primary read as jargon. Each row
+ * names the destination and what moving there means; the conversation
+ * becomes a *native* session at the destination, with its history.
  */
-function ContinueMenu() {
+function MoveMenu({ busy }: { busy: boolean }) {
   const [open, setOpen] = useState(false)
   const thread = useThreads((state) => state.viewing)
   const targets = useThreads((state) => state.targets)
   if (!thread) return null
   const others = targets.filter((target) => target !== "pi" && target !== thread.ref.harness)
-  if (others.length === 0) return null
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label="Continue with another agent"
-          className="pressable flex h-7 items-center border-l border-background/20 px-1.5 text-background transition-opacity hover:opacity-90"
+          className="pressable flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-foreground px-2.5 text-[11.5px] font-medium text-background transition-opacity hover:opacity-90"
         >
-          <ChevronDownIcon className="size-3" />
+          {busy ? <Loader2Icon className="size-3 animate-spin" /> : <ArrowRightIcon className="size-3" />}
+          Move to
+          <ChevronDownIcon className="size-2.5 opacity-70" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" sideOffset={6} className="w-56 p-1">
-        <p className="px-2 pt-1 pb-1.5 text-[10.5px] text-faint">Hand the conversation to</p>
+      <PopoverContent align="end" sideOffset={6} className="w-72 p-1">
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false)
+            void threads.continueHere(thread.ref)
+          }}
+          className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-raised"
+        >
+          <HarnessIcon harness="pi" className="mt-0.5 size-3.5 shrink-0" />
+          <span className="min-w-0">
+            <span className="block text-[12px] text-foreground/90">Pi — a tab here</span>
+            <span className="block text-[10.5px] leading-snug text-faint">
+              Becomes a native Pi session with the full history; keep talking in this app.
+            </span>
+          </span>
+        </button>
         {others.map((target) => (
           <button
             key={target}
@@ -219,94 +214,19 @@ function ContinueMenu() {
               setOpen(false)
               void threads.continueWith(thread.ref, target, harnessLabel(target))
             }}
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] text-foreground/90 transition-colors hover:bg-raised"
+            className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-raised"
           >
-            <HarnessIcon harness={target} className="size-3.5" />
-            {harnessLabel(target)}
+            <HarnessIcon harness={target} className="mt-0.5 size-3.5 shrink-0" />
+            <span className="min-w-0">
+              <span className="block text-[12px] text-foreground/90">{harnessLabel(target)}</span>
+              <span className="block text-[10.5px] leading-snug text-faint">
+                Becomes a native {harnessLabel(target)} session — same conversation, new agent.
+              </span>
+            </span>
           </button>
         ))}
-        <p className="px-2 pt-1.5 pb-1 text-[10px] leading-snug text-faint">
-          Becomes a native session there — same conversation, new harness.
-        </p>
       </PopoverContent>
     </Popover>
   )
 }
 
-/**
- * The next message, sent through the harness that owns this session.
- *
- * The CLI runs headlessly in the thread's working directory and writes its
- * native store as it works — the same store this view is tailing — so the
- * reply streams into the transcript above exactly as if it had been typed in
- * a terminal.
- */
-function Reply() {
-  const thread = useThreads((state) => state.viewing)
-  const resumable = useThreads((state) => state.resumable)
-  const run = useThreads((state) => state.run)
-  const [draft, setDraft] = useState("")
-
-  if (!thread || !resumable.includes(thread.ref.harness)) return null
-  const running = run?.status === "running"
-  const label = harnessLabel(thread.ref.harness)
-
-  const send = () => {
-    const text = draft.trim()
-    if (!text || running) return
-    setDraft("")
-    void threads.reply(thread.ref, text)
-  }
-
-  return (
-    <div className="shrink-0 border-t border-hairline px-4 py-3">
-      <div className="mx-auto w-full max-w-[760px]">
-        <div className="flex items-end gap-2 rounded-xl bg-raised px-1.5 py-1.5 ring-1 ring-hairline ring-inset">
-          <HarnessIcon harness={thread.ref.harness} className="mb-2 ml-1.5 size-3.5 shrink-0" />
-          <textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault()
-                send()
-              }
-            }}
-            rows={1}
-            placeholder={running ? `${label} is working…` : `Reply with ${label}`}
-            disabled={running}
-            className="max-h-40 min-h-9 w-full flex-1 resize-none bg-transparent px-1 py-1.5 text-[13px] leading-relaxed text-foreground placeholder:text-faint focus:outline-none disabled:opacity-60"
-          />
-          {running ? (
-            <button
-              type="button"
-              onClick={() => void threads.abortReply(thread.ref)}
-              className="pressable mb-0.5 flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-hairline px-2.5 text-[11.5px] text-muted-foreground hover:text-foreground"
-            >
-              <Loader2Icon className="size-3 animate-spin" />
-              Stop
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={send}
-              disabled={!draft.trim()}
-              className="pressable mb-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-foreground text-background transition-opacity hover:opacity-90 disabled:opacity-40"
-              aria-label="Send"
-            >
-              <ArrowRightIcon className="size-3.5 -rotate-90" />
-            </button>
-          )}
-        </div>
-        {run?.status === "failed" && run.error ? (
-          <p className="pt-1.5 text-[10.5px] text-red-400">{run.error}</p>
-        ) : null}
-        <p className="pt-1.5 text-[10px] text-faint">
-          {thread.ref.harness === "devin"
-            ? "Sends to the running Devin session in the cloud."
-            : `Runs ${label} headlessly in ${thread.ref.cwd ?? "its workspace"} with tool approvals on.`}
-        </p>
-      </div>
-    </div>
-  )
-}
