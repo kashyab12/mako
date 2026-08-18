@@ -23,6 +23,8 @@ import {
   defaultCatalog,
   emitClaudeSession,
   emitCodexSession,
+  emitCursorSession,
+  emitGrokSession,
   emitPiSession,
   renderTranscript,
   type DevinAccount,
@@ -217,6 +219,30 @@ export async function emitThreadAsCodex(
   const thread = await openThread(path)
   if (!thread) return null
   const emitted = await emitCodexSession(thread)
+  return { thread, sessionId: emitted.sessionId, sessionPath: emitted.path }
+}
+
+/** Every harness whose store we can write, behind one door. */
+export async function emitThreadAs(
+  path: string,
+  harness: string
+): Promise<{ thread: Thread; sessionId: string; sessionPath: string } | null> {
+  const thread = await openThread(path)
+  if (!thread) return null
+  const emitter =
+    harness === "claude"
+      ? emitClaudeSession
+      : harness === "codex"
+        ? emitCodexSession
+        : harness === "grok"
+          ? emitGrokSession
+          : harness === "cursor"
+            ? emitCursorSession
+            : harness === "pi"
+              ? emitPiSession
+              : null
+  if (!emitter) return null
+  const emitted = await emitter(thread, {})
   return { thread, sessionId: emitted.sessionId, sessionPath: emitted.path }
 }
 

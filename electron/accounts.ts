@@ -401,3 +401,55 @@ async function writeKeychain(service: string, contents: string): Promise<void> {
     contents,
   ]).catch(() => {})
 }
+
+/* ------------------------------------------------------------ suggestion */
+
+/**
+ * The account with the most headroom in its five-hour window.
+ *
+ * Groundwork for automatic routing; today it powers the suggestion below.
+ * Only accounts whose usage endpoint answered are candidates — an account
+ * with a stale token might be empty or might be exhausted, and guessing is
+ * worse than not suggesting.
+ */
+export async function pickAccount(
+  harness: AccountHarness
+): Promise<{ name: string; usedPercent: number } | null> {
+  const accounts = (await listAccounts()).filter((account) => account.harness === harness)
+  let best: { name: string; usedPercent: number } | null = null
+  for (const account of accounts) {
+    const usage = await accountUsage(harness, account.name)
+    if (usage.status !== "ok") continue
+    const used = usage.session?.usedPercent ?? usage.weekly?.usedPercent ?? 0
+    if (!best || used < best.usedPercent) best = { name: account.name, usedPercent: used }
+  }
+  return best
+}
+
+const suggestedAt = new Map<string, number>()
+const SUGGEST_THROTTLE_MS = 60 * 60 * 1000
+
+/**
+ * Whether the user should hear about switching, and the words to say it in.
+ *
+ * Fires when the *active* account's session window is nearly spent and some
+ * other account has real headroom. Never switches by itself: an account is
+ * money, and money moves are the user's to make. Throttled to once an hour
+ * per harness — a nag repeated is a nag ignored.
+ */
+export async function switchSuggestion(harness: AccountHarness): Promise<string | null> {
+  const last = suggestedAt.get(harness) ?? 0
+  if (Date.now() - last < SUGGEST_THROTTLE_MS) return null
+  const accounts = (await listAccounts()).filter((account) => account.harness === harness)
+  const active = accounts.find((account) => account.active)
+  if (!active) return null
+  const activeUsage = await accountUsage(harness, active.name)
+  if (activeUsage.status !== "ok") return null
+  const used = activeUsage.session?.usedPercent ?? activeUsage.weekly?.usedPercent ?? 0
+  if (used < 90) return null
+  const best = await pickAccount(harness)
+  if (!best || best.name === active.name || best.usedPercent >= 70) return null
+  suggestedAt.set(harness, Date.now())
+  const label = harness === "claude" ? "Claude Code" : "Codex"
+  return `${label} account "${active.name}" is at ${Math.round(used)}% of its window — "${best.name}" is at ${Math.round(best.usedPercent)}%. Switch in Settings → Agents.`
+}

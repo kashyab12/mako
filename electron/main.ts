@@ -29,7 +29,7 @@ import {
 } from "./devserver.js"
 import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunChecks, type CreatePullOptions } from "./github.js"
 import { HostPool } from "./pool.js"
-import { devinAccountsMasked, emitThreadAsClaude, emitThreadAsCodex, emitThreadAsPi, followThread, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, saveDevinAccounts, sendRemote, stopThreads, unfollowThread } from "./threads.js"
+import { devinAccountsMasked, emitThreadAs, emitThreadAsClaude, emitThreadAsPi, followThread, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, saveDevinAccounts, sendRemote, stopThreads, unfollowThread } from "./threads.js"
 import { abortNative, bindDrivers, freshHarnesses, harnessAvailability, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
 import { bindLineageDirect, chainOf, expectLineage } from "./lineage.js"
 import { accountUsage, captureAccount, listAccounts, removeAccount, selectAccount } from "./accounts.js"
@@ -361,22 +361,20 @@ function bindIpc() {
    * reaches the rail through the watcher, like any session anything starts.
    */
   handle("pi:thread-continue-with", async (_e, path: string, harness: string, instruction?: string) => {
-    // Harnesses whose stores we can write get the real thing: the thread
-    // emitted as a *native* session in their format, instantly replyable —
-    // no tokens spent until someone actually says something.
-    if (harness === "claude" || harness === "codex") {
-      const materialized =
-        harness === "claude" ? await emitThreadAsClaude(path) : await emitThreadAsCodex(path)
-      if (!materialized) throw new Error("This session could not be read for continuation")
+    // Every harness whose store we can write gets the real thing: the
+    // thread emitted as a *native* session in its format, instantly
+    // replyable — no tokens spent until someone actually says something.
+    const materialized = await emitThreadAs(path, harness)
+    if (materialized) {
       bindLineageDirect(materialized.sessionPath, chainOf(materialized.thread.ref))
       return { kind: "emitted" as const, path: materialized.sessionPath }
     }
-    // The rest take the universal transcript as the first prompt of a fresh
-    // headless session, surfaced by the watcher when its store appears.
+    // A harness without an emitter takes the universal transcript as the
+    // first prompt of a fresh headless session instead.
     const [thread, handoff] = await Promise.all([openThread(path), handoffFor(path, instruction)])
     if (!thread || !handoff) throw new Error("This session could not be read for continuation")
     expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
-    return { kind: "spawned" as const, run: startFresh(harness, thread.ref.cwd, handoff) }
+    return { kind: "spawned" as const, run: await startFresh(harness, thread.ref.cwd, handoff) }
   })
   /* Harness accounts: several logins per CLI, Orca-style isolated homes. */
   handle("pi:accounts", () => listAccounts())
@@ -422,7 +420,7 @@ function bindIpc() {
     }
     const thread = await openThread(path)
     if (!thread) throw new Error("This session could not be read")
-    return resumeNative(thread.ref, prompt)
+    return await resumeNative(thread.ref, prompt)
   })
   handle("pi:thread-abort-run", (_e, path: string) => abortNative(path))
   /**

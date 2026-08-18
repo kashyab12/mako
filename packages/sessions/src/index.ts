@@ -20,7 +20,7 @@ export {
 } from "./format.js"
 export { SessionCatalog, type CatalogEvent, type RemoteSource } from "./catalog.js"
 export { renderTranscript, type TranscriptOptions } from "./transcript.js"
-export { emitClaudeSession, emitCodexSession, emitPiSession, type EmitResult } from "./emit.js"
+export { emitClaudeSession, emitCodexSession, emitCursorSession, emitGrokSession, emitPiSession, type EmitResult } from "./emit.js"
 export { type NativeFile, type SessionProvider } from "./providers/types.js"
 export { CodexProvider } from "./providers/codex.js"
 export { CursorProvider } from "./providers/cursor.js"

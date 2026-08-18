@@ -25,7 +25,7 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import type { ThreadRef } from "@mako/sessions"
-import { accountEnv } from "./accounts.js"
+import { accountEnv, switchSuggestion } from "./accounts.js"
 import type { HostEvent, ThreadRunState } from "./shared.js"
 
 interface ResumeCommand {
@@ -192,6 +192,16 @@ async function launch(
   const run: Run = { child, state }
   runs.set(key, run)
   push(state)
+
+  // The moment someone spends from an account is the moment its headroom is
+  // worth a look. Suggest, never switch: money moves are the user's.
+  if (harness === "claude" || harness === "codex") {
+    void switchSuggestion(harness)
+      .then((message) => {
+        if (message) emit({ type: "notice", level: "info", message })
+      })
+      .catch(() => {})
+  }
 
   // Keep the tail of stderr: when a CLI fails it says why there, and "exit
   // code 1" with no words is the worst message this feature could show.

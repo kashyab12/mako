@@ -233,3 +233,153 @@ export async function emitCodexSession(
 function clip(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}… [truncated]` : text
 }
+
+/**
+ * Write a thread into Grok's own store — a session directory holding the
+ * transcript and the summary its CLI lists sessions by. `agent --resume <id>`
+ * replays it. The user's words go inside a `<user_query>` tag because that
+ * is where Grok's own scaffolding puts them, and its resume path expects to
+ * find them there.
+ */
+export async function emitGrokSession(
+  thread: Thread,
+  options: { cwd?: string; home?: string } = {}
+): Promise<EmitResult> {
+  const cwd = options.cwd ?? thread.ref.cwd ?? homedir()
+  const home = options.home ?? homedir()
+  const sessionId = randomUUID()
+  const now = new Date().toISOString()
+  const dir = join(home, ".grok", "sessions", encodeURIComponent(cwd), sessionId)
+  await mkdir(dir, { recursive: true })
+
+  const messages = flatten(thread.entries)
+  const lines = messages.map((message) =>
+    JSON.stringify(
+      message.role === "user"
+        ? { type: "user", content: [{ type: "text", text: `<user_query>\n${message.text}\n</user_query>` }] }
+        : { type: "assistant", content: message.text }
+    )
+  )
+  await writeFile(join(dir, "chat_history.jsonl"), `${lines.join("\n")}\n`, "utf8")
+  await writeFile(
+    join(dir, "summary.json"),
+    JSON.stringify({
+      info: { id: sessionId, cwd },
+      session_summary: thread.ref.title ?? "Imported conversation",
+      created_at: thread.ref.startedAt ?? now,
+      updated_at: now,
+      num_messages: messages.length,
+      num_chat_messages: messages.length,
+      current_model_id: "grok-4.6",
+      chat_format_version: 1,
+      next_trace_turn: 1,
+    }),
+    "utf8"
+  )
+  return { sessionId, path: join(dir, "chat_history.jsonl") }
+}
+
+/**
+ * Write a thread into Cursor's store: content-addressed JSON blobs in
+ * SQLite, ordered by a protobuf root. The root must carry the conversation's
+ * time zone beside its timestamp — Cursor's resume rejects the file
+ * otherwise, in so many words. Verified against `cursor-agent --resume`.
+ */
+export async function emitCursorSession(
+  thread: Thread,
+  options: { cwd?: string; home?: string } = {}
+): Promise<EmitResult> {
+  const sqlite = (await import("node:sqlite")) as {
+    DatabaseSync: new (path: string) => {
+      exec(sql: string): void
+      prepare(sql: string): { run(...args: unknown[]): unknown }
+      close(): void
+    }
+  }
+  const { createHash } = await import("node:crypto")
+
+  const cwd = options.cwd ?? thread.ref.cwd ?? homedir()
+  const home = options.home ?? homedir()
+  const chatId = randomUUID()
+  const workspaceHash = createHash("md5").update(cwd).digest("hex")
+  const dir = join(home, ".cursor", "chats", workspaceHash, chatId)
+  await mkdir(dir, { recursive: true })
+
+  const database = new sqlite.DatabaseSync(join(dir, "store.db"))
+  try {
+    database.exec(
+      "CREATE TABLE blobs (id TEXT PRIMARY KEY, data BLOB); CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)"
+    )
+    const put = database.prepare("INSERT INTO blobs (id, data) VALUES (?, ?)")
+    const hashes: Buffer[] = []
+    for (const message of flatten(thread.entries)) {
+      const data = Buffer.from(
+        JSON.stringify(
+          message.role === "user"
+            ? {
+                role: "user",
+                content: [
+                  { type: "text", text: `<user_query>\n${message.text}\n</user_query>` },
+                ],
+              }
+            : { role: "assistant", content: [{ type: "text", text: message.text }] }
+        )
+      )
+      const id = createHash("sha256").update(data).digest("hex")
+      put.run(id, data)
+      hashes.push(Buffer.from(id, "hex"))
+    }
+
+    const varint = (value: number | bigint): Buffer => {
+      const bytes: number[] = []
+      let current = BigInt(value)
+      while (current > 127n) {
+        bytes.push(Number(current & 0x7fn) | 0x80)
+        current >>= 7n
+      }
+      bytes.push(Number(current))
+      return Buffer.from(bytes)
+    }
+    const tag = (field: number, wire: number): Buffer => varint((field << 3) | wire)
+    const bytesField = (field: number, buffer: Buffer): Buffer =>
+      Buffer.concat([tag(field, 2), varint(buffer.length), buffer])
+
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+    const root = Buffer.concat([
+      ...hashes.map((hash) => bytesField(1, hash)),
+      bytesField(9, Buffer.from(`file://${cwd}`)),
+      bytesField(22, Buffer.from("cli")),
+      Buffer.concat([tag(26, 0), varint(Date.now())]),
+      bytesField(27, Buffer.from(timeZone)),
+    ])
+    const rootId = createHash("sha256").update(root).digest("hex")
+    put.run(rootId, root)
+
+    const meta = {
+      agentId: chatId,
+      latestRootBlobId: rootId,
+      name: thread.ref.title ?? "Imported conversation",
+      mode: "agent",
+      isRunEverything: false,
+      createdAt: Date.now(),
+    }
+    database
+      .prepare("INSERT INTO meta (key, value) VALUES ('0', ?)")
+      .run(Buffer.from(JSON.stringify(meta)).toString("hex"))
+  } finally {
+    database.close()
+  }
+
+  await writeFile(
+    join(dir, "meta.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      createdAtMs: Date.now(),
+      hasConversation: true,
+      updatedAtMs: Date.now(),
+      cwd,
+    }),
+    "utf8"
+  )
+  return { sessionId: chatId, path: join(dir, "store.db") }
+}
