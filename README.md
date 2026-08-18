@@ -2,10 +2,8 @@
 
 <img src="mako-icons/dark/logomark-1024.png" width="88" align="right" alt="" />
 
-A desktop app for coding agents. Today it runs the
-[Pi agent](https://github.com/earendil-works/pi-coding-agent), and models come
-from whatever Pi already has authenticated — but the agent sits behind one
-adapter (`electron/host.ts`), and nothing above that file names it.
+Run coding agents on your own machine, several at once, and see what they
+change before you keep it.
 
 ## Run
 
