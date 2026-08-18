@@ -3,26 +3,34 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { harnessLabel } from "@/components/rail/agent-threads"
 import { threadsStore, useThreads } from "@/state/threads"
-import { actions, store as sessionStore } from "@/state/session"
+import { actions, store as sessionStore, useSession } from "@/state/session"
 import { toast } from "sonner"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
-import { ChevronDownIcon } from "lucide-react"
+import { CheckIcon, ChevronDownIcon } from "lucide-react"
 
 /**
- * Who answers, and how — one panel, in the model picker's own language.
+ * Who answers. One question, one panel.
  *
- * The trigger sits where a picker belongs and reads like one: the agent's
- * mark and name. The panel puts every agent on a chip row and the selected
- * agent's real tuning below it — model rows the way the model picker draws
- * them (recently used on this machine first, a curated floor under that,
- * free-type because a list must never be a cage), effort as chips in the
- * CLI's own vocabulary, fast mode only where a harness actually has one,
- * and Devin as the cloud hand that needs no folder. Nothing here renders
- * an option its agent would ignore.
+ * Each agent is a full row: its mark in a tile, its name, and the model it
+ * would use right now — Pi's row shows the model actually selected, the
+ * others show their harness's own default until the model picker beside
+ * this one says otherwise. No chips, no filler prose: the rows themselves
+ * are the information. Devin is a row too, and picking it means Devin's
+ * models answering locally through Pi — it flips the selection and gets
+ * out of the way.
  */
 
 const ORDER = ["pi", "claude", "codex", "cursor", "grok", "devin"]
+
+const HOW: Record<string, string> = {
+  pi: "Native to this tab",
+  claude: "Live in this workspace",
+  cursor: "Live in this workspace",
+  codex: "Streams into Threads",
+  grok: "Streams into Threads",
+  devin: "Devin's models, through Pi",
+}
 
 export function AgentPicker() {
   const [open, setOpen] = useState(false)
@@ -46,7 +54,7 @@ export function AgentPicker() {
           <ChevronDownIcon className="size-3 shrink-0 text-faint/70" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" sideOffset={8} className="w-[26rem] gap-0 p-0">
+      <PopoverContent align="start" side="top" sideOffset={8} className="w-[19rem] gap-0 p-1">
         <AgentPanel selected={selected} onDone={() => setOpen(false)} />
       </PopoverContent>
     </Popover>
@@ -55,19 +63,42 @@ export function AgentPicker() {
 
 function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void }) {
   const [available, setAvailable] = useState<Record<string, boolean>>({ pi: true })
+  const [defaults, setDefaults] = useState<Record<string, string>>({})
+  const piModel = useSession((state) => state.meta?.model)
+  const tuning = useThreads((state) => state.composerTuning)
   const hasDevinModels = sessionStore.get().models.some((model) => model.provider === "devin")
-
+  const devinModel = sessionStore.get().models.find((model) => model.provider === "devin")
 
   useEffect(() => {
     if (!hasBridge()) return
-    void getPi().harnessAvailability().then(setAvailable).catch(() => {})
+    void getPi()
+      .harnessAvailability()
+      .then((next) => {
+        setAvailable(next)
+        // Each harness's own default model, so every row can wear one.
+        for (const harness of Object.keys(next)) {
+          if (!next[harness] || harness === "pi") continue
+          void getPi()
+            .harnessTuning(harness)
+            .then((t) =>
+              setDefaults((prev) => (t.defaultModel ? { ...prev, [harness]: t.defaultModel } : prev))
+            )
+            .catch(() => {})
+        }
+      })
+      .catch(() => {})
   }, [])
-
 
   const choices = ORDER.filter(
     (harness) => available[harness] || (harness === "devin" && hasDevinModels)
   )
   const devinMissing = !choices.includes("devin")
+
+  const modelFor = (harness: string): string | undefined => {
+    if (harness === "pi") return piModel ? piModel.id : undefined
+    if (harness === "devin") return devinModel?.id
+    return tuning[harness]?.model ?? defaults[harness]
+  }
 
   const pick = (harness: string) => {
     // Devin means one thing here: Devin's models answering locally through
@@ -95,66 +126,64 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
   }
 
   return (
-    <div>
-      <div className="border-b border-hairline p-1.5">
-        <div className="flex flex-wrap gap-1">
-          {choices.map((harness) => (
-            <button
-              key={harness}
-              type="button"
-              onClick={() => pick(harness)}
+    <div className="max-h-[21rem] overflow-y-auto overscroll-contain">
+      {choices.map((harness) => {
+        const active = harness !== "devin" && selected === harness
+        const model = modelFor(harness)
+        return (
+          <button
+            key={harness}
+            type="button"
+            onClick={() => pick(harness)}
+            className={cn(
+              "group flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors duration-100",
+              active ? "bg-raised" : "hover:bg-raised/60"
+            )}
+          >
+            <span
               className={cn(
-                "pressable inline-flex h-6 items-center gap-1.5 rounded px-2 text-[11px] font-medium",
-                "transition-colors duration-100",
-                selected === harness
-                  ? "bg-brand-soft text-brand"
-                  : "bg-raised text-faint hover:text-muted-foreground"
+                "flex size-7 shrink-0 items-center justify-center rounded-md border border-hairline",
+                "bg-raised/70 transition-colors duration-100",
+                active && "border-brand/25 bg-brand-soft"
               )}
             >
-              <HarnessIcon harness={harness} className="size-3" tinted={selected === harness} />
-              {harnessLabel(harness)}
-            </button>
-          ))}
-          {devinMissing ? (
-            <span
-              className="inline-flex h-6 items-center gap-1.5 rounded bg-raised/50 px-2 text-[11px] text-faint/60"
-              title="Devin's models arrive through the pi-devin provider — install and sign in, and this lights up"
-            >
-              <HarnessIcon harness="devin" className="size-3" tinted={false} />
-              Devin
+              <HarnessIcon harness={harness} className="size-3.5" tinted={active} />
             </span>
-          ) : null}
+            <span className="min-w-0 flex-1">
+              <span className="flex items-baseline gap-2">
+                <span
+                  className={cn(
+                    "text-[12.5px]",
+                    active ? "font-medium text-foreground" : "text-foreground/90"
+                  )}
+                >
+                  {harnessLabel(harness)}
+                </span>
+                <span className="truncate font-mono text-[10.5px] text-faint">{model ?? ""}</span>
+              </span>
+              <span className="mt-px block text-[10.5px] text-faint/80">{HOW[harness]}</span>
+            </span>
+            {active ? <CheckIcon className="size-3.5 shrink-0 text-brand" /> : null}
+          </button>
+        )
+      })}
+
+      {devinMissing ? (
+        <div
+          className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 opacity-50"
+          title="Devin's models arrive through the pi-devin provider — install and sign in, and this lights up"
+        >
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-hairline bg-raised/40">
+            <HarnessIcon harness="devin" className="size-3.5" tinted={false} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[12.5px] text-foreground/70">Devin</span>
+            <span className="mt-px block text-[10.5px] text-faint/80">
+              Arrives with the pi-devin provider
+            </span>
+          </span>
         </div>
-      </div>
-
-      <div className="max-h-[19rem] overflow-y-auto overscroll-contain p-1">
-        {selected === "pi" ? (
-          <p className="px-2 py-4 text-[11.5px] leading-relaxed text-faint">
-            Pi answers in this tab, streaming, steerable mid-turn. Its model and
-            reasoning live in the pickers beside this one.
-          </p>
-        ) : (
-          <p className="px-2 py-4 text-[11.5px] leading-relaxed text-faint">
-            {harnessLabel(selected)} answers in this workspace, its conversation
-            right here. Model and reasoning live in the pickers beside this one
-            — the same seats Pi uses.
-          </p>
-        )}
-      </div>
-
-      <div className="flex items-center justify-between border-t border-hairline px-2 py-1.5 text-[10.5px] text-faint">
-        <span>
-          {selected === "pi"
-            ? "Native to this tab"
-            : selected === "claude" || selected === "cursor"
-              ? "Runs live in this workspace"
-              : "Runs in this workspace, streaming in"}
-        </span>
-        <span>Every conversation lands in Threads</span>
-      </div>
+      ) : null}
     </div>
   )
 }
-
-
-

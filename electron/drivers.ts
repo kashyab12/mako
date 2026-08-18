@@ -135,28 +135,32 @@ const FRESH: Record<string, (prompt: string, options: FreshOptions) => ResumeCom
 /** What each harness's CLI actually accepts, for the composer to offer. */
 export const HARNESS_TUNING: Record<
   string,
-  { efforts: string[]; fast: boolean; curatedModels: string[] }
+  { efforts: string[]; fast: boolean; curatedModels: string[]; defaultModel: string }
 > = {
   claude: {
     // --effort low is the fast lever; max is the slow, thorough one.
     efforts: ["low", "medium", "high", "xhigh", "max"],
     fast: false,
     curatedModels: ["opus", "sonnet", "haiku"],
+    defaultModel: "opus",
   },
   codex: {
     efforts: ["minimal", "low", "medium", "high", "xhigh"],
     fast: false,
     curatedModels: ["gpt-5.3-codex", "gpt-5.2-codex", "gpt-5.2"],
+    defaultModel: "gpt-5.3-codex",
   },
   cursor: {
     efforts: ["low", "medium", "high"],
     fast: true,
     curatedModels: ["auto", "gpt-5.2", "sonnet-4.5-thinking", "opus-4.5"],
+    defaultModel: "auto",
   },
   grok: {
     efforts: ["low", "medium", "high"],
     fast: false,
     curatedModels: ["grok-4.6", "grok-code"],
+    defaultModel: "grok-4.6",
   },
 }
 

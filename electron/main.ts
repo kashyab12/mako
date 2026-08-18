@@ -486,7 +486,7 @@ function bindIpc() {
    */
   handle("pi:harness-tuning", (_e, harness: string) => {
     const tuning = HARNESS_TUNING[harness]
-    if (!tuning) return { models: [], efforts: [], fast: false }
+    if (!tuning) return { models: [], efforts: [], fast: false, defaultModel: "" }
     const seen: string[] = []
     for (const ref of listThreads({ harness })) {
       const model = ref.model
@@ -494,7 +494,12 @@ function bindIpc() {
       if (seen.length >= 8) break
     }
     const models = [...seen, ...tuning.curatedModels.filter((model) => !seen.includes(model))]
-    return { models: models.slice(0, 12), efforts: tuning.efforts, fast: tuning.fast }
+    return {
+      models: models.slice(0, 12),
+      efforts: tuning.efforts,
+      fast: tuning.fast,
+      defaultModel: tuning.defaultModel,
+    }
   })
 
   handle("pi:thread-run", (_e, path: string) => threadRun(path))

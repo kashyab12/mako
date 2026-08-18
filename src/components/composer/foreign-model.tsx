@@ -6,7 +6,7 @@ import { harnessLabel } from "@/components/rail/agent-threads"
 import { threadsStore, useThreads } from "@/state/threads"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
-import { CheckIcon, ChevronDownIcon, CircleDashedIcon } from "lucide-react"
+import { CheckIcon, ChevronDownIcon } from "lucide-react"
 
 /**
  * The model picker, for harnesses that are not Pi.
@@ -21,15 +21,20 @@ import { CheckIcon, ChevronDownIcon, CircleDashedIcon } from "lucide-react"
 export function ForeignModelPicker({ harness }: { harness: string }) {
   const [open, setOpen] = useState(false)
   const [models, setModels] = useState<string[]>([])
+  const [fallback, setFallback] = useState("")
   const [typed, setTyped] = useState("")
   const chosen = useThreads((state) => state.composerTuning[harness]?.model)
 
   useEffect(() => {
     if (!hasBridge()) return
     setModels([])
+    setFallback("")
     void getPi()
       .harnessTuning(harness)
-      .then((tuning) => setModels(tuning.models))
+      .then((tuning) => {
+        setFallback(tuning.defaultModel)
+        setModels(tuning.models.filter((model) => model !== tuning.defaultModel))
+      })
       .catch(() => setModels([]))
   }, [harness])
 
@@ -43,7 +48,7 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={`Model: ${chosen ?? "harness default"}`}
+          aria-label={`Model: ${chosen ?? (fallback ? `${fallback} (default)` : "harness default")}`}
           className={cn(
             "pressable no-drag flex h-7 min-w-0 max-w-[15rem] items-center gap-1.5 rounded-md px-2",
             "text-[12.5px] font-medium",
@@ -52,14 +57,8 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
             chosen ? "text-foreground/85" : "text-faint"
           )}
         >
-          {chosen ? (
-            <HarnessIcon harness={harness} className="size-3.5" />
-          ) : (
-            <CircleDashedIcon className="size-3.5 shrink-0 text-faint" />
-          )}
-          <span className={cn("truncate", chosen && "font-mono text-[11.5px]")}>
-            {chosen ?? "Default model"}
-          </span>
+          <HarnessIcon harness={harness} className="size-3.5" />
+          <span className="truncate font-mono text-[11.5px]">{chosen ?? (fallback || "model")}</span>
           <ChevronDownIcon className="size-3 shrink-0 text-faint/70" />
         </button>
       </PopoverTrigger>
@@ -67,8 +66,9 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
         <div className="max-h-[19rem] overflow-y-auto overscroll-contain p-1">
           <Eyebrow className="px-1.5 pt-1.5 pb-1">{harnessLabel(harness)}</Eyebrow>
           <Row
-            label="Harness default"
-            detail={`whatever ${harnessLabel(harness)} would pick itself`}
+            mono
+            label={fallback || "Harness default"}
+            detail={`${harnessLabel(harness)}'s default — used unless you say otherwise`}
             selected={!chosen}
             onChoose={() => {
               set(undefined)
