@@ -369,6 +369,13 @@ export function installMockBridge() {
       { path: "src/state/store.ts", status: "modified" as const, insertions: 41, deletions: 3, binary: false },
       { path: "src/components/rail/session-rail.tsx", status: "modified" as const, insertions: 12, deletions: 9, binary: false },
     ],
+    gitCommitDiffAll: async () => ({
+      diffs: [
+        { path: "src/state/store.ts", binary: false, oldFile: { name: "src/state/store.ts", contents: "const before = 1\n" }, newFile: { name: "src/state/store.ts", contents: "const after = 2\n" } },
+        { path: "src/components/rail/session-rail.tsx", binary: false, oldFile: { name: "src/components/rail/session-rail.tsx", contents: "old\n" }, newFile: { name: "src/components/rail/session-rail.tsx", contents: "new\n" } },
+      ],
+      truncated: 0,
+    }),
     gitCommitFileDiff: async (_hash: string, path: string) => ({
       path,
       binary: false,

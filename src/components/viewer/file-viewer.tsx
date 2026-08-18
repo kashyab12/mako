@@ -54,7 +54,7 @@ export function FileViewer() {
           </IconAction>
         </div>
         <div className="min-h-0 flex-1 overflow-auto">
-          <CenterDiff diff={diff.diff} />
+          <CenterDiff diffs={diff.diffs} note={diff.note} />
         </div>
       </div>
     )
@@ -122,39 +122,40 @@ const LazyDiff = lazy(async () => {
     import("@pierre/diffs/react"),
     import("@/state/prefs"),
   ])
-  function Center({ diff }: { diff: import("@/lib/types").GitDiff }) {
+  function Center({ diffs, note }: { diffs: import("@/lib/types").GitDiff[]; note?: string }) {
     const theme = prefsStore.get().theme
-    if (diff.binary || (!diff.oldFile && !diff.newFile)) {
-      return (
-        <p className="p-4 text-[12px] text-faint">
-          {diff.binary ? "Binary file — no text diff." : "No text content to compare."}
-        </p>
-      )
+    const showable = diffs.filter((diff) => !diff.binary && (diff.oldFile || diff.newFile))
+    if (showable.length === 0) {
+      return <p className="p-4 text-[12px] text-faint">No text content to compare.</p>
     }
     return (
       <Virtualizer className="min-h-full">
-        <MultiFileDiff
-          {...(diff.oldFile && diff.newFile
-            ? { oldFile: diff.oldFile, newFile: diff.newFile }
-            : diff.newFile
-              ? { oldFile: null, newFile: diff.newFile }
-              : { oldFile: diff.oldFile!, newFile: null })}
-          options={{
-            themeType: theme === "light" ? "light" : "dark",
-            // Split view: the center stage is wide enough to earn it.
-            diffStyle: "split",
-          }}
-        />
+        {showable.map((diff) => (
+          <MultiFileDiff
+            key={diff.path}
+            {...(diff.oldFile && diff.newFile
+              ? { oldFile: diff.oldFile, newFile: diff.newFile }
+              : diff.newFile
+                ? { oldFile: null, newFile: diff.newFile }
+                : { oldFile: diff.oldFile!, newFile: null })}
+            options={{
+              themeType: theme === "light" ? "light" : "dark",
+              // Split view: the center stage is wide enough to earn it.
+              diffStyle: "split",
+            }}
+          />
+        ))}
+        {note ? <p className="p-3 text-[11px] text-faint">{note}</p> : null}
       </Virtualizer>
     )
   }
   return { default: Center }
 })
 
-function CenterDiff({ diff }: { diff: import("@/lib/types").GitDiff }) {
+function CenterDiff({ diffs, note }: { diffs: import("@/lib/types").GitDiff[]; note?: string }) {
   return (
     <Suspense fallback={<p className="shimmer p-4 text-[12px]">Loading diff…</p>}>
-      <LazyDiff diff={diff} />
+      <LazyDiff diffs={diffs} note={note} />
     </Suspense>
   )
 }

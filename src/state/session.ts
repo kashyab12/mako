@@ -30,6 +30,7 @@ import { automations } from "@/state/automations"
 import { applyDevServer } from "@/state/devserver"
 import { applyThreadEntries, applyThreadRun, applyThreads, threads } from "@/state/threads"
 import { applyAcpPermission, applyAcpSession, applyAcpUpdate } from "@/state/acp"
+import { watchOnboarding } from "@/state/onboarding"
 import { applyAutomations, noteAutomationRun } from "@/state/automations"
 import { toast } from "sonner"
 
@@ -290,6 +291,18 @@ export const actions = {
       return () => {}
     }
     const pi = getPi()
+    // The renderer hot-reloads through Vite; the engine does not. When this
+    // window is newer than the engine it woke up inside — the bridge missing
+    // an API this build requires — nothing works *subtly*, which is the
+    // worst way for nothing to work. Refuse loudly, with the fix.
+    if (typeof (pi as { daemonStatus?: unknown }).daemonStatus !== "function") {
+      store.set({
+        phase: "detached",
+        fault:
+          "This window is newer than the engine it is connected to — the interface hot-reloaded past the running app. Quit the app and run `npm run desktop` again to rebuild and restart the engine.",
+      })
+      return () => {}
+    }
     const unsubscribe = pi.onEvent(apply)
     try {
       const boot = await withTimeout(
@@ -316,6 +329,7 @@ export const actions = {
       void automations.load()
       void threads.load()
       threads.watchFocus()
+      watchOnboarding()
     } catch (error) {
       store.set({ phase: "detached", fault: error instanceof Error ? error.message : String(error) })
     }

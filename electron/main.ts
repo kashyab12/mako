@@ -345,6 +345,7 @@ function bindIpc() {
   handle("pi:git-commit-file-diff", (_e, hash: string, path: string) =>
     withHost((h) => h.gitCommitFileDiff(hash, path))
   )
+  handle("pi:git-commit-diff-all", (_e, hash: string) => withHost((h) => h.gitCommitDiffAll(hash)))
   handle("pi:git-generate-message", (_e, prompt?: string) =>
     withHost((h) => h.generateCommitMessage(prompt))
   )

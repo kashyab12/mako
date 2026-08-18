@@ -88,13 +88,23 @@ export function ChangesPanel() {
     }
   }, [path])
 
-  // A commit's file opens on the center stage, over the chat — the
-  // inspector's pane is a few hundred pixels wide, fine for glancing at the
-  // working tree and wrong for reading history. Split view, Escape closes.
+  // Commits open on the center stage, over the chat — the inspector's pane
+  // is a few hundred pixels wide, fine for glancing at the working tree and
+  // wrong for reading history. Split view, Escape gives the chat back.
   const pickCommitFile = useCallback((hash: string, filePath: string) => {
-    void viewer.openDiff(`${hash.slice(0, 7)} · ${filePath}`, () =>
-      getPi().gitCommitFileDiff(hash, filePath)
-    )
+    void viewer.openDiff(`${hash.slice(0, 7)} · ${filePath}`, async () => ({
+      diffs: [await getPi().gitCommitFileDiff(hash, filePath)],
+    }))
+  }, [])
+
+  const pickCommit = useCallback((hash: string, subject: string) => {
+    void viewer.openDiff(`${hash.slice(0, 7)} — ${subject}`, async () => {
+      const { diffs, truncated } = await getPi().gitCommitDiffAll(hash)
+      return {
+        diffs,
+        note: truncated > 0 ? `${truncated} more file${truncated === 1 ? "" : "s"} in this commit — open them from the commit's file list.` : undefined,
+      }
+    })
   }, [])
 
   const allComments = useReview((state) => state.comments)
@@ -165,7 +175,7 @@ export function ChangesPanel() {
           />
         </div>
         {/* A clean tree is exactly when history is the interesting part. */}
-        <CommitsSection onPickFile={pickCommitFile} defaultOpen />
+        <CommitsSection onPickFile={pickCommitFile} onPickCommit={pickCommit} defaultOpen />
         {/* Still here on a clean tree — a branch you have finished committing
             is exactly when you want to open the pull request. */}
         <PullRequestCard />
@@ -306,7 +316,7 @@ export function ChangesPanel() {
         </div>
       ) : null}
 
-      <CommitsSection onPickFile={pickCommitFile} />
+      <CommitsSection onPickFile={pickCommitFile} onPickCommit={pickCommit} />
       <ReviewBar />
       <CommitBox staged={staged} total={files.length} />
       <PullRequestCard />
@@ -324,9 +334,11 @@ export function ChangesPanel() {
  */
 function CommitsSection({
   onPickFile,
+  onPickCommit,
   defaultOpen = false,
 }: {
   onPickFile: (hash: string, path: string) => void
+  onPickCommit: (hash: string, subject: string) => void
   defaultOpen?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -346,7 +358,7 @@ function CommitsSection({
       </button>
       {open ? (
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-          <GitLog onPickFile={onPickFile} />
+          <GitLog onPickFile={onPickFile} onPickCommit={onPickCommit} />
         </div>
       ) : null}
     </div>

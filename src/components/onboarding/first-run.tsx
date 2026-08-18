@@ -3,6 +3,7 @@ import { formatChord } from "@/extend/commands"
 import { useSession } from "@/state/session"
 import { setPref, usePrefs } from "@/state/prefs"
 import { useTabs } from "@/state/tabs"
+import { useViewer } from "@/state/viewer"
 import { cn } from "@/lib/utils"
 import { CheckIcon } from "lucide-react"
 
@@ -63,6 +64,8 @@ export function FirstRun() {
   const railMode = usePrefs((prefs) => prefs.railMode)
   const openDirs = usePrefs((prefs) => prefs.openDirs.length)
   const diffOpen = usePrefs((prefs) => prefs.autoOpenDiff)
+  const latched = usePrefs((prefs) => prefs.onboardedSteps)
+  const viewedFile = useViewer((state) => Boolean(state.path))
 
   /**
    * Which steps are already true.
@@ -72,12 +75,22 @@ export function FirstRun() {
    * that step, and telling them otherwise is the fastest way to make the whole
    * thing feel like decoration.
    */
-  const complete: Record<string, boolean> = {
+  const now: Record<string, boolean> = {
     workspace: Boolean(cwd) && !isHome(cwd, home),
     ask: messages > 0,
-    files: railMode === "files" || openDirs > 0,
+    // Opening a file by name counts — that is what the step teaches — and
+    // so does browsing the tree.
+    files: viewedFile || railMode === "files" || openDirs > 0,
     review: diffOpen,
   }
+
+  // Latching lives in state/onboarding.ts, watching the stores directly —
+  // this component only exists on an empty transcript, and a step done
+  // elsewhere must still count. Here: latched or currently true both show
+  // as done.
+  const complete: Record<string, boolean> = Object.fromEntries(
+    STEPS.map((step) => [step.id, latched.includes(step.id) || now[step.id]])
+  )
   const remaining = STEPS.filter((step) => !complete[step.id])
 
   // Finished lists do not linger. Recording it means a later empty transcript

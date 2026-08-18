@@ -1250,6 +1250,19 @@ export class AgentHost {
     return files
   }
 
+  /**
+   * The whole commit as diffs, ready for the center stage. Capped: a
+   *5000-file commit is an archaeology project, not a click.
+   */
+  async gitCommitDiffAll(hash: string): Promise<{ diffs: GitDiff[]; truncated: number }> {
+    const files = await this.gitCommitFiles(hash)
+    const shown = files.filter((file) => !file.binary).slice(0, 25)
+    const diffs = await Promise.all(
+      shown.map((file) => this.gitCommitFileDiff(hash, file.path))
+    )
+    return { diffs, truncated: files.length - shown.length }
+  }
+
   /** A file as one commit changed it: parent's version against the commit's. */
   async gitCommitFileDiff(hash: string, path: string): Promise<GitDiff> {
     const root = await this.requireRoot()

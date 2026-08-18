@@ -25,8 +25,8 @@ export interface ViewerState {
    * arrives after the open: whoever renders it scrolls once it exists.
    */
   line?: number
-  /** A diff on the center stage instead of a file, when set. */
-  diff?: { title: string; diff: GitDiff }
+  /** Diffs on the center stage instead of a file, when set. */
+  diff?: { title: string; diffs: GitDiff[]; note?: string }
 }
 
 export const viewerStore = createStore<ViewerState>({ loading: false })
@@ -59,14 +59,14 @@ export const viewer = {
    * history takes the transcript's space the way a file does, split view
    * and all, and Escape gives it back.
    */
-  async openDiff(title: string, load: () => Promise<GitDiff>) {
+  async openDiff(title: string, load: () => Promise<{ diffs: GitDiff[]; note?: string }>) {
     if (!hasBridge()) return
     const mine = ++generation
     viewerStore.set({ path: title, loading: true, error: undefined, file: undefined, diff: undefined })
     try {
-      const diff = await load()
+      const { diffs, note } = await load()
       if (mine !== generation) return
-      viewerStore.set({ diff: { title, diff }, loading: false })
+      viewerStore.set({ diff: { title, diffs, note }, loading: false })
     } catch (error) {
       if (mine !== generation) return
       viewerStore.set({

@@ -45,6 +45,8 @@ export interface Prefs {
   previewWidth: number
   /** The getting-started list is finished or dismissed, and will not return. */
   onboarded: boolean
+  /** Checklist steps that have been true at least once. Done is done. */
+  onboardedSteps: string[]
   /** Threads kept at the top of both rails, by session path. */
   pinnedThreads: string[]
   /** Harnesses shown in the Agents rail. Empty means all of them. */
@@ -79,6 +81,7 @@ const defaults: Prefs = {
   previewOpen: false,
   previewWidth: 460,
   onboarded: false,
+  onboardedSteps: [],
   pinnedThreads: [],
   agentHarnessFilter: [],
 }

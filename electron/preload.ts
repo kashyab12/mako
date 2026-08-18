@@ -145,6 +145,8 @@ const api = {
     invoke<Array<{ path: string; status: import("./shared.js").GitFileStatus; insertions: number; deletions: number; binary: boolean }>>("pi:git-commit-files", hash),
   gitCommitFileDiff: (hash: string, path: string) =>
     invoke<GitDiff>("pi:git-commit-file-diff", hash, path),
+  gitCommitDiffAll: (hash: string) =>
+    invoke<{ diffs: GitDiff[]; truncated: number }>("pi:git-commit-diff-all", hash),
   generateCommitMessage: (prompt?: string) =>
     invoke<string>("pi:git-generate-message", prompt),
   stageFile: (name: string, base64: string) =>

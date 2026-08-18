@@ -34,10 +34,13 @@ const GLYPH: Record<string, { glyph: string; tone: string }> = {
 
 export function GitLog({
   onPickFile,
+  onPickCommit,
   picked,
 }: {
   /** Present when a diff surface is attached; absent renders read-only. */
   onPickFile?: (hash: string, path: string) => void
+  /** Clicking the commit itself: the whole diff, center stage. */
+  onPickCommit?: (hash: string, subject: string) => void
   picked?: { hash: string; path: string } | null
 }) {
   const files = useSession((state) => state.git?.files.length ?? 0)
@@ -100,7 +103,12 @@ export function GitLog({
           <div key={commit.hash}>
             <button
               type="button"
-              onClick={() => toggle(commit.hash)}
+              // The commit is the unit you read: clicking it opens the whole
+              // diff on the center stage. The chevron below is the smaller
+              // gesture — unfold the file list without leaving the panel.
+              onClick={() =>
+                onPickCommit ? onPickCommit(commit.hash, commit.subject) : toggle(commit.hash)
+              }
               className="contain-turn group flex w-full gap-2 rounded-md px-2.5 py-1 text-left transition-colors duration-100 hover:bg-raised/60 [contain-intrinsic-size:auto_38px]"
             >
               <span className="relative flex w-3 shrink-0 justify-center">
@@ -125,12 +133,23 @@ export function GitLog({
                   </span>
                 </span>
                 <span className="flex items-center gap-2 text-[10px] text-faint">
-                  <ChevronRightIcon
-                    className={cn(
-                      "size-2.5 shrink-0 transition-transform duration-200 ease-out",
-                      expanded && "rotate-90"
-                    )}
-                  />
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    aria-label={expanded ? "Hide files" : "Show files"}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      toggle(commit.hash)
+                    }}
+                    className="rounded p-0.5 hover:text-foreground"
+                  >
+                    <ChevronRightIcon
+                      className={cn(
+                        "size-2.5 shrink-0 transition-transform duration-200 ease-out",
+                        expanded && "rotate-90"
+                      )}
+                    />
+                  </span>
                   <span className="font-mono">{commit.shortHash}</span>
                   <span className="truncate">{commit.author}</span>
                   {commit.insertions || commit.deletions ? (

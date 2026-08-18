@@ -111,7 +111,7 @@ export const threads = {
 
   async load() {
     if (!hasBridge()) return
-    const [result, resumable, targets, acpable] = await Promise.all([
+    const [raw, resumable, targets, acpable] = await Promise.all([
       getPi()
         .threads()
         .catch(() => ({ ready: false, threads: [] as ThreadRef[] })),
@@ -119,6 +119,9 @@ export const threads = {
       getPi().continueTargets().catch((): string[] => []),
       getPi().acpHarnesses().catch((): string[] => []),
     ])
+    // An engine one vintage older answers with a bare array; treat it as
+    // ready rather than spinning forever against the shape difference.
+    const result = Array.isArray(raw) ? { ready: true, threads: raw as ThreadRef[] } : raw
     threadsStore.set({ threads: result.threads, loaded: result.ready, resumable, targets, acpable })
     // The catalog scans for a moment at boot, and its "here is the list"
     // push can fire while the window is still loading — a lossy first
