@@ -30,7 +30,7 @@ import {
 import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunChecks, type CreatePullOptions } from "./github.js"
 import { HostPool } from "./pool.js"
 import { followThread, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, sendRemote, stopThreads, unfollowThread } from "./threads.js"
-import { abortNative, bindDrivers, resumableHarnesses, resumeNative, stopDrivers, threadRun } from "./drivers.js"
+import { abortNative, bindDrivers, freshHarnesses, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
 import { listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
 import type { BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
 
@@ -351,6 +351,17 @@ function bindIpc() {
   handle("pi:thread-follow", (_e, path: string, fromByte: number) => followThread(path, fromByte))
   handle("pi:thread-unfollow", () => unfollowThread())
   handle("pi:thread-resumable", () => [...resumableHarnesses(), ...remoteHarnesses()])
+  handle("pi:thread-continue-targets", () => ["pi", ...freshHarnesses()])
+  /**
+   * Continue a conversation on a *different* harness: render the handoff and
+   * open it as the first prompt of a fresh session there. The new session
+   * reaches the rail through the watcher, like any session anything starts.
+   */
+  handle("pi:thread-continue-with", async (_e, path: string, harness: string, instruction?: string) => {
+    const [thread, handoff] = await Promise.all([openThread(path), handoffFor(path, instruction)])
+    if (!thread || !handoff) throw new Error("This session could not be read for continuation")
+    return startFresh(harness, thread.ref.cwd, handoff)
+  })
   handle("pi:thread-run", (_e, path: string) => threadRun(path))
   handle("pi:thread-resume", async (_e, path: string, prompt: string) => {
     // A remote session (Devin) takes the message through its API and keeps

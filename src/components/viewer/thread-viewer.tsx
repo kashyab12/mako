@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { harnessDot, harnessLabel } from "@/components/rail/agent-threads"
 import { threads, useThreads } from "@/state/threads"
 import { formatRelative } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import { ArrowRightIcon, ChevronRightIcon, Loader2Icon, XIcon } from "lucide-react"
+import { ArrowRightIcon, ChevronDownIcon, ChevronRightIcon, Loader2Icon, XIcon } from "lucide-react"
 import type { EntryBlock, ThreadEntry } from "@/lib/types"
 
 /**
@@ -66,22 +67,25 @@ export function ThreadViewer() {
               {ref.updatedAt ? ` · ${formatRelative(ref.updatedAt)}` : ""}
             </p>
           </div>
-          <button
-            type="button"
-            disabled={continuing === ref.path}
-            onClick={() => void threads.continueHere(ref)}
-            className={cn(
-              "pressable flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-foreground px-2.5 text-[11.5px] font-medium text-background",
-              "transition-opacity hover:opacity-90 disabled:opacity-50"
-            )}
-          >
-            {continuing === ref.path ? (
-              <Loader2Icon className="size-3 animate-spin" />
-            ) : (
-              <ArrowRightIcon className="size-3" />
-            )}
-            Continue here
-          </button>
+          <div className="flex shrink-0 items-center overflow-hidden rounded-md bg-foreground">
+            <button
+              type="button"
+              disabled={continuing === ref.path}
+              onClick={() => void threads.continueHere(ref)}
+              className={cn(
+                "pressable flex h-7 items-center gap-1.5 px-2.5 text-[11.5px] font-medium text-background",
+                "transition-opacity hover:opacity-90 disabled:opacity-50"
+              )}
+            >
+              {continuing === ref.path ? (
+                <Loader2Icon className="size-3 animate-spin" />
+              ) : (
+                <ArrowRightIcon className="size-3" />
+              )}
+              Continue here
+            </button>
+            <ContinueMenu />
+          </div>
           <button
             type="button"
             aria-label="Close"
@@ -92,19 +96,63 @@ export function ThreadViewer() {
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
-          {thread.entries.length === 0 ? (
-            <p className="pt-8 text-center text-[12px] text-faint">
-              This session has no readable conversation.
-            </p>
-          ) : (
-            thread.entries.map((entry, index) => <Entry key={index} entry={entry} />)
-          )}
-        </div>
+        <Entries entries={thread.entries} />
 
         <Reply />
       </div>
     </div>
+  )
+}
+
+/**
+ * Every place this conversation can go next.
+ *
+ * "Continue here" is the primary because this app is where the button lives;
+ * the menu holds the rest of the matrix — any harness with a CLI on this
+ * machine can pick the conversation up as a fresh session, opened with the
+ * handoff. The thread's own harness is not offered: it already has the reply
+ * bar below, which continues the *same* session rather than starting one.
+ */
+function ContinueMenu() {
+  const [open, setOpen] = useState(false)
+  const thread = useThreads((state) => state.viewing)
+  const targets = useThreads((state) => state.targets)
+  if (!thread) return null
+  const others = targets.filter((target) => target !== "pi" && target !== thread.ref.harness)
+  if (others.length === 0) return null
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Continue with another agent"
+          className="pressable flex h-7 items-center border-l border-background/20 px-1.5 text-background transition-opacity hover:opacity-90"
+        >
+          <ChevronDownIcon className="size-3" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" sideOffset={6} className="w-56 p-1">
+        <p className="px-2 pt-1 pb-1.5 text-[10.5px] text-faint">Hand the conversation to</p>
+        {others.map((target) => (
+          <button
+            key={target}
+            type="button"
+            onClick={() => {
+              setOpen(false)
+              void threads.continueWith(thread.ref, target, harnessLabel(target))
+            }}
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] text-foreground/90 transition-colors hover:bg-raised"
+          >
+            <span className={cn("size-1.5 rounded-full", harnessDot(target))} />
+            {harnessLabel(target)}
+          </button>
+        ))}
+        <p className="px-2 pt-1.5 pb-1 text-[10px] leading-snug text-faint">
+          Starts a new session in the same folder, opened with this transcript.
+        </p>
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -179,6 +227,43 @@ function Reply() {
           ? "Sends to the running Devin session in the cloud."
           : `Runs ${label} headlessly in ${thread.ref.cwd ?? "its workspace"} with tool approvals on.`}
       </p>
+    </div>
+  )
+}
+
+/**
+ * The transcript, sticky at the bottom.
+ *
+ * When entries stream in from the live tail, someone reading the latest
+ * turn should stay on the latest turn — and someone who has scrolled up to
+ * read something older should not be yanked away from it. "Near the bottom"
+ * is the whole heuristic, measured before the new entries land.
+ */
+function Entries({ entries }: { entries: ThreadEntry[] }) {
+  const scroller = useRef<HTMLDivElement | null>(null)
+  const stick = useRef(true)
+
+  useEffect(() => {
+    const node = scroller.current
+    if (node && stick.current) node.scrollTop = node.scrollHeight
+  }, [entries.length])
+
+  return (
+    <div
+      ref={scroller}
+      onScroll={(event) => {
+        const node = event.currentTarget
+        stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80
+      }}
+      className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3"
+    >
+      {entries.length === 0 ? (
+        <p className="pt-8 text-center text-[12px] text-faint">
+          This session has no readable conversation.
+        </p>
+      ) : (
+        entries.map((entry, index) => <Entry key={index} entry={entry} />)
+      )}
     </div>
   )
 }

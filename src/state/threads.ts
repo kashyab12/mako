@@ -21,8 +21,12 @@ interface ThreadsState {
   continuing: string | null
   /** Harnesses whose CLI can be driven headlessly from here. */
   resumable: string[]
+  /** Harnesses a conversation can be continued on, "pi" first. */
+  targets: string[]
   /** The native run for the viewed thread, if one was started. */
   run: ThreadRunState | null
+  /** Every live native run, by thread path — the rail's working dots. */
+  running: Record<string, boolean>
 }
 
 export const threadsStore = createStore<ThreadsState>({
@@ -32,7 +36,9 @@ export const threadsStore = createStore<ThreadsState>({
   viewingBusy: false,
   continuing: null,
   resumable: [],
+  targets: [],
   run: null,
+  running: {},
 })
 export const useThreads = createHook(threadsStore)
 
@@ -40,9 +46,13 @@ export function applyThreads(threads: ThreadRef[]) {
   threadsStore.set({ threads, loaded: true })
 }
 
-/** A native run started, finished, or failed for the viewed thread. */
+/** A native run started, finished, or failed, on any thread. */
 export function applyThreadRun(run: ThreadRunState) {
-  const { viewing } = threadsStore.get()
+  const { viewing, running } = threadsStore.get()
+  const next = { ...running }
+  if (run.status === "running") next[run.path] = true
+  else delete next[run.path]
+  threadsStore.set({ running: next })
   if (viewing && viewing.ref.path === run.path) threadsStore.set({ run })
   if (run.status === "failed" && run.error) toast.error(run.error)
 }
@@ -59,11 +69,12 @@ export function applyThreadEntries(path: string, entries: ThreadEntry[], replace
 export const threads = {
   async load() {
     if (!hasBridge()) return
-    const [list, resumable] = await Promise.all([
+    const [list, resumable, targets] = await Promise.all([
       getPi().threads().catch((): ThreadRef[] => []),
       getPi().resumableHarnesses().catch((): string[] => []),
+      getPi().continueTargets().catch((): string[] => []),
     ])
-    threadsStore.set({ threads: list, loaded: true, resumable })
+    threadsStore.set({ threads: list, loaded: true, resumable, targets })
   },
 
   /** Open a foreign session read-only, translated to the canonical shape. */
@@ -98,6 +109,9 @@ export const threads = {
     if (!hasBridge()) return
     try {
       const run = await getPi().resumeThread(ref.path, prompt)
+      // Through the same reducer the host's events use, so the rail's
+      // working dot lights immediately rather than on the first event.
+      applyThreadRun(run)
       threadsStore.set({ run })
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
@@ -107,6 +121,28 @@ export const threads = {
   async abortReply(ref: ThreadRef) {
     if (!hasBridge()) return
     await getPi().abortThreadRun(ref.path).catch(() => {})
+  },
+
+  /**
+   * Continue this conversation on a different harness: the transcript
+   * becomes the first prompt of a fresh session there. "pi" opens a tab in
+   * this app; anything else runs headlessly and surfaces in the rail when
+   * its session store appears — which the watcher notices, not this code.
+   */
+  async continueWith(ref: ThreadRef, harness: string, label: string) {
+    if (harness === "pi") return this.continueHere(ref)
+    if (!hasBridge()) return false
+    try {
+      await getPi().continueThreadWith(ref.path, harness)
+      threadsStore.set({ viewing: null, run: null })
+      toast(`${label} picked up the conversation`, {
+        description: `Working in ${ref.cwd ?? "its workspace"} — it will appear under Agents.`,
+      })
+      return true
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+      return false
+    }
   },
 
   /**

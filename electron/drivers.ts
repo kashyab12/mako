@@ -62,8 +62,37 @@ const RESUME: Record<string, (nativeId: string, prompt: string) => ResumeCommand
   }),
 }
 
+/**
+ * How each harness starts a *new* headless session with an opening prompt.
+ * Used by cross-harness continuation: the rendered handoff becomes the first
+ * message of a fresh session in the same working directory, and the watcher
+ * surfaces that session in the rail the moment its store appears.
+ */
+const FRESH: Record<string, (prompt: string) => ResumeCommand> = {
+  codex: (prompt) => ({
+    command: "codex",
+    args: ["exec", prompt, "--sandbox", "workspace-write", "--skip-git-repo-check"],
+  }),
+  claude: (prompt) => ({
+    command: "claude",
+    args: ["-p", prompt, "--dangerously-skip-permissions"],
+  }),
+  cursor: (prompt) => ({
+    command: "cursor-agent",
+    args: ["-p", prompt, "--force"],
+  }),
+  grok: (prompt) => ({
+    command: "agent",
+    args: ["-p", prompt, "--always-approve"],
+  }),
+}
+
 export function resumableHarnesses(): string[] {
   return Object.keys(RESUME)
+}
+
+export function freshHarnesses(): string[] {
+  return Object.keys(FRESH)
 }
 
 interface Run {
@@ -95,18 +124,41 @@ export function resumeNative(ref: ThreadRef, prompt: string): ThreadRunState {
 
   const make = RESUME[ref.harness]
   if (!make) throw new Error(`Sessions from ${ref.harness} cannot be resumed here`)
-  const { command, args } = make(ref.nativeId, prompt)
+  return launch(ref.path, ref.harness, ref.cwd, make(ref.nativeId, prompt))
+}
 
-  const cwd = ref.cwd && existsSync(ref.cwd) ? ref.cwd : homedir()
+/**
+ * Start a fresh headless session on another harness, opened with a handoff.
+ *
+ * The run is keyed by a synthetic path — there is no session file until the
+ * CLI creates one — and the session itself arrives in the catalog through
+ * the watcher, like any other session anything starts on this machine.
+ */
+let freshCounter = 0
+
+export function startFresh(harness: string, cwd: string | undefined, prompt: string): ThreadRunState {
+  const make = FRESH[harness]
+  if (!make) throw new Error(`A new ${harness} session cannot be started from here`)
+  return launch(`fresh:${harness}:${++freshCounter}`, harness, cwd, make(prompt))
+}
+
+function launch(
+  key: string,
+  harness: string,
+  workingDir: string | undefined,
+  resume: ResumeCommand
+): ThreadRunState {
+  const { command, args } = resume
+  const cwd = workingDir && existsSync(workingDir) ? workingDir : homedir()
   const child = spawn(command, args, {
     cwd,
     stdio: ["ignore", "pipe", "pipe"],
     env: process.env,
   })
 
-  const state: ThreadRunState = { path: ref.path, harness: ref.harness, status: "running" }
+  const state: ThreadRunState = { path: key, harness, status: "running" }
   const run: Run = { child, state }
-  runs.set(ref.path, run)
+  runs.set(key, run)
   push(state)
 
   // Keep the tail of stderr: when a CLI fails it says why there, and "exit

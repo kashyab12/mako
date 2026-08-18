@@ -111,6 +111,9 @@ export function AgentThreads() {
 }
 
 const ThreadRow = memo(function ThreadRow({ threadRef: ref }: { threadRef: ThreadRef }) {
+  // A thread whose CLI is being driven from here right now wears a pulse —
+  // the same promise a tab's dot makes: something is working behind this row.
+  const working = useThreads((state) => Boolean(state.running[ref.path]))
   const open = () => {
     // Pi sessions are this app's own: open them natively, with full fidelity
     // and a live agent. Everything else opens translated, read-only, with
@@ -130,11 +133,19 @@ const ThreadRow = memo(function ThreadRow({ threadRef: ref }: { threadRef: Threa
       )}
     >
       <span className="flex items-baseline gap-2">
-        <span className={cn("size-1.5 shrink-0 self-center rounded-full", harnessDot(ref.harness))} />
+        <span
+          className={cn(
+            "size-1.5 shrink-0 self-center rounded-full",
+            harnessDot(ref.harness),
+            working && "animate-pulse"
+          )}
+        />
         <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground/85">
           {ref.title ?? "Untitled session"}
         </span>
-        {ref.updatedAt ? (
+        {working ? (
+          <span className="shrink-0 text-[10.5px] text-faint">working…</span>
+        ) : ref.updatedAt ? (
           <span className="tabular shrink-0 text-[10.5px] text-faint">
             {formatRelative(ref.updatedAt)}
           </span>

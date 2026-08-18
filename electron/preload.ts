@@ -44,6 +44,9 @@ const api = {
   followThread: (path: string, fromByte: number) => invoke<void>("pi:thread-follow", path, fromByte),
   unfollowThread: () => invoke<void>("pi:thread-unfollow"),
   resumableHarnesses: () => invoke<string[]>("pi:thread-resumable"),
+  continueTargets: () => invoke<string[]>("pi:thread-continue-targets"),
+  continueThreadWith: (path: string, harness: string, instruction?: string) =>
+    invoke<ThreadRunState>("pi:thread-continue-with", path, harness, instruction),
   threadRun: (path: string) => invoke<ThreadRunState | null>("pi:thread-run", path),
   resumeThread: (path: string, prompt: string) => invoke<ThreadRunState>("pi:thread-resume", path, prompt),
   abortThreadRun: (path: string) => invoke<void>("pi:thread-abort-run", path),

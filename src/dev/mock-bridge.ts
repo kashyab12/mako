@@ -415,6 +415,8 @@ export function installMockBridge() {
     followThread: async () => {},
     unfollowThread: async () => {},
     resumableHarnesses: async () => ["codex", "claude", "cursor", "grok"],
+    continueTargets: async () => ["pi", "codex", "claude", "cursor", "grok"],
+    continueThreadWith: async (_path: string, harness: string) => ({ path: `fresh:${harness}:1`, harness, status: "running" as const }),
     threadRun: async () => null,
     resumeThread: async (path: string) => ({ path, harness: "codex", status: "running" as const }),
     abortThreadRun: async () => {},
