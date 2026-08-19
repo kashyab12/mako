@@ -31,7 +31,14 @@ import {
   type ThreadRef,
   type TurnUsage,
 } from "../format.js"
-import { createJsonlFollower, parseLine, readLines, snapshotSink, walkFiles } from "../jsonl.js"
+import {
+  createJsonlFollower,
+  parseLine,
+  readLines,
+  snapshotSink,
+  walkFiles,
+  type LineTranslator,
+} from "../jsonl.js"
 import type { NativeFile, SessionProvider } from "./types.js"
 
 /**
@@ -43,21 +50,241 @@ import type { NativeFile, SessionProvider } from "./types.js"
  */
 const INJECTED = /^(?:<[a-z]+(?:_[a-z0-9]+)+>|# Files mentioned by the user:)/i
 
-interface CodexLine {
-  timestamp?: string
-  type?: string
-  payload?: Record<string, unknown>
+type JsonScalar = boolean | number | string | null
+type JsonValue = JsonScalar | JsonObject | JsonValue[]
+
+interface JsonObject {
+  [key: string]: JsonValue | undefined
 }
 
-function textOf(content: unknown): string {
-  if (typeof content === "string") return content
+interface CodexRolloutBase {
+  at?: string
+}
+
+interface CodexSessionMeta extends CodexRolloutBase {
+  kind: "session_meta"
+  id: string
+  cwd?: string
+  startedAt?: string
+}
+
+interface CodexTurnContext extends CodexRolloutBase {
+  kind: "turn_context"
+  model?: string
+}
+
+interface CodexUserMessageEvent extends CodexRolloutBase {
+  kind: "user_message_event"
+  text: string
+}
+
+interface CodexTokenUsage {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+}
+
+interface CodexTokenCountEvent extends CodexRolloutBase {
+  kind: "token_count_event"
+  usage?: CodexTokenUsage
+}
+
+interface CodexUserResponse extends CodexRolloutBase {
+  kind: "user_response"
+  text: string
+}
+
+interface CodexAssistantResponse extends CodexRolloutBase {
+  kind: "assistant_response"
+  text: string
+}
+
+interface CodexPlumbingResponse extends CodexRolloutBase {
+  kind: "plumbing_response"
+}
+
+interface CodexReasoningResponse extends CodexRolloutBase {
+  kind: "reasoning_response"
+  text: string
+}
+
+interface CodexFunctionCallResponse extends CodexRolloutBase {
+  kind: "function_call_response"
+  callId?: string
+  name: string
+  input?: string
+}
+
+interface CodexFunctionOutputResponse extends CodexRolloutBase {
+  kind: "function_output_response"
+  callId?: string
+  output: string
+}
+
+interface CodexIgnoredRolloutLine extends CodexRolloutBase {
+  kind: "ignored"
+}
+
+type CodexRolloutEvent =
+  | CodexSessionMeta
+  | CodexTurnContext
+  | CodexUserMessageEvent
+  | CodexTokenCountEvent
+  | CodexUserResponse
+  | CodexAssistantResponse
+  | CodexPlumbingResponse
+  | CodexReasoningResponse
+  | CodexFunctionCallResponse
+  | CodexFunctionOutputResponse
+  | CodexIgnoredRolloutLine
+
+type AssistantEntry = Extract<ThreadEntry, { kind: "assistant" }>
+type ToolBlock = EntryBlock & { type: "tool" }
+
+interface CodexTranslator extends LineTranslator {
+  done(): ThreadEntry[]
+  commitBatch(): void
+  readonly needsReset: boolean
+}
+
+function isString(value: JsonValue | undefined): value is string {
+  return Object.prototype.toString.call(value) === "[object String]"
+}
+
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return (
+    value !== undefined &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.prototype.toString.call(value) === "[object Object]"
+  )
+}
+
+function stringValue(value: JsonValue | undefined): string | undefined {
+  return isString(value) ? value : undefined
+}
+
+function objectValue(value: JsonValue | undefined): JsonObject | undefined {
+  return isJsonObject(value) ? value : undefined
+}
+
+function textOf(content: JsonValue | undefined): string {
+  if (isString(content)) return content
   if (!Array.isArray(content)) return ""
-  return content
-    .map((part) => {
-      const rec = part as Record<string, unknown>
-      return typeof rec?.text === "string" ? rec.text : ""
-    })
-    .join("")
+  let text = ""
+  for (const value of content) {
+    const part = objectValue(value)
+    text += stringValue(part?.["text"]) ?? ""
+  }
+  return text
+}
+
+function outputText(output: JsonValue | undefined): string {
+  if (isString(output)) return output
+  const content = stringValue(objectValue(output)?.["content"])
+  return content ?? JSON.stringify(output ?? "") ?? ""
+}
+
+function parseTokenUsage(payload: JsonObject): CodexTokenUsage | undefined {
+  const info = objectValue(payload["info"])
+  const usage = objectValue(info?.["last_token_usage"])
+  if (!usage) return undefined
+  return {
+    input: Number(usage["input_tokens"] ?? 0),
+    output: Number(usage["output_tokens"] ?? 0),
+    cacheRead: Number(usage["cached_input_tokens"] ?? 0),
+    cacheWrite: Number(usage["cache_write_input_tokens"] ?? 0),
+  }
+}
+
+function parseResponseItem(
+  payload: JsonObject,
+  at: string | undefined
+): CodexRolloutEvent {
+  switch (stringValue(payload["type"])) {
+    case "message": {
+      const text = textOf(payload["content"])
+      switch (stringValue(payload["role"])) {
+        case "user":
+          return { kind: "user_response", at, text }
+        case "assistant":
+          return { kind: "assistant_response", at, text }
+        default:
+          return { kind: "plumbing_response", at }
+      }
+    }
+    case "reasoning":
+      return {
+        kind: "reasoning_response",
+        at,
+        text: textOf(payload["summary"]) || textOf(payload["content"]),
+      }
+    case "function_call":
+      return {
+        kind: "function_call_response",
+        at,
+        callId: stringValue(payload["call_id"]),
+        name: String(payload["name"] ?? "tool"),
+        input: stringValue(payload["arguments"]),
+      }
+    case "function_call_output":
+      return {
+        kind: "function_output_response",
+        at,
+        callId: stringValue(payload["call_id"]),
+        output: outputText(payload["output"]),
+      }
+    default:
+      return { kind: "ignored", at }
+  }
+}
+
+function parseCodexRolloutLine(raw: string): CodexRolloutEvent | null {
+  const root = parseLine(raw)
+  if (!root) return null
+  const at = stringValue(root["timestamp"])
+  const payload = objectValue(root["payload"])
+  switch (stringValue(root["type"])) {
+    case "session_meta":
+      return {
+        kind: "session_meta",
+        at,
+        id: String(payload?.["id"] ?? payload?.["session_id"] ?? ""),
+        cwd: stringValue(payload?.["cwd"]),
+        startedAt: stringValue(payload?.["timestamp"]),
+      }
+    case "turn_context":
+      return {
+        kind: "turn_context",
+        at,
+        model: stringValue(payload?.["model"]),
+      }
+    case "event_msg":
+      if (!payload) return { kind: "ignored", at }
+      switch (stringValue(payload["type"])) {
+        case "user_message":
+          return {
+            kind: "user_message_event",
+            at,
+            text: String(payload["message"] ?? ""),
+          }
+        case "token_count":
+          return {
+            kind: "token_count_event",
+            at,
+            usage: parseTokenUsage(payload),
+          }
+        default:
+          return { kind: "ignored", at }
+      }
+    case "response_item":
+      return payload ? parseResponseItem(payload, at) : { kind: "ignored", at }
+    case undefined:
+      return null
+    default:
+      return { kind: "ignored", at }
+  }
 }
 
 export class CodexProvider implements SessionProvider {
@@ -103,19 +330,17 @@ export class CodexProvider implements SessionProvider {
     let ref: ThreadRef | null = null
     await readLines(file.path, 0, (raw) => {
       spent += raw.length + 1
-      const line = parseLine(raw) as CodexLine | null
-      if (!line?.type) return spent < budget
-      const payload = line.payload ?? {}
-      if (line.type === "session_meta") {
+      const event = parseCodexRolloutLine(raw)
+      if (!event) return spent < budget
+      if (event.kind === "session_meta") {
         sawMeta = true
-        const id = String(payload.id ?? payload.session_id ?? "")
-        if (!id) return false
+        if (!event.id) return false
         ref = {
           harness: this.harness,
-          nativeId: id,
+          nativeId: event.id,
           path: file.path,
-          cwd: typeof payload.cwd === "string" ? payload.cwd : undefined,
-          startedAt: typeof payload.timestamp === "string" ? payload.timestamp : line.timestamp,
+          cwd: event.cwd,
+          startedAt: event.startedAt ?? event.at,
           updatedAt: new Date(file.mtimeMs).toISOString(),
           bytes: file.bytes,
         }
@@ -123,18 +348,16 @@ export class CodexProvider implements SessionProvider {
       }
       if (!sawMeta) return false // Not a rollout file at all.
       if (!ref) return spent < budget
-      if (line.type === "turn_context" && !ref.model && typeof payload.model === "string") {
-        ref.model = payload.model
+      if (event.kind === "turn_context" && !ref.model && event.model) {
+        ref.model = event.model
       }
-      if (!ref.title) {
-        if (line.type === "event_msg" && payload.type === "user_message") {
-          const text = String(payload.message ?? "")
-          if (!INJECTED.test(text.trimStart())) ref.title = titleFrom(text)
-        }
-        if (line.type === "response_item" && payload.type === "message" && payload.role === "user") {
-          const text = textOf(payload.content)
-          if (!INJECTED.test(text.trimStart())) ref.title = titleFrom(text)
-        }
+      if (
+        !ref.title &&
+        (event.kind === "user_message_event" ||
+          event.kind === "user_response") &&
+        !INJECTED.test(event.text.trimStart())
+      ) {
+        ref.title = titleFrom(event.text)
       }
       return spent < budget && !(ref.title && ref.model)
     })
@@ -156,7 +379,10 @@ export class CodexProvider implements SessionProvider {
     return createJsonlFollower(path, fromByte, translator)
   }
 
-  async tail(path: string, fromByte: number): Promise<{ entries: ThreadEntry[]; nextByte: number }> {
+  async tail(
+    path: string,
+    fromByte: number
+  ): Promise<{ entries: ThreadEntry[]; nextByte: number }> {
     const into = translator()
     const nextByte = await readLines(path, fromByte, into.push)
     return { entries: into.done(), nextByte }
@@ -171,15 +397,12 @@ export class CodexProvider implements SessionProvider {
  * closes over the most recent assistant entry, which is the turn it priced.
  * Push-based so a gigabyte session streams through without ever being held.
  */
-function translator(): {
-  push: (raw: string) => void
-  snapshot: () => ThreadEntry[]
-  done: () => ThreadEntry[]
-} {
-  type AssistantEntry = Extract<ThreadEntry, { kind: "assistant" }>
+function translator(): CodexTranslator {
   const sink = new EntrySink()
   let assistant: AssistantEntry | null = null
-  const callsByid = new Map<string, EntryBlock & { type: "tool" }>()
+  const callsById = new Map<string, ToolBlock>()
+  let started = false
+  let needsReset = false
   let model: string | undefined
 
   const openAssistant = (at?: string): AssistantEntry => {
@@ -191,81 +414,85 @@ function translator(): {
   }
 
   const push = (raw: string): void => {
-    const line = parseLine(raw) as CodexLine | null
-    if (!line?.type) return
-    const payload = line.payload ?? {}
+    const event = parseCodexRolloutLine(raw)
+    if (!event) return
 
-    if (line.type === "turn_context") {
-      if (typeof payload.model === "string") model = payload.model
-      return
-    }
-
-    if (line.type === "event_msg" && payload.type === "token_count") {
-      const info = payload.info as Record<string, unknown> | undefined
-      const last = info?.last_token_usage as Record<string, unknown> | undefined
-      const turn = assistant as AssistantEntry | null
-      if (last && turn) {
-        const usage: TurnUsage = {
-          input: Number(last.input_tokens ?? 0),
-          output: Number(last.output_tokens ?? 0),
-          cacheRead: Number(last.cached_input_tokens ?? 0),
-          cacheWrite: Number(last.cache_write_input_tokens ?? 0),
-        }
-        turn.usage = usage
-      }
-      return
-    }
-
-    if (line.type !== "response_item") return
-
-    switch (payload.type) {
-      case "message": {
-        const text = textOf(payload.content)
-        if (payload.role === "user") {
-          if (INJECTED.test(text.trimStart()) || !text.trim()) return
-          assistant = null
-          sink.push({ kind: "user", at: line.timestamp, text })
-        } else if (payload.role === "assistant" && text) {
-          openAssistant(line.timestamp).blocks.push({ type: "text", text })
-        }
-        // Developer/system messages are harness plumbing; skipped.
+    switch (event.kind) {
+      case "turn_context":
+        if (event.model) model = event.model
         return
-      }
-      case "reasoning": {
-        const summary = textOf(payload.summary) || textOf(payload.content)
-        if (summary.trim()) {
-          openAssistant(line.timestamp).blocks.push({ type: "thinking", text: summary })
+      case "token_count_event":
+        if (event.usage && assistant) {
+          const usage: TurnUsage = {
+            input: event.usage.input,
+            output: event.usage.output,
+            cacheRead: event.usage.cacheRead,
+            cacheWrite: event.usage.cacheWrite,
+          }
+          assistant.usage = usage
         }
         return
-      }
-      case "function_call": {
-        const block: EntryBlock & { type: "tool" } = {
+      case "user_response":
+        if (INJECTED.test(event.text.trimStart()) || !event.text.trim()) return
+        assistant = null
+        started = true
+        sink.push({ kind: "user", at: event.at, text: event.text })
+        return
+      case "assistant_response":
+        if (!event.text) return
+        if (!started) needsReset = true
+        started = true
+        openAssistant(event.at).blocks.push({ type: "text", text: event.text })
+        return
+      case "reasoning_response":
+        if (!event.text.trim()) return
+        if (!started) needsReset = true
+        started = true
+        openAssistant(event.at).blocks.push({
+          type: "thinking",
+          text: event.text,
+        })
+        return
+      case "function_call_response": {
+        if (!started) needsReset = true
+        started = true
+        const block: ToolBlock = {
           type: "tool",
-          name: String(payload.name ?? "tool"),
-          input: clip(typeof payload.arguments === "string" ? payload.arguments : undefined),
+          name: event.name,
+          input: clip(event.input),
         }
-        if (typeof payload.call_id === "string") callsByid.set(payload.call_id, block)
-        openAssistant(line.timestamp).blocks.push(block)
+        if (event.callId) callsById.set(event.callId, block)
+        openAssistant(event.at).blocks.push(block)
         return
       }
-      case "function_call_output": {
-        const id = typeof payload.call_id === "string" ? payload.call_id : ""
-        const block = callsByid.get(id)
-        const output = payload.output
-        const text =
-          typeof output === "string"
-            ? output
-            : typeof (output as Record<string, unknown>)?.content === "string"
-              ? String((output as Record<string, unknown>).content)
-              : JSON.stringify(output ?? "")
+      case "function_output_response": {
+        const id = event.callId ?? ""
+        const block = callsById.get(id)
         if (block) {
-          block.output = clip(text)
-          callsByid.delete(id)
+          block.output = clip(event.output)
+          callsById.delete(id)
+        } else if (id) {
+          needsReset = true
         }
         return
       }
+      case "session_meta":
+      case "user_message_event":
+      case "plumbing_response":
+      case "ignored":
+        return
     }
   }
 
-  return { push, snapshot: () => snapshotSink(sink), done: () => snapshotSink(sink) }
+  return {
+    push,
+    snapshot: () => snapshotSink(sink),
+    done: () => snapshotSink(sink),
+    commitBatch: () => {
+      assistant = null
+    },
+    get needsReset() {
+      return needsReset
+    },
+  }
 }
