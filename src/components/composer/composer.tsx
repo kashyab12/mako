@@ -14,6 +14,7 @@ import { Slot } from "@/extend/slot"
 import { formatChord } from "@/extend/commands"
 import { mentionAt, replaceMention, type ActiveMention } from "@/lib/mentions"
 import { textOf } from "@/lib/format"
+import { appendThreadReferences, prefetchThreadReferences } from "@/lib/thread-references"
 import { actions, shallowEqual, store as sessionStore, useSession } from "@/state/session"
 import { threads, threadsStore, useThreads } from "@/state/threads"
 import { acp, acpStore, useAcp } from "@/state/acp"
@@ -191,26 +192,15 @@ export function Composer() {
       const text = draft.trim()
       if (!text && attachments.items.length === 0) return
 
-      // One composer, routed. A live agent gets the message directly (it
-      // queues its own mid-turn sends); an open foreign conversation gets
-      // the reply through its own harness; a foreign harness chosen for a
-      // new conversation starts one — live over ACP where the harness
-      // speaks it, otherwise running in the workspace with its transcript
-      // streaming in. Pi keeps the native path with steering and
-      // follow-ups. Attachments ride as staged file paths — every agent can
-      // read its own disk.
+      // One composer, routed. A live agent gets the message directly; an
+      // open conversation resumes through the provider that owns it; a new
+      // conversation starts through that provider's richest live protocol.
+      // Attachments ride as staged file paths so every local CLI reads the
+      // same bytes without base64 crossing IPC.
       const liveSession = acpStore.get().session
       const viewingRef = threadsStore.get().viewing?.ref
       const harness = threadsStore.get().composerHarness
-      // Harnesses the app's own engine answers for, in-process — Devin's
-      // models run right here (and legacy Pi sessions still route the same
-      // way). Every other harness is its own CLI: Claude Code and Cursor
-      // live over ACP, Codex and Grok headless with the transcript tailed
-      // in. "Native" was the wrong word — every path is native to its
-      // harness; this one just doesn't leave the building.
-      const engineAnswers = harness === "pi" || harness === "devin"
-      const foreignSurface = liveSession || viewingRef || !engineAnswers
-      if (foreignSurface && (!mode || viewingRef || liveSession)) {
+      if (liveSession || viewingRef || harness !== "pi") {
         // Wait out staging — a screenshot mid-copy must not race the send
         // and leave a dead [Attachment N] marker with no file behind it —
         // then put even inline-shaped images on disk, since a CLI reads
@@ -229,7 +219,8 @@ export function Composer() {
             }
           })
         )
-        const full = buildForeignPrompt(text, staged)
+        const attachmentPrompt = buildForeignPrompt(text, staged)
+        const full = await appendThreadReferences(attachmentPrompt, threadsStore.get().threads)
         if (!full.trim()) return
         const previousDraft = draft
         const detached = attachments.detach()
@@ -253,10 +244,7 @@ export function Composer() {
                 ? await threads.interruptAndSend(viewingRef, full)
                 : await threads.reply(viewingRef, full)
               : await threads.moveAndSend(viewingRef, harness, full)
-        } else if (engineAnswers) {
-          // Unreachable by construction, but the router stays total.
-          ok = false
-        } else if (harness === "claude" || harness === "cursor") {
+        } else if (harness === "claude" || harness === "cursor" || harness === "devin") {
           ok = await acp.startFresh(harness, meta?.cwd ?? "", full)
         } else {
           ok = await threads.startNew(harness, full)
@@ -280,6 +268,7 @@ export function Composer() {
       }
 
       const built = buildPrompt(draft, attachments.items)
+      built.text = await appendThreadReferences(built.text, threadsStore.get().threads)
 
       // Cleared before the host answers, so typing the next thing is instant —
       // and put back verbatim if the host refuses. A prompt is rejected
@@ -313,6 +302,9 @@ export function Composer() {
       }
       const next = replaceMention(draft, mention, value)
       update(next.text)
+      if (value.startsWith("@thread:")) {
+        prefetchThreadReferences(value, threadsStore.get().threads)
+      }
       setMention(null)
       requestAnimationFrame(() => {
         const node = textarea.current
@@ -384,13 +376,11 @@ export function Composer() {
           : viewingRunning
             ? `${HARNESS_TITLES[routedHarness] ?? routedHarness} is working — Enter queues, ${isMac ? "⌘" : "Ctrl+"}Enter interrupts`
             : `Reply — ${HARNESS_TITLES[routedHarness] ?? routedHarness} answers`
-      : newHarness !== "pi" && newHarness !== "devin"
+      : newHarness !== "pi"
         ? `Ask ${HARNESS_TITLES[newHarness] ?? newHarness} for a change`
         : status.streaming
           ? "Steer the current turn…"
-          : newHarness === "devin"
-            ? "Ask Devin for a change"
-            : "Ask for a change"
+          : "Ask for a change"
 
   return (
     <div className="shrink-0 px-6 pt-1 pb-4">

@@ -25,7 +25,7 @@ import {
   type ThreadEntry,
   type ThreadRef,
 } from "../format.js"
-import { parseLine, readLines } from "../jsonl.js"
+import { createJsonlFollower, parseLine, readLines, snapshotSink } from "../jsonl.js"
 import type { NativeFile, SessionProvider } from "./types.js"
 
 const USER_QUERY = /<user_query>([\s\S]*?)<\/user_query>/
@@ -133,6 +133,10 @@ export class GrokProvider implements SessionProvider {
     return { ref, entries: into.done() }
   }
 
+  createFollower(path: string, fromByte: number) {
+    return createJsonlFollower(path, fromByte, translator)
+  }
+
   async tail(path: string, fromByte: number): Promise<{ entries: ThreadEntry[]; nextByte: number }> {
     const into = translator()
     const nextByte = await readLines(path, fromByte, into.push)
@@ -140,7 +144,11 @@ export class GrokProvider implements SessionProvider {
   }
 }
 
-function translator(): { push: (raw: string) => void; done: () => ThreadEntry[] } {
+function translator(): {
+  push: (raw: string) => void
+  snapshot: () => ThreadEntry[]
+  done: () => ThreadEntry[]
+} {
   type AssistantEntry = Extract<ThreadEntry, { kind: "assistant" }>
   const sink = new EntrySink()
   let assistant: AssistantEntry | null = null
@@ -201,5 +209,5 @@ function translator(): { push: (raw: string) => void; done: () => ThreadEntry[] 
       }
     }
   }
-  return { push, done: () => sink.done() }
+  return { push, snapshot: () => snapshotSink(sink), done: () => snapshotSink(sink) }
 }

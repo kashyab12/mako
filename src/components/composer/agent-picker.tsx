@@ -4,8 +4,6 @@ import { HarnessIcon } from "@/components/ui/provider-icon"
 import { harnessLabel } from "@/components/rail/agent-threads"
 import { harnessDefault, setComposerHarness, useThreads } from "@/state/threads"
 import { decomposeModelId } from "@/lib/model-id"
-import { actions, store as sessionStore, useSession } from "@/state/session"
-import { toast } from "sonner"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
 import { CheckIcon, ChevronDownIcon } from "lucide-react"
@@ -16,8 +14,8 @@ import { CheckIcon, ChevronDownIcon } from "lucide-react"
  * Each agent is a full row: its mark in a tile, its name, and the model it
  * would use right now — the user's saved choice, or Mako's own sensible
  * default. Five hands, one bar: Claude Code, Codex, Cursor, Grok, Devin.
- * Devin runs local, natively in this tab. No filler prose — the rows are
- * the information, and every row earns the same treatment.
+ * No filler prose — the rows are the information, and every row earns the
+ * same treatment.
  */
 
 const ORDER = ["claude", "codex", "cursor", "grok", "devin"]
@@ -52,12 +50,9 @@ export function AgentPicker() {
 }
 
 function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void }) {
-  const [available, setAvailable] = useState<Record<string, boolean>>({ pi: true })
+  const [available, setAvailable] = useState<Record<string, boolean>>({})
   const [defaults, setDefaults] = useState<Record<string, string>>({})
-  const piModel = useSession((state) => state.meta?.model)
   const tuning = useThreads((state) => state.composerTuning)
-  const hasDevinModels = sessionStore.get().models.some((model) => model.provider === "devin")
-  const devinModel = sessionStore.get().models.find((model) => model.provider === "devin")
 
   useEffect(() => {
     if (!hasBridge()) return
@@ -67,7 +62,7 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
         setAvailable(next)
         // Each harness's own default model, so every row can wear one.
         for (const harness of Object.keys(next)) {
-          if (!next[harness] || harness === "pi") continue
+          if (!next[harness]) continue
           void getPi()
             .harnessTuning(harness)
             .then((t) =>
@@ -79,41 +74,14 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
       .catch(() => {})
   }, [])
 
-  const choices = ORDER.filter(
-    (harness) => available[harness] || (harness === "devin" && hasDevinModels)
-  )
-  const devinMissing = !choices.includes("devin")
+  const choices = ORDER.filter((harness) => available[harness])
 
-  const modelFor = (harness: string): string | undefined => {
-    if (harness === "devin") {
-      return piModel?.provider === "devin" ? piModel.id : devinModel?.id
-    }
-    return tuning[harness]?.model ?? defaults[harness] ?? harnessDefault(harness).model
-  }
+  const modelFor = (harness: string): string | undefined =>
+    tuning[harness]?.model ?? defaults[harness] ?? harnessDefault(harness).model
 
   const pick = (harness: string) => {
-    // Devin runs local: its models answer natively in this tab — streaming,
-    // steerable, in this folder. Picking it points the engine at a Devin
-    // model and gets out of the way.
-    if (harness === "devin") {
-      const models = sessionStore.get().models
-      const current = sessionStore.get().meta?.model
-      const devinModels = models.filter((model) => model.provider === "devin")
-      if (devinModels.length === 0) {
-        toast.error("No Devin models available", {
-          description: "The pi-devin provider supplies them — check it is installed and signed in.",
-        })
-        return
-      }
-      setComposerHarness("devin")
-      if (current?.provider !== "devin") {
-        const first = devinModels[0]
-        if (first) void actions.setModel(first.provider, first.id)
-      }
-      onDone()
-      return
-    }
     setComposerHarness(harness)
+    onDone()
   }
 
   return (
@@ -157,23 +125,6 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
           </button>
         )
       })}
-
-      {devinMissing ? (
-        <div
-          className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 opacity-50"
-          title="Devin's models arrive through the pi-devin provider — install and sign in, and this lights up"
-        >
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-hairline bg-raised/40">
-            <HarnessIcon harness="devin" className="size-3.5" tinted={false} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[12.5px] text-foreground/70">Devin</span>
-            <span className="mt-px block text-[10.5px] text-faint/80">
-              Arrives with the pi-devin provider
-            </span>
-          </span>
-        </div>
-      ) : null}
     </div>
   )
 }

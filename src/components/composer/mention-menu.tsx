@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Eyebrow, Keys } from "@/components/ui/kit"
-import { fileKind } from "@/lib/mentions"
-import { fileDir, fileName } from "@/lib/format"
+import { fileKind, threadToken } from "@/lib/mentions"
+import { fileDir, fileName, workspaceName } from "@/lib/format"
 import { fuzzy } from "@/lib/fuzzy"
 import { useSession } from "@/state/session"
+import { useThreads } from "@/state/threads"
 import { useWorkspaceFiles } from "@/state/files"
+import { HarnessIcon } from "@/components/ui/provider-icon"
 import { cn } from "@/lib/utils"
 import { BookOpenIcon, FileIcon } from "lucide-react"
 
@@ -17,6 +19,8 @@ export interface MentionItem {
   title: string
   hint?: string
   badge?: string
+  type: "file" | "thread" | "skill" | "command"
+  harness?: string
 }
 
 /**
@@ -37,20 +41,28 @@ export function MentionMenu({
 }) {
   const skills = useSession((state) => state.capabilities.skills)
   const commands = useSession((state) => state.capabilities.commands)
+  const threads = useThreads((state) => state.threads)
   const files = useWorkspaceFiles(kind === "@")
 
   const items = useMemo<MentionItem[]>(() => {
     if (kind === "@") {
-      return rank(
-        files.map((file) => ({
-          value: `@${file.path}`,
-          title: fileName(file.path),
-          hint: fileDir(file.path),
-          badge: file.changed ? "changed" : undefined,
-          key: file.path,
-        })),
-        query
-      )
+      const threadItems = threads.map((thread) => ({
+        value: threadToken(thread.harness, thread.nativeId),
+        title: thread.title ?? "Untitled conversation",
+        hint: [thread.harness, thread.cwd ? workspaceName(thread.cwd) : null].filter(Boolean).join(" · "),
+        type: "thread" as const,
+        harness: thread.harness,
+        key: `${thread.title ?? ""} ${thread.cwd ?? ""} ${thread.harness} ${thread.model ?? ""}`,
+      }))
+      const fileItems = files.map((file) => ({
+        value: `@${file.path}`,
+        title: fileName(file.path),
+        hint: fileDir(file.path),
+        badge: file.changed ? "changed" : undefined,
+        type: "file" as const,
+        key: file.path,
+      }))
+      return rank([...threadItems, ...fileItems], query)
     }
     if (kind === "$") {
       return rank(
@@ -58,6 +70,7 @@ export function MentionMenu({
           value: `$${skill.name}`,
           title: skill.name,
           hint: skill.description,
+          type: "skill" as const,
           key: `${skill.name} ${skill.description}`,
         })),
         query
@@ -68,11 +81,12 @@ export function MentionMenu({
         value: `/${command.name}`,
         title: `/${command.name}`,
         hint: command.description,
+        type: "command" as const,
         key: `${command.name} ${command.description ?? ""}`,
       })),
       query
     )
-  }, [commands, files, kind, query, skills])
+  }, [commands, files, kind, query, skills, threads])
 
   const [cursor, setCursor] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
@@ -118,7 +132,7 @@ export function MentionMenu({
 
   if (items.length === 0) return null
 
-  const label = kind === "@" ? "Files" : kind === "$" ? "Skills" : "Pi commands"
+  const label = kind === "@" ? "Conversations and files" : kind === "$" ? "Skills" : "Commands"
   const Icon = kind === "$" ? BookOpenIcon : FileIcon
 
   return (
@@ -137,11 +151,13 @@ export function MentionMenu({
               index === cursor && "bg-raised"
             )}
           >
-            {kind === "/" ? null : (
+            {item.type === "command" ? null : item.type === "thread" ? (
+              <HarnessIcon harness={item.harness ?? ""} className="size-3 shrink-0" />
+            ) : (
               <Icon
                 className={cn(
                   "size-3 shrink-0 text-faint",
-                  kind === "@" && fileKind(item.value.slice(1)) === "code" && "text-muted-foreground"
+                  item.type === "file" && fileKind(item.value.slice(1)) === "code" && "text-muted-foreground"
                 )}
               />
             )}
@@ -173,11 +189,14 @@ export function MentionMenu({
 function rank<T extends MentionItem & { key: string }>(items: T[], query: string): MentionItem[] {
   const term = query.trim()
   if (!term) return items.slice(0, LIMIT)
-  const scored: Array<{ item: T; score: number }> = []
+  const top: Array<{ item: T; score: number }> = []
   for (const item of items) {
     const match = fuzzy(term, item.key)
-    if (match) scored.push({ item, score: match.score })
+    if (!match) continue
+    const at = top.findIndex((entry) => match.score > entry.score)
+    if (at === -1) top.push({ item, score: match.score })
+    else top.splice(at, 0, { item, score: match.score })
+    if (top.length > LIMIT) top.pop()
   }
-  scored.sort((a, b) => b.score - a.score)
-  return scored.slice(0, LIMIT).map((entry) => entry.item)
+  return top.map((entry) => entry.item)
 }

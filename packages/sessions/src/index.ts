@@ -21,7 +21,16 @@ export {
 export { SessionCatalog, type CatalogEvent, type RemoteSource } from "./catalog.js"
 export { SessionArchive } from "./archive.js"
 export { connectDaemon, daemonSocketPath, pingDaemon, PROTOCOL_VERSION, serveCatalog, type DaemonClient, type DaemonStats } from "./daemon.js"
-export { renderTranscript, type TranscriptOptions } from "./transcript.js"
+export {
+  renderTranscript,
+  renderTranscriptBundle,
+  type TranscriptAsset,
+  type TranscriptBundle,
+  type TranscriptBundleMetadata,
+  type TranscriptLoss,
+  type TranscriptOptions,
+  type TranscriptSpill,
+} from "./transcript.js"
 export { emitClaudeSession, emitCodexSession, emitCursorSession, emitGrokSession, emitPiSession, type EmitResult } from "./emit.js"
 export { type NativeFile, type SessionProvider } from "./providers/types.js"
 export { CodexProvider } from "./providers/codex.js"

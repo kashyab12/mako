@@ -21,6 +21,48 @@ export interface ThreadRunState {
   error?: string
 }
 
+export interface HarnessSelectValue {
+  value: string
+  label: string
+  description?: string
+  default?: boolean
+}
+
+export type HarnessModelOption =
+  | {
+      kind: "select"
+      id: string
+      label: string
+      current?: string
+      values: HarnessSelectValue[]
+    }
+  | {
+      kind: "boolean"
+      id: string
+      label: string
+      current: boolean
+    }
+
+export interface HarnessModel {
+  id: string
+  label: string
+  description?: string
+  contextWindow?: number
+  maxOutputTokens?: number
+  options: HarnessModelOption[]
+}
+
+export interface HarnessProfile {
+  id: string
+  label: string
+  available: boolean
+  transport: "acp" | "app-server" | "remote"
+  models: HarnessModel[]
+  defaultModel?: string
+  capabilities: string[]
+  error?: string
+}
+
 /* ------------------------------------------------------------------ */
 /* Interactive foreign agents (ACP)                                    */
 /* ------------------------------------------------------------------ */

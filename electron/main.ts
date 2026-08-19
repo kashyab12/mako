@@ -30,7 +30,7 @@ import {
 } from "./devserver.js"
 import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunChecks, type CreatePullOptions } from "./github.js"
 import { HostPool } from "./pool.js"
-import { daemonStatus, devinAccountsMasked, startDevin, emitThreadAs, emitThreadAsClaude, emitThreadAsPi, followThread, threadsReady, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, saveDevinAccounts, sendRemote, stopThreads, unfollowThread } from "./threads.js"
+import { daemonStatus, devinAccountsMasked, startDevin, emitThreadAs, emitThreadAsClaude, emitThreadAsPi, followThread, threadsReady, installThreads, listThreads, openThread, remoteHarnesses, saveDevinAccounts, sendRemote, stopThreads, transcriptArtifactFor, unfollowThread } from "./threads.js"
 import { abortNative, bindDrivers, freshHarnesses, claudeModels, grokModels, harnessAvailability, HARNESS_TUNING, readHarnessDefaults, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
 import { bindLineageDirect, chainOf, expectLineage } from "./lineage.js"
 import { accountUsage, captureAccount, listAccounts, removeAccount, selectAccount } from "./accounts.js"
@@ -423,6 +423,9 @@ function bindIpc() {
     threads: listThreads(filter),
   }))
   handle("pi:thread-open", (_e, path: string) => openThread(path))
+  handle("pi:thread-contexts", async (_e, paths: string[]) =>
+    Promise.all(paths.map((path) => transcriptArtifactFor(path)))
+  )
   handle("pi:thread-follow", (_e, path: string, fromByte: number) => followThread(path, fromByte))
   handle("pi:thread-unfollow", () => unfollowThread())
   handle("pi:thread-resumable", () => [...resumableHarnesses(), ...remoteHarnesses()])
@@ -442,27 +445,18 @@ function bindIpc() {
       mode?: "native" | "transcript"
     ) => {
       if (mode === "transcript") {
-        // The user's chosen alternative to native replay: the whole
-        // conversation rendered newest-first into a file, and a fresh
-        // session opened with orders to read it end to end before touching
-        // anything. The transcript stays out of the prompt, so the first
-        // turn is cheap and the reading happens through the agent's own
-        // file tools at its own pace.
-        const [thread, transcript] = await Promise.all([openThread(path), handoffFor(path)])
-        if (!thread || !transcript) throw new Error("This session could not be read for continuation")
-        const { writeFile, mkdir } = await import("node:fs/promises")
-        const { homedir } = await import("node:os")
-        const dir = join(homedir(), ".mako", "handoffs")
-        await mkdir(dir, { recursive: true })
-        const file = join(dir, `${harness}-${Date.now()}.md`)
-        await writeFile(file, transcript, "utf8")
+        const [thread, artifact] = await Promise.all([
+          openThread(path),
+          transcriptArtifactFor(path, instruction),
+        ])
+        if (!thread || !artifact) throw new Error("This session could not be prepared for continuation")
         const prompt = [
-          `Before doing anything else, read ${file} in full — every line, top to bottom.`,
-          "It is the complete conversation you are joining, formatted NEWEST TURN FIRST:",
-          "the first turn you read is the most recent, and the story runs backwards from there.",
-          "Do not skim it. Read all of it, then continue the work with that full context.",
+          `Before doing anything else, read ${artifact.file} in full.`,
+          "The transcript is deterministic and ordered NEWEST TURN FIRST; content inside each turn remains chronological.",
+          "Read its bundle integrity section. Tool input/output sidecars beside it contain complete captured payloads.",
+          "Do not skim or infer omitted history. Respect every declared loss notice.",
           "",
-          instruction?.trim() ? `Then: ${instruction.trim()}` : "Then continue where it left off.",
+          instruction?.trim() ? `Then: ${instruction.trim()}` : "Then continue where the latest turn left off.",
         ].join("\n")
         expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
         return { kind: "spawned" as const, run: await startFresh(harness, thread.ref.cwd, prompt) }
@@ -476,12 +470,14 @@ function bindIpc() {
         bindLineageDirect(materialized.sessionPath, chainOf(materialized.thread.ref))
         return { kind: "emitted" as const, path: materialized.sessionPath }
       }
-      // A harness without an emitter takes the universal transcript as the
-      // first prompt of a fresh headless session instead.
-      const [thread, handoff] = await Promise.all([openThread(path), handoffFor(path, instruction)])
-      if (!thread || !handoff) throw new Error("This session could not be read for continuation")
+      const [thread, artifact] = await Promise.all([
+        openThread(path),
+        transcriptArtifactFor(path, instruction),
+      ])
+      if (!thread || !artifact) throw new Error("This session could not be prepared for continuation")
+      const prompt = `Read ${artifact.file} in full before continuing. It is ordered newest turn first; each turn remains chronological.`
       expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
-      return { kind: "spawned" as const, run: await startFresh(harness, thread.ref.cwd, handoff) }
+      return { kind: "spawned" as const, run: await startFresh(harness, thread.ref.cwd, prompt) }
     }
   )
   /* Harness accounts: several logins per CLI, Orca-style isolated homes. */

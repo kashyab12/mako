@@ -17,7 +17,7 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process"
-import { existsSync } from "node:fs"
+import { existsSync, readdirSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { Readable, Writable } from "node:stream"
@@ -48,19 +48,48 @@ function specFor(harness: string): AgentSpec | null {
     case "claude": {
       // The adapter is a bin script; run it with our own Node (Electron).
       const script = join(app.getAppPath(), "node_modules", "@zed-industries", "claude-code-acp", "dist", "index.js")
-      return existsSync(script)
-        ? { command: process.execPath, args: [script] }
-        : { command: "npx", args: ["--yes", "@zed-industries/claude-code-acp"] }
+      return existsSync(script) ? { command: process.execPath, args: [script] } : null
     }
     case "cursor":
       return { command: "cursor-agent", args: ["acp"] }
+    case "devin":
+      return { command: devinExecutable() ?? "devin", args: ["acp"] }
     default:
       return null
   }
 }
 
 export function acpHarnesses(): string[] {
-  return ["claude", "cursor"]
+  return ["claude", "cursor", "devin"].filter((harness) => {
+    const spec = specFor(harness)
+    return Boolean(spec && (spec.command === "cursor-agent" || spec.command === "devin" || existsSync(spec.command)))
+  })
+}
+
+function devinExecutable(): string | null {
+  const configured = process.env["DEVIN_CLI_PATH"]
+  if (configured && existsSync(configured)) return configured
+  const direct = join(homedir(), ".local", "bin", "devin")
+  if (existsSync(direct)) return direct
+  if (process.platform !== "darwin") return null
+  const registry = join(
+    homedir(),
+    "Library",
+    "Application Support",
+    "Zed",
+    "external_agents",
+    "registry",
+    "devin"
+  )
+  try {
+    for (const version of readdirSync(registry).sort().reverse()) {
+      const executable = join(registry, version, "bin", "devin")
+      if (existsSync(executable)) return executable
+    }
+  } catch {
+    return null
+  }
+  return null
 }
 
 interface Live {

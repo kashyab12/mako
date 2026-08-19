@@ -10,6 +10,7 @@
 export type Segment =
   | { kind: "text"; text: string }
   | { kind: "file"; path: string; raw: string }
+  | { kind: "thread"; harness: string; nativeId: string; raw: string }
   | { kind: "skill"; name: string; raw: string }
 
 /**
@@ -31,10 +32,13 @@ export function tokenize(text: string): Segment[] {
     if (start > cursor) segments.push({ kind: "text", text: text.slice(cursor, start) })
 
     const raw = `${sigil}${body}`
+    const thread = sigil === "@" ? parseThreadToken(body) : null
     segments.push(
-      sigil === "@"
-        ? { kind: "file", path: body, raw }
-        : { kind: "skill", name: body, raw }
+      thread
+        ? { kind: "thread", ...thread, raw }
+        : sigil === "@"
+          ? { kind: "file", path: body, raw }
+          : { kind: "skill", name: body, raw }
     )
     cursor = start + raw.length
   }
@@ -47,6 +51,20 @@ export function tokenize(text: string): Segment[] {
 export function hasReferences(text: string): boolean {
   TOKEN.lastIndex = 0
   return TOKEN.test(text)
+}
+
+export function threadToken(harness: string, nativeId: string): string {
+  return `@thread:${encodeURIComponent(harness)}:${encodeURIComponent(nativeId)}`
+}
+
+export function parseThreadToken(body: string): { harness: string; nativeId: string } | null {
+  const match = /^thread:([^:]+):(.+)$/.exec(body)
+  if (!match) return null
+  try {
+    return { harness: decodeURIComponent(match[1]!), nativeId: decodeURIComponent(match[2]!) }
+  } catch {
+    return null
+  }
 }
 
 /** The reference being typed at the caret, if any. */

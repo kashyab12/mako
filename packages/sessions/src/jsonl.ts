@@ -9,9 +9,38 @@
  * become one JavaScript string).
  */
 
+import { statSync } from "node:fs"
 import { open } from "node:fs/promises"
+import { EntrySink, type ThreadEntry } from "./format.js"
+import type { SessionFollower, SessionUpdate } from "./providers/types.js"
 
 const CHUNK = 4 * 1024 * 1024
+
+export interface LineTranslator {
+  push(raw: string): void
+  snapshot(): ThreadEntry[]
+}
+
+export function snapshotSink(sink: EntrySink): ThreadEntry[] {
+  const droppedUsers = (sink as unknown as { droppedUsers: number }).droppedUsers
+  return droppedUsers > 0
+    ? [
+        {
+          kind: "event",
+          label: "Earlier history not shown",
+          detail: `${droppedUsers} earlier turns remain in the native session file`,
+        },
+        ...sink.entries,
+      ]
+    : sink.entries
+}
+
+interface LineRead {
+  nextByte: number
+  reset: boolean
+  size: number
+  identity: string
+}
 
 /** Parse one JSONL line, returning null rather than throwing on torn writes. */
 export function parseLine(line: string): Record<string, unknown> | null {
@@ -55,20 +84,24 @@ export async function readHead(path: string, bytes: number): Promise<string> {
  * truncation); reading restarts from zero so offsets never point into a file
  * that no longer exists in that shape.
  */
-export async function readLines(
+async function readLineBatch(
   path: string,
   fromByte: number,
-  onLine: (line: string) => void | boolean
-): Promise<number> {
+  onLine: (line: string) => void | boolean,
+  throughByte?: number
+): Promise<LineRead> {
   const handle = await open(path, "r")
   try {
-    const size = (await handle.stat()).size
-    let cursor = size < fromByte ? 0 : fromByte
+    const info = await handle.stat()
+    const size = info.size
+    const reset = size < fromByte
+    let cursor = reset ? 0 : fromByte
+    const end = Math.min(size, throughByte ?? size)
     let consumed = cursor
     let carry: Buffer | null = null
 
-    while (cursor < size) {
-      const length = Math.min(CHUNK, size - cursor)
+    while (cursor < end) {
+      const length = Math.min(CHUNK, end - cursor)
       const chunk = Buffer.alloc(length)
       await handle.read(chunk, 0, length, cursor)
       cursor += length
@@ -80,15 +113,100 @@ export async function readLines(
         continue
       }
       for (const line of buffer.toString("utf8", 0, lastBreak).split("\n")) {
-        if (onLine(line) === false) return consumed
+        if (onLine(line) === false) {
+          return { nextByte: consumed, reset, size, identity: `${info.dev}:${info.ino}` }
+        }
       }
       consumed += lastBreak + 1
-      // The remainder after the last newline carries into the next chunk.
       carry = lastBreak + 1 < buffer.length ? Buffer.from(buffer.subarray(lastBreak + 1)) : null
     }
-    return consumed
+    return { nextByte: consumed, reset, size, identity: `${info.dev}:${info.ino}` }
   } finally {
     await handle.close()
+  }
+}
+
+export async function readLines(
+  path: string,
+  fromByte: number,
+  onLine: (line: string) => void | boolean
+): Promise<number> {
+  return (await readLineBatch(path, fromByte, onLine)).nextByte
+}
+
+export function createJsonlFollower(
+  path: string,
+  fromByte: number,
+  createTranslator: () => LineTranslator
+): SessionFollower {
+  let parser = createTranslator()
+  let cursor = fromByte
+  let initialized = false
+  let identity: string | null = null
+  try {
+    const info = statSync(path)
+    identity = `${info.dev}:${info.ino}`
+  } catch {
+    identity = null
+  }
+  let previousRefs: ThreadEntry[] = []
+  let previousValues: string[] = []
+
+  const remember = (entries: ThreadEntry[]) => {
+    previousRefs = [...entries]
+    previousValues = entries.map((entry) => JSON.stringify(entry))
+  }
+  const cloneEntries = (entries: ThreadEntry[]): ThreadEntry[] => structuredClone(entries)
+
+  return {
+    get offset() {
+      return cursor
+    },
+    async next(): Promise<SessionUpdate> {
+      if (!initialized) {
+        const seeded = await readLineBatch(path, 0, parser.push, fromByte)
+        initialized = true
+        if (seeded.size < fromByte || (identity !== null && seeded.identity !== identity)) {
+          parser = createTranslator()
+          const reread = await readLineBatch(path, 0, parser.push)
+          cursor = reread.nextByte
+          identity = reread.identity
+          const current = parser.snapshot()
+          remember(current)
+          return { entries: cloneEntries(current), nextByte: cursor, replace: true, reset: true }
+        }
+        identity = seeded.identity
+        remember(parser.snapshot())
+      }
+
+      let read = await readLineBatch(path, cursor, parser.push)
+      if (read.reset || (identity !== null && read.identity !== identity)) {
+        parser = createTranslator()
+        read = await readLineBatch(path, 0, parser.push)
+        cursor = read.nextByte
+        identity = read.identity
+        const current = parser.snapshot()
+        remember(current)
+        return { entries: cloneEntries(current), nextByte: cursor, replace: true }
+      }
+
+      cursor = Math.max(cursor, read.nextByte)
+      identity = read.identity
+      const current = parser.snapshot()
+      const appended =
+        current.length >= previousRefs.length &&
+        previousRefs.every(
+          (entry, index) => entry === current[index] && previousValues[index] === JSON.stringify(entry)
+        )
+      const entries = appended ? current.slice(previousRefs.length) : current
+      const update: SessionUpdate = {
+        entries: cloneEntries(entries),
+        nextByte: cursor,
+        replace: !appended,
+      }
+      remember(current)
+      return update
+    },
   }
 }
 

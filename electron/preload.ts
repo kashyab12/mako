@@ -42,6 +42,8 @@ const api = {
   threads: (filter?: { cwd?: string; harness?: string }) =>
     invoke<{ ready: boolean; threads: ThreadRef[] }>("pi:threads", filter),
   openThread: (path: string) => invoke<Thread | null>("pi:thread-open", path),
+  threadContexts: (paths: string[]) =>
+    invoke<Array<{ file: string; title?: string; harness: string } | null>>("pi:thread-contexts", paths),
   continueThread: (path: string) => invoke<TabSnapshot>("pi:thread-continue", path),
   emitThreadToClaude: (path: string) => invoke<{ sessionId: string }>("pi:thread-emit-claude", path),
   followThread: (path: string, fromByte: number) => invoke<void>("pi:thread-follow", path, fromByte),

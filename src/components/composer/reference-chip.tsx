@@ -1,6 +1,8 @@
 import { fileKind } from "@/lib/mentions"
 import { fileName } from "@/lib/format"
 import { getPi } from "@/lib/bridge"
+import { useThreads } from "@/state/threads"
+import { HarnessIcon } from "@/components/ui/provider-icon"
 import { cn } from "@/lib/utils"
 import type { ComponentType } from "react"
 import {
@@ -57,6 +59,25 @@ export function FileChip({ path, interactive }: { path: string; interactive?: bo
     >
       {body}
     </button>
+  )
+}
+
+export function ThreadChip({ harness, nativeId }: { harness: string; nativeId: string }) {
+  const thread = useThreads((state) =>
+    state.threads.find((entry) => entry.harness === harness && entry.nativeId === nativeId)
+  )
+  return (
+    <span
+      title={thread?.title ?? `${harness} conversation`}
+      className={cn(
+        "inline-flex max-w-[18rem] items-baseline gap-1 rounded bg-raised px-1 align-baseline",
+        "text-[0.92em] leading-[1.35] text-foreground ring-1 ring-hairline ring-inset",
+        "[&_svg]:translate-y-[1.5px]"
+      )}
+    >
+      <HarnessIcon harness={harness} className="size-3 shrink-0 text-faint" />
+      <span className="truncate">{thread?.title ?? "Referenced conversation"}</span>
+    </span>
   )
 }
 

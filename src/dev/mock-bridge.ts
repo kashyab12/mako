@@ -460,6 +460,8 @@ export function installMockBridge() {
         ] },
       ],
     }),
+    threadContexts: async (paths: string[]) =>
+      paths.map((path) => ({ file: `/mock/transcripts/${encodeURIComponent(path)}.md`, title: "Referenced conversation", harness: "codex" })),
     continueThread: async () => {
       throw new Error("The browser mock cannot open tabs")
     },

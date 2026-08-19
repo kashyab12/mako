@@ -18,6 +18,18 @@ export interface NativeFile {
   mtimeMs: number
 }
 
+export interface SessionUpdate {
+  entries: ThreadEntry[]
+  nextByte: number
+  replace: boolean
+  reset?: boolean
+}
+
+export interface SessionFollower {
+  readonly offset: number
+  next(): Promise<SessionUpdate>
+}
+
 export interface SessionProvider {
   harness: Harness
   displayName: string
@@ -53,5 +65,6 @@ export interface SessionProvider {
    * where to tail from next time. Providers whose store is not append-only
    * (Cursor's SQLite) fall back to a full re-read by omitting this.
    */
+  createFollower?(path: string, fromByte: number): SessionFollower
   tail?(path: string, fromByte: number): Promise<{ entries: ThreadEntry[]; nextByte: number }>
 }

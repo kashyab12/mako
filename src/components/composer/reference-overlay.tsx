@@ -26,14 +26,14 @@ export const ReferenceOverlay = memo(function ReferenceOverlay({ text }: { text:
     >
       {segments.map((segment, index) => {
         if (segment.kind === "text") return <span key={index}>{segment.text}</span>
-        if (segment.kind === "file") {
+        if (segment.kind === "file" || segment.kind === "thread") {
           return (
             <span
               key={index}
               // Sized to the glyphs it replaces so wrapping stays identical:
               // the chip is a background, not a differently-shaped box.
               className="rounded-[3px] bg-raised text-foreground ring-1 ring-hairline ring-inset"
-              title={segment.path}
+              title={segment.kind === "file" ? segment.path : `${segment.harness} conversation`}
             >
               {segment.raw}
             </span>

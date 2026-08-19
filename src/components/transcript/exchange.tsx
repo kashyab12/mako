@@ -1,12 +1,13 @@
 import { memo, useMemo, useState } from "react"
 import { Prose } from "@/components/transcript/markdown"
 import { ToolRow } from "@/components/transcript/tool-row"
-import { FileChip, SkillChip } from "@/components/composer/reference-chip"
+import { FileChip, SkillChip, ThreadChip } from "@/components/composer/reference-chip"
 import { Slot } from "@/extend/slot"
 import { tokenize } from "@/lib/mentions"
 import { pairTools } from "@/lib/tools"
 import { formatTime, textOf } from "@/lib/format"
 import { parseAttachmentAppendix } from "@/lib/attachments"
+import { stripThreadReferenceAppendix } from "@/lib/thread-references"
 import { responseText, type Exchange as ExchangeData } from "@/lib/exchanges"
 import { actions, useSession } from "@/state/session"
 import { threads, useThreads } from "@/state/threads"
@@ -98,6 +99,8 @@ function Prompt({ message }: { message: PiMessage }) {
               <span key={index}>{segment.text}</span>
             ) : segment.kind === "file" ? (
               <FileChip key={index} path={segment.path} interactive />
+            ) : segment.kind === "thread" ? (
+              <ThreadChip key={index} harness={segment.harness} nativeId={segment.nativeId} />
             ) : (
               <SkillChip key={index} name={segment.name} />
             )

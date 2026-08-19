@@ -20,7 +20,12 @@ import { existsSync, watch, type FSWatcher } from "node:fs"
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
 import type { Thread, ThreadEntry, ThreadRef } from "./format.js"
-import type { NativeFile, SessionProvider } from "./providers/types.js"
+import type {
+  NativeFile,
+  SessionFollower,
+  SessionProvider,
+  SessionUpdate,
+} from "./providers/types.js"
 import { SessionArchive } from "./archive.js"
 
 /**
@@ -48,6 +53,17 @@ interface CacheEntry {
   ref: ThreadRef | null
 }
 
+interface FollowState {
+  listeners: Set<(entries: ThreadEntry[], replaced: boolean) => void>
+  follower: SessionFollower | null
+  fromByte: number
+}
+
+interface RefreshState {
+  requested: boolean
+  promise: Promise<void>
+}
+
 const WATCH_DEBOUNCE_MS = 200
 const CACHE_SAVE_DEBOUNCE_MS = 2000
 
@@ -73,8 +89,8 @@ export class SessionCatalog {
   private watchers: FSWatcher[] = []
   private pending = new Map<string, NodeJS.Timeout>()
   private listeners = new Set<(event: CatalogEvent) => void>()
-  private follows = new Map<string, Set<(entries: ThreadEntry[], replaced: boolean) => void>>()
-  private followOffsets = new Map<string, number>()
+  private follows = new Map<string, FollowState>()
+  private refreshes = new Map<string, RefreshState>()
 
   private archive: SessionArchive | null = null
 
@@ -239,16 +255,17 @@ export class SessionCatalog {
     fromByte: number,
     onEntries: (entries: ThreadEntry[], replaced: boolean) => void
   ): () => void {
-    const set = this.follows.get(path) ?? new Set()
-    set.add(onEntries)
-    this.follows.set(path, set)
-    if (!this.followOffsets.has(path)) this.followOffsets.set(path, fromByte)
+    const provider = this.ownerOf(path)
+    const state = this.follows.get(path) ?? {
+      listeners: new Set(),
+      follower: provider ? this.makeFollower(provider, path, fromByte) : null,
+      fromByte,
+    }
+    state.listeners.add(onEntries)
+    this.follows.set(path, state)
     return () => {
-      set.delete(onEntries)
-      if (set.size === 0) {
-        this.follows.delete(path)
-        this.followOffsets.delete(path)
-      }
+      state.listeners.delete(onEntries)
+      if (state.listeners.size === 0) this.follows.delete(path)
     }
   }
 
@@ -294,12 +311,12 @@ export class SessionCatalog {
       })
     )
     // A followed remote thread refreshes wholesale — polling is its only tail.
-    for (const [path, followers] of this.follows) {
+    for (const [path, follow] of this.follows) {
       const remote = this.remoteFor(path)
-      if (!remote || followers.size === 0) continue
+      if (!remote || follow.listeners.size === 0) continue
       const thread = await remote.read(path).catch(() => null)
       if (thread) {
-        for (const follower of followers) follower(thread.entries, true)
+        for (const listener of follow.listeners) listener(thread.entries, true)
       }
     }
   }
@@ -360,10 +377,12 @@ export class SessionCatalog {
       this.byPath.set(file.path, { bytes: file.bytes, mtimeMs: file.mtimeMs, ref })
       if (ref) this.emit({ type: cached?.ref ? "updated" : "added", ref })
       // A grown session with watchers gets the honest live view: a re-read.
-      const followers = this.follows.get(file.path)
-      if (followers && followers.size > 0) {
+      const follow = this.follows.get(file.path)
+      if (follow && follow.listeners.size > 0) {
         const thread = await provider.read(file.path).catch(() => null)
-        if (thread) for (const follower of followers) follower(thread.entries, true)
+        if (thread) {
+          for (const listener of follow.listeners) listener(thread.entries, true)
+        }
       }
     }
     const prefix = provider.roots()[0] ?? ""
@@ -376,7 +395,28 @@ export class SessionCatalog {
     this.scheduleSave()
   }
 
-  private async refresh(provider: SessionProvider, path: string): Promise<void> {
+  private refresh(provider: SessionProvider, path: string): Promise<void> {
+    const active = this.refreshes.get(path)
+    if (active) {
+      active.requested = true
+      return active.promise
+    }
+    const state: RefreshState = { requested: false, promise: Promise.resolve() }
+    state.promise = (async () => {
+      try {
+        do {
+          state.requested = false
+          await this.refreshOnce(provider, path)
+        } while (state.requested)
+      } finally {
+        if (this.refreshes.get(path) === state) this.refreshes.delete(path)
+      }
+    })()
+    this.refreshes.set(path, state)
+    return state.promise
+  }
+
+  private async refreshOnce(provider: SessionProvider, path: string): Promise<void> {
     const info = await stat(path).catch(() => null)
     if (!info || !info.isFile()) {
       if (this.byPath.delete(path)) {
@@ -387,31 +427,63 @@ export class SessionCatalog {
     }
     const file: NativeFile = { path, bytes: info.size, mtimeMs: info.mtimeMs }
     const cached = this.byPath.get(path)
-    if (cached && cached.bytes === file.bytes && cached.mtimeMs === file.mtimeMs) return
-    const ref = await provider.peek(file).catch(() => null)
+    const follow = this.follows.get(path)
+    const unchanged = cached && cached.bytes === file.bytes && cached.mtimeMs === file.mtimeMs
+    if (unchanged && (!follow?.follower || follow.follower.offset >= file.bytes)) return
+
+    const grew = cached && file.bytes > cached.bytes
+    const ref =
+      grew && cached.ref
+        ? {
+            ...cached.ref,
+            bytes: file.bytes,
+            updatedAt: new Date(file.mtimeMs).toISOString(),
+          }
+        : await provider.peek(file).catch(() => null)
     this.byPath.set(path, { bytes: file.bytes, mtimeMs: file.mtimeMs, ref })
     this.scheduleSave()
     if (ref) this.emit({ type: cached?.ref ? "updated" : "added", ref })
 
-    const followers = this.follows.get(path)
-    if (!followers || followers.size === 0) return
-    if (provider.tail) {
-      const from = this.followOffsets.get(path) ?? 0
-      const { entries, nextByte } = await provider.tail(path, from).catch(() => ({
-        entries: [] as ThreadEntry[],
-        nextByte: from,
-      }))
-      this.followOffsets.set(path, nextByte)
-      if (entries.length > 0) {
-        for (const follower of followers) follower(entries, false)
+    if (!follow || follow.listeners.size === 0) return
+    if (!follow.follower) follow.follower = this.makeFollower(provider, path, follow.fromByte)
+    if (follow.follower) {
+      if (!provider.createFollower && file.bytes < follow.follower.offset) {
+        const thread = await provider.read(path).catch(() => null)
+        follow.follower = this.makeFollower(provider, path, file.bytes)
+        if (thread) this.deliver(follow, { entries: thread.entries, nextByte: file.bytes, replace: true })
+        return
       }
-    } else {
-      // The store rewrites in place; the honest live view is a re-read.
-      const thread = await provider.read(path).catch(() => null)
-      if (thread) {
-        for (const follower of followers) follower(thread.entries, true)
-      }
+      const update = await follow.follower.next().catch(() => null)
+      if (update && (update.replace || update.entries.length > 0)) this.deliver(follow, update)
+      return
     }
+
+    const thread = await provider.read(path).catch(() => null)
+    if (thread) this.deliver(follow, { entries: thread.entries, nextByte: file.bytes, replace: true })
+  }
+
+  private makeFollower(
+    provider: SessionProvider,
+    path: string,
+    fromByte: number
+  ): SessionFollower | null {
+    if (provider.createFollower) return provider.createFollower(path, fromByte)
+    if (!provider.tail) return null
+    let offset = fromByte
+    return {
+      get offset() {
+        return offset
+      },
+      async next() {
+        const result = await provider.tail!(path, offset)
+        offset = Math.max(offset, result.nextByte)
+        return { entries: result.entries, nextByte: offset, replace: false }
+      },
+    }
+  }
+
+  private deliver(follow: FollowState, update: SessionUpdate): void {
+    for (const listener of follow.listeners) listener(update.entries, update.replace)
   }
 
   private emit(event: CatalogEvent): void {

@@ -20,8 +20,8 @@
 import { homedir } from "node:os"
 import { join, basename } from "node:path"
 import { readdir, stat } from "node:fs/promises"
-import { EntrySink, titleFrom, type Thread, type ThreadEntry, type ThreadRef } from "../format.js"
-import { readLines } from "../jsonl.js"
+import { clip, EntrySink, titleFrom, type Thread, type ThreadEntry, type ThreadRef } from "../format.js"
+import { createJsonlFollower, readLines, snapshotSink } from "../jsonl.js"
 import type { NativeFile, SessionProvider } from "./types.js"
 
 interface SqliteDatabase {
@@ -149,6 +149,10 @@ export class DevinLocalProvider implements SessionProvider {
     return { ref, entries }
   }
 
+  createFollower(path: string, fromByte: number) {
+    return createJsonlFollower(path, fromByte, translator)
+  }
+
   async tail(path: string, fromByte: number): Promise<{ entries: ThreadEntry[]; nextByte: number }> {
     const into = translator()
     const nextByte = await readLines(path, fromByte, into.push)
@@ -230,6 +234,7 @@ export class DevinLocalProvider implements SessionProvider {
  */
 function translator(): {
   push: (raw: string) => void
+  snapshot: () => ThreadEntry[]
   done: () => ThreadEntry[]
   title?: string
 } {
@@ -324,7 +329,11 @@ function translator(): {
       }
       case "tool_call_update": {
         const block = event.toolCallId ? toolsById.get(event.toolCallId) : undefined
-        if (block && event.status === "failed") block.error = true
+        if (block) {
+          const output = event.content?.text
+          if (output) block.output = clip(`${block.output ?? ""}${output}`)
+          if (event.status === "failed") block.error = true
+        }
         return
       }
       case "session_info_update":
@@ -340,9 +349,13 @@ function translator(): {
 
   return {
     push,
+    snapshot: () => {
+      const entries = snapshotSink(sink)
+      return assistant ? [...entries, assistant] : entries
+    },
     done: () => {
       flushAssistant()
-      return sink.entries
+      return snapshotSink(sink)
     },
     get title() {
       return state.title

@@ -286,13 +286,13 @@ function Agents() {
     <Section title="Agents">
       <Row
         label="Moving conversations"
-        hint="Native replay writes a real session in the target's own store. Transcript hands the new agent a file of the full conversation — newest turn first — and tells it to read everything before continuing."
+        hint="Transcript replay gives the next agent a deterministic newest-first bundle with reasoning, tool calls, and complete captured outputs. Session import writes a lossy copy into the target store."
       >
         <Segmented<"native" | "transcript">
           value={conversionMode}
           options={[
-            { value: "native", label: "Native replay" },
-            { value: "transcript", label: "Transcript file" },
+            { value: "transcript", label: "Transcript replay" },
+            { value: "native", label: "Session import" },
           ]}
           onChange={(next) => setPref("conversionMode", next)}
         />

@@ -56,10 +56,9 @@ export interface Prefs {
   /** Per-harness model/effort/fast choices — Mako's own memory of them. */
   composerTuning: Record<string, { model?: string; effort?: string; fast?: boolean }>
   /**
-   * How a conversation moves to another harness: "native" emits it into the
-   * target's own store (a real resumable session); "transcript" writes the
-   * full conversation to a file — newest turn first — and opens a fresh
-   * session told to read it end to end before continuing.
+   * How a conversation moves to another harness. Transcript replay is the
+   * loss-aware default; session import is the compatibility path for stores
+   * that accept synthesized history.
    */
   conversionMode: "native" | "transcript"
   /** Your names for threads, by path — native stores don't take renames. */
@@ -102,7 +101,7 @@ const defaults: Prefs = {
   composerTuning: {},
   harnessDefaults: {},
   titleOverrides: {},
-  conversionMode: "native",
+  conversionMode: "transcript",
 }
 
 function load(): Prefs {

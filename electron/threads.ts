@@ -16,10 +16,11 @@
  */
 
 import { spawn } from "node:child_process"
+import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
-import { readFile } from "node:fs/promises"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { app } from "electron"
 import {
   connectDaemon,
@@ -32,6 +33,8 @@ import {
   emitGrokSession,
   emitPiSession,
   renderTranscript,
+  renderTranscriptBundle,
+  type TranscriptBundleMetadata,
   type DaemonClient,
   type DaemonStats,
   type DevinAccount,
@@ -327,12 +330,58 @@ const HARNESS_NAMES: Record<string, string> = {
  * get the real thing via the emitters below.
  */
 export async function handoffFor(path: string, instruction?: string): Promise<string | null> {
-  const thread = await catalog?.open(path)
+  const thread = await openThread(path)
   if (!thread) return null
   return renderTranscript(thread, {
     from: HARNESS_NAMES[thread.ref.harness] ?? thread.ref.harness,
     ...(instruction ? { instruction } : {}),
   })
+}
+
+export interface TranscriptArtifact {
+  file: string
+  title?: string
+  harness: string
+  metadata: TranscriptBundleMetadata
+}
+
+const transcriptArtifacts = new Map<string, { version: string; artifact: TranscriptArtifact }>()
+
+export async function transcriptArtifactFor(path: string, instruction?: string): Promise<TranscriptArtifact | null> {
+  const known = listThreads().find((ref) => ref.path === path)
+  const version = `${known?.bytes ?? "?"}:${known?.updatedAt ?? "?"}:${instruction ?? ""}`
+  const cached = transcriptArtifacts.get(path)
+  if (cached?.version === version && existsSync(cached.artifact.file)) return cached.artifact
+
+  const thread = await openThread(path)
+  if (!thread) return null
+  const bundle = renderTranscriptBundle(thread, {
+    from: HARNESS_NAMES[thread.ref.harness] ?? thread.ref.harness,
+    ...(instruction ? { instruction } : {}),
+  })
+  const digest = createHash("sha256")
+    .update(bundle.markdown)
+    .update("\0")
+  for (const asset of bundle.assets) digest.update(asset.path).update("\0").update(asset.content).update("\0")
+  const root = join(homedir(), ".mako", "transcripts", digest.digest("hex").slice(0, 24))
+  await Promise.all(
+    bundle.assets.map(async (asset) => {
+      const file = join(root, asset.path)
+      await mkdir(dirname(file), { recursive: true })
+      await writeFile(file, asset.content, "utf8")
+    })
+  )
+  await mkdir(root, { recursive: true })
+  const file = join(root, "transcript.md")
+  await writeFile(file, bundle.markdown, "utf8")
+  const artifact: TranscriptArtifact = {
+    file,
+    title: thread.ref.title,
+    harness: thread.ref.harness,
+    metadata: bundle.metadata,
+  }
+  transcriptArtifacts.set(path, { version, artifact })
+  return artifact
 }
 
 /**
