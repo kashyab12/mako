@@ -14,7 +14,30 @@ export type {
 import type {
   ThreadEntry as CatalogThreadEntry,
   ThreadRef as CatalogThreadRef,
+  TranscriptBundleMetadata,
 } from "@mako/sessions"
+
+/** How referenced conversations cross the host boundary. */
+export interface ThreadContextOptions {
+  /** Inline delivery is for remote agents that cannot access this machine. */
+  inline?: boolean
+}
+
+export interface ThreadFileContext {
+  kind: "file"
+  file: string
+  title?: string
+  harness: string
+  metadata: TranscriptBundleMetadata
+}
+
+export interface ThreadInlineContext {
+  kind: "inline"
+  content: string
+  title?: string
+  harness: string
+  metadata: TranscriptBundleMetadata
+}
 
 /** One headless run of a thread's own CLI, keyed by the thread's path. */
 export interface ThreadRunState {
@@ -82,6 +105,10 @@ export interface HarnessProfile {
   capabilities: string[]
   error?: string
 }
+
+/* ------------------------------------------------------------------ */
+/* MCP servers                                                         */
+/* ------------------------------------------------------------------ */
 
 /* ------------------------------------------------------------------ */
 /* Interactive foreign agents (ACP)                                    */
@@ -177,7 +204,7 @@ export interface Block {
   isError?: boolean
 }
 
-export interface PiMessage {
+export interface ChatMessage {
   id: string
   role: ChatRole
   blocks: Block[]
@@ -195,7 +222,7 @@ export interface PiMessage {
 /**
  * One session entry, flat.
  *
- * Deliberately not nested. Pi stores a session as a parent-linked chain, so a
+ * Deliberately not nested. The engine stores a session as a parent-linked chain, so a
  * nested shape is exactly as deep as the session is long — 334 levels for 345
  * entries — and Electron's contextBridge refuses to clone anything past 1000.
  * A flat list with `parentId` carries the same information with no ceiling and
@@ -359,15 +386,15 @@ export interface GitDiff {
 /** Full snapshot — sent on boot and whenever the branch/session is replaced. */
 export interface SessionState {
   meta: SessionMeta
-  messages: PiMessage[]
+  messages: ChatMessage[]
   tree: TreeNode[]
 }
 
 export type HostEventBody =
   | { type: "session"; session: SessionState }
   | { type: "meta"; meta: SessionMeta }
-  | { type: "messages"; messages: PiMessage[] }
-  | { type: "stream"; message: PiMessage | null }
+  | { type: "messages"; messages: ChatMessage[] }
+  | { type: "stream"; message: ChatMessage | null }
   | { type: "tree"; tree: TreeNode[]; leafId: string | null }
   | { type: "git"; git: GitStatus }
   | { type: "capabilities"; capabilities: Capabilities }
@@ -658,14 +685,76 @@ export interface FileContents {
 
 /**
  * A file the agent cannot receive inline — a PDF, a video, an archive.
- * The host materializes it to disk and hands back a path, so Pi's own read
- * and bash tools can open it. That is what makes "attach anything" honest
+ * The host materializes it to disk and hands back a path, so engine-owned read
+ * and shell tools can open it. That is what makes "attach anything" honest
  * rather than a silent drop.
  */
 export interface StagedFile {
   path: string
   name: string
   size: number
+}
+
+export type McpProvider = "claude" | "cursor" | "devin" | "codex" | "grok"
+export type McpTransport = "stdio" | "http" | "sse"
+export type McpScope = "user" | "workspace" | "effective" | "managed"
+
+export interface McpRegistryProviderStatus {
+  id: McpProvider
+  label: string
+  account: string
+  available: boolean
+  source: string
+  detail?: string
+}
+
+export interface McpServerDefinition {
+  name: string
+  transport: McpTransport
+  command?: string
+  args?: string[]
+  url?: string
+  envNames: string[]
+  headerNames: string[]
+  portable: boolean
+  blockReason?: string
+}
+
+export interface McpServerOrigin {
+  provider: McpProvider | "mako"
+  account: string
+  scope: McpScope
+  provenance: string
+}
+
+export interface McpServerRecord extends McpServerDefinition {
+  id: string
+  origins: McpServerOrigin[]
+  conflict?: "name" | "drift"
+  availability?: "available" | "unavailable" | "unknown"
+  detail?: string
+  managed?: boolean
+}
+
+export interface McpRegistrySnapshot {
+  cwd: string
+  generatedAt: number
+  servers: McpServerRecord[]
+  providers: McpRegistryProviderStatus[]
+}
+
+export interface McpSyncTarget {
+  provider: McpProvider
+  account: string
+  scope: "user" | "workspace"
+}
+
+export interface McpSyncPreview {
+  serverId: string
+  target: McpSyncTarget
+  action: "add" | "replace" | "unchanged" | "blocked"
+  summary: string
+  blockReason?: string
 }
 
 export interface BootPayload {

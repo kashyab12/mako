@@ -2,7 +2,10 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { StringDecoder } from "node:string_decoder"
+import { app } from "electron"
 import { accountEnv } from "./accounts.js"
+import { discoverMcpRegistry } from "./mcp-registry.js"
+import { codexMcpConfig, mergeCodexConfig } from "./mcp-runtime.js"
 import {
   clearTurnServerRequests,
   handleServerRequest,
@@ -20,6 +23,7 @@ import {
   sendRpcError,
   sendRpcResult,
   type ItemTracker,
+  type JsonObject,
   type PendingRpc,
   type ProtocolCallbacks,
   type RpcParams,
@@ -31,6 +35,7 @@ import type {
   AcpSessionState,
   AcpUpdate,
   HostEvent,
+  McpRegistrySnapshot,
 } from "./shared.js"
 
 type Live = {
@@ -41,6 +46,7 @@ type Live = {
   currentTurnId: string | null
   state: AcpSessionState
   tuning?: Tuning
+  mcpSnapshot: McpRegistrySnapshot
   nextRequestId: number
   pending: Map<string, PendingRpc>
   serverRequests: Map<string, PendingServerRequest>
@@ -80,6 +86,7 @@ export async function codexAppStart(
 ): Promise<AcpSessionState> {
   const id = `codex-app-${++sessionCounter}`
   const workingDir = cwd && existsSync(cwd) ? cwd : homedir()
+  const mcpSnapshot = await discoverMcpRegistry(workingDir, app.getAppPath())
   const env = await accountEnv("codex", process.env)
   const child = spawn("codex", ["app-server"], {
     cwd: workingDir,
@@ -105,6 +112,7 @@ export async function codexAppStart(
       configOptions: [],
     },
     tuning: options.tuning,
+    mcpSnapshot,
     nextRequestId: 0,
     pending: new Map(),
     serverRequests: new Map(),
@@ -250,7 +258,7 @@ async function openThread(
     capabilities: { experimentalApi: true, requestAttestation: false },
   })
   sendRpc(live, { jsonrpc: "2.0", method: "initialized" })
-  const tuning = threadTuning(live.tuning)
+  const tuning = threadTuning(live.tuning, codexMcpConfig(live.mcpSnapshot))
   return resume
     ? rpcRequest(live, "thread/resume", {
         threadId: resume,
@@ -260,12 +268,19 @@ async function openThread(
     : rpcRequest(live, "thread/start", { cwd: live.cwd, ...tuning })
 }
 
-function threadTuning(tuning?: Tuning): Omit<RpcParams["thread/start"], "cwd"> {
+function threadTuning(
+  tuning: Tuning | undefined,
+  mcpConfig: JsonObject
+): Omit<RpcParams["thread/start"], "cwd"> {
   const result: Omit<RpcParams["thread/start"], "cwd"> = {}
   const serviceTier = tuningServiceTier(tuning)
+  const base = tuning?.effort
+    ? { model_reasoning_effort: tuning.effort }
+    : undefined
+  const config = mergeCodexConfig(base, mcpConfig)
   if (tuning?.model) result.model = tuning.model
   if (serviceTier) result.serviceTier = serviceTier
-  if (tuning?.effort) result.config = { model_reasoning_effort: tuning.effort }
+  if (config) result.config = config
   return result
 }
 

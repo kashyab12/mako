@@ -13,7 +13,14 @@ import { watch } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { COMMIT_PROMPT, type AgentHost } from "./host.js"
-import { breadcrumb, clearCrashes, crashesDir, installCrashReporting, listCrashes, record } from "./crash.js"
+import {
+  breadcrumb,
+  clearCrashes,
+  crashesDir,
+  installCrashReporting,
+  listCrashes,
+  record,
+} from "./crash.js"
 import { installAutomation } from "./automation.js"
 import { check, installNow, installUpdates, updateState } from "./updates.js"
 import { listPorts } from "./ports.js"
@@ -38,22 +45,97 @@ import {
   startDevServer,
   stopDevServer,
 } from "./devserver.js"
-import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunChecks, type CreatePullOptions } from "./github.js"
+import {
+  createPull,
+  githubStatus,
+  listPulls,
+  pullForBranch,
+  repoAvatar,
+  rerunChecks,
+  type CreatePullOptions,
+} from "./github.js"
 import { HostPool } from "./pool.js"
-import { daemonStatus, devinAccountsMasked, startDevin, emitThreadAs, emitThreadAsClaude, emitThreadAsPi, followThread, threadsReady, installThreads, listThreads, openThread, remoteHarnesses, saveDevinAccounts, sendRemote, stopThreads, transcriptArtifactFor, unfollowThread } from "./threads.js"
-import { abortNative, bindDrivers, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
+import {
+  daemonStatus,
+  devinAccountsMasked,
+  startDevin,
+  emitThreadAs,
+  followThread,
+  threadsReady,
+  installThreads,
+  listThreads,
+  openThread,
+  remoteHarnesses,
+  saveDevinAccounts,
+  sendRemote,
+  stopThreads,
+  transcriptArtifactFor,
+  transcriptInlineFor,
+  unfollowThread,
+} from "./threads.js"
+import {
+  abortNative,
+  bindDrivers,
+  resumableHarnesses,
+  resumeNative,
+  startFresh,
+  stopDrivers,
+  threadRun,
+} from "./drivers.js"
 import {
   harnessProfile,
   harnessProfiles,
   resolveHarnessTuning,
 } from "./harnesses.js"
 import { bindLineageDirect, chainOf, expectLineage } from "./lineage.js"
-import { accountUsage, captureAccount, listAccounts, removeAccount, selectAccount } from "./accounts.js"
+import {
+  accountUsage,
+  captureAccount,
+  listAccounts,
+  removeAccount,
+  selectAccount,
+} from "./accounts.js"
 import { daemonLoginEnabled, setDaemonLogin } from "./daemon-login.js"
-import { acpCancel, acpClose, acpHarnesses, acpPrompt, acpRespondPermission, acpSetMode, acpStart, acpState, bindAcp, stopAcp } from "./acp.js"
-import { bindCodexApp, codexAppCancel, codexAppClose, codexAppPermission, codexAppPrompt, codexAppStart, codexAppState, stopCodexApps } from "./codex-app.js"
-import { deletePlugin, listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
-import type { AcpPromptAttachment, BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
+import {
+  acpCancel,
+  acpClose,
+  acpHarnesses,
+  acpPrompt,
+  acpRespondPermission,
+  acpSetMode,
+  acpStart,
+  acpState,
+  bindAcp,
+  stopAcp,
+} from "./acp.js"
+import {
+  bindCodexApp,
+  codexAppCancel,
+  codexAppClose,
+  codexAppPermission,
+  codexAppPrompt,
+  codexAppStart,
+  codexAppState,
+  stopCodexApps,
+} from "./codex-app.js"
+import {
+  deletePlugin,
+  listPlugins,
+  pluginsDir,
+  watchPlugins,
+  writePlugin,
+} from "./plugins.js"
+import { discoverMcpRegistry } from "./mcp-registry.js"
+import { applyMcpSync, previewMcpSync } from "./mcp-sync.js"
+import type {
+  AcpPromptAttachment,
+  BootPayload,
+  HostEvent,
+  McpSyncTarget,
+  SearchOptions,
+  ThinkingLevel,
+  ThreadContextOptions,
+} from "./shared.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const isDev = !app.isPackaged && !process.env.MAKO_PROD
@@ -85,11 +167,6 @@ let window: BrowserWindow | null = null
 const pool = new HostPool(emit)
 let starting: Promise<unknown> | null = null
 
-interface ThreadContinuationOptions {
-  cwd?: string
-  sessionPath: string
-}
-
 let fileWatcher: import("node:fs").FSWatcher | null = null
 function stopFileWatch() {
   fileWatcher?.close()
@@ -102,7 +179,7 @@ function emit(event: HostEvent) {
   // running a watcher of its own.
   if (event.type === "git") noticeHead(event.git.head)
   if (window?.isDestroyed()) return
-  window?.webContents.send("pi:event", event)
+  window?.webContents.send("mako:event", event)
 }
 
 /** Start the first tab once, however many callers race for it. */
@@ -121,7 +198,9 @@ async function ready(): Promise<HostPool> {
  * the only one with a composer pointed at it — so tab routing does not need to
  * reach the handlers. Background tabs keep streaming; they just take no orders.
  */
-async function withHost<T>(run: (host: AgentHost) => T | Promise<T>): Promise<T> {
+async function withHost<T>(
+  run: (host: AgentHost) => T | Promise<T>
+): Promise<T> {
   const live = await ready()
   return run(live.active)
 }
@@ -176,7 +255,9 @@ async function createWindow() {
   // becomes the crash reporter's job, not stdout's.
   if (isDev) {
     window.webContents.on("console-message", (details) => {
-      const where = details.lineNumber ? ` (${details.sourceId}:${details.lineNumber})` : ""
+      const where = details.lineNumber
+        ? ` (${details.sourceId}:${details.lineNumber})`
+        : ""
       console.log(`[renderer:${details.level}] ${details.message}${where}`)
     })
   }
@@ -211,7 +292,8 @@ async function createWindow() {
           emit({
             type: "notice",
             level: "info",
-            message: "Mako's engine was rebuilt — restart the app to run the new version.",
+            message:
+              "Mako's engine was rebuilt — restart the app to run the new version.",
           })
         }, 500)
       })
@@ -231,7 +313,9 @@ async function createWindow() {
   })
 
   if (isDev) {
-    await window.loadURL(process.env.VITE_DEV_SERVER_URL ?? "http://127.0.0.1:5173")
+    await window.loadURL(
+      process.env.VITE_DEV_SERVER_URL ?? "http://127.0.0.1:5173"
+    )
   } else {
     await window.loadFile(join(__dirname, "../dist/index.html"))
   }
@@ -249,7 +333,10 @@ async function createWindow() {
  * keeping the user's prompts and source on disk, which the crash file promises
  * not to do.
  */
-function handle(channel: string, listener: Parameters<typeof ipcMain.handle>[1]) {
+function handle(
+  channel: string,
+  listener: Parameters<typeof ipcMain.handle>[1]
+) {
   ipcMain.handle(channel, async (event, ...args) => {
     breadcrumb(channel)
     try {
@@ -262,9 +349,12 @@ function handle(channel: string, listener: Parameters<typeof ipcMain.handle>[1])
 }
 
 function bindIpc() {
-  handle("pi:boot", async (): Promise<BootPayload> => {
+  handle("mako:boot", async (): Promise<BootPayload> => {
     const live = await ready()
-    const [tabs, models] = await Promise.all([live.snapshots(), live.active.listModels()])
+    const [tabs, models] = await Promise.all([
+      live.snapshots(),
+      live.active.listModels(),
+    ])
     return {
       tabs,
       activeTabId: live.activeId,
@@ -276,44 +366,51 @@ function bindIpc() {
     }
   })
 
-  handle("pi:open-tab", async (_e, options?: { cwd?: string; sessionPath?: string }) => {
-    const live = await ready()
-    return live.open(options ?? {})
-  })
-  handle("pi:close-tab", async (_e, id: string) => {
+  handle(
+    "mako:open-tab",
+    async (_e, options?: { cwd?: string; sessionPath?: string }) => {
+      const live = await ready()
+      return live.open(options ?? {})
+    }
+  )
+  handle("mako:close-tab", async (_e, id: string) => {
     const live = await ready()
     return live.close(id)
   })
-  handle("pi:activate-tab", async (_e, id: string) => {
+  handle("mako:activate-tab", async (_e, id: string) => {
     const live = await ready()
     return live.activate(id)
   })
 
-  handle("pi:list-sessions", (_e, cwd?: string, scope?: "workspace" | "all") =>
-    withHost((h) => h.listSessions(cwd, scope))
+  handle(
+    "mako:list-sessions",
+    (_e, cwd?: string, scope?: "workspace" | "all") =>
+      withHost((h) => h.listSessions(cwd, scope))
   )
-  handle("pi:open-session", (_e, path: string) =>
+  handle("mako:open-session", (_e, path: string) =>
     withHost(async (h) => {
       await h.openSession(path)
       return h.state()
     })
   )
-  handle("pi:new-session", () =>
+  handle("mako:new-session", () =>
     withHost(async (h) => {
       await h.newSession()
       return h.state()
     })
   )
-  handle("pi:set-cwd", (_e, cwd: string) =>
+  handle("mako:set-cwd", (_e, cwd: string) =>
     withHost(async (h) => {
       await h.setCwd(cwd)
       return h.state()
     })
   )
-  handle("pi:set-name", (_e, name: string) => withHost((h) => h.setName(name)))
+  handle("mako:set-name", (_e, name: string) =>
+    withHost((h) => h.setName(name))
+  )
 
   ipcMain.handle(
-    "pi:prompt",
+    "mako:prompt",
     (
       _e,
       text: string,
@@ -321,45 +418,56 @@ function bindIpc() {
       images?: Array<{ mimeType: string; data: string }>
     ) => withHost((h) => h.prompt(text, mode, images))
   )
-  handle("pi:abort", () => withHost((h) => h.abort()))
-  handle("pi:clear-queue", () => withHost((h) => h.clearQueue()))
+  handle("mako:abort", () => withHost((h) => h.abort()))
+  handle("mako:clear-queue", () => withHost((h) => h.clearQueue()))
   // Branching opens a tab rather than replacing this one. Exploring the same
   // question two ways only works if both answers stay on screen.
-  handle("pi:fork", async (_e, entryId: string, position?: "before" | "at") => {
-    const live = await ready()
-    return live.forkIntoTab(entryId, position)
-  })
-  handle("pi:navigate-tree", (_e, targetId: string) =>
+  handle(
+    "mako:fork",
+    async (_e, entryId: string, position?: "before" | "at") => {
+      const live = await ready()
+      return live.forkIntoTab(entryId, position)
+    }
+  )
+  handle("mako:navigate-tree", (_e, targetId: string) =>
     withHost(async (h) => {
       await h.navigateTree(targetId)
       return h.state()
     })
   )
-  handle("pi:compact", (_e, instructions?: string) => withHost((h) => h.compact(instructions)))
-  handle("pi:set-auto-compaction", (_e, enabled: boolean) =>
+  handle("mako:compact", (_e, instructions?: string) =>
+    withHost((h) => h.compact(instructions))
+  )
+  handle("mako:set-auto-compaction", (_e, enabled: boolean) =>
     withHost((h) => h.setAutoCompaction(enabled))
   )
 
-  handle("pi:list-models", () => withHost((h) => h.listModels()))
-  handle("pi:set-model", (_e, provider: string, id: string) =>
+  handle("mako:list-models", () => withHost((h) => h.listModels()))
+  handle("mako:set-model", (_e, provider: string, id: string) =>
     withHost((h) => h.setModel(provider, id))
   )
-  handle("pi:set-thinking", (_e, level: ThinkingLevel) => withHost((h) => h.setThinking(level)))
+  handle("mako:set-thinking", (_e, level: ThinkingLevel) =>
+    withHost((h) => h.setThinking(level))
+  )
 
-  handle("pi:capabilities", () => withHost((h) => h.capabilities()))
-  handle("pi:set-active-tools", (_e, names: string[]) => withHost((h) => h.setActiveTools(names)))
-  handle("pi:run-command", (_e, name: string, args?: string) =>
+  handle("mako:capabilities", () => withHost((h) => h.capabilities()))
+  handle("mako:set-active-tools", (_e, names: string[]) =>
+    withHost((h) => h.setActiveTools(names))
+  )
+  handle("mako:run-command", (_e, name: string, args?: string) =>
     withHost((h) => h.runCommand(name, args))
   )
 
-  handle("pi:list-files", () => withHost((h) => h.listFiles()))
-  handle("pi:read-file", (_e, path: string) => withHost((h) => h.readWorkspaceFile(path)))
+  handle("mako:list-files", () => withHost((h) => h.listFiles()))
+  handle("mako:read-file", (_e, path: string) =>
+    withHost((h) => h.readWorkspaceFile(path))
+  )
   /**
    * Watch the one file the viewer has open. An agent mid-edit rewrites it
    * every few seconds; the viewer should breathe with it, not wait for a
    * manual reopen. One watcher, replaced on every call, dropped on unwatch.
    */
-  handle("pi:watch-file", (_e, path: string) => {
+  handle("mako:watch-file", (_e, path: string) => {
     stopFileWatch()
     try {
       let timer: NodeJS.Timeout | null = null
@@ -371,54 +479,70 @@ function bindIpc() {
       // A file that cannot be watched simply does not live-update.
     }
   })
-  handle("pi:unwatch-file", () => stopFileWatch())
-  handle("pi:search", (_e, query: string, options?: SearchOptions) =>
+  handle("mako:unwatch-file", () => stopFileWatch())
+  handle("mako:search", (_e, query: string, options?: SearchOptions) =>
     withHost((h) => h.search(query, options))
   )
 
-  handle("pi:git-status", () => withHost((h) => h.gitStatus()))
-  handle("pi:git-diff", (_e, path: string) => withHost((h) => h.gitDiff(path)))
-  handle("pi:git-stage", (_e, paths: string[]) => withHost((h) => h.gitStage(paths)))
-  handle("pi:git-unstage", (_e, paths: string[]) => withHost((h) => h.gitUnstage(paths)))
-  handle("pi:git-stage-all", () => withHost((h) => h.gitStageAll()))
-  handle("pi:git-unstage-all", () => withHost((h) => h.gitUnstageAll()))
-  handle("pi:git-commit", (_e, message: string, options?: { amend?: boolean }) =>
-    withHost((h) => h.gitCommit(message, options))
+  handle("mako:git-status", () => withHost((h) => h.gitStatus()))
+  handle("mako:git-diff", (_e, path: string) =>
+    withHost((h) => h.gitDiff(path))
   )
-  handle("pi:git-push", () => withHost((h) => h.gitPush()))
-  handle("pi:git-log", (_e, limit?: number) => withHost((h) => h.gitLog(limit)))
-  handle("pi:git-commit-files", (_e, hash: string) => withHost((h) => h.gitCommitFiles(hash)))
-  handle("pi:git-commit-file-diff", (_e, hash: string, path: string) =>
+  handle("mako:git-stage", (_e, paths: string[]) =>
+    withHost((h) => h.gitStage(paths))
+  )
+  handle("mako:git-unstage", (_e, paths: string[]) =>
+    withHost((h) => h.gitUnstage(paths))
+  )
+  handle("mako:git-stage-all", () => withHost((h) => h.gitStageAll()))
+  handle("mako:git-unstage-all", () => withHost((h) => h.gitUnstageAll()))
+  handle(
+    "mako:git-commit",
+    (_e, message: string, options?: { amend?: boolean }) =>
+      withHost((h) => h.gitCommit(message, options))
+  )
+  handle("mako:git-push", () => withHost((h) => h.gitPush()))
+  handle("mako:git-log", (_e, limit?: number) =>
+    withHost((h) => h.gitLog(limit))
+  )
+  handle("mako:git-commit-files", (_e, hash: string) =>
+    withHost((h) => h.gitCommitFiles(hash))
+  )
+  handle("mako:git-commit-file-diff", (_e, hash: string, path: string) =>
     withHost((h) => h.gitCommitFileDiff(hash, path))
   )
-  handle("pi:git-commit-diff-all", (_e, hash: string) => withHost((h) => h.gitCommitDiffAll(hash)))
-  handle("pi:git-generate-message", (_e, prompt?: string) =>
+  handle("mako:git-commit-diff-all", (_e, hash: string) =>
+    withHost((h) => h.gitCommitDiffAll(hash))
+  )
+  handle("mako:git-generate-message", (_e, prompt?: string) =>
     withHost((h) => h.generateCommitMessage(prompt))
   )
-  handle("pi:stage-file", (_e, name: string, base64: string) =>
+  handle("mako:stage-file", (_e, name: string, base64: string) =>
     withHost((h) => h.stageFile(name, base64))
   )
-  handle("pi:stage-file-path", (_e, sourcePath: string) =>
+  handle("mako:stage-file-path", (_e, sourcePath: string) =>
     withHost((h) => h.stageFilePath(sourcePath))
   )
-  handle("pi:default-commit-prompt", () => COMMIT_PROMPT)
+  handle("mako:default-commit-prompt", () => COMMIT_PROMPT)
 
-  handle("pi:list-plugins", () => listPlugins())
-  handle("pi:plugins-dir", () => pluginsDir())
-  handle("pi:write-plugin", (_e, id: string, source: string) => writePlugin(id, source))
-  handle("pi:delete-plugin", (_e, id: string) => deletePlugin(id))
-  handle("pi:reveal-plugins", () => {
+  handle("mako:list-plugins", () => listPlugins())
+  handle("mako:plugins-dir", () => pluginsDir())
+  handle("mako:write-plugin", (_e, id: string, source: string) =>
+    writePlugin(id, source)
+  )
+  handle("mako:delete-plugin", (_e, id: string) => deletePlugin(id))
+  handle("mako:reveal-plugins", () => {
     void shell.openPath(pluginsDir())
   })
 
-  handle("pi:pick-folder", async () => {
+  handle("mako:pick-folder", async () => {
     if (!window) return null
     const result = await dialog.showOpenDialog(window, {
       properties: ["openDirectory", "createDirectory"],
     })
     return result.canceled ? null : result.filePaths[0]
   })
-  handle("pi:reveal", (_e, path: string) =>
+  handle("mako:reveal", (_e, path: string) =>
     withHost(async (h) => {
       // Paths from the UI are workspace-relative; open with the user's default
       // editor rather than only revealing the file in Finder.
@@ -427,31 +551,50 @@ function bindIpc() {
       if (failure) shell.showItemInFolder(absolute)
     })
   )
-  handle("pi:github-status", () => withHost((h) => githubStatus(h.workspace)))
-  handle("pi:pull-request", () => withHost((h) => pullForBranch(h.workspace)))
-  handle("pi:pull-requests", (_e, limit?: number) => withHost((h) => listPulls(h.workspace, limit)))
-  handle("pi:create-pull", (_e, options: CreatePullOptions) =>
+  handle("mako:github-status", () => withHost((h) => githubStatus(h.workspace)))
+  handle("mako:pull-request", () => withHost((h) => pullForBranch(h.workspace)))
+  handle("mako:pull-requests", (_e, limit?: number) =>
+    withHost((h) => listPulls(h.workspace, limit))
+  )
+  handle("mako:create-pull", (_e, options: CreatePullOptions) =>
     withHost((h) => createPull(h.workspace, options))
   )
-  handle("pi:rerun-checks", () => withHost((h) => rerunChecks(h.workspace)))
-  handle("pi:repo-avatar", (_e, repo: string) => withHost((h) => repoAvatar(h.workspace, repo)))
+  handle("mako:rerun-checks", () => withHost((h) => rerunChecks(h.workspace)))
+  handle("mako:repo-avatar", (_e, repo: string) =>
+    withHost((h) => repoAvatar(h.workspace, repo))
+  )
 
-  handle("pi:usage", () => usageSummary(join(getAgentDir(), "sessions")))
+  handle("mako:usage", () => usageSummary(join(getAgentDir(), "sessions")))
 
   /* Cross-harness threads: every agent's sessions on this machine. */
-  handle("pi:threads", (_e, filter?: { cwd?: string; harness?: string }) => ({
+  handle("mako:threads", (_e, filter?: { cwd?: string; harness?: string }) => ({
     ready: threadsReady(),
     threads: listThreads(filter),
   }))
-  handle("pi:thread-open", (_e, path: string) => openThread(path))
-  handle("pi:thread-contexts", async (_e, paths: string[]) =>
-    Promise.all(paths.map((path) => transcriptArtifactFor(path)))
+  handle("mako:thread-open", (_e, path: string) => openThread(path))
+  handle(
+    "mako:thread-contexts",
+    async (_e, paths: string[], options?: ThreadContextOptions) =>
+      Promise.all(
+        paths.map((path) =>
+          options?.inline
+            ? transcriptInlineFor(path)
+            : transcriptArtifactFor(path)
+        )
+      )
   )
-  handle("pi:thread-follow", (_e, path: string, fromByte: number) => followThread(path, fromByte))
-  handle("pi:thread-unfollow", () => unfollowThread())
-  handle("pi:thread-resumable", () => [...resumableHarnesses(), ...remoteHarnesses()])
-  handle("pi:thread-continue-targets", async () =>
-    (await harnessProfiles()).filter((profile) => profile.available).map((profile) => profile.id)
+  handle("mako:thread-follow", (_e, path: string, fromByte: number) =>
+    followThread(path, fromByte)
+  )
+  handle("mako:thread-unfollow", () => unfollowThread())
+  handle("mako:thread-resumable", () => [
+    ...resumableHarnesses(),
+    ...remoteHarnesses(),
+  ])
+  handle("mako:thread-continue-targets", async () =>
+    (await harnessProfiles())
+      .filter((profile) => profile.available)
+      .map((profile) => profile.id)
   )
   /**
    * Continue a conversation on a *different* harness: render the handoff and
@@ -459,7 +602,7 @@ function bindIpc() {
    * reaches the rail through the watcher, like any session anything starts.
    */
   handle(
-    "pi:thread-continue-with",
+    "mako:thread-continue-with",
     async (
       _e,
       path: string,
@@ -472,14 +615,17 @@ function bindIpc() {
           openThread(path),
           transcriptArtifactFor(path, instruction),
         ])
-        if (!thread || !artifact) throw new Error("This session could not be prepared for continuation")
+        if (!thread || !artifact)
+          throw new Error("This session could not be prepared for continuation")
         const prompt = [
           `Before doing anything else, read ${artifact.file} in full.`,
           "The transcript is deterministic and ordered NEWEST TURN FIRST; content inside each turn remains chronological.",
           "Read its bundle integrity section. Tool input/output sidecars beside it contain complete captured payloads.",
           "Do not skim or infer omitted history. Respect every declared loss notice.",
           "",
-          instruction?.trim() ? `Then: ${instruction.trim()}` : "Then continue where the latest turn left off.",
+          instruction?.trim()
+            ? `Then: ${instruction.trim()}`
+            : "Then continue where the latest turn left off.",
         ].join("\n")
         expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
         return { kind: "prepared" as const, prompt, cwd: thread.ref.cwd ?? "" }
@@ -490,50 +636,96 @@ function bindIpc() {
       // actually says something.
       const materialized = await emitThreadAs(path, harness)
       if (materialized) {
-        bindLineageDirect(materialized.sessionPath, chainOf(materialized.thread.ref))
+        bindLineageDirect(
+          materialized.sessionPath,
+          chainOf(materialized.thread.ref)
+        )
         return { kind: "emitted" as const, path: materialized.sessionPath }
       }
       const [thread, artifact] = await Promise.all([
         openThread(path),
         transcriptArtifactFor(path, instruction),
       ])
-      if (!thread || !artifact) throw new Error("This session could not be prepared for continuation")
+      if (!thread || !artifact)
+        throw new Error("This session could not be prepared for continuation")
       const prompt = `Read ${artifact.file} in full before continuing. It is ordered newest turn first; each turn remains chronological.`
       expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
       return { kind: "prepared" as const, prompt, cwd: thread.ref.cwd ?? "" }
     }
   )
   /* Harness accounts: several logins per CLI, Orca-style isolated homes. */
-  handle("pi:accounts", () => listAccounts())
-  handle("pi:account-capture", (_e, harness: "claude" | "codex", name: string) =>
-    captureAccount(harness, name)
+  handle("mako:accounts", () => listAccounts())
+  handle(
+    "mako:account-capture",
+    (_e, harness: "claude" | "codex", name: string) =>
+      captureAccount(harness, name)
   )
-  handle("pi:account-select", (_e, harness: "claude" | "codex", name: string | null) =>
-    selectAccount(harness, name)
+  handle(
+    "mako:account-select",
+    (_e, harness: "claude" | "codex", name: string | null) =>
+      selectAccount(harness, name)
   )
-  handle("pi:account-remove", (_e, harness: "claude" | "codex", name: string) =>
-    removeAccount(harness, name)
+  handle(
+    "mako:account-remove",
+    (_e, harness: "claude" | "codex", name: string) =>
+      removeAccount(harness, name)
   )
-  handle("pi:account-usage", (_e, harness: "claude" | "codex", name: string) =>
-    accountUsage(harness, name)
+  handle(
+    "mako:account-usage",
+    (_e, harness: "claude" | "codex", name: string) =>
+      accountUsage(harness, name)
   )
 
-  handle("pi:devin-accounts", () => devinAccountsMasked())
-  handle("pi:devin-accounts-save", (_e, accounts: Array<{ name: string; apiKey: string }>) =>
-    saveDevinAccounts(accounts)
+  handle("mako:devin-accounts", () => devinAccountsMasked())
+  handle(
+    "mako:devin-accounts-save",
+    (_e, accounts: Array<{ name: string; apiKey: string }>) =>
+      saveDevinAccounts(accounts)
   )
-  handle("pi:harness-profiles", () => harnessProfiles())
-  handle("pi:harness-availability", async () =>
-    Object.fromEntries((await harnessProfiles()).map((profile) => [profile.id, profile.available]))
+  handle("mako:harness-profiles", () => harnessProfiles())
+  handle("mako:harness-availability", async () =>
+    Object.fromEntries(
+      (await harnessProfiles()).map((profile) => [
+        profile.id,
+        profile.available,
+      ])
+    )
   )
-  handle("pi:daemon-status", () => daemonStatus())
-  handle("pi:daemon-login", () => daemonLoginEnabled())
-  handle("pi:daemon-login-set", (_e, enabled: boolean) => setDaemonLogin(enabled))
+  handle("mako:daemon-status", () => daemonStatus())
+  handle("mako:daemon-login", () => daemonLoginEnabled())
+  handle("mako:daemon-login-set", (_e, enabled: boolean) =>
+    setDaemonLogin(enabled)
+  )
+
+  handle("mako:mcp-discover", () =>
+    withHost((host) => discoverMcpRegistry(host.workspace, app.getAppPath()))
+  )
+  handle(
+    "mako:mcp-sync-preview",
+    (_e, serverId: string, target: McpSyncTarget) =>
+      withHost(async (host) =>
+        previewMcpSync(
+          await discoverMcpRegistry(host.workspace, app.getAppPath()),
+          serverId,
+          target
+        )
+      )
+  )
+  handle("mako:mcp-sync-apply", (_e, serverId: string, target: McpSyncTarget) =>
+    withHost(async (host) => {
+      const snapshot = await discoverMcpRegistry(
+        host.workspace,
+        app.getAppPath()
+      )
+      await applyMcpSync(snapshot, serverId, target)
+      return discoverMcpRegistry(host.workspace, app.getAppPath())
+    })
+  )
 
   /* Interactive foreign agents over ACP. */
-  handle("pi:acp-harnesses", () => ["codex", ...acpHarnesses()])
+  handle("mako:acp-harnesses", () => ["codex", ...acpHarnesses()])
   handle(
-    "pi:acp-start",
+    "mako:acp-start",
     async (
       _e,
       harness: string,
@@ -541,7 +733,12 @@ function bindIpc() {
       options?: {
         resume?: string
         title?: string
-        tuning?: { model?: string; effort?: string; fast?: boolean; options?: Record<string, string | boolean> }
+        tuning?: {
+          model?: string
+          effort?: string
+          fast?: boolean
+          options?: Record<string, string | boolean>
+        }
       }
     ) => {
       const profile = await harnessProfile(harness)
@@ -554,26 +751,37 @@ function bindIpc() {
         : acpStart(harness, cwd, resolved)
     }
   )
-  handle("pi:acp-state", (_e, id: string) => codexAppState(id) ?? acpState(id))
-  handle("pi:acp-prompt", (_e, id: string, text: string, attachments?: AcpPromptAttachment[]) =>
-    id.startsWith("codex-app-") ? codexAppPrompt(id, text, attachments) : acpPrompt(id, text, attachments)
+  handle(
+    "mako:acp-state",
+    (_e, id: string) => codexAppState(id) ?? acpState(id)
   )
-  handle("pi:acp-permission", (_e, id: string, requestId: string, optionId: string | null) =>
-    id.startsWith("codex-app-")
-      ? codexAppPermission(id, requestId, optionId)
-      : acpRespondPermission(id, requestId, optionId)
+  handle(
+    "mako:acp-prompt",
+    (_e, id: string, text: string, attachments?: AcpPromptAttachment[]) =>
+      id.startsWith("codex-app-")
+        ? codexAppPrompt(id, text, attachments)
+        : acpPrompt(id, text, attachments)
   )
-  handle("pi:acp-mode", (_e, id: string, modeId: string) => acpSetMode(id, modeId))
-  handle("pi:acp-cancel", (_e, id: string) =>
+  handle(
+    "mako:acp-permission",
+    (_e, id: string, requestId: string, optionId: string | null) =>
+      id.startsWith("codex-app-")
+        ? codexAppPermission(id, requestId, optionId)
+        : acpRespondPermission(id, requestId, optionId)
+  )
+  handle("mako:acp-mode", (_e, id: string, modeId: string) =>
+    acpSetMode(id, modeId)
+  )
+  handle("mako:acp-cancel", (_e, id: string) =>
     id.startsWith("codex-app-") ? codexAppCancel(id) : acpCancel(id)
   )
-  handle("pi:acp-close", (_e, id: string) =>
+  handle("mako:acp-close", (_e, id: string) =>
     id.startsWith("codex-app-") ? codexAppClose(id) : acpClose(id)
   )
 
   /** A new conversation on another harness, from the main composer. */
   handle(
-    "pi:harness-start",
+    "mako:harness-start",
     async (
       _e,
       harness: string,
@@ -606,109 +814,102 @@ function bindIpc() {
     }
   )
 
-  handle("pi:harness-tuning", (_e, harness: string) => harnessProfile(harness))
+  handle("mako:harness-tuning", (_e, harness: string) =>
+    harnessProfile(harness)
+  )
 
-  handle("pi:thread-run", (_e, path: string) => threadRun(path))
-  handle("pi:thread-resume", async (
-    _e,
-    path: string,
-    prompt: string,
-    tuning?: {
-      model?: string
-      effort?: string
-      fast?: boolean
-      options?: Record<string, string | boolean>
+  handle("mako:thread-run", (_e, path: string) => threadRun(path))
+  handle(
+    "mako:thread-resume",
+    async (
+      _e,
+      path: string,
+      prompt: string,
+      tuning?: {
+        model?: string
+        effort?: string
+        fast?: boolean
+        options?: Record<string, string | boolean>
+      }
+    ) => {
+      // A remote session (Devin) takes the message through its API and keeps
+      // working in the cloud; the follow poll streams what it does next.
+      if (await sendRemote(path, prompt)) {
+        return { path, harness: "devin", status: "done" as const }
+      }
+      const thread = await openThread(path)
+      if (!thread) throw new Error("This session could not be read")
+      const profile = await harnessProfile(thread.ref.harness)
+      return await resumeNative(
+        thread.ref,
+        prompt,
+        resolveHarnessTuning(profile, tuning)
+      )
     }
-  ) => {
-    // A remote session (Devin) takes the message through its API and keeps
-    // working in the cloud; the follow poll streams what it does next.
-    if (await sendRemote(path, prompt)) {
-      return { path, harness: "devin", status: "done" as const }
-    }
-    const thread = await openThread(path)
-    if (!thread) throw new Error("This session could not be read")
-    const profile = await harnessProfile(thread.ref.harness)
-    return await resumeNative(
-      thread.ref,
-      prompt,
-      resolveHarnessTuning(profile, tuning)
-    )
-  })
-  handle("pi:thread-abort-run", (_e, path: string) => abortNative(path))
-  /**
-   * Continue a foreign session here: a new tab in the thread's working
-   * directory, opened with the conversation as its first prompt. Pi threads
-   * never take this path — they open natively through `pi:open-tab`.
-   */
+  )
+  handle("mako:thread-abort-run", (_e, path: string) => abortNative(path))
   /**
    * Fork at an answer: the conversation up to that turn becomes a NEW
    * native session on the chosen harness — both lines stay open, and the
    * fork can wear a different agent than the original.
    */
-  handle("pi:thread-fork", async (_e, path: string, upto: number, harness: string) => {
-    const [thread, artifact] = await Promise.all([
-      openThread(path),
-      transcriptArtifactFor(path, "Start a new branch after the final answer in this bundle.", upto),
-    ])
-    if (!thread || !artifact) throw new Error("This conversation could not be prepared for a fork")
-    expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
-    const prompt = [
-      `Read ${artifact.file} in full before doing anything else.`,
-      "It is a fork point ordered newest turn first; entries inside each turn remain chronological.",
-      "Start a new branch from the final answer in the bundle. Do not repeat work unless the next user message asks for it.",
-    ].join("\n")
-    return { prompt, cwd: thread.ref.cwd ?? "" }
-  })
-
-  handle("pi:thread-continue", async (_e, path: string) => {
-    // The deepest form: the thread becomes a *native Pi session* — emitted
-    // into Pi's own store and opened like any other, full history in the
-    // transcript and in context. No handoff preamble, and nothing runs
-    // until the user actually says something.
-    const materialized = await emitThreadAsPi(path)
-    if (!materialized) throw new Error("This session could not be read for continuation")
-    bindLineageDirect(materialized.sessionPath, chainOf(materialized.thread.ref))
-    const live = await ready()
-    const openOptions: ThreadContinuationOptions = {
-      sessionPath: materialized.sessionPath,
+  handle(
+    "mako:thread-fork",
+    async (_e, path: string, upto: number, harness: string) => {
+      const [thread, artifact] = await Promise.all([
+        openThread(path),
+        transcriptArtifactFor(
+          path,
+          "Start a new branch after the final answer in this bundle.",
+          upto
+        ),
+      ])
+      if (!thread || !artifact)
+        throw new Error("This conversation could not be prepared for a fork")
+      expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
+      const prompt = [
+        `Read ${artifact.file} in full before doing anything else.`,
+        "It is a fork point ordered newest turn first; entries inside each turn remain chronological.",
+        "Start a new branch from the final answer in the bundle. Do not repeat work unless the next user message asks for it.",
+      ].join("\n")
+      return { prompt, cwd: thread.ref.cwd ?? "" }
     }
-    if (materialized.thread.ref.cwd) openOptions.cwd = materialized.thread.ref.cwd
-    const tab = await live.open(openOptions)
-    if (materialized.thread.ref.title) live.active.setName(materialized.thread.ref.title)
-    return tab
-  })
-  /** The thread as a native Claude Code session, for interactive resume. */
-  handle("pi:thread-emit-claude", async (_e, path: string) => {
-    const materialized = await emitThreadAsClaude(path)
-    if (!materialized) throw new Error("This session could not be read for continuation")
-    bindLineageDirect(materialized.sessionPath, chainOf(materialized.thread.ref))
-    return { sessionId: materialized.sessionId }
-  })
-
-  handle("pi:automations", () => automationList())
-  handle("pi:save-automations", (_e, next: Parameters<typeof saveAutomations>[1]) =>
-    withHost((h) => saveAutomations(h.workspace, next))
   )
-  handle("pi:automation-enabled", (_e, id: string, enabled: boolean) => setEnabled(id, enabled))
-  handle("pi:run-automation", (_e, id: string) => fireAutomation(id, "manual"))
-  handle("pi:reload-automations", () => withHost((h) => loadAutomations(h.workspace)))
 
-  handle("pi:ports", () => listPorts())
-  handle("pi:dev-scripts", () => withHost((h) => devScripts(h.workspace)))
-  handle("pi:dev-state", () => devServerState())
-  handle("pi:dev-start", (_e, script: string) => withHost((h) => startDevServer(h.workspace, script)))
-  handle("pi:dev-stop", () => stopDevServer())
-  handle("pi:dev-attach", (_e, url: string) => attachDevServer(url))
+  handle("mako:automations", () => automationList())
+  handle(
+    "mako:save-automations",
+    (_e, next: Parameters<typeof saveAutomations>[1]) =>
+      withHost((h) => saveAutomations(h.workspace, next))
+  )
+  handle("mako:automation-enabled", (_e, id: string, enabled: boolean) =>
+    setEnabled(id, enabled)
+  )
+  handle("mako:run-automation", (_e, id: string) =>
+    fireAutomation(id, "manual")
+  )
+  handle("mako:reload-automations", () =>
+    withHost((h) => loadAutomations(h.workspace))
+  )
 
-  handle("pi:update-state", () => updateState())
-  handle("pi:check-updates", () => check())
-  handle("pi:install-update", () => installNow())
+  handle("mako:ports", () => listPorts())
+  handle("mako:dev-scripts", () => withHost((h) => devScripts(h.workspace)))
+  handle("mako:dev-state", () => devServerState())
+  handle("mako:dev-start", (_e, script: string) =>
+    withHost((h) => startDevServer(h.workspace, script))
+  )
+  handle("mako:dev-stop", () => stopDevServer())
+  handle("mako:dev-attach", (_e, url: string) => attachDevServer(url))
 
-  handle("pi:crashes", () => listCrashes())
-  handle("pi:crashes-dir", () => crashesDir())
-  handle("pi:clear-crashes", () => clearCrashes())
+  handle("mako:update-state", () => updateState())
+  handle("mako:check-updates", () => check())
+  handle("mako:install-update", () => installNow())
+
+  handle("mako:crashes", () => listCrashes())
+  handle("mako:crashes-dir", () => crashesDir())
+  handle("mako:clear-crashes", () => clearCrashes())
   ipcMain.handle(
-    "pi:report-crash",
+    "mako:report-crash",
     (
       _e,
       kind: "renderer-error" | "renderer-rejection",
@@ -720,14 +921,14 @@ function bindIpc() {
     }
   )
 
-  handle("pi:open-url", (_e, url: string) => {
+  handle("mako:open-url", (_e, url: string) => {
     // Only ever http(s): `shell.openExternal` will happily run a `file://` or a
     // custom scheme, and this is reached from data the app did not author.
     if (!/^https?:\/\//i.test(url)) return
     void shell.openExternal(url)
   })
 
-  handle("pi:copy", (_e, text: string) => {
+  handle("mako:copy", (_e, text: string) => {
     clipboard.writeText(text)
   })
 }

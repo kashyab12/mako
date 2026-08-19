@@ -32,6 +32,7 @@ import {
   type ContentBlock,
   type LoadSessionRequest,
   type LoadSessionResponse,
+  type McpServer,
   type NewSessionRequest,
   type NewSessionResponse,
   type RequestPermissionRequest,
@@ -42,6 +43,9 @@ import {
 } from "@agentclientprotocol/sdk"
 import { accountEnv } from "./accounts.js"
 import { devinExecutable, normalizeAcpOptions } from "./harnesses.js"
+import { discoverMcpRegistry } from "./mcp-registry.js"
+import { acpMcpServers } from "./mcp-runtime.js"
+import type { McpProvider, McpTransport } from "./shared.js"
 import type {
   AcpPermissionRequest,
   AcpPromptAttachment,
@@ -125,6 +129,16 @@ function specFor(harness: string, tuning?: AcpTuning): AgentSpec | null {
   }
 }
 
+function isMcpProvider(value: string): value is McpProvider {
+  return (
+    value === "claude" ||
+    value === "codex" ||
+    value === "cursor" ||
+    value === "grok" ||
+    value === "devin"
+  )
+}
+
 export function acpHarnesses(): string[] {
   return ["claude", "cursor", "grok", "devin"].filter((harness) => {
     const spec = specFor(harness)
@@ -152,6 +166,7 @@ interface Live {
     audio?: boolean
     embeddedContext?: boolean
   }
+  mcpServers: McpServer[]
   turn: Promise<unknown> | null
 }
 
@@ -187,6 +202,7 @@ export async function acpStart(
 
   const id = `acp-${++counter}`
   const workingDir = cwd && existsSync(cwd) ? cwd : homedir()
+  const mcpSnapshot = await discoverMcpRegistry(workingDir, app.getAppPath())
 
   // The nested-session guard: Claude Code refuses to start inside another
   // Claude Code. Mako is not one, but it may have been *launched from* one,
@@ -226,6 +242,7 @@ export async function acpStart(
     },
     pendingPermissions: new Map(),
     promptCapabilities: {},
+    mcpServers: [],
     turn: null,
   }
   sessions.set(id, live)
@@ -285,6 +302,13 @@ export async function acpStart(
     })
     live.promptCapabilities =
       initialized.agentCapabilities?.promptCapabilities ?? {}
+    const mcpCapabilities = initialized.agentCapabilities?.mcpCapabilities
+    const transports: McpTransport[] = ["stdio"]
+    if (mcpCapabilities?.http) transports.push("http")
+    if (mcpCapabilities?.sse) transports.push("sse")
+    live.mcpServers = isMcpProvider(harness)
+      ? acpMcpServers(mcpSnapshot, harness, transports)
+      : []
     const session = options.resume
       ? parseLoadedAcpSession(
           await connection.loadSession(
@@ -292,14 +316,20 @@ export async function acpStart(
               options.resume,
               workingDir,
               harness,
-              options.tuning
+              options.tuning,
+              live.mcpServers
             )
           ),
           options.resume
         )
       : parseNewAcpSession(
           await connection.newSession(
-            newSessionRequest(workingDir, harness, options.tuning)
+            newSessionRequest(
+              workingDir,
+              harness,
+              options.tuning,
+              live.mcpServers
+            )
           )
         )
     live.sessionId = session.sessionId
@@ -357,9 +387,10 @@ function addClaudeSessionMetadata(
 function newSessionRequest(
   cwd: string,
   harness: string,
-  tuning?: AcpTuning
+  tuning: AcpTuning | undefined,
+  mcpServers: NewSessionRequest["mcpServers"]
 ): NewSessionRequest {
-  const request: NewSessionRequest = { cwd, mcpServers: [] }
+  const request: NewSessionRequest = { cwd, mcpServers }
   addClaudeSessionMetadata(request, harness, tuning)
   return request
 }
@@ -368,9 +399,10 @@ function loadSessionRequest(
   sessionId: string,
   cwd: string,
   harness: string,
-  tuning?: AcpTuning
+  tuning: AcpTuning | undefined,
+  mcpServers: LoadSessionRequest["mcpServers"]
 ): LoadSessionRequest {
-  const request: LoadSessionRequest = { sessionId, cwd, mcpServers: [] }
+  const request: LoadSessionRequest = { sessionId, cwd, mcpServers }
   addClaudeSessionMetadata(request, harness, tuning)
   return request
 }

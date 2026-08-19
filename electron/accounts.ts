@@ -596,6 +596,18 @@ export async function selectAccount(
  * vars are stripped either way: an inherited `ANTHROPIC_API_KEY` silently
  * overriding the chosen account is the bug this whole file exists to avoid.
  */
+export async function selectedAccount(
+  harness: string
+): Promise<{ name: string; dir?: string }> {
+  if (harness !== "claude" && harness !== "codex") return { name: "default" }
+  const selection = await readSelection()
+  const name = selection[harness]
+  if (!name) return { name: "default" }
+  const env = await accountEnv(harness, process.env)
+  const dir = harness === "claude" ? env.CLAUDE_CONFIG_DIR : env.CODEX_HOME
+  return dir ? { name, dir } : { name: "default" }
+}
+
 export async function accountEnv(
   harness: string,
   base: NodeJS.ProcessEnv
