@@ -1,72 +1,182 @@
-import { getPi } from "@/lib/bridge"
-import { tokenize } from "@/lib/mentions"
+import { getMako } from "@/lib/bridge"
+import { tokenize, type Segment } from "@/lib/mentions"
 import type { ThreadRef } from "@/lib/types"
 
-interface ThreadArtifact {
+interface ThreadFileContext {
+  kind: "file"
   file: string
   title?: string
   harness: string
 }
 
-const pending = new Map<string, Promise<ThreadArtifact | null>>()
-
-function references(text: string, threads: ThreadRef[]): ThreadRef[] {
-  const found = new Map<string, ThreadRef>()
-  for (const segment of tokenize(text)) {
-    if (segment.kind !== "thread") continue
-    const thread = threads.find(
-      (entry) => entry.harness === segment.harness && entry.nativeId.startsWith(segment.nativeId)
-    )
-    if (thread) found.set(thread.path, thread)
-  }
-  return [...found.values()]
+interface ThreadInlineContext {
+  kind: "inline"
+  content: string
+  title?: string
+  harness: string
 }
 
-function artifact(path: string): Promise<ThreadArtifact | null> {
-  const held = pending.get(path)
+type ThreadContext = ThreadFileContext | ThreadInlineContext
+
+interface LocatedReference {
+  key: string
+  number: number
+  thread?: ThreadRef
+}
+
+interface LocatedSegment {
+  segment: Segment
+  reference?: LocatedReference
+}
+
+interface LocatedReferences {
+  segments: LocatedSegment[]
+  references: LocatedReference[]
+}
+
+export interface ThreadReferenceOptions {
+  /** Remote agents receive transcript data inline because local paths are inaccessible. */
+  inline?: boolean
+}
+
+const pending = new Map<string, Promise<ThreadContext | null>>()
+const remembered = new Map<string, ThreadRef>()
+
+function tokenKey(harness: string, nativeId: string): string {
+  return `${harness}\0${nativeId}`
+}
+
+/**
+ * Exact ids win. A legacy shortened id resolves only when its prefix is unique;
+ * an ambiguous prefix is deliberately left unavailable rather than attaching
+ * the wrong conversation. Remembering a prior unique resolution lets a draft
+ * survive a catalog refresh or deletion between selection and send.
+ */
+function resolveThread(
+  harness: string,
+  nativeId: string,
+  threads: ThreadRef[]
+): ThreadRef | undefined {
+  const identity = tokenKey(harness, nativeId)
+  const exact = threads.filter(
+    (entry) => entry.harness === harness && entry.nativeId === nativeId
+  )
+  if (exact.length === 1) {
+    remembered.set(identity, exact[0]!)
+    return exact[0]
+  }
+  if (exact.length > 1) return undefined
+
+  const prefixed = threads.filter(
+    (entry) =>
+      entry.harness === harness && entry.nativeId.startsWith(nativeId)
+  )
+  if (prefixed.length === 1) {
+    remembered.set(identity, prefixed[0]!)
+    return prefixed[0]
+  }
+  if (prefixed.length > 1) return undefined
+  return remembered.get(identity)
+}
+
+function locate(text: string, threads: ThreadRef[]): LocatedReferences {
+  const references: LocatedReference[] = []
+  const byKey = new Map<string, LocatedReference>()
+  const segments = tokenize(text).map((segment): LocatedSegment => {
+    if (segment.kind !== "thread") return { segment }
+    const thread = resolveThread(segment.harness, segment.nativeId, threads)
+    const key = thread
+      ? `path\0${thread.path}`
+      : `token\0${tokenKey(segment.harness, segment.nativeId)}`
+    let reference = byKey.get(key)
+    if (!reference) {
+      reference = { key, number: references.length + 1, thread }
+      byKey.set(key, reference)
+      references.push(reference)
+    }
+    return { segment, reference }
+  })
+  return { segments, references }
+}
+
+function replaceTokens(segments: LocatedSegment[]): string {
+  return segments
+    .map(({ segment, reference }) =>
+      segment.kind === "thread" && reference
+        ? `[Referenced conversation ${reference.number}]`
+        : segment.kind === "text"
+          ? segment.text
+          : segment.raw
+    )
+    .join("")
+}
+
+function contextVersion(thread: ThreadRef): string {
+  return `${thread.bytes ?? "?"}:${thread.updatedAt ?? "?"}`
+}
+
+function contextKey(thread: ThreadRef, inline: boolean): string {
+  return `${inline ? "inline" : "file"}\0${thread.path}\0${contextVersion(thread)}`
+}
+
+function context(
+  thread: ThreadRef,
+  inline: boolean
+): Promise<ThreadContext | null> {
+  const key = contextKey(thread, inline)
+  const prefix = `${inline ? "inline" : "file"}\0${thread.path}\0`
+  for (const cached of pending.keys()) {
+    if (cached !== key && cached.startsWith(prefix)) pending.delete(cached)
+  }
+  const held = pending.get(key)
   if (held) return held
-  const request = getPi()
-    .threadContexts([path])
-    .then((items) => {
-      const item = items[0] ?? null
-      if (!item) pending.delete(path)
-      return item
-    })
-    .catch(() => {
-      pending.delete(path)
-      return null
-    })
-  pending.set(path, request)
+  const request = contextBatch([thread], inline).then((items) => items[0] ?? null)
+  pending.set(key, request)
   return request
 }
 
-function artifactBatch(paths: string[]): Promise<Array<ThreadArtifact | null>> {
-  const missing = [...new Set(paths.filter((path) => !pending.has(path)))]
+function contextBatch(
+  threads: ThreadRef[],
+  inline: boolean
+): Promise<Array<ThreadContext | null>> {
+  const unique = [...new Map(threads.map((thread) => [thread.path, thread])).values()]
+  const missing = unique.filter(
+    (thread) => !pending.has(contextKey(thread, inline))
+  )
   if (missing.length > 0) {
-    const request = getPi().threadContexts(missing)
+    const paths = missing.map((thread) => thread.path)
+    const request: Promise<Array<ThreadContext | null>> = inline
+      ? getMako().threadContexts(paths, { inline: true })
+      : getMako().threadContexts(paths)
     for (let index = 0; index < missing.length; index += 1) {
-      const path = missing[index]!
+      const thread = missing[index]!
+      const key = contextKey(thread, inline)
       pending.set(
-        path,
+        key,
         request
           .then((items) => {
             const item = items[index] ?? null
-            if (!item) pending.delete(path)
+            if (!item) pending.delete(key)
             return item
           })
           .catch(() => {
-            pending.delete(path)
+            pending.delete(key)
             return null
           })
       )
     }
   }
-  return Promise.all(paths.map((path) => artifact(path)))
+  return Promise.all(threads.map((thread) => context(thread, inline)))
 }
 
-export function prefetchThreadReferences(text: string, threads: ThreadRef[]): void {
-  const paths = references(text, threads).map((thread) => thread.path)
-  if (paths.length > 0) void artifactBatch(paths)
+export function prefetchThreadReferences(
+  text: string,
+  threads: ThreadRef[]
+): void {
+  const referenced = locate(text, threads).references.flatMap((reference) =>
+    reference.thread ? [reference.thread] : []
+  )
+  if (referenced.length > 0) void contextBatch(referenced, false)
 }
 
 export function stripThreadReferenceAppendix(text: string): string {
@@ -74,21 +184,54 @@ export function stripThreadReferenceAppendix(text: string): string {
   return at === -1 ? text : text.slice(0, at).trimEnd()
 }
 
-export async function appendThreadReferences(text: string, threads: ThreadRef[]): Promise<string> {
-  const refs = references(text, threads)
-  if (refs.length === 0) return text
-  const artifacts = await artifactBatch(refs.map((thread) => thread.path))
-  const lines: string[] = []
-  for (let index = 0; index < refs.length; index += 1) {
-    const thread = refs[index]!
-    const prepared = artifacts[index]
-    if (!prepared) continue
-    lines.push(
-      `[Referenced conversation ${index + 1}] ${prepared.title ?? thread.title ?? "Untitled conversation"} (${prepared.harness})`,
-      `Transcript bundle: ${prepared.file}`,
-      "Read transcript.md in its displayed newest-first order before using this reference. Preserve the chronological order inside each turn. Tool payload sidecars are next to the transcript and contain the complete captured inputs and outputs."
-    )
+export async function appendThreadReferences(
+  text: string,
+  threads: ThreadRef[],
+  options: ThreadReferenceOptions = {}
+): Promise<string> {
+  const located = locate(text, threads)
+  if (located.references.length === 0) return text
+
+  const replaced = replaceTokens(located.segments)
+  const available = located.references.filter(
+    (reference): reference is LocatedReference & { thread: ThreadRef } =>
+      reference.thread !== undefined
+  )
+  const prepared = await contextBatch(
+    available.map((reference) => reference.thread),
+    options.inline === true
+  )
+  const contextByKey = new Map<string, ThreadContext | null>()
+  for (let index = 0; index < available.length; index += 1) {
+    contextByKey.set(available[index]!.key, prepared[index] ?? null)
   }
-  if (lines.length === 0) return text
-  return `${text.trimEnd()}\n\n---\n${lines.join("\n\n")}`
+
+  const lines: string[] = []
+  for (const reference of located.references) {
+    const preparedContext = contextByKey.get(reference.key)
+    const title =
+      preparedContext?.title ?? reference.thread?.title ?? "Untitled conversation"
+    const harness = preparedContext?.harness ?? reference.thread?.harness
+    lines.push(
+      `[Referenced conversation ${reference.number}] ${title}${harness ? ` (${harness})` : ""}`
+    )
+    if (!preparedContext) {
+      lines.push(
+        "This referenced conversation is unavailable or no longer exists. Do not infer its contents."
+      )
+    } else if (preparedContext.kind === "inline") {
+      lines.push(
+        "Remote inline transcript bundle follows. Read its security boundary, chronology, integrity, and loss directions before using the history.",
+        "",
+        preparedContext.content
+      )
+    } else {
+      lines.push(
+        `Local transcript bundle: ${preparedContext.file}`,
+        "Before using this reference, read transcript.md at that exact content-addressed path in full.",
+        "Read turns NEWEST FIRST while preserving chronological order inside each turn. Read the Bundle integrity section, inspect complete tool input/output sidecars beside the transcript, and respect every declared loss without guessing omitted history."
+      )
+    }
+  }
+  return `${replaced.trimEnd()}\n\n---\n${lines.join("\n\n")}`
 }

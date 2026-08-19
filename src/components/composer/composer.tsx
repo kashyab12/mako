@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react"
 import { AgentPicker } from "@/components/composer/agent-picker"
 import { ForeignEffortPicker } from "@/components/composer/foreign-effort"
 import { ForeignModelPicker } from "@/components/composer/foreign-model"
@@ -7,7 +13,6 @@ import { MentionMenu } from "@/components/composer/mention-menu"
 import { AttachmentStrip } from "@/components/composer/attachments"
 import {
   buildForeignPrompt,
-  buildPrompt,
   useAttachments,
   type Attachment,
 } from "@/lib/attachments"
@@ -17,14 +22,21 @@ import { Slot } from "@/extend/slot"
 import { formatChord } from "@/extend/commands"
 import { mentionAt, replaceMention, type ActiveMention } from "@/lib/mentions"
 import { textOf } from "@/lib/format"
-import { appendThreadReferences, prefetchThreadReferences } from "@/lib/thread-references"
-import { actions, shallowEqual, store as sessionStore, useSession } from "@/state/session"
+import {
+  appendThreadReferences,
+  prefetchThreadReferences,
+} from "@/lib/thread-references"
+import {
+  actions,
+  shallowEqual,
+  store as sessionStore,
+  useSession,
+} from "@/state/session"
 import { threads, threadsStore, useThreads } from "@/state/threads"
 import { acp, acpStore, useAcp } from "@/state/acp"
-import { getPi } from "@/lib/bridge"
+import { getMako } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
 import type { AcpPromptAttachment, Harness } from "@/lib/types"
-import { toast } from "sonner"
 import {
   ArrowUpIcon,
   AtSignIcon,
@@ -67,8 +79,8 @@ interface BannerProps {
 
 declare global {
   interface WindowEventMap {
-    "pi:compose": ComposerTextEvent
-    "pi:insert": ComposerTextEvent
+    "mako:compose": ComposerTextEvent
+    "mako:insert": ComposerTextEvent
   }
 }
 
@@ -87,7 +99,6 @@ const isMac = navigator.platform.startsWith("Mac")
 /** Drafts survive session switches within a run; nobody should lose a paragraph. */
 const drafts = new Map<string, StoredDraft>()
 
-
 export function Composer() {
   const sessionId = useSession((state) => state.meta?.sessionId)
   const status = useSession(
@@ -97,7 +108,8 @@ export function Composer() {
         compacting: state.meta?.isCompacting ?? false,
         retrying: state.meta?.isRetrying ?? false,
         queued:
-          (state.meta?.queued.steering.length ?? 0) + (state.meta?.queued.followUp.length ?? 0),
+          (state.meta?.queued.steering.length ?? 0) +
+          (state.meta?.queued.followUp.length ?? 0),
       }),
       []
     ),
@@ -121,12 +133,19 @@ export function Composer() {
    * and ↓ walks forward until your unfinished draft comes back. Typing
    * anything ends the walk.
    */
-  const promptHistory = useRef<{ list: string[]; at: number; stash: string } | null>(null)
+  const promptHistory = useRef<{
+    list: string[]
+    at: number
+    stash: string
+  } | null>(null)
   const collectPromptHistory = useCallback((): string[] => {
     const viewing = threadsStore.get().viewing
     if (viewing) {
       return viewing.entries
-        .filter((entry): entry is Extract<typeof entry, { kind: "user" }> => entry.kind === "user")
+        .filter(
+          (entry): entry is Extract<typeof entry, { kind: "user" }> =>
+            entry.kind === "user"
+        )
         .map((entry) => entry.text.trim())
         .filter(Boolean)
     }
@@ -142,7 +161,10 @@ export function Composer() {
     async (files: File[]) => {
       if (files.length === 0) return
       const markers = await attachments.add(files)
-      if (markers) window.dispatchEvent(new CustomEvent("pi:insert", { detail: `${markers} ` }))
+      if (markers)
+        window.dispatchEvent(
+          new CustomEvent("mako:insert", { detail: `${markers} ` })
+        )
     },
     [attachments]
   )
@@ -173,7 +195,12 @@ export function Composer() {
     // slash commands work everywhere else.
     const slash = /^\/([\w-]*)$/.exec(node.value)
     if (slash) {
-      setMention({ sigil: "/", query: slash[1] ?? "", start: 0, end: node.value.length })
+      setMention({
+        sigil: "/",
+        query: slash[1] ?? "",
+        start: 0,
+        end: node.value.length,
+      })
       return
     }
     setMention(found)
@@ -228,13 +255,13 @@ export function Composer() {
         node?.setSelectionRange(at + detail.length, at + detail.length)
       })
     }
-    window.addEventListener("pi:focus-composer", focus)
-    window.addEventListener("pi:compose", setText)
-    window.addEventListener("pi:insert", insert)
+    window.addEventListener("mako:focus-composer", focus)
+    window.addEventListener("mako:compose", setText)
+    window.addEventListener("mako:insert", insert)
     return () => {
-      window.removeEventListener("pi:focus-composer", focus)
-      window.removeEventListener("pi:compose", setText)
-      window.removeEventListener("pi:insert", insert)
+      window.removeEventListener("mako:focus-composer", focus)
+      window.removeEventListener("mako:compose", setText)
+      window.removeEventListener("mako:insert", insert)
     }
   }, [draft, update])
 
@@ -251,100 +278,83 @@ export function Composer() {
       const liveSession = acpStore.get().session
       const viewingRef = threadsStore.get().viewing?.ref
       const harness = threadsStore.get().composerHarness
-      if (liveSession || viewingRef || harness !== "pi") {
-        // Wait out staging — a screenshot mid-copy must not race the send
-        // and leave a dead [Attachment N] marker with no file behind it —
-        // then put even inline-shaped images on disk, since a CLI reads
-        // files, not base64.
-        const settledItems = attachments.items.some((item) => item.pending)
-          ? await attachments.settled()
-          : attachments.items
-        const staged = await Promise.all(
-          settledItems.map(async (item) => {
-            if (item.stagedPath || item.kind !== "image" || !item.data) return item
-            try {
-              const file = await getPi().stageFile(item.name, item.data)
-              return { ...item, stagedPath: file.path }
-            } catch {
-              return item
-            }
-          })
-        )
-        const attachmentPrompt = buildForeignPrompt(text, staged)
-        const full = await appendThreadReferences(attachmentPrompt, threadsStore.get().threads)
-        if (!full.trim()) return
-        const acpAttachments = staged.map(toAcpPromptAttachment)
-        const restorableDraft: RestorableDraft = {
-          text: draft,
-          attachments: attachments.detach(),
-        }
-        update("")
-        setMention(null)
-        let ok: boolean
-        if (liveSession) {
-          // Mod+Enter while the agent runs: stop the turn, then send — the
-          // live protocol's own interrupt. Plain Enter queues agent-side.
-          if (mode && liveSession.status === "running") acp.cancel()
-          await acp.send(full, acpAttachments)
-          ok = true
-        } else if (viewingRef) {
-          // An archived conversation has no native session to resume — a
-          // reply re-materializes it: the emitters write a fresh native
-          // session (same harness or any other) from the archived history,
-          // and the message goes out as its next turn.
-          ok =
-            harness === viewingRef.harness && !viewingRef.archived
-              ? mode
-                ? await threads.interruptAndSend(viewingRef, full)
-                : await threads.reply(viewingRef, full)
-              : await threads.moveAndSend(viewingRef, harness, full)
-        } else if (threadsStore.get().acpable.includes(harness)) {
-          ok = await acp.startFresh(harness, meta?.cwd ?? "", full, acpAttachments)
-        } else {
-          ok = await threads.startNew(harness, full)
-        }
-        if (ok) attachments.discard(restorableDraft.attachments)
-        else {
-          update(restorableDraft.text)
-          attachments.reattach(restorableDraft.attachments)
-        }
-        return
-      }
-
-      // The agent rejects a prompt outright when no model is selected. Catching
-      // it here rather than letting it round-trip means the draft is never
-      // touched, and the message names the fix instead of quoting an error.
-      if (!meta?.model) {
-        toast.error("Choose a model first", {
-          description: "Nothing was sent — your message is still here.",
+      // Wait out staging — a screenshot mid-copy must not race the send
+      // and leave a dead [Attachment N] marker with no file behind it —
+      // then put even inline-shaped images on disk, since a CLI reads
+      // files, not base64.
+      const settledItems = attachments.items.some((item) => item.pending)
+        ? await attachments.settled()
+        : attachments.items
+      const staged = await Promise.all(
+        settledItems.map(async (item) => {
+          if (item.stagedPath || item.kind !== "image" || !item.data)
+            return item
+          try {
+            const file = await getMako().stageFile(item.name, item.data)
+            return { ...item, stagedPath: file.path }
+          } catch {
+            return item
+          }
         })
-        return
-      }
-
-      const built = buildPrompt(draft, attachments.items)
-      built.text = await appendThreadReferences(built.text, threadsStore.get().threads)
-
-      // Cleared before the host answers, so typing the next thing is instant —
-      // and put back verbatim if the host refuses. A prompt is rejected
-      // outright when no model is selected, and losing a paragraph to that is
-      // not an acceptable way to find out.
+      )
+      const attachmentPrompt = buildForeignPrompt(text, staged)
+      const full = await appendThreadReferences(
+        attachmentPrompt,
+        threadsStore.get().threads,
+        {
+          // Only Devin Cloud cannot open this machine's transcript paths.
+          // Local Devin ACP reads the content-addressed bundle like every other
+          // local provider and keeps the larger, sidecar-preserving context.
+          inline:
+            viewingRef?.path.startsWith("devin://") ||
+            (harness === "devin" &&
+              !threadsStore.get().acpable.includes("devin")),
+        }
+      )
+      if (!full.trim()) return
+      const acpAttachments = staged.map(toAcpPromptAttachment)
       const restorableDraft: RestorableDraft = {
         text: draft,
         attachments: attachments.detach(),
       }
       update("")
       setMention(null)
-
-      const sent = await actions.send(built.text, mode, built.images)
-      if (sent) {
-        attachments.discard(restorableDraft.attachments)
-        return
+      let ok: boolean
+      if (liveSession) {
+        // Mod+Enter while the agent runs: stop the turn, then send — the
+        // live protocol's own interrupt. Plain Enter queues agent-side.
+        if (mode && liveSession.status === "running") acp.cancel()
+        await acp.send(full, acpAttachments)
+        ok = true
+      } else if (viewingRef) {
+        // An archived conversation has no native session to resume — a
+        // reply re-materializes it: the emitters write a fresh native
+        // session (same harness or any other) from the archived history,
+        // and the message goes out as its next turn.
+        ok =
+          harness === viewingRef.harness && !viewingRef.archived
+            ? mode
+              ? await threads.interruptAndSend(viewingRef, full)
+              : await threads.reply(viewingRef, full)
+            : await threads.moveAndSend(viewingRef, harness, full)
+      } else if (threadsStore.get().acpable.includes(harness)) {
+        ok = await acp.startFresh(
+          harness,
+          meta?.cwd ?? "",
+          full,
+          acpAttachments
+        )
+      } else {
+        ok = await threads.startNew(harness, full)
       }
-      update(restorableDraft.text)
-      attachments.reattach(restorableDraft.attachments)
-      requestAnimationFrame(() => textarea.current?.focus())
+      if (ok) attachments.discard(restorableDraft.attachments)
+      else {
+        update(restorableDraft.text)
+        attachments.reattach(restorableDraft.attachments)
+      }
+      return
     },
-    [attachments, draft, meta?.cwd, meta?.model, update]
+    [attachments, draft, meta?.cwd, update]
   )
 
   const pick = useCallback(
@@ -374,12 +384,22 @@ export function Composer() {
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // The mention menu owns navigation keys while it is open.
-    if (mention && ["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"].includes(event.key)) return
+    if (
+      mention &&
+      ["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"].includes(event.key)
+    )
+      return
     const node = textarea.current
-    if (event.key === "ArrowUp" && node && node.selectionStart === 0 && node.selectionEnd === 0) {
+    if (
+      event.key === "ArrowUp" &&
+      node &&
+      node.selectionStart === 0 &&
+      node.selectionEnd === 0
+    ) {
       if (!promptHistory.current) {
         const list = collectPromptHistory()
-        if (list.length > 0) promptHistory.current = { list, at: list.length, stash: draft }
+        if (list.length > 0)
+          promptHistory.current = { list, at: list.length, stash: draft }
       }
       const history = promptHistory.current
       if (history && history.at > 0) {
@@ -417,9 +437,13 @@ export function Composer() {
   const busy = status.streaming || status.compacting
   const liveHarness = useAcp((state) => state.session?.harness ?? null)
   const liveRunning = useAcp((state) => state.session?.status === "running")
-  const routedHarness = useThreads((state) => state.viewing?.ref.harness ?? null)
+  const routedHarness = useThreads(
+    (state) => state.viewing?.ref.harness ?? null
+  )
   const viewingRunning = useThreads((state) => state.run?.status === "running")
-  const viewingArchived = useThreads((state) => Boolean(state.viewing?.ref.archived))
+  const viewingArchived = useThreads((state) =>
+    Boolean(state.viewing?.ref.archived)
+  )
   const newHarness = useThreads((state) => state.composerHarness)
   const placeholder = liveHarness
     ? liveRunning
@@ -433,19 +457,19 @@ export function Composer() {
           : viewingRunning
             ? `${harnessTitle(routedHarness)} is working — Enter queues, ${isMac ? "⌘" : "Ctrl+"}Enter interrupts`
             : `Reply — ${harnessTitle(routedHarness)} answers`
-      : newHarness !== "pi"
-        ? `Ask ${harnessTitle(newHarness)} for a change`
-        : status.streaming
-          ? "Steer the current turn…"
-          : "Ask for a change"
+      : `Ask ${harnessTitle(newHarness)} for a change`
 
   return (
     <div className="shrink-0 px-6 pt-1 pb-4">
       <div className="mx-auto w-full max-w-[760px]">
         <Slot name="composer.above" meta={meta} />
 
-        {status.compacting ? <Banner text="Compacting the conversation…" /> : null}
-        {status.retrying ? <Banner text="Retrying after a provider error…" /> : null}
+        {status.compacting ? (
+          <Banner text="Compacting the conversation…" />
+        ) : null}
+        {status.retrying ? (
+          <Banner text="Retrying after a provider error…" />
+        ) : null}
         {status.queued > 0 ? (
           <div className="mb-1.5 flex items-center gap-2 px-1 text-[11px] text-faint">
             <Chip>{status.queued} queued</Chip>
@@ -485,7 +509,11 @@ export function Composer() {
           }}
           className={cn(
             "surface-glass lit-edge relative rounded-2xl bg-surface ring-1 transition-[box-shadow] duration-150",
-            dragging ? "ring-foreground/40" : focused ? "ring-border" : "ring-hairline"
+            dragging
+              ? "ring-foreground/40"
+              : focused
+                ? "ring-border"
+                : "ring-hairline"
           )}
         >
           {mention ? (
@@ -506,7 +534,10 @@ export function Composer() {
            * native caret, IME, undo, and spellcheck — a contenteditable would
            * trade all four for the same visual result.
            */}
-          <AttachmentStrip items={attachments.items} onRemove={attachments.remove} />
+          <AttachmentStrip
+            items={attachments.items}
+            onRemove={attachments.remove}
+          />
 
           <div
             ref={scroller}
@@ -558,7 +589,9 @@ export function Composer() {
               side="top"
               size="xs"
               onClick={() => {
-                window.dispatchEvent(new CustomEvent("pi:insert", { detail: "@" }))
+                window.dispatchEvent(
+                  new CustomEvent("mako:insert", { detail: "@" })
+                )
                 requestAnimationFrame(syncMention)
               }}
             >
@@ -588,7 +621,7 @@ export function Composer() {
                 </IconAction>
               ) : null}
               <SendButton
-                ready={Boolean(meta?.model) && (Boolean(draft.trim()) || attachments.items.length > 0)}
+                ready={Boolean(draft.trim()) || attachments.items.length > 0}
                 steering={status.streaming}
                 onSend={() => void submit()}
               />
@@ -612,7 +645,9 @@ export function Composer() {
               draft || focused ? "opacity-0" : "opacity-100"
             )}
           >
-            <Keys keys={formatChord(status.streaming ? "mod+enter" : "mod+k")} />
+            <Keys
+              keys={formatChord(status.streaming ? "mod+enter" : "mod+k")}
+            />
             {status.streaming ? "queue" : "commands"}
           </span>
         </div>
@@ -671,15 +706,11 @@ function BranchChip() {
 function Banner({ text }: BannerProps) {
   return (
     <div className="mb-1.5 flex items-center gap-2 rounded-md bg-raised px-2 py-1 text-[11.5px] text-muted-foreground">
-      <span className="size-1 animate-live rounded-full bg-current" />
+      <span className="animate-live size-1 rounded-full bg-current" />
       {text}
     </div>
   )
 }
-
-
-
-
 
 function harnessTitle(harness: Harness): string {
   switch (harness) {
@@ -710,7 +741,9 @@ function ComposerRouting() {
   const viewing = useThreads((state) => state.viewing?.ref)
   const run = useThreads((state) => state.run)
   const viewingQueued = useThreads((state) =>
-    state.viewing ? (state.queuedReplies[state.viewing.ref.path]?.prompts.length ?? 0) : 0
+    state.viewing
+      ? (state.queuedReplies[state.viewing.ref.path]?.prompts.length ?? 0)
+      : 0
   )
   const harness = useThreads((state) => state.composerHarness)
   const live = useAcp((state) => state.session)
@@ -732,7 +765,9 @@ function ComposerRouting() {
             stop turn
           </button>
         ) : null}
-        {queued ? <span className="text-[10px] text-faint">1 queued</span> : null}
+        {queued ? (
+          <span className="text-[10px] text-faint">1 queued</span>
+        ) : null}
       </span>
     )
   }

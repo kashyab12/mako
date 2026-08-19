@@ -25,12 +25,18 @@ export function tokenize(text: string): Segment[] {
   let cursor = 0
 
   for (const match of text.matchAll(TOKEN)) {
-    const [, lead, sigil, body] = match
+    const [, lead, sigil, matchedBody] = match
     const start = (match.index ?? 0) + lead.length
-    if (!body) continue
+    if (!matchedBody) continue
 
     if (start > cursor) segments.push({ kind: "text", text: text.slice(cursor, start) })
 
+    // A generated thread token is commonly followed by sentence punctuation.
+    // Keep that punctuation as prose rather than folding it into the native id.
+    const body =
+      sigil === "@" && matchedBody.startsWith("thread:")
+        ? matchedBody.replace(/[),.;!?]+$/, "")
+        : matchedBody
     const raw = `${sigil}${body}`
     const thread = sigil === "@" ? parseThreadToken(body) : null
     segments.push(
@@ -54,7 +60,9 @@ export function hasReferences(text: string): boolean {
 }
 
 export function threadToken(harness: string, nativeId: string): string {
-  return `@thread:${encodeURIComponent(harness)}:${encodeURIComponent(nativeId.slice(0, 12))}`
+  // The full native id keeps the token collision-safe. Older drafts containing
+  // shortened ids still resolve when their prefix identifies exactly one thread.
+  return `@thread:${encodeURIComponent(harness)}:${encodeURIComponent(nativeId)}`
 }
 
 export function parseThreadToken(body: string): { harness: string; nativeId: string } | null {
