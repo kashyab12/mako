@@ -1,6 +1,23 @@
 import { createServer, type Server } from "node:http"
 import type { BrowserWindow } from "electron"
 
+interface AutomationObject {
+  [property: string]: AutomationValue
+}
+
+type AutomationValue =
+  | AutomationObject
+  | AutomationValue[]
+  | string
+  | number
+  | bigint
+  | boolean
+  | symbol
+  | null
+  | undefined
+
+type AutomationFailure = Error | AutomationValue
+
 /**
  * A way to drive the window without touching the mouse.
  *
@@ -43,11 +60,11 @@ export function installAutomation(window: BrowserWindow, isDev: boolean) {
         // `true` marks it as a user gesture, which some handlers require and
         // which a real click would have carried.
         .executeJavaScript(source, true)
-        .then((value: unknown) => {
+        .then((value: AutomationValue) => {
           response.writeHead(200, { "content-type": "application/json" })
           response.end(JSON.stringify({ ok: true, value: value ?? null }))
         })
-        .catch((error: unknown) => {
+        .catch((error: AutomationFailure) => {
           response.writeHead(200, { "content-type": "application/json" })
           response.end(
             JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error) })

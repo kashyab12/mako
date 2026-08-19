@@ -1,6 +1,7 @@
 import { watch, type FSWatcher } from "node:fs"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join, relative, sep } from "node:path"
+import type { JsonObject, JsonValue } from "./codex-app-protocol.js"
 import type { Automation, AutomationRun, HostEvent } from "./shared.js"
 
 /**
@@ -51,10 +52,15 @@ interface Runtime {
   head: string | null
 }
 
+interface AutomationDocument {
+  automations: Automation[]
+}
+
 let runtime: Runtime | null = null
 let automations: Automation[] = []
 let emit: (event: HostEvent) => void = () => {}
-let launch: ((cwd: string, prompt: string, label: string) => Promise<void>) | null = null
+let launch:
+  ((cwd: string, prompt: string, label: string) => Promise<void>) | null = null
 
 export function automationList(): Automation[] {
   return automations
@@ -66,14 +72,28 @@ function publish() {
 
 export async function loadAutomations(cwd: string): Promise<Automation[]> {
   try {
-    const raw = await readFile(join(cwd, FILE), "utf8")
-    const parsed = JSON.parse(raw) as { automations?: Automation[] }
-    automations = (parsed.automations ?? []).map(normalize)
+    const document = parseAutomationDocument(
+      await readFile(join(cwd, FILE), "utf8")
+    )
+    automations = document.automations
   } catch {
     automations = []
   }
   publish()
   return automations
+}
+
+function parseAutomationDocument(text: string): AutomationDocument {
+  const value: JsonValue = JSON.parse(text)
+  if (!isJsonObject(value) || !Array.isArray(value.automations))
+    return { automations: [] }
+
+  const entries: Automation[] = []
+  for (const entry of value.automations) {
+    if (!isJsonObject(entry)) throw new Error("Invalid automation")
+    entries.push(normalize(entry))
+  }
+  return { automations: entries }
 }
 
 /**
@@ -83,15 +103,29 @@ export async function loadAutomations(cwd: string): Promise<Automation[]> {
  * whatever the author set, and honouring that would mean cloning a repo could
  * start running an agent. Enabling is a local decision, held locally.
  */
-function normalize(raw: Automation): Automation {
+function normalize(raw: JsonObject): Automation {
   return {
-    id: String(raw.id ?? "").slice(0, 80) || `a${Math.abs(hash(JSON.stringify(raw)))}`,
+    id:
+      String(raw.id ?? "").slice(0, 80) ||
+      `a${Math.abs(hash(JSON.stringify(raw)))}`,
     name: String(raw.name ?? "Untitled").slice(0, 120),
     prompt: String(raw.prompt ?? "").slice(0, 8000),
-    trigger: raw.trigger === "files" || raw.trigger === "commit" ? raw.trigger : "manual",
+    trigger:
+      raw.trigger === "files" || raw.trigger === "commit"
+        ? raw.trigger
+        : "manual",
     paths: Array.isArray(raw.paths) ? raw.paths.slice(0, 40).map(String) : [],
     enabled: false,
   }
+}
+
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return (
+    value !== undefined &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.prototype.toString.call(value) === "[object Object]"
+  )
 }
 
 function hash(text: string): number {
@@ -102,15 +136,22 @@ function hash(text: string): number {
   return value
 }
 
-export async function saveAutomations(cwd: string, next: Automation[]): Promise<Automation[]> {
+export async function saveAutomations(
+  cwd: string,
+  next: Automation[]
+): Promise<Automation[]> {
   automations = next
   publish()
   try {
     await mkdir(join(cwd, ".mako"), { recursive: true })
     // `enabled` is not written: it is a local decision about a shared file, and
     // committing it would switch the automation on for everyone who clones.
-    const shared = next.map(({ enabled: _enabled, ...rest }) => rest)
-    await writeFile(join(cwd, FILE), `${JSON.stringify({ automations: shared }, null, 2)}\n`, "utf8")
+    const shared = next.map((entry) => ({ ...entry, enabled: undefined }))
+    await writeFile(
+      join(cwd, FILE),
+      `${JSON.stringify({ automations: shared }, null, 2)}\n`,
+      "utf8"
+    )
   } catch {
     // A project we cannot write to still gets working automations in memory.
   }
@@ -119,7 +160,9 @@ export async function saveAutomations(cwd: string, next: Automation[]): Promise<
 
 /** Enabling is per-machine and is not written to the shared file. */
 export function setEnabled(id: string, enabled: boolean): Automation[] {
-  automations = automations.map((entry) => (entry.id === id ? { ...entry, enabled } : entry))
+  automations = automations.map((entry) =>
+    entry.id === id ? { ...entry, enabled } : entry
+  )
   publish()
   return automations
 }
@@ -140,7 +183,7 @@ export function matchesGlob(pattern: string, path: string): boolean {
   let source = ""
   let index = 0
   while (index < pattern.length) {
-    const char = pattern[index] as string
+    const char = pattern[index] ?? ""
     if (char === "*" && pattern[index + 1] === "*") {
       // `**/` has to be able to match *no* directories, or `src/**/*.ts`
       // misses `src/session.ts` — which is the first thing anyone writes and
@@ -194,7 +237,10 @@ export function bindAutomations(
  * watcher pointed at a directory an agent is editing will otherwise re-trigger
  * on the agent's own output, which is a loop that bills.
  */
-export async function fireAutomation(id: string, reason: AutomationRun["reason"]): Promise<void> {
+export async function fireAutomation(
+  id: string,
+  reason: AutomationRun["reason"]
+): Promise<void> {
   const automation = automations.find((entry) => entry.id === id)
   const state = runtime
   if (!automation || !state || !launch) return
@@ -205,7 +251,10 @@ export async function fireAutomation(id: string, reason: AutomationRun["reason"]
 
   state.inFlight.add(id)
   state.lastRun.set(id, Date.now())
-  emit({ type: "automation-run", run: { id, name: automation.name, reason, at: Date.now() } })
+  emit({
+    type: "automation-run",
+    run: { id, name: automation.name, reason, at: Date.now() },
+  })
   try {
     await launch(state.cwd, automation.prompt, automation.name)
   } finally {
@@ -222,24 +271,37 @@ export async function fireAutomation(id: string, reason: AutomationRun["reason"]
  */
 export async function watchWorkspace(cwd: string) {
   stopWatching()
-  runtime = { cwd, watcher: null, timers: new Map(), lastRun: new Map(), inFlight: new Set(), head: null }
+  runtime = {
+    cwd,
+    watcher: null,
+    timers: new Map(),
+    lastRun: new Map(),
+    inFlight: new Set(),
+    head: null,
+  }
   await loadAutomations(cwd)
 
   try {
     runtime.watcher = watch(cwd, { recursive: true }, (_event, filename) => {
       if (!filename || !runtime) return
-      const path = relative(cwd, join(cwd, filename.toString())).split(sep).join("/")
+      const path = relative(cwd, join(cwd, filename.toString()))
+        .split(sep)
+        .join("/")
       if (!path || isIgnored(path)) return
 
       for (const automation of automations) {
         if (!automation.enabled || automation.trigger !== "files") continue
-        if (!automation.paths.some((pattern) => matchesGlob(pattern, path))) continue
+        if (!automation.paths.some((pattern) => matchesGlob(pattern, path)))
+          continue
         // Debounced per automation: a save that touches four matching files is
         // one event, not four.
         clearTimeout(runtime.timers.get(automation.id))
         runtime.timers.set(
           automation.id,
-          setTimeout(() => void fireAutomation(automation.id, "files"), DEBOUNCE_MS)
+          setTimeout(
+            () => void fireAutomation(automation.id, "files"),
+            DEBOUNCE_MS
+          )
         )
       }
     })
@@ -250,7 +312,8 @@ export async function watchWorkspace(cwd: string) {
 }
 
 /** Directories whose churn is never what a rule means. */
-const IGNORED = /(^|\/)(\.git|node_modules|dist|dist-electron|release|build|out|\.next|coverage|\.turbo)(\/|$)/
+const IGNORED =
+  /(^|\/)(\.git|node_modules|dist|dist-electron|release|build|out|\.next|coverage|\.turbo)(\/|$)/
 
 function isIgnored(path: string): boolean {
   return IGNORED.test(path)
