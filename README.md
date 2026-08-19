@@ -2,8 +2,8 @@
 
 <img src="mako-icons/dark/logomark-1024.png" width="88" align="right" alt="" />
 
-A fast desktop for the [Pi coding agent](https://github.com/earendil-works/pi-coding-agent).
-Run several at once, and see what they change before you keep it.
+A fast desktop meta-harness for Claude Code, Codex, Cursor, Grok, and Devin.
+Run several provider-native sessions at once, move conversations between them, and see what they change before you keep it.
 
 ## Run
 
@@ -66,18 +66,16 @@ one live list. Nothing imports and nothing polls — the native session stores
 are watched, so a session you start in a terminal appears here mid-turn.
 Opening one shows the conversation translated to one shape, live-tailed while
 its agent works. From there it goes anywhere: **reply** sends your next message
-through the CLI that owns the session; **continue here** brings the
-conversation into a Mako tab; the menu hands it to any *other* harness as a
-fresh session opened with the transcript. Sessions are not bound to the tool
-that started them.
+through the provider that owns the session, while choosing another provider
+starts a new session from Mako's deterministic transcript bundle. Sessions are
+not bound to the tool that started them.
 
 The layer under this is [`@mako/sessions`](packages/sessions) — a dependency-free
 library that reads every harness's native store into one canonical format,
 catalogs them incrementally (a thousand unchanged sessions cost a thousand
 stats and zero reads), and streams gigabyte-sized files in fixed-size chunks.
-It also *writes* every store: a conversation can be emitted as a native
-session in any harness's own format — a real Pi session file, a Claude
-project, a Codex rollout, a Grok session directory, a Cursor SQLite store —
+It also *writes* supported provider stores: a conversation can be emitted as a
+Claude project, a Codex rollout, a Grok session directory, or a Cursor SQLite store —
 which the target's ordinary resume machinery then loads with the full history
 in context. Continuation is not a pasted summary; the receiving agent
 remembers the conversation, because as far as its harness can tell, it had it.
@@ -93,6 +91,20 @@ identical across accounts, and the only thing that changes is who pays.
 Usage comes from the providers' own endpoints: five-hour and weekly windows
 per account, and a quiet suggestion when the active one is nearly spent and
 another has headroom. Nothing ever switches by itself.
+
+**MCP servers** — Settings → MCP servers discovers Claude, Codex, Cursor, Grok,
+and Devin configuration into one redacted registry. Mako injects portable
+missing definitions into local sessions and can preview an explicit user- or
+project-scoped sync before writing provider config. Secret values never cross
+the desktop bridge, OAuth remains provider-owned, and sync never removes a
+server. The bundled server uses MCP 2025-11-25 through the current TypeScript
+SDK, including tool safety annotations and Streamable HTTP compatibility.
+
+**Local computer and browser tools** — Mako exposes optional managed MCP
+definitions for macOS Harness, CUA Driver, and Browser Use. macOS Harness is
+wrapped by Mako's local stdio server; Browser Use runs its local CLI MCP through
+`uvx`; CUA uses its signed-driver MCP. They are never started just because the
+app opened—select and sync them in Settings when wanted.
 
 ⌘K reaches every command, model, and session. ⌘P opens a file by name. **⌘/**
 shows what every region is for and every key that does something — generated

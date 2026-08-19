@@ -1,10 +1,18 @@
 # Mako
 
-Pi is the only agent harness. Do not wrap Codex, Claude Code, Cursor, or ORCA CLIs.
-Pi already talks to every model those tools use.
+Mako is a meta-harness. Claude Code, Codex, Cursor, Grok, and Devin are peer
+providers with provider-native control and observation transports. No provider
+is privileged in public types, bridge names, UI language, continuation, or
+session handling.
+
+The `@earendil-works/pi-coding-agent` package is an internal implementation
+library for Mako's built-in runtime. Keep it behind `electron/host.ts`; never
+expose Pi as a provider, bridge, IPC namespace, message type, UI label, or
+"native" path.
 
 `ignore/` is reference-only and gitignored: DeepSeek Harness, Pierre, T3 Code,
-ORCA, Codex, and Zed. Study material, never imported.
+ORCA, Codex, Zed, Superset, OpenCode, macOS Harness, CUA, and Browser Use.
+Study material, never imported or edited.
 
 Prior art worth knowing: ORCA's sidebar flattens groups into a `header | item`
 row list with a user-selectable group-by, which is what `rail-rows.ts` follows.
@@ -47,7 +55,7 @@ Three rules hold this together, and each has a specific failure it prevents:
 `useVirtualizer` makes the React Compiler bail out of the component that calls
 it, so it stays isolated in `rail/virtual-sessions.tsx`. Keep it there.
 
-## Pi's session tree is not a tree
+## The built-in runtime's session tree is not a tree
 
 It is a parent-linked chain: every entry is a child of the previous one, so
 nesting depth grows once per *entry*, not once per branch. A real session is
@@ -112,8 +120,8 @@ Restoring a refused send is where this gets subtle, and the trap is timing.
 minutes later, when the answer is done. Restoring a draft on that promise
 overwrites the paragraph the user has since typed — losing work in the name of
 saving it — and can paint it into whatever session is on screen by then.
-Rejection is a *preflight* fact (no model, no key), so read it from Pi's
-`PromptOptions.preflightResult` and settle in one tick, while the composer is
+Rejection is a *preflight* fact (no model, no key), so read it from the
+built-in runtime's `PromptOptions.preflightResult` and settle in one tick, while the composer is
 still provably empty. Anything that repaints the textarea later must first
 check that the draft is still empty and the session has not changed; otherwise
 leave the text in `drafts` and say so.
@@ -122,6 +130,25 @@ The same rule covers the quieter losses: `buildPrompt` silently omits an
 attachment that is still `pending`, so sending mid-staging drops a file with no
 notice, and `clear()` revokes preview URLs — which is why detaching for a
 possible restore is separate from discarding for good.
+
+## MCP
+
+Mako owns a redacted, provider-neutral MCP registry. Use the current
+`@modelcontextprotocol/sdk` and its latest negotiated protocol (currently
+2025-11-25); do not hand-roll legacy SSE framing. Streamable HTTP is the remote
+transport, stdio is the local transport, and tool annotations must accurately
+state read-only, destructive, idempotent, and open-world behavior. Provider
+OAuth remains provider-owned. Never send secret values over IPC, logs, tests,
+or registry snapshots.
+
+## Zero lint debt
+
+Every source change must leave both ESLint and Oxlint clean. Run `npm run lint`
+before handoff; `npm run lint:anti-slop` must report zero warnings and zero
+errors. Do not disable, downgrade, or bypass anti-slop rules. A narrowly scoped
+exception is allowed only when the owning external API makes a typed boundary
+impossible, and it must include a precise safety invariant plus a regression
+test. Existing debt is never a reason to add new debt.
 
 ## Git
 
@@ -158,7 +185,7 @@ deliberate action and never rides along with a commit.
 
 ## Product surface
 
-Chat sessions, the Pi session tree, and the current git diff. No worktree
+Provider sessions, the built-in runtime's session tree, and the current git diff. No worktree
 manager.
 
 ## Working on the UI
