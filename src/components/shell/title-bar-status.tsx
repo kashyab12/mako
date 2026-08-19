@@ -1,5 +1,6 @@
 import { Slot } from "@/extend/slot"
 import { actions, useSession } from "@/state/session"
+import { stage } from "@/state/stage"
 import { workspaceName } from "@/lib/format"
 import { HotIndicator } from "@/components/shell/hot-indicator"
 import { updates, useUpdates } from "@/state/updates"
@@ -16,8 +17,7 @@ import { ArrowUpCircleIcon, FolderIcon, GitBranchIcon } from "lucide-react"
 export function TitleBarStatus() {
   return (
     <div className="mr-1 flex min-w-0 items-center gap-2 text-label text-faint">
-      <Workspace />
-      <Branch />
+      <ProjectContext />
       <HotIndicator />
       <UpdatePill />
       <Slot name="titlebar.status" meta={undefined} />
@@ -25,32 +25,40 @@ export function TitleBarStatus() {
   )
 }
 
-function Workspace() {
+function ProjectContext() {
   const cwd = useSession((state) => state.meta?.cwd)
-  if (!cwd) return null
-  return (
-    <button
-      type="button"
-      onClick={() => void actions.pickWorkspace()}
-      title={cwd}
-      className="no-drag flex min-w-0 items-center gap-1 rounded px-1 transition-colors duration-100 hover:bg-fill-hover hover:text-foreground"
-    >
-      <FolderIcon className="size-3" />
-      <span className="max-w-[9rem] truncate">{workspaceName(cwd)}</span>
-    </button>
-  )
-}
-
-function Branch() {
   const branch = useSession((state) => state.git?.branch)
   const changed = useSession((state) => state.git?.files.length ?? 0)
-  if (!branch) return null
+  if (!cwd) return null
   return (
-    <span className="flex min-w-0 items-center gap-1">
-      <GitBranchIcon className="size-3" />
-      <span className="max-w-[8rem] truncate">{branch}</span>
-      {changed > 0 ? <span className="text-caution">·{changed}</span> : null}
-    </span>
+    <div className="flex min-w-0 items-center gap-0.5">
+      <button
+        type="button"
+        onClick={() => void actions.pickWorkspace()}
+        title={cwd}
+        className="no-drag flex min-w-0 items-center gap-1 rounded px-1 transition-colors duration-100 hover:bg-fill-hover hover:text-foreground"
+      >
+        <FolderIcon className="size-3" />
+        <span className="max-w-[9rem] truncate">{workspaceName(cwd)}</span>
+      </button>
+      {branch ? (
+        <>
+          <span aria-hidden className="text-faint/50">/</span>
+          <button
+            type="button"
+            onClick={() => stage.open("changes")}
+            title={`${branch}${changed > 0 ? ` · ${changed} changed` : ""}`}
+            className="no-drag flex min-w-0 items-center gap-1 rounded px-1 transition-colors duration-100 hover:bg-fill-hover hover:text-foreground"
+          >
+            <GitBranchIcon className="size-3" />
+            <span className="max-w-[8rem] truncate font-mono">{branch}</span>
+            {changed > 0 ? (
+              <span className="text-caution">{changed} changed</span>
+            ) : null}
+          </button>
+        </>
+      ) : null}
+    </div>
   )
 }
 

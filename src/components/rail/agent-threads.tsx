@@ -4,7 +4,13 @@ import { harnessLabel } from "@/components/rail/harness-meta"
 import { formatRelative, workspaceName } from "@/lib/format"
 import { threads, useThreads } from "@/state/threads"
 import { actions, shallowEqual, useSession } from "@/state/session"
-import { prefsStore, setPref, togglePinned, usePrefs } from "@/state/prefs"
+import {
+  prefsStore,
+  setPref,
+  togglePinned,
+  togglePinnedProject,
+  usePrefs,
+} from "@/state/prefs"
 import { cn } from "@/lib/utils"
 import { useTabs, type TabInfo } from "@/state/tabs"
 import { Blank } from "@/components/ui/kit"
@@ -44,6 +50,8 @@ const LEAD_ROWS = 5
 const REST_ROWS = 3
 /** Each press of "More" reveals this many further rows. */
 const PAGE_ROWS = 5
+const PINNED_ROWS = 8
+const PROJECT_ROWS = 6
 /** Folders quiet longer than this start out collapsed. */
 const COLD_MS = 7 * 24 * 3600_000
 const LIVE_TIME_MS = 60_000
@@ -60,6 +68,7 @@ interface Folder {
   cwd: string | null
   refs: ThreadRef[]
   current: boolean
+  pinned: boolean
   latest: string
 }
 
@@ -77,6 +86,8 @@ function useLiveTime(): number {
 export function AgentThreads() {
   const [query, setQuery] = useState("")
   const [searching, setSearching] = useState(false)
+  const [showAllPinned, setShowAllPinned] = useState(false)
+  const [showAllProjects, setShowAllProjects] = useState(false)
   // Extra pages unfolded per folder — More reveals a handful at a time,
   // not the whole archive in one avalanche.
   const [pages, setPages] = useState<Record<string, number>>({})
@@ -86,6 +97,7 @@ export function AgentThreads() {
   const running = useThreads((state) => state.running)
   const filter = usePrefs((prefs) => prefs.agentHarnessFilter)
   const pinned = usePrefs((prefs) => prefs.pinnedThreads)
+  const pinnedProjects = usePrefs((prefs) => prefs.pinnedProjects)
   const collapsed = usePrefs((prefs) => prefs.collapsedGroups)
   const scope = usePrefs((prefs) => prefs.railScope)
   const sortBy = usePrefs((prefs) => prefs.railSortBy)
@@ -158,26 +170,43 @@ export function AgentThreads() {
       if (sortBy === "created") return (b.startedAt ?? "").localeCompare(a.startedAt ?? "")
       return (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")
     }
+    const pinnedSet = new Set(pinnedProjects)
     const result: Folder[] = [...byCwd.entries()].map(([key, refs]) => {
       refs.sort(byOrder)
       return {
         key: key || "~",
-        name: key ? workspaceName(key) : "No folder",
+        name: key ? workspaceName(key) : "Sessions",
         cwd: key || null,
         refs,
         current: Boolean(cwd) && key === cwd,
+        pinned: Boolean(key) && pinnedSet.has(key),
         latest: refs.reduce((top, ref) => ((ref.updatedAt ?? "") > top ? ref.updatedAt! : top), ""),
       }
     })
     result.sort((a, b) => {
+      if (a.cwd === null || b.cwd === null) return a.cwd === null ? 1 : -1
       if (a.current !== b.current) return a.current ? -1 : 1
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+      if (a.pinned && b.pinned)
+        return pinnedProjects.indexOf(a.cwd) - pinnedProjects.indexOf(b.cwd)
       if (sortBy === "name") return a.name.localeCompare(b.name)
       return b.latest.localeCompare(a.latest)
     })
     return result
-  }, [cwd, matched, pinned, sortBy])
+  }, [cwd, matched, pinned, pinnedProjects, sortBy])
 
   const searchActive = Boolean(deferred.trim())
+  const shownPinned = showAllPinned ? held : held.slice(0, PINNED_ROWS)
+  const hiddenPinned = held.length - shownPinned.length
+  const projects = folders.filter((folder) => folder.cwd !== null)
+  const sessions = folders.find((folder) => folder.cwd === null)
+  const priorityProjects = projects.filter(
+    (folder) => folder.current || folder.pinned
+  ).length
+  const shownProjects = showAllProjects
+    ? projects
+    : projects.slice(0, Math.max(PROJECT_ROWS, priorityProjects))
+  const hiddenProjects = projects.length - shownProjects.length
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -237,12 +266,21 @@ export function AgentThreads() {
                   <PinIcon className="size-3 fill-current opacity-60" />
                   Pinned
                 </p>
-                {held.map((ref) => (
+                {shownPinned.map((ref) => (
                   <ThreadRow key={ref.path} threadRef={ref} showFolder />
                 ))}
+                {hiddenPinned > 0 || showAllPinned ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllPinned((current) => !current)}
+                    className="flex h-6 w-full items-center rounded-md pl-7 text-left text-label text-faint transition-colors duration-100 hover:bg-fill-hover hover:text-muted-foreground"
+                  >
+                    {showAllPinned ? "Fewer pinned" : `${hiddenPinned} more pinned`}
+                  </button>
+                ) : null}
               </section>
             ) : null}
-            {folders.map((folder) => (
+            {shownProjects.map((folder) => (
               <FolderSection
                 key={folder.key}
                 folder={folder}
@@ -257,10 +295,42 @@ export function AgentThreads() {
                       : [...collapsed, key]
                   )
                 }}
+                onPin={() => {
+                  if (folder.cwd) togglePinnedProject(folder.cwd)
+                }}
                 pages={pages[folder.key] ?? 0}
                 onPages={(next) => setPages((prev) => ({ ...prev, [folder.key]: next }))}
               />
             ))}
+            {hiddenProjects > 0 || showAllProjects ? (
+              <button
+                type="button"
+                onClick={() => setShowAllProjects((current) => !current)}
+                className="mb-1 flex h-7 w-full items-center rounded-md px-1.5 text-left text-label text-faint transition-colors duration-100 hover:bg-fill-hover hover:text-muted-foreground"
+              >
+                {showAllProjects ? "Fewer projects" : `${hiddenProjects} more projects`}
+              </button>
+            ) : null}
+            {sessions ? (
+              <FolderSection
+                folder={sessions}
+                now={now}
+                collapsed={collapsed.includes(`ws:${sessions.key}`)}
+                onToggle={() => {
+                  const key = `ws:${sessions.key}`
+                  setPref(
+                    "collapsedGroups",
+                    collapsed.includes(key)
+                      ? collapsed.filter((entry) => entry !== key)
+                      : [...collapsed, key]
+                  )
+                }}
+                pages={pages[sessions.key] ?? 0}
+                onPages={(next) =>
+                  setPages((prev) => ({ ...prev, [sessions.key]: next }))
+                }
+              />
+            ) : null}
           </>
         )}
       </div>
@@ -574,6 +644,7 @@ function FolderSection({
   now,
   collapsed,
   onToggle,
+  onPin,
   pages,
   onPages,
 }: {
@@ -581,6 +652,7 @@ function FolderSection({
   now: number
   collapsed: boolean
   onToggle: () => void
+  onPin?: () => void
   pages: number
   onPages: (next: number) => void
 }) {
@@ -596,34 +668,51 @@ function FolderSection({
 
   return (
     <section className="pb-1">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="group/folder flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 text-left transition-colors duration-100 hover:bg-fill-hover"
-      >
-        {closed ? (
-          <FolderIcon className="size-3.5 shrink-0 text-faint" />
-        ) : (
-          <FolderOpenIcon className="size-3.5 shrink-0 text-faint" />
-        )}
-        <span
-          className={cn(
-            "min-w-0 flex-1 truncate text-ui",
-            folder.current ? "font-medium text-foreground" : "text-foreground/80"
-          )}
+      <div className="group/folder flex h-7 w-full items-center rounded-md transition-colors duration-100 hover:bg-fill-hover">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch px-1.5 text-left"
         >
-          {folder.name}
-        </span>
-        <span className="tabular pr-0.5 text-label text-faint/60 opacity-0 transition-opacity duration-100 group-hover/folder:opacity-100">
-          {folder.refs.length}
-        </span>
-        <ChevronRightIcon
-          className={cn(
-            "size-3 shrink-0 text-faint/50 transition-transform duration-200 ease-out",
-            !closed && "rotate-90"
+          {closed ? (
+            <FolderIcon className="size-3.5 shrink-0 text-faint" />
+          ) : (
+            <FolderOpenIcon className="size-3.5 shrink-0 text-faint" />
           )}
-        />
-      </button>
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate text-ui",
+              folder.current ? "font-medium text-foreground" : "text-foreground/80"
+            )}
+          >
+            {folder.name}
+          </span>
+          <span className="tabular text-label text-faint/60 opacity-0 transition-opacity duration-100 group-hover/folder:opacity-100">
+            {folder.refs.length}
+          </span>
+          <ChevronRightIcon
+            className={cn(
+              "size-3 shrink-0 text-faint/50 transition-transform duration-200 ease-out",
+              !closed && "rotate-90"
+            )}
+          />
+        </button>
+        {onPin ? (
+          <button
+            type="button"
+            aria-label={folder.pinned ? "Unpin project" : "Pin project"}
+            onClick={onPin}
+            className={cn(
+              "mr-1 rounded p-0.5 text-faint transition-opacity duration-150 hover:text-foreground",
+              folder.pinned
+                ? "text-foreground/70"
+                : "opacity-0 group-hover/folder:opacity-100 focus:opacity-100"
+            )}
+          >
+            <PinIcon className={cn("size-3", folder.pinned && "fill-current")} />
+          </button>
+        ) : null}
+      </div>
       <div
         className={cn(
           "grid transition-[grid-template-rows] duration-200 ease-out",

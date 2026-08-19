@@ -16,6 +16,7 @@ import { useSearch } from "@/state/search"
 import { prefsStore, setPref, usePrefs } from "@/state/prefs"
 import {
   clampCompanionWidth,
+  clampDockHeight,
   COMPANION_MIN_DEFAULT,
   fitsBeside,
 } from "@/components/stage/stage-width"
@@ -26,7 +27,7 @@ import type { TabStage } from "@/state/stage"
 const NO_COMPANION: TabStage = { companion: null, presentation: "beside" }
 
 /**
- * The stage: the chat card, and at most one companion card beside it.
+ * The stage: the chat card, and at most one companion beside or below it.
  *
  * The chat card is rendered first, in a stable position, and is *hidden*
  * rather than unmounted when a companion covers the stage — opening a diff
@@ -39,6 +40,7 @@ export function Stage() {
   const tabStage = useStage((state) => state.byTab[activeId] ?? NO_COMPANION)
   const surfaces = useSurfaces()
   const surfaceWidths = usePrefs((prefs) => prefs.surfaceWidths)
+  const surfaceHeights = usePrefs((prefs) => prefs.surfaceHeights)
 
   // On first boot, restore the companion you usually work with. Tab ids do
   // not survive a relaunch, so this is the only cross-launch memory needed.
@@ -54,35 +56,59 @@ export function Stage() {
   // The stage measures itself so the clamp and the beside→over degradation
   // are render-time facts, not stored state. Resizes are rare and the two
   // cards are memoized, so the re-render is cheap.
-  const row = useRef<HTMLDivElement>(null)
-  const [available, setAvailable] = useState<number | undefined>(undefined)
+  const stageRef = useRef<HTMLDivElement>(null)
+  const [available, setAvailable] = useState<
+    { width: number; height: number } | undefined
+  >(undefined)
   useEffect(() => {
-    const node = row.current
+    const node = stageRef.current
     if (!node) return
     const observer = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width
-      if (width) setAvailable((current) => (current === width ? current : width))
+      const bounds = entries[0]?.contentRect
+      if (!bounds?.width || !bounds.height) return
+      setAvailable((current) =>
+        current?.width === bounds.width && current.height === bounds.height
+          ? current
+          : { width: bounds.width, height: bounds.height }
+      )
     })
     observer.observe(node)
     return () => observer.disconnect()
   }, [])
 
   const companionRef = useRef<HTMLDivElement>(null)
+  const dockRef = useRef<HTMLDivElement>(null)
   const surface = tabStage.companion
     ? surfaces.find((entry) => entry.id === tabStage.companion)
     : undefined
-  const min = Math.max(surface?.minWidth ?? 0, COMPANION_MIN_DEFAULT)
-  const width = surface
+  const docked = surface?.placement === "bottom"
+  const sideSurface = docked ? undefined : surface
+  const min = Math.max(sideSurface?.minWidth ?? 0, COMPANION_MIN_DEFAULT)
+  const width = sideSurface
     ? clampCompanionWidth({
-        width: surfaceWidths[surface.id] ?? min,
-        available,
+        width: surfaceWidths[sideSurface.id] ?? min,
+        available: available?.width,
         min,
+      })
+    : 0
+  const dockMin = surface?.minHeight ?? 180
+  const dockMax = clampDockHeight({
+    height: 9999,
+    available: available?.height,
+    min: dockMin,
+  })
+  const dockHeight = docked
+    ? clampDockHeight({
+        height: surfaceHeights[surface.id] ?? 280,
+        available: available?.height,
+        min: dockMin,
       })
     : 0
   // A split that cannot afford both minimums renders as "over" without
   // rewriting the stored preference; widening the window restores it.
   const wantsCover = Boolean(
-    surface && (tabStage.presentation === "over" || !fitsBeside(available, min))
+    sideSurface &&
+      (tabStage.presentation === "over" || !fitsBeside(available?.width, min))
   )
   // The file viewer and search ride on the chat card; while either is up,
   // the chat must win even when the width degraded the split — otherwise
@@ -95,39 +121,77 @@ export function Stage() {
   const companionHidden = wantsCover && overlayUp
 
   return (
-    <div ref={row} className="relative flex min-h-0 min-w-0 flex-1">
-      <ChatCard hidden={covered} />
+    <div
+      ref={stageRef}
+      className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+    >
+      <div className="relative flex min-h-0 min-w-0 flex-1">
+        <ChatCard hidden={covered} />
 
-      {surface && !covered && !companionHidden ? (
-        <Divider
-          side="right"
-          width={width}
-          min={min}
-          max={available ? Math.max(available - 450 - 24, min) : 9999}
-          onResize={(next) => {
-            if (companionRef.current) companionRef.current.style.width = `${next}px`
-          }}
-          onCommit={(next) =>
-            setPref("surfaceWidths", {
-              ...prefsStore.get().surfaceWidths,
-              [surface.id]: next,
-            })
-          }
-        />
-      ) : null}
+        {sideSurface && !covered && !companionHidden ? (
+          <Divider
+            side="right"
+            size={width}
+            min={min}
+            max={
+              available
+                ? Math.max(available.width - 450 - 24, min)
+                : 9999
+            }
+            onResize={(next) => {
+              if (companionRef.current)
+                companionRef.current.style.width = `${next}px`
+            }}
+            onCommit={(next) =>
+              setPref("surfaceWidths", {
+                ...prefsStore.get().surfaceWidths,
+                [sideSurface.id]: next,
+              })
+            }
+          />
+        ) : null}
 
-      {surface ? (
-        <div
-          ref={companionRef}
-          style={covered || companionHidden ? undefined : { width }}
-          className={cn(
-            "card relative m-2 ml-0 flex min-h-0 flex-col overflow-hidden",
-            covered && "ml-2 min-w-0 flex-1",
-            companionHidden && "hidden"
-          )}
-        >
-          <CompanionBody render={surface.render} />
-        </div>
+        {sideSurface ? (
+          <div
+            ref={companionRef}
+            style={covered || companionHidden ? undefined : { width }}
+            className={cn(
+              "card relative m-2 ml-0 flex min-h-0 flex-col overflow-hidden",
+              covered && "ml-2 min-w-0 flex-1",
+              companionHidden && "hidden"
+            )}
+          >
+            <CompanionBody render={sideSurface.render} />
+          </div>
+        ) : null}
+      </div>
+
+      {docked && surface ? (
+        <>
+          <Divider
+            side="bottom"
+            size={dockHeight}
+            min={dockMin}
+            max={dockMax}
+            className="mx-2 w-auto"
+            onResize={(next) => {
+              if (dockRef.current) dockRef.current.style.height = `${next}px`
+            }}
+            onCommit={(next) =>
+              setPref("surfaceHeights", {
+                ...prefsStore.get().surfaceHeights,
+                [surface.id]: next,
+              })
+            }
+          />
+          <div
+            ref={dockRef}
+            style={{ height: dockHeight }}
+            className="card relative mx-2 mb-2 flex shrink-0 flex-col overflow-hidden"
+          >
+            <CompanionBody render={surface.render} />
+          </div>
+        </>
       ) : null}
     </div>
   )

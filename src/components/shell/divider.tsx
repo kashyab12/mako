@@ -8,65 +8,101 @@ import { cn } from "@/lib/utils"
  */
 export function Divider({
   side,
-  width,
+  size,
   min,
   max,
   onResize,
   onCommit,
   className,
 }: {
-  side: "left" | "right"
-  width: number
+  side: "left" | "right" | "bottom"
+  size: number
   min: number
   max: number
   onResize: (next: number) => void
   onCommit: (next: number) => void
   className?: string
 }) {
-  const state = useRef({ start: 0, base: 0, latest: 0 })
+  const state = useRef<{
+    start: number
+    base: number
+    latest: number
+    frame: number | null
+  }>({ start: 0, base: 0, latest: 0, frame: null })
+  const horizontal = side === "bottom"
 
   const onPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault()
       const handle = event.currentTarget
       handle.setPointerCapture(event.pointerId)
-      state.current = { start: event.clientX, base: width, latest: width }
-      document.body.style.cursor = "col-resize"
+      state.current = {
+        start: horizontal ? event.clientY : event.clientX,
+        base: size,
+        latest: size,
+        frame: null,
+      }
+      const cursor = document.body.style.cursor
+      const userSelect = document.body.style.userSelect
+      document.body.style.cursor = horizontal ? "row-resize" : "col-resize"
+      document.body.style.userSelect = "none"
 
       const move = (moveEvent: PointerEvent) => {
-        const delta = moveEvent.clientX - state.current.start
+        const point = horizontal ? moveEvent.clientY : moveEvent.clientX
+        const delta = point - state.current.start
         const raw = state.current.base + (side === "left" ? delta : -delta)
         const next = Math.round(Math.min(max, Math.max(min, raw)))
         state.current.latest = next
-        onResize(next)
+        if (state.current.frame !== null) return
+        state.current.frame = requestAnimationFrame(() => {
+          state.current.frame = null
+          onResize(state.current.latest)
+        })
       }
-      const up = () => {
+      const finish = () => {
         handle.removeEventListener("pointermove", move)
-        handle.removeEventListener("pointerup", up)
-        document.body.style.cursor = ""
+        handle.removeEventListener("pointerup", finish)
+        handle.removeEventListener("pointercancel", finish)
+        document.body.style.cursor = cursor
+        document.body.style.userSelect = userSelect
+        if (state.current.frame !== null) {
+          cancelAnimationFrame(state.current.frame)
+          state.current.frame = null
+          onResize(state.current.latest)
+        }
         onCommit(state.current.latest)
       }
       handle.addEventListener("pointermove", move)
-      handle.addEventListener("pointerup", up)
+      handle.addEventListener("pointerup", finish)
+      handle.addEventListener("pointercancel", finish)
     },
-    [max, min, onCommit, onResize, side, width]
+    [horizontal, max, min, onCommit, onResize, side, size]
   )
 
   return (
     <div
       role="separator"
-      aria-orientation="vertical"
+      aria-orientation={horizontal ? "horizontal" : "vertical"}
+      aria-valuemin={min}
+      aria-valuemax={max}
+      aria-valuenow={size}
       onPointerDown={onPointerDown}
       onDoubleClick={() => {
         onResize(min)
         onCommit(min)
       }}
       className={cn(
-        "no-drag group relative z-10 w-px shrink-0 cursor-col-resize bg-hairline",
+        "no-drag group relative z-10 shrink-0 bg-hairline",
+        horizontal ? "h-px w-full cursor-row-resize" : "h-full w-px cursor-col-resize",
         className
       )}
     >
-      <span className="absolute inset-y-0 -left-1 -right-1 transition-colors duration-150 group-hover:bg-foreground/20 group-active:bg-foreground/35" />
+      <span
+        className={cn(
+          "absolute transition-colors duration-150 group-hover:bg-foreground/20 group-active:bg-foreground/35",
+          horizontal ? "-top-1 -bottom-1 inset-x-0" : "inset-y-0 -left-1 -right-1"
+        )}
+      />
     </div>
   )
 }

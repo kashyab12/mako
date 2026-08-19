@@ -7,6 +7,7 @@
  */
 
 export const CHAT_MIN = 450
+export const CHAT_HEIGHT_MIN = 260
 export const COMPANION_MIN_DEFAULT = 380
 /** The card gutters between and around the two cards. */
 export const STAGE_GUTTERS = 24
@@ -29,4 +30,18 @@ export function clampCompanionWidth(input: {
 export function fitsBeside(available: number | undefined, min: number): boolean {
   if (available === undefined) return true
   return available >= CHAT_MIN + min + STAGE_GUTTERS
+}
+
+export function clampDockHeight(input: {
+  height: number
+  available: number | undefined
+  min: number
+}): number {
+  const { height, available, min } = input
+  if (available === undefined) return Math.max(height, min)
+  const most = Math.max(
+    Math.min(Math.floor(available * 0.7), available - CHAT_HEIGHT_MIN),
+    min
+  )
+  return Math.min(Math.max(height, min), most)
 }

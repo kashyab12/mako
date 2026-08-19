@@ -63,6 +63,8 @@ export function installBuiltins(): () => void {
       icon: TerminalSquareIcon,
       render: TerminalPanel,
       order: 4,
+      placement: "bottom",
+      minHeight: 180,
     }),
     registerSurface({
       id: "preview",

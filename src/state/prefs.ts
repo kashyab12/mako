@@ -29,6 +29,7 @@ export interface Prefs {
   railWidth: number
   /** Dragged companion-card widths, per surface id — a spatial habit. */
   surfaceWidths: SurfaceWidthMap
+  surfaceHeights: SurfaceWidthMap
   /** What ⌘I reopens, and what boot restores. Tab ids don't survive a relaunch. */
   lastCompanion: string | null
   /** `provider/id` keys, most recent first. */
@@ -50,6 +51,7 @@ export interface Prefs {
   onboardedSteps: string[]
   /** Threads kept at the top of both rails, by session path. */
   pinnedThreads: string[]
+  pinnedProjects: string[]
   /** Harnesses shown in the Agents rail. Empty means all of them. */
   agentHarnessFilter: string[]
   /** The composer's chosen agent, kept across launches. */
@@ -88,6 +90,7 @@ const defaults: Prefs = {
   railOpen: true,
   railWidth: 264,
   surfaceWidths: {},
+  surfaceHeights: {},
   lastCompanion: "changes",
   favoriteModels: [],
   recentModels: [],
@@ -103,6 +106,7 @@ const defaults: Prefs = {
   onboarded: false,
   onboardedSteps: [],
   pinnedThreads: [],
+  pinnedProjects: [],
   agentHarnessFilter: [],
   composerTuning: {},
   providerTuningImported: [],
@@ -247,6 +251,7 @@ function parsePrefs(value: JsonValue): Prefs | null {
     railOpen: readBoolean(value.railOpen, defaults.railOpen),
     railWidth: readNumber(value.railWidth, defaults.railWidth),
     surfaceWidths: readSurfaceWidths(value),
+    surfaceHeights: readNumberRecord(value.surfaceHeights),
     lastCompanion: readLastCompanion(value),
     favoriteModels: readStringList(value.favoriteModels, defaults.favoriteModels),
     recentModels: readStringList(value.recentModels, defaults.recentModels),
@@ -280,6 +285,7 @@ function parsePrefs(value: JsonValue): Prefs | null {
       defaults.onboardedSteps
     ),
     pinnedThreads: readStringList(value.pinnedThreads, defaults.pinnedThreads),
+    pinnedProjects: readStringList(value.pinnedProjects, defaults.pinnedProjects),
     agentHarnessFilter: readStringList(
       value.agentHarnessFilter,
       defaults.agentHarnessFilter
@@ -369,6 +375,16 @@ export function togglePinned(path: string) {
   const current = prefsStore.get().pinnedThreads
   setPref(
     "pinnedThreads",
+    current.includes(path)
+      ? current.filter((entry) => entry !== path)
+      : [path, ...current]
+  )
+}
+
+export function togglePinnedProject(path: string) {
+  const current = prefsStore.get().pinnedProjects
+  setPref(
+    "pinnedProjects",
     current.includes(path)
       ? current.filter((entry) => entry !== path)
       : [path, ...current]

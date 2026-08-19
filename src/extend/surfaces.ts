@@ -4,8 +4,8 @@ import type { NoProps } from "@/extend/slots"
 
 /**
  * Surfaces are the stage's registry: every view of the current thread that
- * can open beside the chat — the changed files, the session's context, the
- * history, the preview. The chat itself is structural and never registered,
+ * can open with the chat — beside it for reading, or below it for a terminal.
+ * The chat itself is structural and never registered,
  * the same way the composer is not a plugin. Everything else, including all
  * of the desk's own panels, arrives through this one call, so a plugin's
  * surface is indistinguishable from a built-in one.
@@ -16,6 +16,8 @@ export interface SurfaceDefinition {
   icon?: ComponentType<{ className?: string }>
   render: ComponentType<NoProps>
   order?: number
+  placement?: "side" | "bottom"
+  minHeight?: number
   /**
    * The narrowest this surface is useful beside the chat. The stage never
    * splits by percentage: the companion keeps its minimum and the chat takes

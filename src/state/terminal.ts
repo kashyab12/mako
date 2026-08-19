@@ -180,9 +180,12 @@ async function load() {
   try {
     const sessions = sortSessions(await getMako().terminalList())
     const current = terminalStore.get().activeId
-    const activeId = sessions.some((session) => session.id === current)
-      ? current
-      : sessions[0]?.id
+    const held = sessions.find((session) => session.id === current)
+    const activeId =
+      (held?.status === "running" ? held.id : undefined) ??
+      sessions.find((session) => session.status === "running")?.id ??
+      held?.id ??
+      sessions[0]?.id
     clearRecentOutputs()
     terminalStore.set({
       phase: "ready",

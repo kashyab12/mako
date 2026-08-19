@@ -355,7 +355,7 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
         <div className="absolute inset-x-2 bottom-2 flex items-center justify-between rounded-md border border-hairline bg-raised px-2.5 py-1.5 text-label text-muted-foreground">
           <span>
             {session.status === "interrupted"
-              ? "Shell interrupted · saved scrollback restored"
+              ? "Shell stopped · scrollback restored"
               : `Shell exited${session.exitCode === undefined ? "" : ` with code ${session.exitCode}`}`}
           </span>
           <button

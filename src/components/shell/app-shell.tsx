@@ -90,7 +90,7 @@ export function AppShell() {
               </div>
               <Divider
                 side="left"
-                width={prefsStore.get().railWidth}
+                size={prefsStore.get().railWidth}
                 min={200}
                 max={420}
                 onResize={resizeRail}
