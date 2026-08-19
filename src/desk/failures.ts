@@ -1,4 +1,4 @@
-import { getPi, hasBridge } from "@/lib/bridge"
+import { getMako, hasBridge } from "@/lib/bridge"
 
 /**
  * Errors the error boundary never sees.
@@ -39,7 +39,7 @@ function report(
   const key = `${kind}:${message}:${source ?? ""}`
   if (seen.has(key) || seen.size >= LIMIT) return
   seen.add(key)
-  void getPi()
+  void getMako()
     .reportCrash(kind, { message, stack, source })
     .catch(() => {
       // Reporting a failure must never itself fail loudly.

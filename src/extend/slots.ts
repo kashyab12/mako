@@ -1,6 +1,6 @@
 import type { ComponentType, ElementType, ReactNode } from "react"
 import { Registry, useRegistry } from "@/extend/registry"
-import type { GitFile, PiMessage, SessionMeta, SessionSummary } from "@/lib/types"
+import type { GitFile, ChatMessage, SessionMeta, SessionSummary } from "@/lib/types"
 import type { Checkpoint } from "@/lib/thread"
 
 /** A slot whose contributions receive nothing from the render site. */
@@ -16,7 +16,7 @@ export interface SessionMetaSlotProps {
 }
 
 export interface TranscriptTurnSlotProps {
-  message: PiMessage
+  message: ChatMessage
 }
 
 export interface ComposerControlSlotProps extends SessionMetaSlotProps {

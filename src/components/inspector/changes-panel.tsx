@@ -7,7 +7,7 @@ import { review, useReview } from "@/state/review"
 import { PullRequestCard } from "@/components/inspector/pull-request"
 import { Slot } from "@/extend/slot"
 import { actions, useSession } from "@/state/session"
-import { getPi } from "@/lib/bridge"
+import { getMako } from "@/lib/bridge"
 import { GitLog } from "@/components/inspector/git-log"
 import { buildFileTree, type TreeRow } from "@/lib/file-tree"
 import { cn } from "@/lib/utils"
@@ -81,7 +81,7 @@ export function ChangesPanel() {
   useEffect(() => {
     if (!path) return
     let cancelled = false
-    void getPi()
+    void getMako()
       .gitDiff(path)
       .then((next) => {
         if (!cancelled) setDiff(next)
@@ -99,13 +99,13 @@ export function ChangesPanel() {
   // wrong for reading history. Split view, Escape gives the chat back.
   const pickCommitFile = useCallback((hash: string, filePath: string) => {
     void viewer.openDiff(`${hash.slice(0, 7)} · ${filePath}`, async () => ({
-      diffs: [await getPi().gitCommitFileDiff(hash, filePath)],
+      diffs: [await getMako().gitCommitFileDiff(hash, filePath)],
     }))
   }, [])
 
   const pickCommit = useCallback((hash: string, subject: string) => {
     void viewer.openDiff(`${hash.slice(0, 7)} — ${subject}`, async () => {
-      const { diffs, truncated } = await getPi().gitCommitDiffAll(hash)
+      const { diffs, truncated } = await getMako().gitCommitDiffAll(hash)
       return {
         diffs,
         note: truncated > 0 ? `${truncated} more file${truncated === 1 ? "" : "s"} in this commit — open them from the commit's file list.` : undefined,
@@ -152,18 +152,18 @@ export function ChangesPanel() {
   }, [])
 
   const toggleStage = useCallback(async (file: GitFile) => {
-    const pi = getPi()
-    if (file.staged) await pi.gitUnstage([file.path])
-    else await pi.gitStage([file.path])
+    const bridge = getMako()
+    if (file.staged) await bridge.gitUnstage([file.path])
+    else await bridge.gitStage([file.path])
   }, [])
 
   const stagePaths = useCallback(async (paths: string[], stage: boolean) => {
     if (paths.length === 0) return
-    const pi = getPi()
+    const bridge = getMako()
     // One call for the whole folder: `git add -- a b c` is atomic where a loop
     // would emit a status refresh per file and flicker the list.
-    if (stage) await pi.gitStage(paths)
-    else await pi.gitUnstage(paths)
+    if (stage) await bridge.gitStage(paths)
+    else await bridge.gitUnstage(paths)
   }, [])
 
   if (files.length === 0) {
@@ -208,8 +208,8 @@ export function ChangesPanel() {
             size="xs"
             onClick={() =>
               void (staged === files.length
-                ? getPi().gitUnstageAll()
-                : getPi().gitStageAll())
+                ? getMako().gitUnstageAll()
+                : getMako().gitStageAll())
             }
           >
             {staged === files.length ? <MinusIcon /> : <PlusIcon />}

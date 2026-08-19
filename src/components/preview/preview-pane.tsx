@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Action, IconAction } from "@/components/ui/kit"
 import { dev, useDev } from "@/state/devserver"
-import { getPi } from "@/lib/bridge"
+import { getMako } from "@/lib/bridge"
 import { setPref } from "@/state/prefs"
 import { cn } from "@/lib/utils"
 import {
@@ -81,7 +81,7 @@ function Toolbar() {
           <IconAction
             label="Open in your browser"
             size="xs"
-            onClick={() => void getPi().openUrl(url)}
+            onClick={() => void getMako().openUrl(url)}
           >
             <ExternalLinkIcon />
           </IconAction>

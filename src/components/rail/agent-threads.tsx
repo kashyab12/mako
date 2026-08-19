@@ -1,6 +1,6 @@
 import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { displayHarness, harnessLabel } from "@/components/rail/harness-meta"
+import { harnessLabel } from "@/components/rail/harness-meta"
 import { formatRelative, workspaceName } from "@/lib/format"
 import { threads, useThreads } from "@/state/threads"
 import { actions, useSession } from "@/state/session"
@@ -45,6 +45,11 @@ const COLD_MS = 7 * 24 * 3600_000
 const LIVE_TIME_MS = 60_000
 const INITIAL_TIME = Date.now()
 
+interface AgentActivity {
+  harness: string
+  count: number
+}
+
 interface Folder {
   key: string
   name: string
@@ -74,6 +79,7 @@ export function AgentThreads() {
   const deferred = useDeferredValue(query)
   const all = useThreads((state) => state.threads)
   const loaded = useThreads((state) => state.loaded)
+  const running = useThreads((state) => state.running)
   const filter = usePrefs((prefs) => prefs.agentHarnessFilter)
   const pinned = usePrefs((prefs) => prefs.pinnedThreads)
   const collapsed = usePrefs((prefs) => prefs.collapsedGroups)
@@ -88,7 +94,7 @@ export function AgentThreads() {
       all.map((ref) => ({
         ref,
         haystack:
-          `${ref.title ?? ""} ${ref.cwd ?? ""} ${harnessLabel(displayHarness(ref))} ${ref.model ?? ""}`.toLowerCase(),
+          `${ref.title ?? ""} ${ref.cwd ?? ""} ${harnessLabel(ref.harness)} ${ref.model ?? ""}`.toLowerCase(),
       })),
     [all]
   )
@@ -96,11 +102,22 @@ export function AgentThreads() {
   const counts = useMemo(() => {
     const byHarness = new Map<string, number>()
     for (const entry of indexed) {
-      const harness = displayHarness(entry.ref)
+      const harness = entry.ref.harness
       byHarness.set(harness, (byHarness.get(harness) ?? 0) + 1)
     }
     return byHarness
   }, [indexed])
+
+  const activity = useMemo(() => {
+    const byHarness = new Map<string, number>()
+    for (const ref of all) {
+      if (!running[ref.path]) continue
+      byHarness.set(ref.harness, (byHarness.get(ref.harness) ?? 0) + 1)
+    }
+    return [...byHarness.entries()].map(
+      ([harness, count]): AgentActivity => ({ harness, count })
+    )
+  }, [all, running])
 
   const matched = useMemo(() => {
     const needle = deferred.trim().toLowerCase()
@@ -109,7 +126,7 @@ export function AgentThreads() {
       .filter(
         (entry) =>
           (scope !== "workspace" || !cwd || entry.ref.cwd === cwd) &&
-          (!active || active.has(displayHarness(entry.ref))) &&
+          (!active || active.has(entry.ref.harness)) &&
           (!needle || entry.haystack.includes(needle))
       )
       .map((entry) => entry.ref)
@@ -171,6 +188,7 @@ export function AgentThreads() {
         counts={counts}
         filter={filter}
       />
+      <ActiveAgents activity={activity} />
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3">
         {!loaded && matched.length === 0 ? (
@@ -260,9 +278,25 @@ function RailSkeleton() {
   )
 }
 
+function ActiveAgents({ activity }: { activity: AgentActivity[] }) {
+  if (activity.length === 0) return null
+  return (
+    <div className="flex h-7 items-center gap-2 overflow-x-auto px-3 text-[10.5px] text-faint">
+      {activity.map((entry) => (
+        <span key={entry.harness} className="flex shrink-0 items-center gap-1.5">
+          <HarnessIcon harness={entry.harness} className="size-3" />
+          <span>{harnessLabel(entry.harness)}</span>
+          <span className="size-1.5 animate-pulse rounded-full bg-current" />
+          {entry.count > 1 ? <span>{entry.count} running</span> : <span>running</span>}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 /**
  * The rail's one header line: an eyebrow, and two glyphs that expand into
- * search and the harness filter only when wanted. While searching, the whole
+ * search and the provider filter only when wanted. While searching, the whole
  * line becomes the input — space is spent on what is being done.
  */
 function RailHeader({
@@ -568,12 +602,8 @@ const ThreadRow = memo(function ThreadRow({
   const active = useSession((state) => state.meta?.sessionFile === ref.path)
   const viewingPath = useThreads((state) => state.viewing?.ref.path)
 
-  const open = (inNewTab: boolean) => {
-    // Pi sessions are this app's own: open them natively, with full fidelity
-    // and a live agent. Everything else opens translated, live through the
-    // file tail, with every continuation one send away.
-    if (ref.harness === "pi") void actions.openSession(ref.path, { inNewTab })
-    else void threads.view(ref)
+  const open = () => {
+    void threads.view(ref)
   }
 
   // One selection at a time: while a thread is open in the viewer, IT is
@@ -584,14 +614,14 @@ const ThreadRow = memo(function ThreadRow({
   return (
     <button
       type="button"
-      onClick={(event) => open(event.metaKey || event.ctrlKey || event.shiftKey)}
+      onClick={open}
       onAuxClick={(event) => {
-        if (event.button === 1) open(true)
+        if (event.button === 1) open()
       }}
       title={[
         ref.title ?? "Untitled session",
         ref.archived ? "Archived: the native store lost this; Mako kept it. Reply to bring it back to life." : undefined,
-        [...(ref.lineage ?? []).map((origin) => harnessLabel(origin.harness)), harnessLabel(displayHarness(ref))].join(" → "),
+        [...(ref.lineage ?? []).map((origin) => harnessLabel(origin.harness)), harnessLabel(ref.harness)].join(" → "),
         ref.model,
         ref.cwd,
       ]
@@ -616,7 +646,7 @@ const ThreadRow = memo(function ThreadRow({
           />
         ))}
         <HarnessIcon
-          harness={displayHarness(ref)}
+          harness={ref.harness}
           className={cn("size-3", working && "animate-pulse")}
         />
       </span>

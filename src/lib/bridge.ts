@@ -1,17 +1,17 @@
-import type { PiBridge } from "../../electron/preload.ts"
+import type { MakoBridge } from "../../electron/preload.ts"
 
 declare global {
   interface Window {
-    pi?: PiBridge
+    mako?: MakoBridge
   }
 }
 
 export function hasBridge(): boolean {
-  return Boolean(globalThis.window?.pi)
+  return Boolean(globalThis.window?.mako)
 }
 
-export function getPi(): PiBridge {
-  const bridge = globalThis.window?.pi
+export function getMako(): MakoBridge {
+  const bridge = globalThis.window?.mako
   if (!bridge) {
     throw new Error("The desktop bridge is unavailable. Launch with `npm run desktop`.")
   }

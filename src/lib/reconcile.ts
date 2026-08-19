@@ -1,4 +1,4 @@
-import type { Block, PiMessage } from "@/lib/types"
+import type { Block, ChatMessage } from "@/lib/types"
 
 /**
  * Keep message identity stable across host re-serializations.
@@ -14,7 +14,7 @@ import type { Block, PiMessage } from "@/lib/types"
  * nothing and touches only lengths and discriminators, so it stays cheap on
  * the exact sessions where it matters most.
  */
-export function reconcileMessages(previous: PiMessage[], next: PiMessage[]): PiMessage[] {
+export function reconcileMessages(previous: ChatMessage[], next: ChatMessage[]): ChatMessage[] {
   if (previous.length === 0) return next
 
   let reused = 0
@@ -32,7 +32,7 @@ export function reconcileMessages(previous: PiMessage[], next: PiMessage[]): PiM
   return reused === 0 ? next : out
 }
 
-function sameMessage(a: PiMessage, b: PiMessage): boolean {
+function sameMessage(a: ChatMessage, b: ChatMessage): boolean {
   if (a.id !== b.id) return false
   if (a.role !== b.role) return false
   if (a.timestamp !== b.timestamp) return false

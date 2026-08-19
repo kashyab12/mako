@@ -174,7 +174,7 @@ export function ReviewBar() {
       <Action
         tone="brand"
         onClick={() => {
-          window.dispatchEvent(new CustomEvent("pi:compose", { detail: composeReview(comments) }))
+          window.dispatchEvent(new CustomEvent("mako:compose", { detail: composeReview(comments) }))
           review.clear()
         }}
       >

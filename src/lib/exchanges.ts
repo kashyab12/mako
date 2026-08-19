@@ -1,4 +1,4 @@
-import type { PiMessage } from "@/lib/types"
+import type { ChatMessage } from "@/lib/types"
 import { textOf } from "@/lib/format"
 
 /**
@@ -14,15 +14,15 @@ export interface Exchange {
   /** Stable across re-renders: the id of the message that opened the exchange. */
   id: string
   /** The user's message, absent for anything the agent said unprompted. */
-  prompt?: PiMessage
+  prompt?: ChatMessage
   /** Assistant and tool messages answering it, in order. */
-  response: PiMessage[]
+  response: ChatMessage[]
   /** Notes and separators that landed inside this exchange. */
-  system: PiMessage[]
+  system: ChatMessage[]
   timestamp?: number
 }
 
-export function toExchanges(messages: PiMessage[]): Exchange[] {
+export function toExchanges(messages: ChatMessage[]): Exchange[] {
   const exchanges: Exchange[] = []
   let current: Exchange | null = null
 

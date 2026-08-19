@@ -1,6 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react"
 import { Action } from "@/components/ui/kit"
-import { getPi, hasBridge } from "@/lib/bridge"
+import { getMako, hasBridge } from "@/lib/bridge"
 import { MakoMark } from "@/components/ui/mako-mark"
 
 /**
@@ -33,7 +33,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   componentDidCatch(error: Error, info: ErrorInfo) {
     this.setState({ info: info.componentStack ?? undefined })
     if (!hasBridge()) return
-    void getPi()
+    void getMako()
       .reportCrash("renderer-error", {
         message: error.message,
         stack: `${error.stack ?? ""}\n--- component stack ---${info.componentStack ?? ""}`,

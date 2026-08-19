@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { Action, IconAction, Keys } from "@/components/ui/kit"
 import { formatChord } from "@/extend/commands"
-import { getPi } from "@/lib/bridge"
+import { getMako } from "@/lib/bridge"
 import { actions, useSession } from "@/state/session"
 import { prefsStore } from "@/state/prefs"
 import { cn } from "@/lib/utils"
@@ -37,7 +37,7 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
     if (drafting) return
     setDrafting(true)
     try {
-      const next = await getPi().generateCommitMessage(prefsStore.get().commitPrompt)
+      const next = await getMako().generateCommitMessage(prefsStore.get().commitPrompt)
       setMessage(next)
       requestAnimationFrame(() => field.current?.focus())
     } catch (error) {
@@ -51,7 +51,7 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
     if (!message.trim() || busy) return
     setBusy(true)
     try {
-      await getPi().gitCommit(message.trim())
+      await getMako().gitCommit(message.trim())
       setMessage("")
       await actions.refreshGit()
     } catch (error) {
@@ -158,7 +158,7 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
  */
 async function guardedPush() {
   try {
-    await getPi().gitPush()
+    await getMako().gitPush()
     await actions.refreshGit()
   } catch (error) {
     toast.error(error instanceof Error ? error.message : String(error))

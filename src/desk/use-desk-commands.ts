@@ -8,16 +8,16 @@ import {
 } from "@/extend/commands"
 import { installBuiltins } from "@/desk/builtins"
 import { actions, store } from "@/state/session"
-import { getPi } from "@/lib/bridge"
+import { getMako } from "@/lib/bridge"
 import { prefsStore, setPref, togglePref } from "@/state/prefs"
 import { tabsStore } from "@/state/tabs"
 import { search } from "@/state/search"
 
 const openPalette = () => {
-  window.dispatchEvent(new CustomEvent("pi:palette"))
+  window.dispatchEvent(new CustomEvent("mako:palette"))
 }
 const focusComposer = () => {
-  window.dispatchEvent(new CustomEvent("pi:focus-composer"))
+  window.dispatchEvent(new CustomEvent("mako:focus-composer"))
 }
 
 /** 1-9 from a keyboard event, or 0 if this was not a digit. */
@@ -136,14 +136,14 @@ const DESK_COMMANDS: DeskCommand[] = [
     id: "workspace.stage-all",
     title: "Stage every change",
     section: "Workspace",
-    run: () => void getPi().gitStageAll(),
+    run: () => void getMako().gitStageAll(),
   },
   {
     id: "workspace.push",
     title: "Push the current branch",
     section: "Workspace",
     hint: "Publishes work outside this machine",
-    run: () => void getPi().gitPush(),
+    run: () => void getMako().gitPush(),
   },
   {
     id: "workspace.refresh-git",
@@ -222,7 +222,7 @@ const DESK_COMMANDS: DeskCommand[] = [
     section: "View",
     keys: "mod+p",
     hint: "Find any file in the project by name",
-    run: () => window.dispatchEvent(new CustomEvent("pi:quick-open")),
+    run: () => window.dispatchEvent(new CustomEvent("mako:quick-open")),
   },
   {
     id: "view.files",
@@ -311,14 +311,14 @@ const DESK_COMMANDS: DeskCommand[] = [
     section: "View",
     keys: "mod+/",
     hint: "The layout, and every key that does something",
-    run: () => window.dispatchEvent(new CustomEvent("pi:guide")),
+    run: () => window.dispatchEvent(new CustomEvent("mako:guide")),
   },
   {
     id: "view.settings",
     title: "Settings",
     section: "View",
     keys: "mod+,",
-    run: () => window.dispatchEvent(new CustomEvent("pi:settings")),
+    run: () => window.dispatchEvent(new CustomEvent("mako:settings")),
   },
   {
     id: "session.improve-mako",

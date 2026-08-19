@@ -1,5 +1,5 @@
 import { createHook, createStore } from "@/state/store"
-import { getPi, hasBridge } from "@/lib/bridge"
+import { getMako, hasBridge } from "@/lib/bridge"
 import type { SearchOptions, SearchResults } from "@/lib/types"
 
 /**
@@ -65,7 +65,7 @@ function run(query: string, options: SearchOptions) {
     return
   }
   searchStore.set({ running: true })
-  void getPi()
+  void getMako()
     .search(term, options)
     .then((results) => {
       if (mine !== generation) return

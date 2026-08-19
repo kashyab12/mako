@@ -9,6 +9,7 @@ import {
   FileTextIcon,
   FolderTreeIcon,
   GlobeIcon,
+  MonitorCogIcon,
   SearchIcon,
   SquareTerminalIcon,
   WrenchIcon,
@@ -43,7 +44,15 @@ export function ToolGlyph({
   override?: ComponentType<{ className?: string }>
   className?: string
 }) {
-  const Glyph = override ?? ICONS.get(name.toLowerCase()) ?? WrenchIcon
+  const normalized = name.toLowerCase()
+  const Glyph =
+    override ??
+    (normalized.startsWith("mako_macos_")
+      ? MonitorCogIcon
+      : normalized.startsWith("browser_")
+        ? GlobeIcon
+        : ICONS.get(normalized)) ??
+    WrenchIcon
   return createElement(Glyph, { className })
 }
 

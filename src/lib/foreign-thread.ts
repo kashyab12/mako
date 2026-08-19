@@ -1,14 +1,14 @@
-import type { Block, PiMessage, ThreadEntry } from "@/lib/types"
+import type { Block, ChatMessage, ThreadEntry } from "@/lib/types"
 
-export function threadToMessages(entries: ThreadEntry[], indexStart = 0): PiMessage[] {
-  const messages: PiMessage[] = []
+export function threadToMessages(entries: ThreadEntry[], indexStart = 0): ChatMessage[] {
+  const messages: ChatMessage[] = []
 
   for (let localIndex = 0; localIndex < entries.length; localIndex += 1) {
     const entry = entries[localIndex]!
     const entryIndex = indexStart + localIndex
     const messageId = `foreign-entry-${entryIndex}`
     if (entry.kind === "user") {
-      const message: PiMessage = {
+      const message: ChatMessage = {
         id: messageId,
         role: "user",
         blocks: [{ type: "text", text: entry.text }],
@@ -46,7 +46,7 @@ export function threadToMessages(entries: ThreadEntry[], indexStart = 0): PiMess
       }
     }
     if (blocks.length === 0) continue
-    const message: PiMessage = {
+    const message: ChatMessage = {
       id: messageId,
       role: "assistant",
       blocks,

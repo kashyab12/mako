@@ -4,14 +4,14 @@ import type {
   GitStatus,
   HostEvent,
   ModelInfo,
-  PiMessage,
+  ChatMessage,
   SessionMeta,
   SessionState,
   SessionSummary,
   ThinkingLevel,
   TreeNode,
 } from "@/lib/types"
-import { getPi, hasBridge } from "@/lib/bridge"
+import { getMako, hasBridge } from "@/lib/bridge"
 import { reconcileMessages } from "@/lib/reconcile"
 import { prefsStore } from "@/state/prefs"
 import {
@@ -51,9 +51,9 @@ export interface SessionStore {
   phase: Phase
   fault?: string
   meta?: SessionMeta
-  messages: PiMessage[]
+  messages: ChatMessage[]
   /** The in-flight assistant message. Isolated so tokens touch one subtree. */
-  stream: PiMessage | null
+  stream: ChatMessage | null
   tree: TreeNode[]
   git?: GitStatus
   models: ModelInfo[]
@@ -336,12 +336,12 @@ export const actions = {
       })
       return () => {}
     }
-    const pi = getPi()
+    const bridge = getMako()
     // The renderer hot-reloads through Vite; the engine does not. When this
     // window is newer than the engine it woke up inside — the bridge missing
     // an API this build requires — nothing works *subtly*, which is the
     // worst way for nothing to work. Refuse loudly, with the fix.
-    if (!Object.hasOwn(pi, "daemonStatus")) {
+    if (!Object.hasOwn(bridge, "daemonStatus")) {
       store.set({
         phase: "detached",
         fault:
@@ -349,10 +349,10 @@ export const actions = {
       })
       return () => {}
     }
-    const unsubscribe = pi.onEvent(apply)
+    const unsubscribe = bridge.onEvent(apply)
     try {
       const boot = await withTimeout(
-        pi.boot(),
+        bridge.boot(),
         45_000,
         "The agent host did not answer within 45 seconds. Check the terminal it was launched from, then restart."
       )
@@ -422,8 +422,8 @@ export const actions = {
       git: next.git,
       capabilities: next.capabilities ?? empty,
     })
-    window.dispatchEvent(new CustomEvent("pi:close-settings"))
-    await guard(() => getPi().activateTab(id))
+    window.dispatchEvent(new CustomEvent("mako:close-settings"))
+    await guard(() => getMako().activateTab(id))
     if (next.meta?.cwd) void actions.refreshSessions(next.meta.cwd)
   },
 
@@ -441,10 +441,10 @@ export const actions = {
         capabilities: current.capabilities,
       })
     }
-    const tab = await guard(() => getPi().openTab(options))
+    const tab = await guard(() => getMako().openTab(options))
     if (!tab) return
     addTab(tab)
-    window.dispatchEvent(new CustomEvent("pi:close-settings"))
+    window.dispatchEvent(new CustomEvent("mako:close-settings"))
     store.set({
       meta: tab.session.meta,
       messages: tab.session.messages,
@@ -457,7 +457,7 @@ export const actions = {
   },
 
   async closeTab(id: string) {
-    const result = await guard(() => getPi().closeTab(id))
+    const result = await guard(() => getMako().closeTab(id))
     if (!result) return
     const wasActive = tabsStore.get().activeId === id
     removeTab(id, result.activeId)
@@ -484,7 +484,7 @@ export const actions = {
       // can see and retry — an eternal skeleton is the one unacceptable
       // outcome here.
       const next = await withTimeout(
-        getPi().listSessions(
+        getMako().listSessions(
           cwd ?? store.get().meta?.cwd,
           scope ?? prefsStore.get().railScope
         ),
@@ -500,7 +500,7 @@ export const actions = {
   },
 
   async refreshModels() {
-    const models = await guard(() => getPi().listModels())
+    const models = await guard(() => getMako().listModels())
     if (models) store.set({ models })
   },
 
@@ -519,7 +519,7 @@ export const actions = {
     images?: Array<{ mimeType: string; data: string }>
   ): Promise<boolean> {
     try {
-      await getPi().prompt(text, mode, images)
+      await getMako().prompt(text, mode, images)
       return true
     } catch (error) {
       report(error instanceof Error ? error.message : String(error))
@@ -528,16 +528,16 @@ export const actions = {
   },
 
   abort() {
-    return guard(() => getPi().abort())
+    return guard(() => getMako().abort())
   },
 
   clearQueue() {
-    return guard(() => getPi().clearQueue())
+    return guard(() => getMako().clearQueue())
   },
 
   async newSession() {
-    window.dispatchEvent(new CustomEvent("pi:close-settings"))
-    const next = await guard(() => getPi().newSession())
+    window.dispatchEvent(new CustomEvent("mako:close-settings"))
+    const next = await guard(() => getMako().newSession())
     if (!next) return
     adoptState(next)
     void actions.refreshSessions(next.meta.cwd)
@@ -558,21 +558,21 @@ export const actions = {
     if (inNewTab) return actions.openTab({ sessionPath: path })
     // Picking a thread means "show me that thread" — so any full-window view
     // standing in front of the transcript steps aside first.
-    window.dispatchEvent(new CustomEvent("pi:close-settings"))
-    const next = await guard(() => getPi().openSession(path))
+    window.dispatchEvent(new CustomEvent("mako:close-settings"))
+    const next = await guard(() => getMako().openSession(path))
     if (!next) return
     adoptState(next)
     void actions.refreshSessions(next.meta.cwd)
   },
 
   async pickWorkspace() {
-    const folder = await guard(() => getPi().pickFolder())
+    const folder = await guard(() => getMako().pickFolder())
     if (folder) await actions.openWorkspace(folder)
   },
 
   /** Point the agent at a folder by path, without a dialog. */
   async openWorkspace(folder: string) {
-    const next = await guard(() => getPi().setCwd(folder))
+    const next = await guard(() => getMako().setCwd(folder))
     if (!next) return
     adoptState(next)
     void actions.refreshSessions(folder)
@@ -601,7 +601,7 @@ export const actions = {
         capabilities: current.capabilities,
       })
     }
-    const result = await guard(() => getPi().fork(entryId, position))
+    const result = await guard(() => getMako().fork(entryId, position))
     if (!result || result.cancelled) return
     addTab(result.tab)
     store.set({
@@ -615,52 +615,52 @@ export const actions = {
     void actions.refreshSessions(result.tab.session.meta.cwd)
     if (result.text) {
       window.dispatchEvent(
-        new CustomEvent("pi:compose", { detail: result.text })
+        new CustomEvent("mako:compose", { detail: result.text })
       )
     }
   },
 
   async navigate(nodeId: string) {
-    const next = await guard(() => getPi().navigateTree(nodeId))
+    const next = await guard(() => getMako().navigateTree(nodeId))
     if (!next) return
     adoptState(next)
   },
 
   rename(name: string) {
-    return guard(() => getPi().setName(name))
+    return guard(() => getMako().setName(name))
   },
 
   setModel(provider: string, id: string) {
-    return guard(() => getPi().setModel(provider, id))
+    return guard(() => getMako().setModel(provider, id))
   },
 
   setThinking(level: ThinkingLevel) {
-    return guard(() => getPi().setThinking(level))
+    return guard(() => getMako().setThinking(level))
   },
 
   compact(instructions?: string) {
-    return guard(() => getPi().compact(instructions))
+    return guard(() => getMako().compact(instructions))
   },
 
   setAutoCompaction(enabled: boolean) {
-    return guard(() => getPi().setAutoCompaction(enabled))
+    return guard(() => getMako().setAutoCompaction(enabled))
   },
 
   setActiveTools(names: string[]) {
-    return guard(() => getPi().setActiveTools(names))
+    return guard(() => getMako().setActiveTools(names))
   },
 
   runCommand(name: string, args?: string) {
-    return guard(() => getPi().runCommand(name, args))
+    return guard(() => getMako().runCommand(name, args))
   },
 
   async refreshGit() {
-    const git = await guard(() => getPi().gitStatus())
+    const git = await guard(() => getMako().gitStatus())
     if (git) store.set({ git })
   },
 
   copy(text: string) {
-    void guard(() => getPi().copy(text))
+    void guard(() => getMako().copy(text))
     toast.success("Copied")
   },
 }

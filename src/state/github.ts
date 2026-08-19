@@ -1,5 +1,5 @@
 import { createHook, createStore } from "@/state/store"
-import { getPi, hasBridge } from "@/lib/bridge"
+import { getMako, hasBridge } from "@/lib/bridge"
 import type { GitHubStatus, PullRequest } from "@/lib/types"
 
 /**
@@ -32,7 +32,7 @@ export const github = {
   /** Load status once; it does not change while the app is open. */
   async ensureStatus() {
     if (!hasBridge() || githubStore.get().status) return
-    const status = await getPi().githubStatus().catch(() => undefined)
+    const status = await getMako().githubStatus().catch(() => undefined)
     if (status) githubStore.set({ status })
     void github.ensureAvatar()
   },
@@ -49,7 +49,7 @@ export const github = {
     const repo = status?.repo
     if (!repo || avatarFor === repo) return
     githubStore.set({ avatarFor: repo })
-    const avatar = await getPi().repoAvatar(repo).catch(() => undefined)
+    const avatar = await getMako().repoAvatar(repo).catch(() => undefined)
     if (avatar && githubStore.get().avatarFor === repo) githubStore.set({ avatar })
   },
 
@@ -63,19 +63,19 @@ export const github = {
     }
     const mine = ++generation
     githubStore.set({ loading: true })
-    const pull = await getPi().pullRequest().catch(() => null)
+    const pull = await getMako().pullRequest().catch(() => null)
     if (mine !== generation) return
     githubStore.set({ pull, loading: false, branch })
   },
 
   async create(options: { title: string; body: string; base?: string; draft?: boolean }) {
-    const pull = await getPi().createPull(options)
+    const pull = await getMako().createPull(options)
     githubStore.set({ pull })
     return pull
   },
 
   async rerun() {
-    await getPi().rerunChecks()
+    await getMako().rerunChecks()
     await github.refresh(githubStore.get().branch)
   },
 }

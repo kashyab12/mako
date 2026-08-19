@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { Action, Eyebrow, Keys } from "@/components/ui/kit"
 import { formatChord } from "@/extend/commands"
-import { getPi, hasBridge } from "@/lib/bridge"
+import { getMako, hasBridge } from "@/lib/bridge"
 import { setPref, togglePref, usePrefs, type Theme } from "@/state/prefs"
 import { cn } from "@/lib/utils"
 import { formatRelative, formatTokens } from "@/lib/format"
@@ -11,6 +11,7 @@ import type { CrashReport } from "../../../electron/crash.ts"
 import type { UsageSummary } from "@/lib/types"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { PluginsSection } from "@/components/settings/plugins-section"
+import { McpSection } from "@/components/settings/mcp-section"
 import { CheckIcon, RotateCcwIcon, XIcon } from "lucide-react"
 
 const SECTIONS = [
@@ -19,6 +20,7 @@ const SECTIONS = [
   { id: "commits", label: "Commit messages" },
   { id: "usage", label: "Usage" },
   { id: "agents", label: "Agents" },
+  { id: "mcp", label: "MCP servers" },
   { id: "plugins", label: "Plugins" },
   { id: "automations", label: "Automations" },
   { id: "updates", label: "Updates" },
@@ -44,7 +46,7 @@ export function SettingsView() {
 
   useEffect(() => {
     if (defaultPrompt || !hasBridge()) return
-    void getPi()
+    void getMako()
       .defaultCommitPrompt()
       .then(setDefaultPrompt)
       .catch(() => setDefaultPrompt(""))
@@ -52,7 +54,8 @@ export function SettingsView() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") window.dispatchEvent(new CustomEvent("pi:close-settings"))
+      if (event.key === "Escape")
+        window.dispatchEvent(new CustomEvent("mako:close-settings"))
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
@@ -82,7 +85,9 @@ export function SettingsView() {
         ))}
         <button
           type="button"
-          onClick={() => window.dispatchEvent(new CustomEvent("pi:close-settings"))}
+          onClick={() =>
+            window.dispatchEvent(new CustomEvent("mako:close-settings"))
+          }
           className="pressable mt-auto flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[12px] text-faint hover:bg-raised hover:text-foreground"
         >
           <XIcon className="size-3.5" />
@@ -94,9 +99,12 @@ export function SettingsView() {
         <div className="mx-auto w-full max-w-[42rem] px-6 py-6">
           {section === "appearance" ? <Appearance /> : null}
           {section === "transcript" ? <Transcript /> : null}
-          {section === "commits" ? <CommitPrompt fallback={defaultPrompt} /> : null}
+          {section === "commits" ? (
+            <CommitPrompt fallback={defaultPrompt} />
+          ) : null}
           {section === "usage" ? <Usage /> : null}
           {section === "agents" ? <Agents /> : null}
+          {section === "mcp" ? <McpSection /> : null}
           {section === "plugins" ? <PluginsSection /> : null}
           {section === "automations" ? <Automations /> : null}
           {section === "updates" ? <Updates /> : null}
@@ -121,19 +129,25 @@ function Usage() {
 
   useEffect(() => {
     if (!hasBridge()) return
-    void getPi()
+    void getMako()
       .usage()
       .then(setData)
       .catch(() => setData(undefined))
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) return <Section title="Usage"><p className="shimmer text-[12px]">Reading sessions…</p></Section>
+  if (loading)
+    return (
+      <Section title="Usage">
+        <p className="shimmer text-[12px]">Reading sessions…</p>
+      </Section>
+    )
   if (!data || data.total.messages === 0) {
     return (
       <Section title="Usage">
         <p className="rounded-lg bg-surface px-3 py-4 text-center text-[12px] text-faint ring-1 ring-hairline">
-          Nothing priced yet. Spend appears here as soon as a model bills for a turn.
+          Nothing priced yet. Spend appears here as soon as a model bills for a
+          turn.
         </p>
       </Section>
     )
@@ -145,9 +159,12 @@ function Usage() {
     <Section title="Usage">
       <div className="rounded-lg bg-surface px-3 py-3 ring-1 ring-hairline">
         <div className="flex items-baseline gap-2">
-          <span className="tabular text-[18px] font-medium">{money(data.total.cost)}</span>
+          <span className="tabular text-[18px] font-medium">
+            {money(data.total.cost)}
+          </span>
           <span className="text-[11.5px] text-faint">
-            across {data.sessions} {data.sessions === 1 ? "session" : "sessions"} ·{" "}
+            across {data.sessions}{" "}
+            {data.sessions === 1 ? "session" : "sessions"} ·{" "}
             {formatTokens(data.total.input + data.total.output)} tokens
           </span>
         </div>
@@ -178,19 +195,26 @@ function Usage() {
           the money go" — they are rows to scroll past. */}
       <Breakdown
         title="By model"
-        rows={data.models.filter((m) => m.cost > 0).map((m) => ({ label: m.model, cost: m.cost }))}
+        rows={data.models
+          .filter((m) => m.cost > 0)
+          .map((m) => ({ label: m.model, cost: m.cost }))}
         total={data.total.cost}
       />
       <Breakdown
         title="By project"
-        rows={data.projects.filter((p) => p.cost > 0).map((p) => ({ label: shortPath(p.cwd), cost: p.cost }))}
+        rows={data.projects
+          .filter((p) => p.cost > 0)
+          .map((p) => ({ label: shortPath(p.cwd), cost: p.cost }))}
         total={data.total.cost}
       />
 
       <p className="mt-3 text-[11.5px] leading-relaxed text-faint">
-        Read from your session files, on this machine. This is spend, not billing — a payment method
-        and an account are a server and a decision, not something to imply with a currency symbol.
-        {data.truncated ? " Older sessions were left unread to keep the scan quick." : ""}
+        Read from your session files, on this machine. This is spend, not
+        billing — a payment method and an account are a server and a decision,
+        not something to imply with a currency symbol.
+        {data.truncated
+          ? " Older sessions were left unread to keep the scan quick."
+          : ""}
       </p>
     </Section>
   )
@@ -211,18 +235,27 @@ function Breakdown({
       <Eyebrow className="px-0 pb-1">{title}</Eyebrow>
       <div className="flex flex-col gap-0.5">
         {rows.map((row) => (
-          <div key={row.label} className="flex items-center gap-2 rounded-md px-1.5 py-1">
-            <span className="min-w-0 flex-1 truncate text-[11.5px] text-foreground/85">{row.label}</span>
+          <div
+            key={row.label}
+            className="flex items-center gap-2 rounded-md px-1.5 py-1"
+          >
+            <span className="min-w-0 flex-1 truncate text-[11.5px] text-foreground/85">
+              {row.label}
+            </span>
             <span
               aria-hidden
               className="h-1 w-16 shrink-0 overflow-hidden rounded-full bg-raised"
             >
               <span
                 className="block h-full rounded-full bg-foreground/35"
-                style={{ width: `${total > 0 ? Math.round((row.cost / total) * 100) : 0}%` }}
+                style={{
+                  width: `${total > 0 ? Math.round((row.cost / total) * 100) : 0}%`,
+                }}
               />
             </span>
-            <span className="tabular w-14 shrink-0 text-right text-[11.5px]">{money(row.cost)}</span>
+            <span className="tabular w-14 shrink-0 text-right text-[11.5px]">
+              {money(row.cost)}
+            </span>
           </div>
         ))}
       </div>
@@ -253,26 +286,40 @@ function shortPath(path: string): string {
 /**
  * The harnesses this machine can host, and the accounts that need keys.
  *
- * The CLI rows are detection, not configuration — a CLI on the PATH is
- * connected, and there is nothing else to set up. Devin is the exception:
- * its sessions live behind an API, so it takes accounts — several, each with
- * its own service key from app.devin.ai settings, kept in ~/.mako/devin.json
- * and never displayed back beyond the last four characters.
+ * Provider rows report the native control transport Mako found on this
+ * machine. Claude and Codex can route through several isolated account homes;
+ * Devin can additionally connect cloud sessions through service keys kept in
+ * ~/.mako/devin.json and never displayed beyond the last four characters.
  */
 function Agents() {
   const conversionMode = usePrefs((prefs) => prefs.conversionMode)
-  const [availability, setAvailability] = useState<Record<string, boolean> | null>(null)
-  const [daemon, setDaemon] = useState<{ pid: number; startedAt: number; sessions: number } | null>(null)
+  const [availability, setAvailability] = useState<Record<
+    string,
+    boolean
+  > | null>(null)
+  const [daemon, setDaemon] = useState<{
+    pid: number
+    startedAt: number
+    sessions: number
+  } | null>(null)
   const [loginStart, setLoginStart] = useState<boolean | null>(null)
 
   const load = useCallback(() => {
     if (!hasBridge()) return
-    void getPi().harnessAvailability().then(setAvailability).catch(() => setAvailability({}))
-    void getPi().daemonStatus().then(setDaemon).catch(() => setDaemon(null))
-    void getPi().daemonLogin().then(setLoginStart).catch(() => setLoginStart(null))
+    void getMako()
+      .harnessAvailability()
+      .then(setAvailability)
+      .catch(() => setAvailability({}))
+    void getMako()
+      .daemonStatus()
+      .then(setDaemon)
+      .catch(() => setDaemon(null))
+    void getMako()
+      .daemonLogin()
+      .then(setLoginStart)
+      .catch(() => setLoginStart(null))
   }, [])
   useEffect(load, [load])
-
 
   const HARNESSES = [
     { id: "claude", name: "Claude Code", how: "claude CLI" },
@@ -299,12 +346,15 @@ function Agents() {
       </Row>
       <p className="pb-3 text-[12px] leading-relaxed text-muted-foreground">
         Every agent whose sessions appear in the Threads rail, and whether its
-        CLI is on this machine. Installing a CLI is all it takes — sessions
-        are found and watched automatically.
+        CLI is on this machine. Installing a CLI is all it takes — sessions are
+        found and watched automatically.
       </p>
       <p className="mb-3 flex items-center gap-1.5 rounded-md bg-surface px-2.5 py-1.5 text-[11px] text-faint">
         <span
-          className={cn("size-1.5 rounded-full", daemon ? "bg-emerald-400/90" : "bg-faint/50")}
+          className={cn(
+            "size-1.5 rounded-full",
+            daemon ? "bg-emerald-400/90" : "bg-faint/50"
+          )}
         />
         <span className="min-w-0 flex-1">
           {daemon
@@ -319,7 +369,7 @@ function Agents() {
               onChange={(event) => {
                 const next = event.target.checked
                 setLoginStart(next)
-                void getPi()
+                void getMako()
                   .setDaemonLogin(next)
                   .catch(() => setLoginStart(!next))
               }}
@@ -331,12 +381,17 @@ function Agents() {
       </p>
       <div className="flex flex-col">
         {HARNESSES.map((entry) => (
-          <div key={entry.id} className="flex items-center gap-2.5 border-b border-hairline py-2 last:border-b-0">
+          <div
+            key={entry.id}
+            className="flex items-center gap-2.5 border-b border-hairline py-2 last:border-b-0"
+          >
             <HarnessIcon harness={entry.id} className="size-4" />
             <span className="min-w-0 flex-1 text-[12.5px]">{entry.name}</span>
             <span className="text-[11px] text-faint">{entry.how}</span>
             {availability === null ? (
-              <span className="shimmer w-14 text-right text-[11px] text-faint">…</span>
+              <span className="w-14 shimmer text-right text-[11px] text-faint">
+                …
+              </span>
             ) : availability[entry.id] ? (
               <span className="text-[11px] text-emerald-400/90">connected</span>
             ) : (
@@ -368,20 +423,36 @@ function HarnessAccounts() {
       source?: "mako" | "subrouter"
     }>
   >([])
-  const [usage, setUsage] = useState<Record<string, { status: string; plan?: string; detail?: string; session?: { usedPercent: number; resetsAt: number | null } | null; weekly?: { usedPercent: number; resetsAt: number | null } | null }>>({})
+  const [usage, setUsage] = useState<
+    Record<
+      string,
+      {
+        status: string
+        plan?: string
+        detail?: string
+        session?: { usedPercent: number; resetsAt: number | null } | null
+        weekly?: { usedPercent: number; resetsAt: number | null } | null
+      }
+    >
+  >({})
   const [capturing, setCapturing] = useState<"claude" | "codex" | null>(null)
   const [captureName, setCaptureName] = useState("")
 
   const load = useCallback(() => {
     if (!hasBridge()) return
-    void getPi()
+    void getMako()
       .accounts()
       .then((list) => {
         setAccounts(list)
         for (const account of list) {
-          void getPi()
+          void getMako()
             .accountUsage(account.harness, account.name)
-            .then((value) => setUsage((prev) => ({ ...prev, [`${account.harness}:${account.name}`]: value })))
+            .then((value) =>
+              setUsage((prev) => ({
+                ...prev,
+                [`${account.harness}:${account.name}`]: value,
+              }))
+            )
             .catch(() => {})
         }
       })
@@ -392,7 +463,7 @@ function HarnessAccounts() {
   const capture = async () => {
     if (!capturing || !captureName.trim()) return
     try {
-      await getPi().captureAccount(capturing, captureName.trim())
+      await getMako().captureAccount(capturing, captureName.trim())
       setCapturing(null)
       setCaptureName("")
       load()
@@ -424,8 +495,11 @@ function HarnessAccounts() {
                   key={account.name}
                   type="button"
                   onClick={() =>
-                    void getPi()
-                      .selectAccount(harness, account.name === "default" ? null : account.name)
+                    void getMako()
+                      .selectAccount(
+                        harness,
+                        account.name === "default" ? null : account.name
+                      )
                       .then(load)
                   }
                   className={cn(
@@ -439,7 +513,9 @@ function HarnessAccounts() {
                   <span
                     className={cn(
                       "flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold uppercase",
-                      account.active ? "bg-brand-soft text-brand" : "bg-raised text-faint"
+                      account.active
+                        ? "bg-brand-soft text-brand"
+                        : "bg-raised text-faint"
                     )}
                   >
                     {identity.slice(0, 1)}
@@ -448,7 +524,9 @@ function HarnessAccounts() {
                     <span
                       className={cn(
                         "block truncate text-[12.5px]",
-                        account.active ? "font-medium text-foreground" : "text-foreground/85"
+                        account.active
+                          ? "font-medium text-foreground"
+                          : "text-foreground/85"
                       )}
                     >
                       {identity}
@@ -466,7 +544,11 @@ function HarnessAccounts() {
                       <span className="flex items-center gap-2">
                         <UsageBar label="5h" window={stats.session} />
                         <UsageBar label="wk" window={stats.weekly} />
-                        {stats.plan ? <span className="text-[10px] text-faint">{stats.plan}</span> : null}
+                        {stats.plan ? (
+                          <span className="text-[10px] text-faint">
+                            {stats.plan}
+                          </span>
+                        ) : null}
                       </span>
                     ) : stats ? (
                       <span className="text-[10.5px] text-faint">
@@ -477,20 +559,25 @@ function HarnessAccounts() {
                             : (stats.detail ?? "usage unavailable")}
                       </span>
                     ) : (
-                      <span className="shimmer text-[10.5px] text-faint">…</span>
+                      <span className="shimmer text-[10.5px] text-faint">
+                        …
+                      </span>
                     )}
                   </span>
                   {account.active ? (
                     <CheckIcon className="size-3.5 shrink-0 text-brand" />
                   ) : null}
-                  {account.name !== "default" && account.source !== "subrouter" ? (
+                  {account.name !== "default" &&
+                  account.source !== "subrouter" ? (
                     <span
                       role="button"
                       tabIndex={-1}
                       aria-label={`Remove ${account.name}`}
                       onClick={(event) => {
                         event.stopPropagation()
-                        void getPi().removeAccount(harness, account.name).then(load)
+                        void getMako()
+                          .removeAccount(harness, account.name)
+                          .then(load)
                       }}
                       className="pressable rounded p-1 text-faint opacity-0 transition-opacity duration-100 group-hover/account:opacity-100 hover:text-foreground"
                     >
@@ -511,7 +598,10 @@ function HarnessAccounts() {
                   placeholder="account name, e.g. work"
                   className="h-7 w-44 rounded-md bg-surface px-2 text-[12px] text-foreground placeholder:text-faint focus:ring-1 focus:ring-hairline focus:outline-none"
                 />
-                <Action disabled={!captureName.trim()} onClick={() => void capture()}>
+                <Action
+                  disabled={!captureName.trim()}
+                  onClick={() => void capture()}
+                >
                   Capture current login
                 </Action>
                 <Action onClick={() => setCapturing(null)}>Cancel</Action>
@@ -522,9 +612,10 @@ function HarnessAccounts() {
                 onClick={() => setCapturing(harness)}
                 className="pressable pt-2 text-[11.5px] text-faint underline-offset-2 hover:text-foreground hover:underline"
               >
-                + Add another {harness === "claude" ? "Claude Code" : "Codex"} account — sign
-                into it with the CLI first ({harness === "claude" ? "claude /login" : "codex login"}),
-                then capture it here under a name
+                + Add another {harness === "claude" ? "Claude Code" : "Codex"}{" "}
+                account — sign into it with the CLI first (
+                {harness === "claude" ? "claude /login" : "codex login"}), then
+                capture it here under a name
               </button>
             )}
           </div>
@@ -554,12 +645,18 @@ function UsageBar({
         <span
           className={cn(
             "block h-full rounded-full",
-            used >= 90 ? "bg-red-400/80" : used >= 70 ? "bg-amber-300/80" : "bg-emerald-400/70"
+            used >= 90
+              ? "bg-red-400/80"
+              : used >= 70
+                ? "bg-amber-300/80"
+                : "bg-emerald-400/70"
           )}
           style={{ width: `${used}%` }}
         />
       </span>
-      <span className="tabular text-[10px] text-faint">{Math.round(used)}%</span>
+      <span className="tabular text-[10px] text-faint">
+        {Math.round(used)}%
+      </span>
     </span>
   )
 }
@@ -575,23 +672,36 @@ function Automations() {
   return (
     <Section title="Automations">
       <p className="pb-2 text-[12px] leading-relaxed text-muted-foreground">
-        Prompts that can run on their own, defined in <code className="text-faint">.mako/automations.json</code>.
-        Each one starts switched off — a file from a checkout does not get to run an agent because
-        you opened the folder. A run opens a tab in the background; it never takes the window.
+        Prompts that can run on their own, defined in{" "}
+        <code className="text-faint">.mako/automations.json</code>. Each one
+        starts switched off — a file from a checkout does not get to run an
+        agent because you opened the folder. A run opens a tab in the
+        background; it never takes the window.
       </p>
 
       {list.length === 0 ? (
         <p className="rounded-lg bg-surface px-3 py-4 text-center text-[12px] text-faint ring-1 ring-hairline">
-          This project has none. Add <code>.mako/automations.json</code> with a name, a prompt, and a
-          trigger of <code>manual</code>, <code>files</code>, or <code>commit</code>.
+          This project has none. Add <code>.mako/automations.json</code> with a
+          name, a prompt, and a trigger of <code>manual</code>,{" "}
+          <code>files</code>, or <code>commit</code>.
         </p>
       ) : (
         <div className="flex flex-col gap-1">
           {list.map((entry) => (
-            <div key={entry.id} className="rounded-lg bg-surface px-3 py-2.5 ring-1 ring-hairline">
+            <div
+              key={entry.id}
+              className="rounded-lg bg-surface px-3 py-2.5 ring-1 ring-hairline"
+            >
               <div className="flex items-center gap-2">
-                <Toggle on={entry.enabled} onChange={() => void automations.setEnabled(entry.id, !entry.enabled)} />
-                <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{entry.name}</span>
+                <Toggle
+                  on={entry.enabled}
+                  onChange={() =>
+                    void automations.setEnabled(entry.id, !entry.enabled)
+                  }
+                />
+                <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">
+                  {entry.name}
+                </span>
                 <Action tone="ghost" onClick={() => automations.run(entry.id)}>
                   Run now
                 </Action>
@@ -617,15 +727,17 @@ function Automations() {
         </Action>
         {recent.length > 0 ? (
           <span className="text-[10.5px] text-faint">
-            last run: {recent[0]?.name} · {formatRelative(new Date(recent[0]?.at ?? 0).toISOString())}
+            last run: {recent[0]?.name} ·{" "}
+            {formatRelative(new Date(recent[0]?.at ?? 0).toISOString())}
           </span>
         ) : null}
       </div>
 
       <p className="mt-3 text-[11.5px] leading-relaxed text-faint">
-        There is no schedule trigger. An app that is closed cannot fire one, and an app that is open
-        quietly running jobs against your repository is a surprise nobody asked for. A file trigger
-        waits a minute between runs, so an agent editing the files it watches cannot loop.
+        There is no schedule trigger. An app that is closed cannot fire one, and
+        an app that is open quietly running jobs against your repository is a
+        surprise nobody asked for. A file trigger waits a minute between runs,
+        so an agent editing the files it watches cannot loop.
       </p>
     </Section>
   )
@@ -644,7 +756,9 @@ function Updates() {
     <Section title="Updates">
       <div className="rounded-lg bg-surface px-3 py-3 ring-1 ring-hairline">
         <div className="flex items-baseline gap-2">
-          <span className="text-[12.5px] font-medium">Mako {version || "—"}</span>
+          <span className="text-[12.5px] font-medium">
+            Mako {version || "—"}
+          </span>
           <span className="text-[11.5px] text-faint">
             {status === "unsupported"
               ? "running from a checkout, so there is nothing to update"
@@ -682,8 +796,9 @@ function Updates() {
         </div>
 
         <p className="mt-3 text-[11.5px] leading-relaxed text-faint">
-          Updates download on their own but never install on their own. A turn can run for minutes
-          and touch real files; restarting underneath one is not an improvement.
+          Updates download on their own but never install on their own. A turn
+          can run for minutes and touch real files; restarting underneath one is
+          not an improvement.
         </p>
       </div>
     </Section>
@@ -705,8 +820,14 @@ function Diagnostics() {
 
   const load = useCallback(() => {
     if (!hasBridge()) return
-    void getPi().crashes().then(setCrashes).catch(() => setCrashes([]))
-    void getPi().crashesDir().then(setDir).catch(() => setDir(""))
+    void getMako()
+      .crashes()
+      .then(setCrashes)
+      .catch(() => setCrashes([]))
+    void getMako()
+      .crashesDir()
+      .then(setDir)
+      .catch(() => setDir(""))
   }, [])
 
   useEffect(load, [load])
@@ -714,8 +835,8 @@ function Diagnostics() {
   return (
     <Section title="Crash reports">
       <p className="pb-2 text-[12px] leading-relaxed text-muted-foreground">
-        Written to this machine and nowhere else. Nothing here is sent anywhere — copy a report if
-        you want to pass it on.
+        Written to this machine and nowhere else. Nothing here is sent anywhere
+        — copy a report if you want to pass it on.
       </p>
 
       {crashes.length === 0 ? (
@@ -725,16 +846,23 @@ function Diagnostics() {
       ) : (
         <div className="flex flex-col gap-1">
           {crashes.map((crash) => (
-            <div key={crash.id} className="rounded-lg bg-surface ring-1 ring-hairline">
+            <div
+              key={crash.id}
+              className="rounded-lg bg-surface ring-1 ring-hairline"
+            >
               <button
                 type="button"
-                onClick={() => setOpenId(openId === crash.id ? undefined : crash.id)}
+                onClick={() =>
+                  setOpenId(openId === crash.id ? undefined : crash.id)
+                }
                 className="flex w-full items-center gap-2 px-3 py-2 text-left"
               >
                 <span className="shrink-0 rounded bg-raised px-1.5 py-px text-[10px] text-faint">
                   {crash.kind.replace("-", " ")}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-[12px]">{crash.message}</span>
+                <span className="min-w-0 flex-1 truncate text-[12px]">
+                  {crash.message}
+                </span>
                 <span className="tabular shrink-0 text-[10.5px] text-faint">
                   {formatRelative(crash.at)}
                 </span>
@@ -747,13 +875,17 @@ function Diagnostics() {
                   <div className="mt-2 flex items-center gap-2">
                     <Action
                       tone="outline"
-                      onClick={() => void navigator.clipboard.writeText(JSON.stringify(crash, null, 2))}
+                      onClick={() =>
+                        void navigator.clipboard.writeText(
+                          JSON.stringify(crash, null, 2)
+                        )
+                      }
                     >
                       Copy the report
                     </Action>
                     <span className="text-[10.5px] text-faint">
-                      {crash.app.version} · Electron {crash.app.electron} · {crash.os.platform}{" "}
-                      {crash.os.arch}
+                      {crash.app.version} · Electron {crash.app.electron} ·{" "}
+                      {crash.os.platform} {crash.os.arch}
                     </span>
                   </div>
                 </div>
@@ -768,7 +900,7 @@ function Diagnostics() {
           Refresh
         </Action>
         {dir ? (
-          <Action tone="ghost" onClick={() => void getPi().revealPath(dir)}>
+          <Action tone="ghost" onClick={() => void getMako().revealPath(dir)}>
             Show the folder
           </Action>
         ) : null}
@@ -776,7 +908,7 @@ function Diagnostics() {
           <Action
             tone="danger"
             onClick={() => {
-              void getPi().clearCrashes().then(load)
+              void getMako().clearCrashes().then(load)
             }}
           >
             Delete them all
@@ -787,7 +919,13 @@ function Diagnostics() {
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string
+  children: React.ReactNode
+}) {
   return (
     <section className="mb-5 last:mb-0">
       <Eyebrow className="px-0 pb-2">{title}</Eyebrow>
@@ -826,10 +964,16 @@ function Transcript() {
 
   return (
     <Section title="Transcript and changes">
-      <Row label="Show reasoning" hint="Collapsed by default; this hides it entirely">
+      <Row
+        label="Show reasoning"
+        hint="Collapsed by default; this hides it entirely"
+      >
         <Toggle on={showThinking} onChange={() => togglePref("showThinking")} />
       </Row>
-      <Row label="Open the diff on select" hint="Off keeps the changes panel as a plain list">
+      <Row
+        label="Open the diff on select"
+        hint="Off keeps the changes panel as a plain list"
+      >
         <Toggle on={autoDiff} onChange={() => togglePref("autoOpenDiff")} />
       </Row>
     </Section>
@@ -845,8 +989,9 @@ function CommitPrompt({ fallback }: { fallback: string }) {
   return (
     <Section title="Commit messages">
       <p className="px-0.5 pb-1.5 text-[11px] leading-relaxed text-faint">
-        The instructions used when drafting a commit message from the diff. The default is the
-        prompt Zed ships, which is well tuned; edit it to change the house style.
+        The instructions used when drafting a commit message from the diff. The
+        default is the prompt Zed ships, which is well tuned; edit it to change
+        the house style.
       </p>
 
       <textarea
@@ -855,7 +1000,8 @@ function CommitPrompt({ fallback }: { fallback: string }) {
         rows={18}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={() => {
-          if (draft !== null) setPref("commitPrompt", draft.trim() ? draft : undefined)
+          if (draft !== null)
+            setPref("commitPrompt", draft.trim() ? draft : undefined)
           setDraft(null)
         }}
         className={cn(
@@ -965,4 +1111,3 @@ function Segmented<T extends string>({
     </div>
   )
 }
-

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from "react"
 import { IconAction } from "@/components/ui/kit"
-import { getPi } from "@/lib/bridge"
+import { getMako } from "@/lib/bridge"
 import { viewer, useViewer } from "@/state/viewer"
 import { cn } from "@/lib/utils"
 import { AtSignIcon, ExternalLinkIcon, RefreshCwIcon, XIcon } from "lucide-react"
@@ -75,7 +75,7 @@ export function FileViewer() {
           label="Mention this file in the composer"
           size="xs"
           onClick={() => {
-            window.dispatchEvent(new CustomEvent("pi:insert", { detail: `@${path} ` }))
+            window.dispatchEvent(new CustomEvent("mako:insert", { detail: `@${path} ` }))
             viewer.close()
           }}
         >
@@ -87,7 +87,7 @@ export function FileViewer() {
         <IconAction
           label="Open in your editor"
           size="xs"
-          onClick={() => void getPi().revealPath(path)}
+          onClick={() => void getMako().revealPath(path)}
         >
           <ExternalLinkIcon />
         </IconAction>

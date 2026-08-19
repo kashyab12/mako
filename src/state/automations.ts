@@ -1,5 +1,5 @@
 import { createHook, createStore } from "@/state/store"
-import { getPi, hasBridge } from "@/lib/bridge"
+import { getMako, hasBridge } from "@/lib/bridge"
 import type { Automation, AutomationRun } from "@/lib/types"
 
 /**
@@ -29,27 +29,27 @@ export function noteAutomationRun(run: AutomationRun) {
 export const automations = {
   async load() {
     if (!hasBridge()) return
-    const list = await getPi().automations().catch(() => [])
+    const list = await getMako().automations().catch(() => [])
     automationsStore.set({ list })
   },
 
   async reload() {
     if (!hasBridge()) return
-    const list = await getPi().reloadAutomations().catch(() => [])
+    const list = await getMako().reloadAutomations().catch(() => [])
     automationsStore.set({ list })
   },
 
   async setEnabled(id: string, enabled: boolean) {
-    const list = await getPi().setAutomationEnabled(id, enabled).catch(() => null)
+    const list = await getMako().setAutomationEnabled(id, enabled).catch(() => null)
     if (list) automationsStore.set({ list })
   },
 
   run(id: string) {
-    void getPi().runAutomation(id)
+    void getMako().runAutomation(id)
   },
 
   async save(next: Automation[]) {
-    const list = await getPi().saveAutomations(next).catch(() => null)
+    const list = await getMako().saveAutomations(next).catch(() => null)
     if (list) automationsStore.set({ list })
   },
 }

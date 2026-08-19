@@ -62,11 +62,11 @@ export function CommandPalette() {
     }
     const commands = show("commands")
     const quickOpen = show("files")
-    window.addEventListener("pi:palette", commands)
-    window.addEventListener("pi:quick-open", quickOpen)
+    window.addEventListener("mako:palette", commands)
+    window.addEventListener("mako:quick-open", quickOpen)
     return () => {
-      window.removeEventListener("pi:palette", commands)
-      window.removeEventListener("pi:quick-open", quickOpen)
+      window.removeEventListener("mako:palette", commands)
+      window.removeEventListener("mako:quick-open", quickOpen)
     }
   }, [])
 
@@ -98,7 +98,7 @@ export function CommandPalette() {
 
     for (const command of piCommands) {
       list.push({
-        id: `pi:${command.name}`,
+        id: `mako:${command.name}`,
         section: "Agent",
         title: `/${command.name}`,
         hint: command.description,
@@ -187,7 +187,7 @@ export function CommandPalette() {
       // ⌘↩ on a file puts it in the composer rather than opening it — the
       // other reason you went looking for it.
       if (mode === "files" && (event.metaKey || event.ctrlKey) && entry.hint) {
-        window.dispatchEvent(new CustomEvent("pi:insert", { detail: `@${entry.hint} ` }))
+        window.dispatchEvent(new CustomEvent("mako:insert", { detail: `@${entry.hint} ` }))
         return
       }
       entry.run()

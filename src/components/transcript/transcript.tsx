@@ -318,7 +318,7 @@ function Suggestion({
       // where waiting becomes perceptible.
       style={{ animationDelay: `${60 + index * 45}ms` }}
       onClick={() =>
-        window.dispatchEvent(new CustomEvent("pi:compose", { detail: suggestion.text }))
+        window.dispatchEvent(new CustomEvent("mako:compose", { detail: suggestion.text }))
       }
       className={cn(
         "pressable group flex w-full animate-enter items-center gap-2.5 rounded-md border-t border-hairline",

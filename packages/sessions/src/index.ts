@@ -31,13 +31,12 @@ export {
   type TranscriptOptions,
   type TranscriptSpill,
 } from "./transcript.js"
-export { emitClaudeSession, emitCodexSession, emitCursorSession, emitGrokSession, emitPiSession, type EmitResult } from "./emit.js"
+export { emitClaudeSession, emitCodexSession, emitCursorSession, emitGrokSession, type EmitResult } from "./emit.js"
 export { type NativeFile, type SessionProvider } from "./providers/types.js"
 export { CodexProvider } from "./providers/codex.js"
 export { CursorProvider } from "./providers/cursor.js"
 export { GrokProvider } from "./providers/grok.js"
 export { ClaudeProvider } from "./providers/claude.js"
-export { PiProvider } from "./providers/pi.js"
 export { DevinRemote, type DevinAccount } from "./providers/devin.js"
 
 import { SessionCatalog } from "./catalog.js"

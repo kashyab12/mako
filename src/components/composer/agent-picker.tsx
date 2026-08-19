@@ -9,7 +9,7 @@ import {
   threadsStore,
   useThreads,
 } from "@/state/threads"
-import { getPi, hasBridge } from "@/lib/bridge"
+import { getMako, hasBridge } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
 import { CheckIcon, ChevronDownIcon } from "lucide-react"
 import { harnessModelByIdentity } from "@/lib/types"
@@ -62,7 +62,7 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
 
   useEffect(() => {
     if (!hasBridge()) return
-    void getPi()
+    void getMako()
       .harnessProfiles()
       .then((items) => {
         const next = Object.fromEntries(items.map((profile) => [profile.id, profile]))

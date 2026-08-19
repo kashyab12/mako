@@ -10,8 +10,8 @@ import { CheckIcon } from "lucide-react"
 /**
  * Reasoning effort.
  *
- * Only the levels the *selected model* advertises are offered — Pi reports
- * them per model, so a model that cannot do "max" never shows a dead option.
+ * Only the levels the *selected model* advertises are offered, so a model
+ * that cannot do "max" never shows a dead option.
  * The trigger is a four-bar gauge because effort is ordinal: you should be
  * able to read the current setting without reading a word.
  */

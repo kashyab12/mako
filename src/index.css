@@ -498,7 +498,7 @@
  *      animate at all. See the palette.
  * ------------------------------------------------------------------ */
 
-@keyframes pi-enter {
+@keyframes mako-enter {
   from {
     opacity: 0;
     transform: translateY(4px);
@@ -509,7 +509,7 @@
   }
 }
 
-@keyframes pi-pulse {
+@keyframes mako-pulse {
   0%,
   100% {
     opacity: 0.3;
@@ -547,16 +547,16 @@
     transparent
   );
   transform: translateX(-100%);
-  animation: pi-skeleton 1.6s var(--ease-in-out) infinite;
+  animation: mako-skeleton 1.6s var(--ease-in-out) infinite;
 }
 
-@keyframes pi-skeleton {
+@keyframes mako-skeleton {
   to {
     transform: translateX(100%);
   }
 }
 
-@keyframes pi-sweep {
+@keyframes mako-sweep {
   from {
     background-position: 200% 0;
   }
@@ -566,7 +566,7 @@
 }
 
 .animate-enter {
-  animation: pi-enter var(--duration-menu) var(--ease-out) both;
+  animation: mako-enter var(--duration-menu) var(--ease-out) both;
 }
 
 /*
@@ -578,7 +578,7 @@
  * Transform and opacity only, so a switch costs the compositor a frame and the
  * main thread nothing while tokens are landing next door.
  */
-@keyframes pi-thread {
+@keyframes mako-thread {
   from {
     opacity: 0;
     transform: translate3d(0, 6px, 0);
@@ -590,11 +590,11 @@
 }
 
 .animate-thread {
-  animation: pi-thread 190ms var(--ease-out) both;
+  animation: mako-thread 190ms var(--ease-out) both;
 }
 
 .animate-live {
-  animation: pi-pulse 1.5s var(--ease-in-out) infinite;
+  animation: mako-pulse 1.5s var(--ease-in-out) infinite;
 }
 
 /*
@@ -622,7 +622,7 @@
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: pi-sweep 2.2s linear infinite;
+  animation: mako-sweep 2.2s linear infinite;
 }
 
 /*
@@ -648,74 +648,74 @@
  * Prose — the transcript's own typography, not a plugin's defaults.
  * ------------------------------------------------------------------ */
 
-.pi-prose {
+.mako-prose {
   font-size: 13.5px;
   line-height: 1.65;
   color: var(--foreground);
   overflow-wrap: anywhere;
 }
 
-.pi-prose > * + * {
+.mako-prose > * + * {
   margin-top: 0.75em;
 }
 
-.pi-prose h1,
-.pi-prose h2,
-.pi-prose h3,
-.pi-prose h4 {
+.mako-prose h1,
+.mako-prose h2,
+.mako-prose h3,
+.mako-prose h4 {
   font-weight: 600;
   line-height: 1.3;
   letter-spacing: -0.01em;
   margin-top: 1.4em;
 }
 
-.pi-prose h1 {
+.mako-prose h1 {
   font-size: 1.3em;
 }
-.pi-prose h2 {
+.mako-prose h2 {
   font-size: 1.15em;
 }
-.pi-prose h3 {
+.mako-prose h3 {
   font-size: 1.02em;
 }
-.pi-prose h4 {
+.mako-prose h4 {
   font-size: 1em;
   color: var(--muted-foreground);
 }
 
-.pi-prose ul,
-.pi-prose ol {
+.mako-prose ul,
+.mako-prose ol {
   padding-inline-start: 1.35em;
 }
 
-.pi-prose ul {
+.mako-prose ul {
   list-style: disc;
 }
-.pi-prose ol {
+.mako-prose ol {
   list-style: decimal;
 }
 
-.pi-prose li::marker {
+.mako-prose li::marker {
   color: var(--faint);
 }
 
-.pi-prose li + li {
+.mako-prose li + li {
   margin-top: 0.28em;
 }
 
-.pi-prose a {
+.mako-prose a {
   color: var(--brand);
   text-decoration: underline;
   text-underline-offset: 2px;
   text-decoration-color: color-mix(in oklch, var(--brand) 45%, transparent);
 }
 
-.pi-prose strong {
+.mako-prose strong {
   font-weight: 600;
   color: var(--foreground);
 }
 
-.pi-prose code {
+.mako-prose code {
   font-family: var(--font-mono);
   font-size: 0.88em;
   background: var(--raised);
@@ -729,7 +729,7 @@
  * and the copy action, and the code beneath it. The wrapper owns the frame so
  * the <pre> itself carries no border or radius and cannot fight the header.
  */
-.pi-code {
+.mako-code {
   border: 1px solid var(--hairline);
   border-radius: var(--radius-lg);
   overflow: hidden;
@@ -740,7 +740,7 @@
   );
 }
 
-.pi-code-head {
+.mako-code-head {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -750,7 +750,7 @@
   background: color-mix(in oklch, var(--foreground) 3%, transparent);
 }
 
-.pi-prose pre {
+.mako-prose pre {
   background: none;
   border: 0;
   border-radius: 0;
@@ -759,7 +759,7 @@
   overflow-x: auto;
 }
 
-.pi-prose pre code {
+.mako-prose pre code {
   background: none;
   border: 0;
   padding: 0;
@@ -767,37 +767,37 @@
   line-height: 1.6;
 }
 
-.pi-prose blockquote {
+.mako-prose blockquote {
   border-inline-start: 2px solid var(--border);
   padding-inline-start: 0.9em;
   color: var(--muted-foreground);
 }
 
-.pi-prose hr {
+.mako-prose hr {
   border: 0;
   border-top: 1px solid var(--border);
   margin: 1.4em 0;
 }
 
-.pi-prose table {
+.mako-prose table {
   width: 100%;
   border-collapse: collapse;
   font-size: 12.5px;
 }
 
-.pi-prose th,
-.pi-prose td {
+.mako-prose th,
+.mako-prose td {
   border: 1px solid var(--border);
   padding: 5px 9px;
   text-align: start;
 }
 
-.pi-prose th {
+.mako-prose th {
   background: var(--raised);
   font-weight: 550;
 }
 
-.pi-prose img {
+.mako-prose img {
   border-radius: var(--radius-lg);
   max-width: 100%;
 }

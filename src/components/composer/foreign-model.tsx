@@ -10,7 +10,7 @@ import {
   threadsStore,
   useThreads,
 } from "@/state/threads"
-import { getPi, hasBridge } from "@/lib/bridge"
+import { getMako, hasBridge } from "@/lib/bridge"
 import { fuzzy } from "@/lib/fuzzy"
 import { cn } from "@/lib/utils"
 import { harnessModelByIdentity } from "@/lib/types"
@@ -25,7 +25,7 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
 
   const load = useCallback(() => {
     if (!hasBridge()) return
-    void getPi()
+    void getMako()
       .harnessTuning(harness)
       .then((next) => {
         setProfile(next)

@@ -1,4 +1,4 @@
-import type { PiMessage } from "@/lib/types"
+import type { ChatMessage } from "@/lib/types"
 import { primaryArgument } from "@/lib/tools"
 
 /**
@@ -26,7 +26,7 @@ const CREATE_TOOLS = new Set(["write"])
 /** Edited beats created beats read: show the strongest interaction. */
 const RANK = { read: 0, created: 1, edited: 2 } satisfies Record<FileAction, number>
 
-export function touchedFiles(messages: PiMessage[]): TouchedFile[] {
+export function touchedFiles(messages: ChatMessage[]): TouchedFile[] {
   const byPath = new Map<string, TouchedFile>()
 
   messages.forEach((message, index) => {

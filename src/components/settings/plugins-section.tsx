@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { Action, Eyebrow } from "@/components/ui/kit"
-import { getPi, hasBridge } from "@/lib/bridge"
+import { getMako, hasBridge } from "@/lib/bridge"
 import { plugins } from "@/extend/plugin-host"
 import { useRegistry } from "@/extend/registry"
 import { cn } from "@/lib/utils"
@@ -46,11 +46,7 @@ export function setup() {
 
 export function PluginsSection() {
   const registry = useRegistry(plugins)
-  const registryVersion = registry.getVersion()
-  const loaded = useMemo(
-    () => registry.list().filter((plugin) => plugin.source !== ""),
-    [registry, registryVersion]
-  )
+  const loaded = registry.list().filter((plugin) => plugin.source !== "")
   const [open, setOpen] = useState<string | null>(null)
   const [draft, setDraft] = useState("")
   const [saving, setSaving] = useState(false)
@@ -58,7 +54,7 @@ export function PluginsSection() {
 
   useEffect(() => {
     if (!hasBridge()) return
-    void getPi().pluginsDir().then(setDir).catch(() => {})
+    void getMako().pluginsDir().then(setDir).catch(() => {})
   }, [])
 
   const edit = (id: string, source: string) => {
@@ -69,7 +65,7 @@ export function PluginsSection() {
   const save = async (id: string) => {
     setSaving(true)
     try {
-      await getPi().writePlugin(id, draft)
+      await getMako().writePlugin(id, draft)
       // The watcher reloads it; the row's status updates itself through the
       // registry. Nothing to await here except the write.
     } finally {
@@ -82,7 +78,7 @@ export function PluginsSection() {
     let name = base
     let counter = 2
     while (loaded.some((plugin) => plugin.id === name)) name = `${base}-${counter++}`
-    await getPi().writePlugin(name, TEMPLATE)
+    await getMako().writePlugin(name, TEMPLATE)
     setOpen(name)
     setDraft(TEMPLATE)
   }
@@ -137,7 +133,7 @@ export function PluginsSection() {
                   aria-label={`Delete ${plugin.id}`}
                   onClick={(event) => {
                     event.stopPropagation()
-                    void getPi().deletePlugin(plugin.id)
+                    void getMako().deletePlugin(plugin.id)
                     if (open === plugin.id) setOpen(null)
                   }}
                   className="shrink-0 rounded p-1 text-faint transition-colors hover:text-red-400"
@@ -182,7 +178,7 @@ export function PluginsSection() {
           <PlusIcon className="size-3" />
           New plugin
         </Action>
-        <Action tone="outline" onClick={() => void getPi().revealPlugins()}>
+        <Action tone="outline" onClick={() => void getMako().revealPlugins()}>
           <FolderOpenIcon className="size-3" />
           Open folder
         </Action>

@@ -1,9 +1,9 @@
 import type { TreeNode } from "@/lib/types"
 
 /**
- * Turning Pi's entry graph into something worth looking at.
+ * Turning the engine-owned entry graph into something worth looking at.
  *
- * Pi stores a session as a parent-linked chain: every entry is a child of the
+ * The runtime stores a session as a parent-linked chain: every entry is a child of the
  * one before it. A real session is 281 entries with 5 user turns and 45
  * model/thinking changes, so rendering the graph as written produces a
  * staircase that runs off the right edge — and serializing it as a nested

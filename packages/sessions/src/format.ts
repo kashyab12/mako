@@ -1,8 +1,8 @@
 /**
  * The canonical shape of a coding-agent conversation.
  *
- * Every harness — Codex, Claude Code, Cursor, Grok, Pi, Devin — keeps its own
- * session store in its own format. This module is the one shape they all
+ * Every provider keeps its own session store in its own format. This module
+ * is the one shape they all
  * translate into, and it is deliberately smaller than any of them: it keeps
  * exactly what is needed to *show* a conversation anywhere and to *continue*
  * it anywhere, and it always keeps a pointer back to the native file, which
@@ -15,7 +15,7 @@
  */
 
 /** Which harness a session came from. Open — new harnesses appear monthly. */
-export type Harness = "pi" | "codex" | "claude" | "cursor" | "grok" | "devin" | (string & {})
+export type Harness = "codex" | "claude" | "cursor" | "grok" | "devin" | (string & {})
 
 /** Token counts and spend for one assistant turn, when the harness records them. */
 export interface TurnUsage {
@@ -84,11 +84,7 @@ export interface ThreadRef {
   bytes?: number
   /** Earlier harnesses this conversation lived on, oldest first. */
   lineage?: ThreadOrigin[]
-  /**
-   * The provider behind the model, when the harness records one. Pi sessions
-   * driven by the pi-devin provider carry "devin" here — which is how a
-   * Devin-local conversation announces itself without being a new harness.
-   */
+  /** The provider behind the model, when the harness records one. */
   modelProvider?: string
   /**
    * True when this ref is served from Mako's own archive because the native

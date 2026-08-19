@@ -58,8 +58,8 @@ export function Guide() {
 
   useEffect(() => {
     const show = () => setOpen(true)
-    window.addEventListener("pi:guide", show)
-    return () => window.removeEventListener("pi:guide", show)
+    window.addEventListener("mako:guide", show)
+    return () => window.removeEventListener("mako:guide", show)
   }, [])
 
   useEffect(() => {

@@ -1,6 +1,6 @@
 import { createHook, createStore } from "@/state/store"
 import { prefsStore, setPref } from "@/state/prefs"
-import { getPi, hasBridge } from "@/lib/bridge"
+import { getMako, hasBridge } from "@/lib/bridge"
 import { toast } from "sonner"
 import type {
   Thread,
@@ -85,9 +85,9 @@ function isOptimisticEcho(entry: ViewedThreadEntry): boolean {
 /**
  * Every coding agent's sessions on this machine — not just this app's.
  *
- * The host watches the native stores of every harness it knows (Pi, Codex,
- * Claude Code, Cursor, Grok) and pushes the merged catalog here. Nothing in
- * this store polls: a session grown by a terminal on the other monitor
+ * The host watches every configured provider's native store and pushes the
+ * merged catalog here. Nothing in this store polls: a session grown by a
+ * terminal on the other monitor
  * arrives as an event, the same way a streaming token does.
  */
 
@@ -99,7 +99,7 @@ interface ThreadsState {
   viewingBusy: boolean
   /** Harnesses whose CLI can be driven headlessly from here. */
   resumable: string[]
-  /** Harnesses a conversation can be continued on, "pi" first. */
+  /** Harnesses a conversation can be continued on. */
   targets: string[]
   /** Harnesses that can be driven interactively (ACP). */
   acpable: string[]
@@ -128,12 +128,7 @@ export const threadsStore = createStore<ThreadsState>({
   run: null,
   running: {},
   converting: null,
-  // Pi was once persisted as a visible agent. It now migrates to Devin;
-  // the internal engine is not a provider choice.
-  composerHarness:
-    prefsStore.get().composerHarness === "pi"
-      ? "devin"
-      : (prefsStore.get().composerHarness ?? "claude"),
+  composerHarness: prefsStore.get().composerHarness ?? "claude",
   composerTuning: prefsStore.get().composerTuning,
   queuedReplies: {},
 })
@@ -369,14 +364,14 @@ export const threads = {
       string[],
       string[],
     ] = await Promise.all([
-      getPi().threads().catch(unavailableThreadCatalog),
-      getPi()
+      getMako().threads().catch(unavailableThreadCatalog),
+      getMako()
         .resumableHarnesses()
         .catch((): string[] => []),
-      getPi()
+      getMako()
         .continueTargets()
         .catch((): string[] => []),
-      getPi()
+      getMako()
         .acpHarnesses()
         .catch((): string[] => []),
     ])
@@ -412,10 +407,9 @@ export const threads = {
         viewing: cached,
         viewingBusy: false,
         run: null,
-        composerHarness:
-          cached.ref.harness === "pi" ? "devin" : cached.ref.harness,
+        composerHarness: cached.ref.harness,
       })
-      void getPi()
+      void getMako()
         .threadRun(ref.path)
         .then((run) => {
           if (threadsStore.get().viewing?.ref.path === ref.path)
@@ -425,7 +419,7 @@ export const threads = {
       // One follow, registered only after the fresh read, from the fresh
       // byte offset. Following from the cached (stale) offset once replayed
       // the overlap into the viewer as duplicates.
-      void getPi()
+      void getMako()
         .openThread(ref.path)
         .then((fresh) => {
           if (!fresh) return
@@ -437,7 +431,7 @@ export const threads = {
           rememberThread(replaced)
           if (threadsStore.get().viewing?.ref.path === ref.path) {
             threadsStore.set({ viewing: replaced })
-            void getPi().followThread(ref.path, replaced.ref.bytes ?? 0)
+            void getMako().followThread(ref.path, replaced.ref.bytes ?? 0)
           }
         })
         .catch(() => {})
@@ -445,10 +439,10 @@ export const threads = {
     }
     threadsStore.set({ viewingBusy: true })
     try {
-      const thread = await getPi().openThread(ref.path)
+      const thread = await getMako().openThread(ref.path)
       if (!thread) throw new Error("This session could not be read")
       rememberThread(thread)
-      const run = await getPi()
+      const run = await getMako()
         .threadRun(ref.path)
         .catch(() => null)
       // The composer adopts this conversation: its agent picker shows the
@@ -461,12 +455,11 @@ export const threads = {
         viewing: thread,
         viewingBusy: false,
         run,
-        composerHarness:
-          thread.ref.harness === "pi" ? "devin" : thread.ref.harness,
+        composerHarness: thread.ref.harness,
       })
       // Live from here: the agent writing this session — in whatever app —
       // keeps appending, and those entries belong on screen.
-      void getPi().followThread(ref.path, thread.ref.bytes ?? 0)
+      void getMako().followThread(ref.path, thread.ref.bytes ?? 0)
     } catch (error) {
       threadsStore.set({ viewingBusy: false })
       toast.error(error instanceof Error ? error.message : String(error))
@@ -482,7 +475,7 @@ export const threads = {
     }
     if (restore !== null) patch.composerHarness = restore
     threadsStore.set(patch)
-    if (hasBridge()) void getPi().unfollowThread()
+    if (hasBridge()) void getMako().unfollowThread()
   },
 
   /**
@@ -535,7 +528,7 @@ export const threads = {
       // The composer's tuning rides on the reply: pick a different model or
       // effort while a conversation is open and the next turn uses it.
       const tuning = threadsStore.get().composerTuning[ref.harness]
-      const run = await getPi().resumeThread(ref.path, prompt, tuning)
+      const run = await getMako().resumeThread(ref.path, prompt, tuning)
       // Through the same reducer the host's events use, so the rail's
       // working dot lights immediately rather than on the first event.
       applyThreadRun(run)
@@ -574,13 +567,13 @@ export const threads = {
     try {
       const mode = prefsStore.get().conversionMode
       const result = await withConversion(ref.harness, harness, ref.title, () =>
-        getPi().continueThreadWith(ref.path, harness, prompt, mode)
+        getMako().continueThreadWith(ref.path, harness, prompt, mode)
       )
       if (result.kind === "emitted") {
-        const thread = await getPi().openThread(result.path)
+        const thread = await getMako().openThread(result.path)
         if (thread) {
           threadsStore.set({ viewing: thread, run: null })
-          void getPi().followThread(result.path, thread.ref.bytes ?? 0)
+          void getMako().followThread(result.path, thread.ref.bytes ?? 0)
           return this.reply(thread.ref, prompt)
         }
       } else if (result.kind === "prepared") {
@@ -613,7 +606,7 @@ export const threads = {
         ref.harness,
         harness,
         ref.title,
-        () => getPi().forkThread(ref.path, upto, harness)
+        () => getMako().forkThread(ref.path, upto, harness)
       )
       threadsStore.set({ composerHarness: harness })
       const supportsLive = threadsStore.get().acpable.includes(harness)
@@ -636,7 +629,7 @@ export const threads = {
 
   async abortReply(ref: ThreadRef) {
     if (!hasBridge()) return
-    await getPi()
+    await getMako()
       .abortThreadRun(ref.path)
       .catch(() => {})
   },
@@ -649,7 +642,7 @@ export const threads = {
     if (!hasBridge()) return false
     const ok = await this.reply(ref, prompt)
     if (ok && threadsStore.get().running[ref.path]) {
-      await getPi()
+      await getMako()
         .abortThreadRun(ref.path)
         .catch(() => {})
     }
@@ -666,7 +659,7 @@ export const threads = {
     if (!hasBridge()) return false
     try {
       const options = threadsStore.get().composerTuning[harness] ?? {}
-      const { cwd } = await getPi().startHarness(harness, prompt, options)
+      const { cwd } = await getMako().startHarness(harness, prompt, options)
       pendingOpen = { harness, cwd, since: Date.now() }
       toast(`${harnessLabelOf(harness)} is on it`, {
         description:
@@ -683,7 +676,7 @@ export const threads = {
     if (!hasBridge()) return false
     try {
       const result = await withConversion(ref.harness, harness, ref.title, () =>
-        getPi().continueThreadWith(
+        getMako().continueThreadWith(
           ref.path,
           harness,
           undefined,
@@ -691,10 +684,10 @@ export const threads = {
         )
       )
       if (result.kind === "emitted") {
-        const thread = await getPi().openThread(result.path)
+        const thread = await getMako().openThread(result.path)
         if (!thread) return false
         threadsStore.set({ viewing: thread, run: null })
-        void getPi().followThread(result.path, thread.ref.bytes ?? 0)
+        void getMako().followThread(result.path, thread.ref.bytes ?? 0)
         toast(`${label} session imported`, {
           description: "Reply below when you are ready to continue.",
         })

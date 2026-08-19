@@ -67,11 +67,11 @@ export function AppShell() {
   useEffect(() => {
     const open = () => setSettingsOpen(true)
     const close = () => setSettingsOpen(false)
-    window.addEventListener("pi:settings", open)
-    window.addEventListener("pi:close-settings", close)
+    window.addEventListener("mako:settings", open)
+    window.addEventListener("mako:close-settings", close)
     return () => {
-      window.removeEventListener("pi:settings", open)
-      window.removeEventListener("pi:close-settings", close)
+      window.removeEventListener("mako:settings", open)
+      window.removeEventListener("mako:close-settings", close)
     }
   }, [])
 

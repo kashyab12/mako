@@ -16,7 +16,7 @@ import { HarnessIcon } from "@/components/ui/provider-icon"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { usePrefs } from "@/state/prefs"
 import { cn } from "@/lib/utils"
-import type { PiMessage } from "@/lib/types"
+import type { ChatMessage } from "@/lib/types"
 import {
   BrainIcon,
   CheckIcon,
@@ -68,7 +68,7 @@ export const Exchange = memo(function Exchange({
 /* the prompt                                                          */
 /* ------------------------------------------------------------------ */
 
-function Prompt({ message }: { message: PiMessage }) {
+function Prompt({ message }: { message: ChatMessage }) {
   const raw = textOf(message.blocks)
   // Sent context appendices read back as chips, not walls of implementation detail.
   const { body: text, files } = useMemo(
@@ -90,7 +90,7 @@ function Prompt({ message }: { message: PiMessage }) {
     // stay reachable as a branch in History.
     if (!node) return
     if (node.parentId) await actions.navigate(node.parentId)
-    window.dispatchEvent(new CustomEvent("pi:compose", { detail: text }))
+    window.dispatchEvent(new CustomEvent("mako:compose", { detail: text }))
   }
 
   return (
@@ -124,7 +124,7 @@ function Prompt({ message }: { message: PiMessage }) {
           type="button"
           title="Put this prompt back in the composer"
           onClick={() =>
-            window.dispatchEvent(new CustomEvent("pi:compose", { detail: text }))
+            window.dispatchEvent(new CustomEvent("mako:compose", { detail: text }))
           }
           className="pressable flex items-center gap-1 rounded px-1 hover:text-foreground"
         >
@@ -162,7 +162,7 @@ function Prompt({ message }: { message: PiMessage }) {
 /* the response                                                        */
 /* ------------------------------------------------------------------ */
 
-function Response({ message }: { message: PiMessage }) {
+function Response({ message }: { message: ChatMessage }) {
   const showThinking = usePrefs((prefs) => prefs.showThinking)
 
   const { thinking, tools, text } = useMemo(() => {
@@ -231,7 +231,7 @@ function Thinking({ text, live }: { text: string; live: boolean }) {
   )
 }
 
-function SystemNote({ message }: { message: PiMessage }) {
+function SystemNote({ message }: { message: ChatMessage }) {
   const text = textOf(message.blocks)
   if (!text) return null
   return (
@@ -309,7 +309,7 @@ function ForkButton({ exchange }: { exchange: ExchangeData }) {
     )
   }
   if (!viewing || entryIndex === null || Number.isNaN(entryIndex)) return null
-  const options = targets.filter((target) => target !== "pi")
+  const options = targets
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

@@ -1,5 +1,5 @@
 import { createHook, createStore } from "@/state/store"
-import { getPi, hasBridge } from "@/lib/bridge"
+import { getMako, hasBridge } from "@/lib/bridge"
 import type { DevServerState, ListeningPort } from "@/lib/types"
 
 /**
@@ -36,8 +36,8 @@ export const dev = {
   async load() {
     if (!hasBridge()) return
     const [state, scripts] = await Promise.all([
-      getPi().devState().catch(() => null),
-      getPi().devScripts().catch(() => []),
+      getMako().devState().catch(() => null),
+      getMako().devScripts().catch(() => []),
     ])
     if (state) devStore.set(state)
     devStore.set({ scripts })
@@ -54,26 +54,26 @@ export const dev = {
    */
   async scan() {
     if (!hasBridge()) return
-    const ports = await getPi().ports().catch(() => [])
+    const ports = await getMako().ports().catch(() => [])
     devStore.set({ ports })
   },
 
   async start(script: string) {
     if (!hasBridge()) return
     devStore.set({ status: "starting", script, url: undefined, lines: [] })
-    const state = await getPi().devStart(script).catch(() => null)
+    const state = await getMako().devStart(script).catch(() => null)
     if (state) devStore.set(state)
   },
 
   async stop() {
     if (!hasBridge()) return
-    const state = await getPi().devStop().catch(() => null)
+    const state = await getMako().devStop().catch(() => null)
     if (state) devStore.set(state)
   },
 
   async attach(url: string) {
     if (!hasBridge()) return
-    const state = await getPi().devAttach(url).catch(() => null)
+    const state = await getMako().devAttach(url).catch(() => null)
     if (state) devStore.set(state)
   },
 

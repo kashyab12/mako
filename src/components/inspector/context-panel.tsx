@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo, useState } from "react"
 import { Chip, Eyebrow } from "@/components/ui/kit"
 import { touchedFiles, type FileAction, type TouchedFile } from "@/lib/context-files"
 import { fileDir, fileName, formatContextWindow, formatRate, formatTokens } from "@/lib/format"
-import { getPi } from "@/lib/bridge"
+import { getMako } from "@/lib/bridge"
 import { actions, shallowEqual, useSession } from "@/state/session"
 import { cn } from "@/lib/utils"
 import type { SkillSummary } from "@/lib/types"
@@ -151,7 +151,7 @@ const FileRow = memo(function FileRow({
     <button
       type="button"
       title={`${file.path} · ${file.action}${file.count > 1 ? ` ${file.count}×` : ""}`}
-      onClick={() => void getPi().revealPath(file.path)}
+      onClick={() => void getMako().revealPath(file.path)}
       className="contain-turn flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors duration-100 hover:bg-raised [contain-intrinsic-size:auto_26px]"
     >
       <Icon className={cn("size-3 shrink-0", FILE_TONE[file.action])} />
@@ -241,7 +241,7 @@ const SkillRow = memo(function SkillRow({
           title={`Insert $${skill.name} into the composer`}
           onClick={(event) => {
             event.stopPropagation()
-            window.dispatchEvent(new CustomEvent("pi:insert", { detail: `$${skill.name} ` }))
+            window.dispatchEvent(new CustomEvent("mako:insert", { detail: `$${skill.name} ` }))
           }}
           className="pressable shrink-0 rounded px-1 text-[10px] text-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-foreground"
         >

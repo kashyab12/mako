@@ -1,5 +1,5 @@
 import { useEffect } from "react"
-import { getPi, hasBridge } from "@/lib/bridge"
+import { getMako, hasBridge } from "@/lib/bridge"
 import { loadPlugin, plugins, unloadPlugin } from "@/extend/plugin-host"
 import { toast } from "sonner"
 
@@ -15,12 +15,12 @@ import { toast } from "sonner"
 export function usePlugins() {
   useEffect(() => {
     if (!hasBridge()) return
-    const pi = getPi()
+    const bridge = getMako()
 
     let live = true
 
     const sync = async () => {
-      const files = await pi.listPlugins().catch(() => [])
+      const files = await bridge.listPlugins().catch(() => [])
       if (!live) return
 
       const present = new Set(files.map((file) => file.id))
@@ -45,7 +45,7 @@ export function usePlugins() {
     }
 
     void sync()
-    const unsubscribe = pi.onEvent((event) => {
+    const unsubscribe = bridge.onEvent((event) => {
       if (event.type === "plugins-changed") void sync()
     })
 

@@ -40,7 +40,8 @@ interface ReviewState {
   draft?: Draft
 }
 
-const KEY = "pi.review.v1"
+const KEY = "mako.review.v1"
+const LEGACY_KEY = "pi.review.v1"
 
 interface JsonObject {
   [key: string]: JsonValue
@@ -114,7 +115,7 @@ function parseComments(value: JsonValue): ReviewComment[] {
  */
 function load(): ReviewComment[] {
   try {
-    const raw = localStorage.getItem(KEY)
+    const raw = localStorage.getItem(KEY) ?? localStorage.getItem(LEGACY_KEY)
     if (!raw) return []
     const parsed: JsonValue = JSON.parse(raw)
     return parseComments(parsed)

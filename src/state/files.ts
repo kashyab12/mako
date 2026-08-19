@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore } from "react"
-import { getPi, hasBridge } from "@/lib/bridge"
+import { getMako, hasBridge } from "@/lib/bridge"
 import type { WorkspaceFile } from "@/lib/types"
 import { store } from "@/state/session"
 
@@ -22,7 +22,7 @@ function publish() {
 
 function load(cwd: string) {
   if (inFlight || loadedFor === cwd || !hasBridge()) return
-  inFlight = getPi()
+  inFlight = getMako()
     .listFiles()
     .then((next) => {
       files = next

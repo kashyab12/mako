@@ -2,7 +2,7 @@ import { createHook, createStore } from "@/state/store"
 import type {
   Capabilities,
   GitStatus,
-  PiMessage,
+  ChatMessage,
   SessionMeta,
   TabSnapshot,
   TreeNode,
@@ -52,8 +52,8 @@ interface TabsState {
 /** Everything needed to draw a tab the instant it is selected. */
 export interface TabCache {
   meta?: SessionMeta
-  messages: PiMessage[]
-  stream: PiMessage | null
+  messages: ChatMessage[]
+  stream: ChatMessage | null
   tree: TreeNode[]
   git?: GitStatus
   capabilities?: Capabilities
@@ -103,7 +103,7 @@ const MAX_TITLE = 60
  */
 export function titleFor(
   meta: SessionMeta | undefined,
-  messages: PiMessage[]
+  messages: ChatMessage[]
 ): string {
   if (meta?.sessionName) return meta.sessionName
   const first = messages.find((message) => message.role === "user")

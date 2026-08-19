@@ -100,14 +100,14 @@ export function TitleBar() {
         <IconAction
           label="Command palette"
           keys={formatChord("mod+k")}
-          onClick={() => window.dispatchEvent(new CustomEvent("pi:palette"))}
+          onClick={() => window.dispatchEvent(new CustomEvent("mako:palette"))}
         >
           <CommandIcon />
         </IconAction>
         <IconAction
           label="Settings"
           keys={formatChord("mod+,")}
-          onClick={() => window.dispatchEvent(new CustomEvent("pi:settings"))}
+          onClick={() => window.dispatchEvent(new CustomEvent("mako:settings"))}
         >
           <SettingsIcon />
         </IconAction>

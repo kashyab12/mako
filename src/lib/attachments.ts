@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { getPi } from "@/lib/bridge"
+import { getMako } from "@/lib/bridge"
 import { toast } from "sonner"
 
 /**
@@ -227,12 +227,12 @@ async function resolve(attachment: Attachment, file: File): Promise<Attachment> 
   // then one filesystem copy in the engine — nothing crosses the IPC
   // boundary. Base64 marshalling is only the fallback for files that truly
   // have no path (a paste from another app's clipboard).
-  const sourcePath = getPi().pathForFile?.(file) ?? null
+  const sourcePath = getMako().pathForFile?.(file) ?? null
   if (sourcePath) {
-    const staged = await getPi().stageFilePath(sourcePath)
+    const staged = await getMako().stageFilePath(sourcePath)
     return { ...attachment, stagedPath: staged.path, pending: false }
   }
-  const staged = await getPi().stageFile(file.name, await toBase64(file))
+  const staged = await getMako().stageFile(file.name, await toBase64(file))
   return { ...attachment, stagedPath: staged.path, pending: false }
 }
 

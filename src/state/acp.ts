@@ -1,5 +1,5 @@
 import { createHook, createStore } from "@/state/store"
-import { getPi, hasBridge } from "@/lib/bridge"
+import { getMako, hasBridge } from "@/lib/bridge"
 import { toast } from "sonner"
 import { threadsStore, withConversion } from "@/state/threads"
 import type {
@@ -46,7 +46,7 @@ interface AcpState {
 }
 
 type AcpStartOptions = NonNullable<
-  Parameters<ReturnType<typeof getPi>["acpStart"]>[2]
+  Parameters<ReturnType<typeof getMako>["acpStart"]>[2]
 >
 
 export const acpStore = createStore<AcpState>({
@@ -83,7 +83,7 @@ export function applyAcpPermission(request: AcpPermissionRequest) {
     // Nobody is looking at this session; answering nothing cancels the tool,
     // which is the safe default for an unwatched agent.
     if (hasBridge())
-      void getPi().acpPermission(request.sessionId, request.id, null)
+      void getMako().acpPermission(request.sessionId, request.id, null)
     return
   }
   acpStore.set({ permission: request })
@@ -162,7 +162,7 @@ export const acp = {
           harness,
           ref.title,
           async () => {
-            const [artifact] = await getPi().threadContexts([ref.path])
+            const [artifact] = await getMako().threadContexts([ref.path])
             return artifact
           }
         )
@@ -175,9 +175,9 @@ export const acp = {
         tuning: threadsStore.get().composerTuning[harness],
       }
       if (canResume) options.resume = ref.nativeId
-      const session = await getPi().acpStart(harness, ref.cwd ?? "", options)
+      const session = await getMako().acpStart(harness, ref.cwd ?? "", options)
       acpStore.set({ session, starting: false })
-      if (contextPrompt) await getPi().acpPrompt(session.id, contextPrompt)
+      if (contextPrompt) await getMako().acpPrompt(session.id, contextPrompt)
     } catch (error) {
       acpStore.set({ starting: false })
       toast.error(error instanceof Error ? error.message : String(error))
@@ -200,11 +200,11 @@ export const acp = {
     if (!hasBridge()) return false
     acpStore.set({ starting: true, blocks: [], permission: null })
     try {
-      const session = await getPi().acpStart(harness, cwd, {
+      const session = await getMako().acpStart(harness, cwd, {
         tuning: threadsStore.get().composerTuning[harness],
       })
       acpStore.set({ session, starting: false })
-      await getPi().acpPrompt(session.id, prompt, attachments)
+      await getMako().acpPrompt(session.id, prompt, attachments)
       return true
     } catch (error) {
       acpStore.set({ starting: false })
@@ -222,7 +222,7 @@ export const acp = {
       return
     }
     try {
-      await getPi().acpPrompt(session.id, text, attachments)
+      await getMako().acpPrompt(session.id, text, attachments)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     }
@@ -235,25 +235,25 @@ export const acp = {
   answerPermission(optionId: string | null) {
     const { session, permission } = acpStore.get()
     if (!session || !permission || !hasBridge()) return
-    void getPi().acpPermission(session.id, permission.id, optionId)
+    void getMako().acpPermission(session.id, permission.id, optionId)
     acpStore.set({ permission: null })
   },
 
   setMode(modeId: string) {
     const { session } = acpStore.get()
     if (!session || !hasBridge()) return
-    void getPi().acpSetMode(session.id, modeId)
+    void getMako().acpSetMode(session.id, modeId)
   },
 
   cancel() {
     const { session } = acpStore.get()
     if (!session || !hasBridge()) return
-    void getPi().acpCancel(session.id)
+    void getMako().acpCancel(session.id)
   },
 
   close() {
     const { session } = acpStore.get()
-    if (session && hasBridge()) void getPi().acpClose(session.id)
+    if (session && hasBridge()) void getMako().acpClose(session.id)
     acpStore.set({ session: null, blocks: [], permission: null, queued: null })
   },
 }

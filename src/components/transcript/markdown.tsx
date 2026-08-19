@@ -45,7 +45,7 @@ export const Prose = memo(function Prose({
   const source = useThrottled(text, Boolean(streaming))
 
   return (
-    <div className={cn("pi-prose", className)}>
+    <div className={cn("mako-prose", className)}>
       <Markdown remarkPlugins={[remarkGfm]} components={components}>
         {source}
       </Markdown>
@@ -99,7 +99,7 @@ const components = {
  * The language label and the copy button live in a real header row rather than
  * floating over the code. The previous version positioned them absolutely and
  * tried to reserve space with a `pt-6` utility — which silently lost, because
- * `.pi-prose pre` is a class-plus-element selector and outranks a single
+ * `.mako-prose pre` is a class-plus-element selector and outranks a single
  * utility class. The label then sat on top of the first line. Laying the
  * header out in normal flow removes the specificity fight entirely.
  */
@@ -109,8 +109,8 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   const language = extractLanguage(children)
 
   return (
-    <div className="pi-code group">
-      <div className="pi-code-head">
+    <div className="mako-code group">
+      <div className="mako-code-head">
         <span className="font-mono text-[10px] tracking-wide text-faint select-none">
           {language ?? "text"}
         </span>

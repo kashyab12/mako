@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Action, IconAction } from "@/components/ui/kit"
-import { getPi } from "@/lib/bridge"
+import { getMako } from "@/lib/bridge"
 import { github, useGitHub } from "@/state/github"
 import { actions, useSession } from "@/state/session"
 import { prefsStore } from "@/state/prefs"
@@ -43,7 +43,7 @@ export function PullRequestCard() {
     if (pushing) return
     setPushing(true)
     try {
-      await getPi().gitPush()
+      await getMako().gitPush()
       await actions.refreshGit()
       toast.success("Pushed")
     } catch (error) {
@@ -142,7 +142,7 @@ function ComposePull({
     try {
       // The commit drafter already reads the diff and writes a subject and a
       // body; a pull request wants the same two things from the same source.
-      const text = await getPi().generateCommitMessage(prefsStore.get().commitPrompt)
+      const text = await getMako().generateCommitMessage(prefsStore.get().commitPrompt)
       const [first, ...rest] = text.split("\n")
       setTitle((current) => current || (first ?? "").trim())
       setBody((current) => current || rest.join("\n").trim())
@@ -239,7 +239,7 @@ function PullSummary({ pull, loading }: { pull: Pull; loading: boolean }) {
         <span className="tabular shrink-0 text-[11.5px] text-faint">#{pull.number}</span>
         <button
           type="button"
-          onClick={() => void getPi().openUrl(pull.url)}
+          onClick={() => void getMako().openUrl(pull.url)}
           title={pull.url}
           className="min-w-0 flex-1 truncate text-left text-[12px] text-foreground/90 hover:text-foreground"
         >
@@ -253,7 +253,7 @@ function PullSummary({ pull, loading }: { pull: Pull; loading: boolean }) {
         >
           <RefreshCwIcon className={loading ? "animate-spin" : undefined} />
         </IconAction>
-        <IconAction label="Open on GitHub" size="xs" onClick={() => void getPi().openUrl(pull.url)}>
+        <IconAction label="Open on GitHub" size="xs" onClick={() => void getMako().openUrl(pull.url)}>
           <ExternalLinkIcon />
         </IconAction>
       </div>

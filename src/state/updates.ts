@@ -1,5 +1,5 @@
 import { createHook, createStore } from "@/state/store"
-import { getPi, hasBridge } from "@/lib/bridge"
+import { getMako, hasBridge } from "@/lib/bridge"
 import type { UpdateState } from "@/lib/types"
 
 /**
@@ -20,19 +20,19 @@ export function applyUpdate(next: UpdateState) {
 export const updates = {
   async load() {
     if (!hasBridge()) return
-    const state = await getPi().updateState().catch(() => null)
+    const state = await getMako().updateState().catch(() => null)
     if (state) updatesStore.set(state)
   },
 
   async check() {
     if (!hasBridge()) return
     updatesStore.set({ status: "checking" })
-    const state = await getPi().checkUpdates().catch(() => null)
+    const state = await getMako().checkUpdates().catch(() => null)
     if (state) updatesStore.set(state)
   },
 
   install() {
     if (!hasBridge()) return
-    void getPi().installUpdate()
+    void getMako().installUpdate()
   },
 }

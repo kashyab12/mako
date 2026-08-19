@@ -50,7 +50,7 @@ export function decomposeModelId(harness: string, id: string): DecomposedModel {
     return out
   }
 
-  if (harness === "devin" || harness === "pi") {
+  if (harness === "devin") {
     // Trailing tokens, outermost first: `-priority` (the fast lane), then
     // an effort level. `gpt-5-6-sol-high-priority` → gpt-5-6-sol / high / fast.
     let base = id

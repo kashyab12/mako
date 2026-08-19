@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Blank } from "@/components/ui/kit"
-import { getPi } from "@/lib/bridge"
+import { getMako } from "@/lib/bridge"
 import { formatRelative } from "@/lib/format"
 import { useSession } from "@/state/session"
 import { cn } from "@/lib/utils"
@@ -60,7 +60,7 @@ export function GitLog({
   useEffect(() => {
     if (!root) return
     let cancelled = false
-    void getPi()
+    void getMako()
       .gitLog(80)
       .then((next) => {
         if (!cancelled) setCommits(next)
@@ -78,7 +78,7 @@ export function GitLog({
     const next = open === hash ? null : hash
     setOpen(next)
     if (next && !filesByHash[next]) {
-      void getPi()
+      void getMako()
         .gitCommitFiles(next)
         .then((list) => setFilesByHash((prev) => ({ ...prev, [next]: list })))
         .catch(() => setFilesByHash((prev) => ({ ...prev, [next]: [] })))

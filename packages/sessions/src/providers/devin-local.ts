@@ -9,7 +9,7 @@
  * editor's global `state.vscdb` (`windsurf.acp.metadataCache`, with
  * `windsurf.acp.eventLog.index` mapping session ids to journal uuids).
  *
- * Append-only NDJSON means these sessions tail like Pi's: a Devin turn
+ * Append-only NDJSON lets these sessions tail incrementally: a Devin turn
  * streams into the catalog live, byte offset by byte offset.
  *
  * SQLite comes from `node:sqlite`, loaded lazily like the Cursor provider

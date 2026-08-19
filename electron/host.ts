@@ -31,7 +31,7 @@ import {
   type GitStatus,
   type HostEvent,
   type ModelInfo,
-  type PiMessage,
+  type ChatMessage,
   type SessionMeta,
   type SessionState,
   type SessionSummary,
@@ -114,7 +114,7 @@ interface EntryPreview {
   role?: ChatRole
 }
 
-/** Project Pi's owner-typed content blocks onto the renderer wire contract. */
+/** Project engine-owned content blocks onto the renderer wire contract. */
 function blocksFrom(content: RuntimeContent): Block[] {
   if (!Array.isArray(content)) {
     return content ? [{ type: "text", text: content }] : []
@@ -144,7 +144,7 @@ function blocksFrom(content: RuntimeContent): Block[] {
   return blocks
 }
 
-function serializeMessage(message: RuntimeMessage, id: string): PiMessage {
+function serializeMessage(message: RuntimeMessage, id: string): ChatMessage {
   switch (message.role) {
     case "toolResult":
       return {
@@ -232,8 +232,8 @@ function matcher(term: string, options: SearchOptions): (text: string) => boolea
  * real but unreadable as a row, and is reported as the message that made it.
  */
 function entryText(line: string, test: (text: string) => boolean): { role: ChatRole; text: string } | null {
-  // Pi owns the JSONL format and parser. Keep malformed or non-message lines out
-  // before projecting the parsed owner contract onto the search result.
+  // The engine owns the JSONL format and parser. Keep malformed or non-message
+  // lines out before projecting the owner contract onto the search result.
   const entry = parseSessionEntries(line)[0]
   if (!entry || entry.type !== "message") return null
 
@@ -267,7 +267,7 @@ function snippet(text: string, test: (piece: string) => boolean): string {
 }
 
 /**
- * Flatten Pi's tree and mark the root→leaf path so the UI can dim abandoned
+ * Flatten the engine-owned tree and mark the root→leaf path so the UI can dim abandoned
  * branches. The output is a flat list: see the note on `TreeNode` for why
  * nesting is not an option here.
  */
@@ -383,7 +383,7 @@ function statusFor(xy: string): GitFileStatus {
  * you read the original.
  *
  * Everything specific to the agent backend lives inside this class. Nothing
- * above it names Pi, so swapping the runtime out is a change to one file.
+ * above it names the implementation, so swapping the runtime is a local change.
  */
 export class AgentHost {
   readonly id: string
@@ -572,13 +572,13 @@ export class AgentHost {
 
   /* -------------------------------------------------- reads */
 
-  private streamingMessage(): PiMessage | null {
+  private streamingMessage(): ChatMessage | null {
     const message = this.session.state.streamingMessage
     if (!message) return null
     return { ...serializeMessage(message, "draft"), streaming: true }
   }
 
-  messages(): PiMessage[] {
+  messages(): ChatMessage[] {
     return this.session.messages.map((message, index) => serializeMessage(message, `m${index}`))
   }
 
@@ -638,8 +638,8 @@ export class AgentHost {
   /* -------------------------------------------------- sessions */
 
   /**
-   * Sessions for the rail. `scope: "all"` reaches across every project Pi has
-   * ever run in, which is what makes the rail a way to move between projects
+   * Sessions for the rail. `scope: "all"` reaches across every project the
+   * engine has run in, which makes the rail a way to move between projects
    * rather than only within the current one.
    */
   async listSessions(
@@ -959,8 +959,8 @@ export class AgentHost {
 
   /**
    * Write an attachment the model cannot take inline into a scratch directory
-   * inside the agent dir, and return its path. Pi's read/bash tools can then
-   * reach it, which is the difference between "attach anything" and pretending
+   * inside the agent dir, and return its path. Engine-owned tools can then reach
+   * it, which is the difference between "attach anything" and pretending
    * to.
    */
   async stageFile(name: string, base64: string): Promise<StagedFile> {

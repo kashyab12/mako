@@ -235,7 +235,7 @@ const FileRow = memo(function FileRow({
         // Middle-click puts it in the composer instead of opening it — the
         // other reason you go looking for a file in an agent app.
         if (event.button === 1) {
-          window.dispatchEvent(new CustomEvent("pi:insert", { detail: `@${row.path} ` }))
+          window.dispatchEvent(new CustomEvent("mako:insert", { detail: `@${row.path} ` }))
         }
       }}
       title={row.path}

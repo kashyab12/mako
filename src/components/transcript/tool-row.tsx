@@ -1,6 +1,6 @@
 import { memo, useState } from "react"
 import { useToolView, type ToolCall } from "@/extend/slots"
-import { primaryArgument } from "@/lib/tools"
+import { primaryArgument, toolLabel } from "@/lib/tools"
 import { cn } from "@/lib/utils"
 import { usePrefs } from "@/state/prefs"
 import { ChevronRightIcon, CircleAlertIcon , CheckIcon, CopyIcon } from "lucide-react"
@@ -47,7 +47,7 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
           )}
         />
         <span className="shrink-0 text-[12px] font-medium text-foreground/90">
-          {call.name}
+          {toolLabel(call.name)}
         </span>
         <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-faint">{summary}</span>
         <Status call={call} />

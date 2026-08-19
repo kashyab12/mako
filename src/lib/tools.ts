@@ -1,4 +1,4 @@
-import type { Block, PiMessage } from "@/lib/types"
+import type { Block, ChatMessage } from "@/lib/types"
 import type { ToolCall } from "@/extend/slots"
 
 type ToolScalar = boolean | number | string | null
@@ -58,12 +58,12 @@ function parseToolEdit(content: ToolContent): ToolEdit {
 }
 
 /**
- * Fold `tool` messages back into the assistant turn that called them. Pi's
- * message log keeps results as separate entries; the transcript reads far
+ * Fold `tool` messages back into the assistant turn that called them. The
+ * engine-owned log keeps results as separate entries; the transcript reads far
  * better when a call and its result are one row.
  */
-export function foldTools(messages: PiMessage[]): PiMessage[] {
-  const output: PiMessage[] = []
+export function foldTools(messages: ChatMessage[]): ChatMessage[] {
+  const output: ChatMessage[] = []
   for (const message of messages) {
     const previous = output.at(-1)
     if (message.role === "tool" && previous?.role === "assistant") {
@@ -147,6 +147,16 @@ export function primaryArgument<Content>(value: Content): string {
 
 export function argAt<Content>(value: Content, key: string): string | undefined {
   return stringContent(parseToolArguments(value)?.[key])
+}
+
+export function toolLabel(name: string): string {
+  if (name.startsWith("mako_macos_")) {
+    return `macOS ${name.slice("mako_macos_".length).replaceAll("_", " ")}`
+  }
+  if (name.startsWith("browser_")) {
+    return `Browser ${name.slice("browser_".length).replaceAll("_", " ")}`
+  }
+  return name
 }
 
 export function countLines(text?: string) {

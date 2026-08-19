@@ -1,5 +1,5 @@
 import { createHook, createStore } from "@/state/store"
-import { getPi, hasBridge } from "@/lib/bridge"
+import { getMako, hasBridge } from "@/lib/bridge"
 import type { FileContents, GitDiff } from "@/lib/types"
 
 /**
@@ -52,12 +52,12 @@ export const viewer = {
       diff: undefined,
     })
     try {
-      const file = await getPi().readFile(path)
+      const file = await getMako().readFile(path)
       if (mine !== generation) return
       viewerStore.set({ file, loading: false })
       // Live from here: any writer — an agent mid-edit, a formatter, a
       // terminal — lands on screen without a manual reopen.
-      void getPi().watchFile(path)
+      void getMako().watchFile(path)
     } catch (error) {
       if (mine !== generation) return
       viewerStore.set({
@@ -76,7 +76,7 @@ export const viewer = {
     path = current
     const mine = generation
     try {
-      const file = await getPi().readFile(path)
+      const file = await getMako().readFile(path)
       if (mine !== generation || viewerStore.get().path !== path) return
       viewerStore.set({ file })
     } catch {
@@ -108,7 +108,7 @@ export const viewer = {
   },
 
   close() {
-    if (hasBridge()) void getPi().unwatchFile()
+    if (hasBridge()) void getMako().unwatchFile()
     generation += 1
     viewerStore.set({
       path: undefined,

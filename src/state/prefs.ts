@@ -77,7 +77,8 @@ export interface Prefs {
   commitPrompt?: string
 }
 
-const KEY = "pi.prefs.v1"
+const KEY = "mako.prefs.v1"
+const LEGACY_KEY = "pi.prefs.v1"
 
 const defaults: Prefs = {
   theme: "dark",
@@ -144,6 +145,11 @@ function isJsonBoolean(value: StoredValue): value is boolean {
 
 function readOptionalString(value: StoredValue): string | undefined {
   return isJsonString(value) ? value : undefined
+}
+
+function readComposerHarness(value: StoredValue): string | undefined {
+  const harness = readOptionalString(value)
+  return harness === "pi" ? "devin" : harness
 }
 
 function readNumber(value: StoredValue, fallback: number): number {
@@ -282,7 +288,7 @@ function parsePrefs(value: JsonValue): Prefs | null {
       value.agentHarnessFilter,
       defaults.agentHarnessFilter
     ),
-    composerHarness: readOptionalString(value.composerHarness),
+    composerHarness: readComposerHarness(value.composerHarness),
     composerTuning: readComposerTuning(value.composerTuning),
     conversionMode: readChoice(
       value.conversionMode,
@@ -305,7 +311,7 @@ function parsePrefs(value: JsonValue): Prefs | null {
 
 function load(): Prefs {
   try {
-    const raw = localStorage.getItem(KEY)
+    const raw = localStorage.getItem(KEY) ?? localStorage.getItem(LEGACY_KEY)
     if (!raw) return defaults
     const parsed: JsonValue = JSON.parse(raw)
     return parsePrefs(parsed) ?? defaults
