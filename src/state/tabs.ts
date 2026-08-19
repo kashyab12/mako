@@ -31,6 +31,24 @@ export interface TabInfo {
   unread: boolean
 }
 
+interface TabActivity {
+  working: boolean
+  streaming: boolean
+}
+
+export interface TabPatch {
+  title?: string
+  cwd?: string
+  working?: boolean
+  streaming?: boolean
+  unread?: boolean
+}
+
+interface TabsState {
+  tabs: TabInfo[]
+  activeId: string
+}
+
 /** Everything needed to draw a tab the instant it is selected. */
 export interface TabCache {
   meta?: SessionMeta
@@ -43,7 +61,7 @@ export interface TabCache {
 
 const emptyCache = (): TabCache => ({ messages: [], stream: null, tree: [] })
 
-export const tabsStore = createStore<{ tabs: TabInfo[]; activeId: string }>({
+export const tabsStore = createStore<TabsState>({
   tabs: [],
   activeId: "",
 })
@@ -83,7 +101,10 @@ const MAX_TITLE = 60
  * "Session 3" and better than the folder, since several tabs usually share a
  * folder.
  */
-export function titleFor(meta: SessionMeta | undefined, messages: PiMessage[]): string {
+export function titleFor(
+  meta: SessionMeta | undefined,
+  messages: PiMessage[]
+): string {
   if (meta?.sessionName) return meta.sessionName
   const first = messages.find((message) => message.role === "user")
   const text = first?.blocks
@@ -92,14 +113,19 @@ export function titleFor(meta: SessionMeta | undefined, messages: PiMessage[]): 
     .join(" ")
     .replace(/\s+/g, " ")
     .trim()
-  if (text) return text.length > MAX_TITLE ? `${text.slice(0, MAX_TITLE - 1)}…` : text
+  if (text)
+    return text.length > MAX_TITLE ? `${text.slice(0, MAX_TITLE - 1)}…` : text
   return "New thread"
 }
 
-function workingFrom(meta: SessionMeta | undefined): { working: boolean; streaming: boolean } {
+function workingFrom(meta: SessionMeta | undefined): TabActivity {
   return {
     working: Boolean(
-      meta && (meta.isStreaming || meta.isCompacting || meta.isRetrying || meta.isBashRunning)
+      meta &&
+      (meta.isStreaming ||
+        meta.isCompacting ||
+        meta.isRetrying ||
+        meta.isBashRunning)
     ),
     streaming: Boolean(meta?.isStreaming),
   }
@@ -119,6 +145,17 @@ function infoFrom(id: string, entry: TabCache, previous?: TabInfo): TabInfo {
   }
 }
 
+function sameTab(left: TabInfo, right: TabInfo): boolean {
+  return (
+    left.id === right.id &&
+    left.title === right.title &&
+    left.cwd === right.cwd &&
+    left.working === right.working &&
+    left.streaming === right.streaming &&
+    left.unread === right.unread
+  )
+}
+
 export function hydrate(snapshots: TabSnapshot[], activeId: string) {
   cache.clear()
   for (const snapshot of snapshots) {
@@ -132,7 +169,9 @@ export function hydrate(snapshots: TabSnapshot[], activeId: string) {
     })
   }
   tabsStore.set({
-    tabs: snapshots.map((snapshot) => infoFrom(snapshot.id, cacheOf(snapshot.id))),
+    tabs: snapshots.map((snapshot) =>
+      infoFrom(snapshot.id, cacheOf(snapshot.id))
+    ),
     activeId,
   })
 }
@@ -175,21 +214,13 @@ export function removeTab(id: string, nextActiveId: string) {
  * title that only updated for background tabs would be a strange bug to chase.
  * Bails out when nothing changed, so a token arriving cannot repaint the strip.
  */
-export function refresh(id: string, source: TabCache, patch: Partial<TabInfo> = {}) {
+export function refresh(id: string, source: TabCache, patch: TabPatch = {}) {
   tabsStore.set((state) => {
     const index = state.tabs.findIndex((tab) => tab.id === id)
-    if (index === -1) return {}
-    const previous = state.tabs[index] as TabInfo
-    const next = { ...infoFrom(id, source, previous), ...patch }
-    if (
-      next.title === previous.title &&
-      next.cwd === previous.cwd &&
-      next.working === previous.working &&
-      next.streaming === previous.streaming &&
-      next.unread === previous.unread
-    ) {
-      return {}
-    }
+    const previous = state.tabs[index]
+    if (!previous) return {}
+    const next: TabInfo = { ...infoFrom(id, source, previous), ...patch }
+    if (sameTab(previous, next)) return {}
     const tabs = [...state.tabs]
     tabs[index] = next
     return { tabs }
@@ -197,15 +228,13 @@ export function refresh(id: string, source: TabCache, patch: Partial<TabInfo> = 
 }
 
 /** Change strip fields directly, leaving the derived ones alone. */
-export function patchTab(id: string, patch: Partial<TabInfo>) {
+export function patchTab(id: string, patch: TabPatch) {
   tabsStore.set((state) => {
     const index = state.tabs.findIndex((tab) => tab.id === id)
-    if (index === -1) return {}
-    const previous = state.tabs[index] as TabInfo
-    const next = { ...previous, ...patch }
-    if ((Object.keys(patch) as (keyof TabInfo)[]).every((key) => previous[key] === next[key])) {
-      return {}
-    }
+    const previous = state.tabs[index]
+    if (!previous) return {}
+    const next: TabInfo = { ...previous, ...patch }
+    if (sameTab(previous, next)) return {}
     const tabs = [...state.tabs]
     tabs[index] = next
     return { tabs }

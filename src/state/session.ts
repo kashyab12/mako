@@ -28,8 +28,19 @@ import { viewer, viewerStore } from "@/state/viewer"
 import { applyUpdate, updates } from "@/state/updates"
 import { automations } from "@/state/automations"
 import { applyDevServer } from "@/state/devserver"
-import { applyThreadEntries, applyThreadRun, applyThreads, threads } from "@/state/threads"
-import { applyAcpPermission, applyAcpSession, applyAcpUpdate } from "@/state/acp"
+import {
+  applyThreadEntries,
+  applyThreadRef,
+  applyThreadRemoved,
+  applyThreadRun,
+  applyThreads,
+  threads,
+} from "@/state/threads"
+import {
+  applyAcpPermission,
+  applyAcpSession,
+  applyAcpUpdate,
+} from "@/state/acp"
 import { watchOnboarding } from "@/state/onboarding"
 import { applyAutomations, noteAutomationRun } from "@/state/automations"
 import { toast } from "sonner"
@@ -91,7 +102,12 @@ function apply(event: HostEvent) {
     return
   }
   applyToActive(event)
-  if (event.tabId && (event.type === "meta" || event.type === "session" || event.type === "messages")) {
+  if (
+    event.tabId &&
+    (event.type === "meta" ||
+      event.type === "session" ||
+      event.type === "messages")
+  ) {
     const state = store.get()
     writeCache(event.tabId, { meta: state.meta })
     refresh(event.tabId, { ...cacheOf(event.tabId), messages: state.messages })
@@ -155,7 +171,10 @@ function applyToActive(event: HostEvent) {
     case "session":
       store.set({
         meta: event.session.meta,
-        messages: reconcileMessages(store.get().messages, event.session.messages),
+        messages: reconcileMessages(
+          store.get().messages,
+          event.session.messages
+        ),
         tree: event.session.tree,
         stream: null,
       })
@@ -166,7 +185,9 @@ function applyToActive(event: HostEvent) {
     case "messages":
       // Reuse the objects for turns that did not change, so a tool result
       // re-renders one turn instead of the whole transcript.
-      store.set({ messages: reconcileMessages(store.get().messages, event.messages) })
+      store.set({
+        messages: reconcileMessages(store.get().messages, event.messages),
+      })
       break
     case "stream":
       store.set({ stream: event.message })
@@ -196,8 +217,19 @@ function applyToActive(event: HostEvent) {
     case "threads":
       applyThreads(event.threads)
       break
+    case "thread-ref":
+      applyThreadRef(event.ref)
+      break
+    case "thread-removed":
+      applyThreadRemoved(event.path)
+      break
     case "thread-entries":
-      applyThreadEntries(event.path, event.entries, event.replace)
+      applyThreadEntries(
+        event.path,
+        event.entries,
+        event.replace,
+        event.replaceFrom
+      )
       break
     case "thread-run":
       applyThreadRun(event.run)
@@ -237,15 +269,21 @@ function applyToActive(event: HostEvent) {
 /* actions — every mutation the UI can perform, in one place           */
 /* ------------------------------------------------------------------ */
 
-function report(error: unknown) {
-  toast.error(error instanceof Error ? error.message : String(error))
+function report(message: string) {
+  toast.error(message)
 }
 
 /** Reject after `ms`, so no await can strand the interface in a skeleton. */
-function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  message: string
+): Promise<T> {
   return Promise.race([
     promise,
-    new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error(message)), ms)),
+    new Promise<never>((_resolve, reject) =>
+      setTimeout(() => reject(new Error(message)), ms)
+    ),
   ])
 }
 
@@ -253,7 +291,7 @@ async function guard<T>(run: () => Promise<T>): Promise<T | undefined> {
   try {
     return await run()
   } catch (error) {
-    report(error)
+    report(error instanceof Error ? error.message : String(error))
     return undefined
   }
 }
@@ -280,7 +318,11 @@ function adoptState(next: SessionState) {
   const id = tabsStore.get().activeId
   if (id) {
     writeCache(id, { meta: next.meta })
-    refresh(id, { ...cacheOf(id), meta: next.meta, messages: next.messages }, { unread: false })
+    refresh(
+      id,
+      { ...cacheOf(id), meta: next.meta, messages: next.messages },
+      { unread: false }
+    )
   }
 }
 
@@ -289,7 +331,8 @@ export const actions = {
     if (!hasBridge()) {
       store.set({
         phase: "detached",
-        fault: "The agent host is not attached. Launch the desktop app with `npm run desktop`.",
+        fault:
+          "The agent host is not attached. Launch the desktop app with `npm run desktop`.",
       })
       return () => {}
     }
@@ -298,7 +341,7 @@ export const actions = {
     // window is newer than the engine it woke up inside — the bridge missing
     // an API this build requires — nothing works *subtly*, which is the
     // worst way for nothing to work. Refuse loudly, with the fix.
-    if (typeof (pi as { daemonStatus?: unknown }).daemonStatus !== "function") {
+    if (!Object.hasOwn(pi, "daemonStatus")) {
       store.set({
         phase: "detached",
         fault:
@@ -314,7 +357,8 @@ export const actions = {
         "The agent host did not answer within 45 seconds. Check the terminal it was launched from, then restart."
       )
       hydrate(boot.tabs, boot.activeTabId)
-      const active = boot.tabs.find((tab) => tab.id === boot.activeTabId) ?? boot.tabs[0]
+      const active =
+        boot.tabs.find((tab) => tab.id === boot.activeTabId) ?? boot.tabs[0]
       if (!active) throw new Error("The host started without a conversation")
       store.set({
         phase: "ready",
@@ -334,7 +378,10 @@ export const actions = {
       threads.watchFocus()
       watchOnboarding()
     } catch (error) {
-      store.set({ phase: "detached", fault: error instanceof Error ? error.message : String(error) })
+      store.set({
+        phase: "detached",
+        fault: error instanceof Error ? error.message : String(error),
+      })
     }
     return unsubscribe
   },
@@ -437,13 +484,16 @@ export const actions = {
       // can see and retry — an eternal skeleton is the one unacceptable
       // outcome here.
       const next = await withTimeout(
-        getPi().listSessions(cwd ?? store.get().meta?.cwd, scope ?? prefsStore.get().railScope),
+        getPi().listSessions(
+          cwd ?? store.get().meta?.cwd,
+          scope ?? prefsStore.get().railScope
+        ),
         20_000,
         "Listing sessions took too long"
       )
       store.set({ sessions: next })
     } catch (error) {
-      report(error)
+      report(error instanceof Error ? error.message : String(error))
     } finally {
       store.set({ sessionsLoading: false })
     }
@@ -472,7 +522,7 @@ export const actions = {
       await getPi().prompt(text, mode, images)
       return true
     } catch (error) {
-      report(error)
+      report(error instanceof Error ? error.message : String(error))
       return false
     }
   },
@@ -501,7 +551,9 @@ export const actions = {
     // Already open somewhere? Go there. Two tabs on one session file would be
     // two views of one runtime fighting over it, and the rail giving you a
     // duplicate instead of the thing you can see is the wrong answer anyway.
-    const existing = tabsStore.get().tabs.find((tab) => sessionFileOf(tab.id) === path)
+    const existing = tabsStore
+      .get()
+      .tabs.find((tab) => sessionFileOf(tab.id) === path)
     if (existing) return actions.switchTab(existing.id)
     if (inNewTab) return actions.openTab({ sessionPath: path })
     // Picking a thread means "show me that thread" — so any full-window view
@@ -562,7 +614,9 @@ export const actions = {
     })
     void actions.refreshSessions(result.tab.session.meta.cwd)
     if (result.text) {
-      window.dispatchEvent(new CustomEvent("pi:compose", { detail: result.text }))
+      window.dispatchEvent(
+        new CustomEvent("pi:compose", { detail: result.text })
+      )
     }
   },
 
