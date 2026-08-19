@@ -29,14 +29,14 @@
 import { createHash } from "node:crypto"
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import type { Thread, ThreadRef } from "./format.js"
+import type { Thread, ThreadEntry, ThreadRef } from "./format.js"
 
 /** At most one archive write per session per this window while it grows. */
 const THROTTLE_MS = 15_000
 /** The settle delay after the last change before the final write. */
 const SETTLE_MS = 3_000
 
-interface ArchiveState {
+interface PersistedArchiveState {
   /** Native size at the time of the last write, to skip no-op syncs. */
   bytes?: number
   updatedAt?: string
@@ -47,7 +47,7 @@ export class SessionArchive {
   private root: string
   /** path → archived ref; the in-memory index behind synchronous list(). */
   private index = new Map<string, ThreadRef>()
-  private states = new Map<string, ArchiveState>()
+  private states = new Map<string, PersistedArchiveState>()
   private loaded: Promise<void> | null = null
   private timers = new Map<string, NodeJS.Timeout>()
   private lastWrite = new Map<string, number>()
@@ -60,17 +60,20 @@ export class SessionArchive {
   /** Read every archived ref into memory. Idempotent; called once. */
   load(): Promise<void> {
     this.loaded ??= (async () => {
-      const dirs = await readdir(this.root).catch(() => [] as string[])
+      const dirs: string[] = await readdir(this.root).catch(() => [])
       await Promise.all(
         dirs.map(async (dir) => {
           try {
             const raw = await readFile(join(this.root, dir, "ref.json"), "utf8")
-            const ref = JSON.parse(raw) as ThreadRef
+            const ref: ThreadRef = JSON.parse(raw)
             if (ref?.path) this.index.set(ref.path, { ...ref, archived: true })
             const state = await readFile(join(this.root, dir, "state.json"), "utf8").catch(
               () => null
             )
-            if (state) this.states.set(ref.path, JSON.parse(state) as ArchiveState)
+            if (state) {
+              const persisted: PersistedArchiveState = JSON.parse(state)
+              this.states.set(ref.path, persisted)
+            }
           } catch {
             // A torn directory contributes nothing; the next sync heals it.
           }
@@ -131,7 +134,8 @@ export class SessionArchive {
         .filter(Boolean)
         .flatMap((line) => {
           try {
-            return [JSON.parse(line) as Thread["entries"][number]]
+            const entry: ThreadEntry = JSON.parse(line)
+            return [entry]
           } catch {
             return []
           }
@@ -174,7 +178,7 @@ export class SessionArchive {
       await this.atomically(join(dir, "entries.jsonl"), body)
     }
     await this.atomically(join(dir, "ref.json"), JSON.stringify(thread.ref))
-    const state: ArchiveState = {
+    const state: PersistedArchiveState = {
       bytes: ref.bytes,
       updatedAt: ref.updatedAt,
       entryCount: thread.entries.length,
