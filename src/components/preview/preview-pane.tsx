@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { Action, IconAction } from "@/components/ui/kit"
 import { dev, useDev } from "@/state/devserver"
 import { getMako } from "@/lib/bridge"
-import { setPref } from "@/state/prefs"
+import { stage } from "@/state/stage"
 import { cn } from "@/lib/utils"
 import {
   ExternalLinkIcon,
@@ -33,7 +33,7 @@ export function PreviewPane() {
   }, [])
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col border-l border-hairline bg-shell">
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
       <Toolbar />
       <div className="relative min-h-0 flex-1">
         {status === "running" && url ? (
@@ -95,7 +95,7 @@ function Toolbar() {
       <IconAction
         label="Close the preview"
         size="xs"
-        onClick={() => setPref("previewOpen", false)}
+        onClick={() => stage.close()}
       >
         <XIcon />
       </IconAction>

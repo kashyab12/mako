@@ -86,7 +86,7 @@ export function StatusBar() {
       <UpdatePill />
 
       <div className="ml-auto flex items-center gap-3">
-        <Slot name="statusbar.trailing" meta={undefined} />
+        <Slot name="titlebar.status" meta={undefined} />
 
         {/*
          * Both readings are labelled. A bare meter and a bare percentage sat

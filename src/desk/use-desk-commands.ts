@@ -11,6 +11,7 @@ import { installBuiltins } from "@/desk/builtins"
 import { actions, store } from "@/state/session"
 import { getMako } from "@/lib/bridge"
 import { prefsStore, setPref, togglePref } from "@/state/prefs"
+import { stage } from "@/state/stage"
 import { tabsStore } from "@/state/tabs"
 import { search } from "@/state/search"
 
@@ -136,8 +137,7 @@ const DESK_COMMANDS: DeskCommand[] = [
     keys: "mod+shift+g",
     hint: "From the staged diff, using the current model",
     run: () => {
-      setPref("inspectorOpen", true)
-      setPref("inspectorTab", "changes")
+      stage.open("changes")
       requestAnimationFrame(() =>
         window.dispatchEvent(new CustomEvent("mako:draft-commit"))
       )
@@ -205,7 +205,7 @@ const DESK_COMMANDS: DeskCommand[] = [
     section: "View",
     keys: "mod+shift+p",
     hint: "The dev server, beside the conversation",
-    run: () => togglePref("previewOpen"),
+    run: () => stage.toggle("preview"),
   },
   {
     id: "view.toggle-diff",
@@ -214,8 +214,7 @@ const DESK_COMMANDS: DeskCommand[] = [
     keys: "mod+shift+d",
     hint: "The changed file's contents, beneath the file list",
     run: () => {
-      setPref("inspectorOpen", true)
-      setPref("inspectorTab", "changes")
+      stage.open("changes")
       togglePref("autoOpenDiff")
     },
   },
@@ -256,55 +255,36 @@ const DESK_COMMANDS: DeskCommand[] = [
     },
   },
   {
-    id: "view.toggle-inspector",
-    title: "Toggle the inspector",
+    id: "view.toggle-companion",
+    title: "Toggle the companion pane",
     section: "View",
     keys: "mod+i",
-    run: () => togglePref("inspectorOpen"),
+    hint: "Hide what is open beside the chat, or bring back the last one",
+    run: () => stage.toggleCompanion(),
   },
   {
     id: "view.changes",
     title: "Show changed files",
     section: "View",
-    keys: "mod+alt+1",
-    run: () => {
-      setPref("inspectorOpen", true)
-      setPref("inspectorTab", "changes")
-    },
+    run: () => stage.toggle("changes"),
   },
   {
     id: "view.context",
     title: "Show context: files, skills, tokens",
     section: "View",
-    keys: "mod+alt+2",
-    run: () => {
-      setPref("inspectorOpen", true)
-      setPref("inspectorTab", "context")
-    },
+    run: () => stage.toggle("context"),
   },
   {
     id: "view.history",
     title: "Show history and rewind points",
     section: "View",
-    keys: "mod+alt+3",
-    run: () => {
-      setPref("inspectorOpen", true)
-      setPref("inspectorTab", "history")
-    },
+    run: () => stage.toggle("history"),
   },
   {
     id: "view.terminal",
     title: "Show terminal",
     section: "View",
-    keys: "mod+alt+4",
-    run: () => {
-      setPref("inspectorOpen", true)
-      requestAnimationFrame(() => {
-        window.dispatchEvent(
-          new CustomEvent("mako:inspector-panel", { detail: "terminal" })
-        )
-      })
-    },
+    run: () => stage.toggle("terminal"),
   },
   {
     id: "view.all-projects",

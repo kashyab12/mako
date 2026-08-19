@@ -525,7 +525,7 @@ function FileRow({
           </span>
         ) : null}
       </button>
-      <Slot name="inspector.changes.file.trailing" file={file} />
+      <Slot name="changes.file.trailing" file={file} />
     </div>
   )
 }

@@ -3,18 +3,17 @@ import {
   GitCompareIcon,
   HistoryIcon,
   LayersIcon,
+  MonitorIcon,
   TerminalSquareIcon,
 } from "lucide-react"
-import {
-  registerInspectorPanel,
-  registerToolView,
-  type ToolCall,
-} from "@/extend/slots"
+import { registerToolView, type ToolCall } from "@/extend/slots"
+import { registerSurface } from "@/extend/surfaces"
 import { ChangesPanel } from "@/components/inspector/changes-lazy"
 import { FileTree } from "@/components/rail/file-tree"
 import { ContextPanel } from "@/components/inspector/context-panel"
 import { HistoryPanel } from "@/components/inspector/history-panel"
 import { TerminalPanel } from "@/components/inspector/terminal-lazy"
+import { PreviewPane } from "@/components/preview/preview-pane"
 import { BashBody, EditBody, WriteBody } from "@/components/transcript/tool-views"
 import { argAt, countLines, editsOf, primaryArgument } from "@/lib/tools"
 import { fileName } from "@/lib/format"
@@ -27,40 +26,49 @@ import { fileName } from "@/lib/format"
 
 export function installBuiltins(): () => void {
   const disposers = [
-    registerInspectorPanel({
+    registerSurface({
       id: "changes",
       label: "Changes",
       icon: GitCompareIcon,
       render: ChangesPanel,
       order: 0,
+      minWidth: 400,
     }),
-    registerInspectorPanel({
+    registerSurface({
       id: "context",
       label: "Context",
       icon: LayersIcon,
       render: ContextPanel,
       order: 1,
     }),
-    registerInspectorPanel({
+    registerSurface({
       id: "history",
       label: "History",
       icon: HistoryIcon,
       render: HistoryPanel,
       order: 2,
     }),
-    registerInspectorPanel({
+    registerSurface({
       id: "files",
       label: "Files",
       icon: FilesIcon,
       render: FileTree,
       order: 3,
     }),
-    registerInspectorPanel({
+    registerSurface({
       id: "terminal",
       label: "Terminal",
       icon: TerminalSquareIcon,
       render: TerminalPanel,
       order: 4,
+    }),
+    registerSurface({
+      id: "preview",
+      label: "Preview",
+      icon: MonitorIcon,
+      render: PreviewPane,
+      order: 5,
+      minWidth: 460,
     }),
 
     registerToolView("bash", {

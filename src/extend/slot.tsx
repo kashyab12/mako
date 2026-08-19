@@ -78,7 +78,7 @@ export function Slot(props: SlotInvocation): ReactNode {
     case "transcript.header":
     case "transcript.empty":
     case "composer.above":
-    case "statusbar.trailing":
+    case "titlebar.status":
       return renderSlot(entries, props.name, { meta: props.meta })
     case "transcript.turn.trailing":
       return renderSlot(entries, props.name, { message: props.message })
@@ -88,9 +88,9 @@ export function Slot(props: SlotInvocation): ReactNode {
         meta: props.meta,
         disabled: props.disabled,
       })
-    case "inspector.history.trailing":
+    case "history.checkpoint.trailing":
       return renderSlot(entries, props.name, { checkpoint: props.checkpoint })
-    case "inspector.changes.file.trailing":
+    case "changes.file.trailing":
       return renderSlot(entries, props.name, { file: props.file })
   }
 

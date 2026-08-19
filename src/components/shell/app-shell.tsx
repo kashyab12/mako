@@ -1,25 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { Composer } from "@/components/composer/composer"
 import { CommandPalette } from "@/components/palette/command-palette"
 import { Guide } from "@/components/onboarding/guide"
-import { ThreadViewer } from "@/components/viewer/thread-viewer"
-import { useThreads } from "@/state/threads"
-import { useAcp } from "@/state/acp"
-import { AcpPanel } from "@/components/viewer/acp-panel"
 import { ConversionOverlay } from "@/components/viewer/conversion-overlay"
 import { SettingsView } from "@/components/settings/settings-view"
 import { usePlugins } from "@/extend/use-plugins"
-import { Inspector } from "@/components/inspector/inspector"
 import { SessionRail } from "@/components/rail/session-rail"
 import { StatusBar } from "@/components/shell/status-bar"
 import { TitleBar } from "@/components/shell/title-bar"
-import { TabStrip } from "@/components/shell/tab-strip"
 import { Divider } from "@/components/shell/divider"
-import { Transcript } from "@/components/transcript/transcript"
-import { FileViewer } from "@/components/viewer/file-viewer"
-import { SearchView } from "@/components/search/search-view"
-import { PreviewPane } from "@/components/preview/preview-pane"
+import { Stage } from "@/components/stage/stage"
+import { StageStrip } from "@/components/stage/stage-strip"
 import { Action, Blank } from "@/components/ui/kit"
 import { useDeskCommands } from "@/desk/use-desk-commands"
 import { actions, store, useSession } from "@/state/session"
@@ -32,12 +23,8 @@ export function AppShell() {
   const phase = useSession((state) => state.phase)
   const fault = useSession((state) => state.fault)
   const railOpen = usePrefs((prefs) => prefs.railOpen)
-  const inspectorOpen = usePrefs((prefs) => prefs.inspectorOpen)
-  const previewOpen = usePrefs((prefs) => prefs.previewOpen)
 
   const railRef = useRef<HTMLDivElement>(null)
-  const inspectorRef = useRef<HTMLDivElement>(null)
-  const previewRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => bindTheme(), [])
 
@@ -87,12 +74,6 @@ export function AppShell() {
   const resizeRail = useCallback((next: number) => {
     if (railRef.current) railRef.current.style.width = `${next}px`
   }, [])
-  const resizeInspector = useCallback((next: number) => {
-    if (inspectorRef.current) inspectorRef.current.style.width = `${next}px`
-  }, [])
-  const resizePreview = useCallback((next: number) => {
-    if (previewRef.current) previewRef.current.style.width = `${next}px`
-  }, [])
 
   return (
     <TooltipProvider delayDuration={350}>
@@ -119,10 +100,8 @@ export function AppShell() {
             </>
           ) : null}
 
-          {/* The conversation floats on the shell as a card; the chrome
-              around it stays shadowless and recessed. */}
-          <main className="card relative m-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-            {phase === "detached" ? (
+          {phase === "detached" ? (
+            <main className="card relative m-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
               <Blank
                 icon={<PlugZapIcon />}
                 title="No agent attached"
@@ -133,61 +112,13 @@ export function AppShell() {
                   </Action>
                 }
               />
-            ) : (
-              <>
-                <TabStrip />
-                <ConversationSurface />
-                <Composer />
-                {/* Over the conversation column only. The rail stays reachable,
-                    so you can walk the tree with a file already open. */}
-                <FileViewer />
-                <SearchView />
-              </>
-            )}
-          </main>
-
-          {/* The preview is a sibling of the conversation, not an overlay on
-              it: the whole point is watching the thing change while you talk
-              about it. */}
-          {previewOpen && phase !== "detached" ? (
-            <>
-              <Divider
-                side="right"
-                width={prefsStore.get().previewWidth}
-                min={320}
-                max={900}
-                onResize={resizePreview}
-                onCommit={(next) => setPref("previewWidth", next)}
-              />
-              <div
-                ref={previewRef}
-                style={{ width: prefsStore.get().previewWidth }}
-                className="flex min-h-0 shrink-0 flex-col overflow-hidden"
-              >
-                <PreviewPane />
-              </div>
-            </>
-          ) : null}
-
-          {inspectorOpen ? (
-            <>
-              <Divider
-                side="right"
-                width={prefsStore.get().inspectorWidth}
-                min={300}
-                max={720}
-                onResize={resizeInspector}
-                onCommit={(next) => setPref("inspectorWidth", next)}
-              />
-              <div
-                ref={inspectorRef}
-                style={{ width: prefsStore.get().inspectorWidth }}
-                className="flex min-h-0 shrink-0 flex-col overflow-hidden"
-              >
-                <Inspector />
-              </div>
-            </>
-          ) : null}
+            </main>
+          ) : (
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <StageStrip />
+              <Stage />
+            </div>
+          )}
         </div>
         <StatusBar />
 
@@ -212,16 +143,4 @@ export function AppShell() {
       <ConversionOverlay />
     </TooltipProvider>
   )
-}
-
-
-/**
- * The chat column's middle. The composer below is the same for every
- * provider and routes to whoever owns the open conversation.
- */
-function ConversationSurface() {
-  const viewing = useThreads((state) => Boolean(state.viewing) || state.viewingBusy)
-  const live = useAcp((state) => Boolean(state.session) || state.starting)
-  if (live) return <AcpPanel />
-  return viewing ? <ThreadViewer /> : <Transcript />
 }

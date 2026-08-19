@@ -25,6 +25,7 @@ import {
   writeCache,
 } from "@/state/tabs"
 import { viewer, viewerStore } from "@/state/viewer"
+import { stage } from "@/state/stage"
 import { applyUpdate, updates } from "@/state/updates"
 import { automations } from "@/state/automations"
 import { applyDevServer } from "@/state/devserver"
@@ -469,6 +470,7 @@ export const actions = {
     if (!result) return
     const wasActive = tabsStore.get().activeId === id
     removeTab(id, result.activeId)
+    stage.drop(id)
     if (result.opened) addTab(result.opened)
     if (!wasActive) return
     const next = cacheOf(result.activeId)

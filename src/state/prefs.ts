@@ -6,7 +6,6 @@ import { createHook, createStore } from "@/state/store"
  */
 
 export type Theme = "dark" | "light" | "system"
-export type InspectorTab = "changes" | "context" | "history"
 
 /** What the left rail is showing: your conversations, or the project. */
 export type RailMode = "threads" | "agents" | "files"
@@ -19,13 +18,19 @@ interface PreferenceStringMap {
   [key: string]: string
 }
 
+/** Dragged companion-card widths, keyed by surface id. */
+interface SurfaceWidthMap {
+  [surfaceId: string]: number
+}
+
 export interface Prefs {
   theme: Theme
   railOpen: boolean
-  inspectorOpen: boolean
-  inspectorTab: InspectorTab
   railWidth: number
-  inspectorWidth: number
+  /** Dragged companion-card widths, per surface id — a spatial habit. */
+  surfaceWidths: SurfaceWidthMap
+  /** What ⌘I reopens, and what boot restores. Tab ids don't survive a relaunch. */
+  lastCompanion: string | null
   /** `provider/id` keys, most recent first. */
   favoriteModels: string[]
   recentModels: string[]
@@ -39,9 +44,6 @@ export interface Prefs {
   /** Folders open in the project tree. Keys are folded paths, not path prefixes. */
   openDirs: string[]
   autoOpenDiff: boolean
-  /** The dev-server preview, beside the conversation. */
-  previewOpen: boolean
-  previewWidth: number
   /** The getting-started list is finished or dismissed, and will not return. */
   onboarded: boolean
   /** Checklist steps that have been true at least once. Done is done. */
@@ -83,10 +85,9 @@ const LEGACY_KEY = "pi.prefs.v1"
 const defaults: Prefs = {
   theme: "dark",
   railOpen: true,
-  inspectorOpen: true,
-  inspectorTab: "changes",
   railWidth: 264,
-  inspectorWidth: 400,
+  surfaceWidths: {},
+  lastCompanion: "changes",
   favoriteModels: [],
   recentModels: [],
   showThinking: true,
@@ -98,8 +99,6 @@ const defaults: Prefs = {
   collapsedDirs: [],
   openDirs: [],
   autoOpenDiff: true,
-  previewOpen: false,
-  previewWidth: 460,
   onboarded: false,
   onboardedSteps: [],
   pinnedThreads: [],
@@ -172,6 +171,15 @@ function readStringList(value: StoredValue, fallback: string[]): string[] {
   return value
 }
 
+function readNumberRecord(value: StoredValue): SurfaceWidthMap {
+  if (!isJsonObject(value)) return {}
+  const record: SurfaceWidthMap = {}
+  for (const [key, entry] of Object.entries(value)) {
+    if (isJsonNumber(entry)) record[key] = entry
+  }
+  return record
+}
+
 function readStringRecord(value: StoredValue): PreferenceStringMap {
   if (!isJsonObject(value)) return {}
   const record: PreferenceStringMap = {}
@@ -209,19 +217,35 @@ function readComposerTuning(
   return tuning
 }
 
+/**
+ * One-shot migrations from the inspector-era prefs: the dragged inspector
+ * and preview widths seed the matching surface widths, and a deliberately
+ * closed inspector stays closed at boot.
+ */
+function readSurfaceWidths(value: JsonObject): SurfaceWidthMap {
+  const stored = readNumberRecord(value.surfaceWidths)
+  if (Object.keys(stored).length > 0) return stored
+  const seeded: SurfaceWidthMap = {}
+  if (isJsonNumber(value.inspectorWidth)) seeded.changes = value.inspectorWidth
+  if (isJsonNumber(value.previewWidth)) seeded.preview = value.previewWidth
+  return seeded
+}
+
+function readLastCompanion(value: JsonObject): string | null {
+  if (isJsonString(value.lastCompanion)) return value.lastCompanion
+  if (value.lastCompanion === null || value.inspectorOpen === false) return null
+  if (isJsonString(value.inspectorTab)) return value.inspectorTab
+  return defaults.lastCompanion
+}
+
 function parsePrefs(value: JsonValue): Prefs | null {
   if (!isJsonObject(value)) return null
   const prefs: Prefs = {
     theme: readChoice(value.theme, ["dark", "light", "system"], defaults.theme),
     railOpen: readBoolean(value.railOpen, defaults.railOpen),
-    inspectorOpen: readBoolean(value.inspectorOpen, defaults.inspectorOpen),
-    inspectorTab: readChoice(
-      value.inspectorTab,
-      ["changes", "context", "history"],
-      defaults.inspectorTab
-    ),
     railWidth: readNumber(value.railWidth, defaults.railWidth),
-    inspectorWidth: readNumber(value.inspectorWidth, defaults.inspectorWidth),
+    surfaceWidths: readSurfaceWidths(value),
+    lastCompanion: readLastCompanion(value),
     favoriteModels: readStringList(value.favoriteModels, defaults.favoriteModels),
     recentModels: readStringList(value.recentModels, defaults.recentModels),
     showThinking: readBoolean(value.showThinking, defaults.showThinking),
@@ -248,8 +272,6 @@ function parsePrefs(value: JsonValue): Prefs | null {
     collapsedDirs: readStringList(value.collapsedDirs, defaults.collapsedDirs),
     openDirs: readStringList(value.openDirs, defaults.openDirs),
     autoOpenDiff: readBoolean(value.autoOpenDiff, defaults.autoOpenDiff),
-    previewOpen: readBoolean(value.previewOpen, defaults.previewOpen),
-    previewWidth: readNumber(value.previewWidth, defaults.previewWidth),
     onboarded: readBoolean(value.onboarded, defaults.onboarded),
     onboardedSteps: readStringList(
       value.onboardedSteps,

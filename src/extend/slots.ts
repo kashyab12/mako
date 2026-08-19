@@ -41,6 +41,7 @@ export interface ChangedFileSlotProps {
 export interface SlotMap {
   "titlebar.leading": NoProps
   "titlebar.trailing": NoProps
+  "titlebar.status": SessionMetaSlotProps
   "rail.header": NoProps
   "rail.footer": NoProps
   "rail.session.trailing": RailSessionSlotProps
@@ -50,9 +51,8 @@ export interface SlotMap {
   "composer.controls": ComposerControlSlotProps
   "composer.trailing": ComposerControlSlotProps
   "composer.above": SessionMetaSlotProps
-  "inspector.history.trailing": HistoryCheckpointSlotProps
-  "inspector.changes.file.trailing": ChangedFileSlotProps
-  "statusbar.trailing": SessionMetaSlotProps
+  "history.checkpoint.trailing": HistoryCheckpointSlotProps
+  "changes.file.trailing": ChangedFileSlotProps
 }
 
 export type SlotName = keyof SlotMap
@@ -112,26 +112,3 @@ export function useToolView(name: string): ToolView | undefined {
   return useRegistry(toolViews).get(name)
 }
 
-/* ------------------------------------------------------------------ */
-/* inspector panels                                                    */
-/* ------------------------------------------------------------------ */
-
-export interface InspectorPanel {
-  id: string
-  label: string
-  icon?: ComponentType<{ className?: string }>
-  render: ComponentType<NoProps>
-  order?: number
-}
-
-export const inspectorPanels = new Registry<InspectorPanel>()
-
-export function registerInspectorPanel(panel: InspectorPanel) {
-  return inspectorPanels.register(panel.id, panel)
-}
-
-export function useInspectorPanels(): InspectorPanel[] {
-  return useRegistry(inspectorPanels)
-    .list()
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-}

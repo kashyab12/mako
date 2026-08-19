@@ -204,7 +204,7 @@ const Row = memo(function Row({
           ) : null}
         </div>
 
-        <Slot name="inspector.history.trailing" checkpoint={checkpoint} />
+        <Slot name="history.checkpoint.trailing" checkpoint={checkpoint} />
       </div>
     </div>
   )

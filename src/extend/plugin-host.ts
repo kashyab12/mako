@@ -7,14 +7,14 @@ import {
   type DeskCommand,
 } from "@/extend/commands"
 import {
-  registerInspectorPanel,
   registerSlot,
   registerToolView,
-  type InspectorPanel,
   type SlotMap,
   type SlotName,
   type ToolView,
 } from "@/extend/slots"
+import { registerSurface, type SurfaceDefinition } from "@/extend/surfaces"
+import { stage } from "@/state/stage"
 import { actions, store, useSession } from "@/state/session"
 import { threads, threadsStore, useThreads } from "@/state/threads"
 import { toast } from "sonner"
@@ -60,7 +60,13 @@ export interface MakoApi {
     order?: number
   ) => void
   registerToolView: (name: string, view: ToolView) => void
-  registerInspectorPanel: (panel: InspectorPanel) => void
+  registerSurface: (surface: SurfaceDefinition) => void
+  /** Show, hide, or swap the stage's companion surface. */
+  surfaces: {
+    open: (id: string) => void
+    close: () => void
+    toggle: (id: string) => void
+  }
   runCommand: (id: string) => void
   /** Session state: `read()` once, `use()` to subscribe from a component. */
   session: { read: typeof store.get; use: typeof useSession; actions: typeof actions }
@@ -116,8 +122,13 @@ function apiFor(id: string): MakoApi {
     registerCommands: (list) => track(registerCommands(list.map((c) => scopeCommand(id, c)))),
     registerSlot: (slot, render, order) => track(registerSlot(id, slot, render, order ?? 0)),
     registerToolView: (name, view) => track(registerToolView(name, view)),
-    registerInspectorPanel: (panel) =>
-      track(registerInspectorPanel({ ...panel, id: `${id}:${panel.id}` })),
+    registerSurface: (surface) =>
+      track(registerSurface({ ...surface, id: `${id}:${surface.id}` })),
+    surfaces: {
+      open: (surfaceId) => stage.open(`${id}:${surfaceId}`),
+      close: () => stage.close(),
+      toggle: (surfaceId) => stage.toggle(`${id}:${surfaceId}`),
+    },
     runCommand,
     session: { read: store.get, use: useSession, actions },
     prefs: { read: prefsStore.get, use: usePrefs, set: setPref, toggle: togglePref },

@@ -4,6 +4,8 @@ import { Slot } from "@/extend/slot"
 import { formatChord } from "@/extend/commands"
 import { actions, useSession } from "@/state/session"
 import { togglePref, usePrefs } from "@/state/prefs"
+import { stage, useStage } from "@/state/stage"
+import { useTabs } from "@/state/tabs"
 import { MakoMark } from "@/components/ui/mako-mark"
 import { workspaceName } from "@/lib/format"
 import { search } from "@/state/search"
@@ -35,7 +37,8 @@ export function TitleBar() {
   const streaming = useSession((state) => state.meta?.isStreaming ?? false)
   const railOpen = usePrefs((prefs) => prefs.railOpen)
   const railWidth = usePrefs((prefs) => prefs.railWidth)
-  const inspectorOpen = usePrefs((prefs) => prefs.inspectorOpen)
+  const activeTab = useTabs((state) => state.activeId)
+  const companionOpen = useStage((state) => Boolean(state.byTab[activeTab]?.companion))
 
   return (
     <header className="drag-region relative flex h-[38px] shrink-0 items-center border-b border-hairline bg-shell pr-2">
@@ -112,10 +115,10 @@ export function TitleBar() {
           <SettingsIcon />
         </IconAction>
         <IconAction
-          label={inspectorOpen ? "Hide inspector" : "Show inspector"}
+          label={companionOpen ? "Hide the companion pane" : "Show the companion pane"}
           keys={formatChord("mod+i")}
-          data-on={inspectorOpen}
-          onClick={() => togglePref("inspectorOpen")}
+          data-on={companionOpen}
+          onClick={() => stage.toggleCompanion()}
         >
           <PanelRightIcon />
         </IconAction>

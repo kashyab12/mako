@@ -1,0 +1,96 @@
+import { createHook, createStore } from "@/state/store"
+import { prefsStore, setPref } from "@/state/prefs"
+import { tabsStore } from "@/state/tabs"
+
+/**
+ * What the stage is showing beside the chat, per open tab.
+ *
+ * One companion at a time: every real workflow here is "talk, and watch one
+ * thing" — the diff, the preview, a shell. Holding it as a single id keeps
+ * persistence, focus, and resizing trivial, and upgrading to several later
+ * is a data change, not an architecture change.
+ *
+ * "beside" splits the stage into two cards; "over" lets the companion cover
+ * it, with the chat card kept mounted underneath so the transcript's scroll
+ * position and stream survive.
+ */
+export interface TabStage {
+  companion: string | null
+  presentation: "beside" | "over"
+}
+
+interface StageState {
+  byTab: Record<string, TabStage>
+}
+
+const CLOSED: TabStage = { companion: null, presentation: "beside" }
+
+export const stageStore = createStore<StageState>({ byTab: {} })
+export const useStage = createHook(stageStore)
+
+export function stageOf(tabId: string): TabStage {
+  return stageStore.get().byTab[tabId] ?? CLOSED
+}
+
+function write(tabId: string, next: TabStage) {
+  stageStore.set((state) => ({ byTab: { ...state.byTab, [tabId]: next } }))
+}
+
+function activeTab(): string {
+  return tabsStore.get().activeId
+}
+
+export const stage = {
+  open(surfaceId: string, options: { presentation?: "beside" | "over" } = {}) {
+    const tabId = activeTab()
+    if (!tabId) return
+    write(tabId, {
+      companion: surfaceId,
+      presentation: options.presentation ?? "beside",
+    })
+    setPref("lastCompanion", surfaceId)
+  },
+
+  close() {
+    const tabId = activeTab()
+    if (!tabId) return
+    write(tabId, CLOSED)
+  },
+
+  toggle(surfaceId: string) {
+    const tabId = activeTab()
+    if (!tabId) return
+    if (stageOf(tabId).companion === surfaceId) stage.close()
+    else stage.open(surfaceId)
+  },
+
+  /**
+   * The ⌘I gesture: hide whatever is open, or bring back the last companion.
+   * Rebooting starts every tab closed, so the pref is the only memory this
+   * needs across launches — tab ids themselves do not survive a restart.
+   */
+  toggleCompanion() {
+    const tabId = activeTab()
+    if (!tabId) return
+    if (stageOf(tabId).companion) stage.close()
+    else stage.open(prefsStore.get().lastCompanion ?? "changes")
+  },
+
+  /** Uncover the chat without closing the companion. */
+  showChat() {
+    const tabId = activeTab()
+    if (!tabId) return
+    const current = stageOf(tabId)
+    if (current.presentation === "over") write(tabId, { ...current, presentation: "beside" })
+  },
+
+  /** A closed tab must not leave its stage entry behind. */
+  drop(tabId: string) {
+    stageStore.set((state) => {
+      if (!(tabId in state.byTab)) return {}
+      const byTab = { ...state.byTab }
+      delete byTab[tabId]
+      return { byTab }
+    })
+  },
+}

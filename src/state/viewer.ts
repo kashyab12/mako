@@ -1,5 +1,6 @@
 import { createHook, createStore } from "@/state/store"
 import { getMako, hasBridge } from "@/lib/bridge"
+import { stage } from "@/state/stage"
 import type { FileContents, GitDiff } from "@/lib/types"
 
 /**
@@ -38,6 +39,9 @@ let generation = 0
 export const viewer = {
   async open(path: string, line?: number) {
     if (!hasBridge()) return
+    // The viewer rides on the chat card; a companion covering the stage must
+    // step aside or the file would open somewhere the reader cannot see.
+    stage.showChat()
     const mine = ++generation
     // Reopening the same file keeps the old text on screen while the fresh
     // read races in — no white flash, no skeleton for a file already read.
