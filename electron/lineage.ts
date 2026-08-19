@@ -20,6 +20,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { app } from "electron"
 import type { ThreadOrigin, ThreadRef } from "@mako/sessions"
+import type { JsonObject, JsonValue } from "./codex-app-protocol.js"
 
 interface Expectation {
   harness: string
@@ -48,12 +49,92 @@ export async function loadLineage(): Promise<void> {
   if (loaded) return
   loaded = true
   try {
-    const parsed = JSON.parse(await readFile(filePath(), "utf8")) as LineageFile
-    if (parsed.version === 1) state = parsed
+    const parsed = parseLineageFile(await readFile(filePath(), "utf8"))
+    if (parsed) state = parsed
   } catch {
     // First run, or an unreadable file: lineage starts empty.
   }
   prune()
+}
+
+function parseLineageFile(raw: string): LineageFile | null {
+  const value: JsonValue = JSON.parse(raw)
+  const root = objectValue(value)
+  const byPathValue = objectValue(root?.byPath)
+  if (root?.version !== 1 || !byPathValue || !Array.isArray(root.pending))
+    return null
+
+  const byPath: Record<string, ThreadOrigin[]> = {}
+  for (const [path, chainValue] of Object.entries(byPathValue)) {
+    const chain = parseOriginList(chainValue)
+    if (!chain) return null
+    byPath[path] = chain
+  }
+
+  const pending: Expectation[] = []
+  for (const pendingValue of root.pending) {
+    const expectation = parseExpectation(pendingValue)
+    if (!expectation) return null
+    pending.push(expectation)
+  }
+  return { version: 1, byPath, pending }
+}
+
+function parseExpectation(value: JsonValue): Expectation | null {
+  const root = objectValue(value)
+  const harness = stringValue(root?.harness)
+  const at = numberValue(root?.at)
+  const chain = parseOriginList(root?.chain)
+  if (!root || harness === undefined || at === undefined || !chain) return null
+
+  const expectation: Expectation = { harness, at, chain }
+  const cwd = stringValue(root.cwd)
+  if (cwd !== undefined) expectation.cwd = cwd
+  return expectation
+}
+
+function parseOriginList(value: JsonValue | undefined): ThreadOrigin[] | null {
+  if (!Array.isArray(value)) return null
+  const origins: ThreadOrigin[] = []
+  for (const originValue of value) {
+    const root = objectValue(originValue)
+    const harness = stringValue(root?.harness)
+    if (!root || harness === undefined) return null
+    const origin: ThreadOrigin = { harness }
+    const title = stringValue(root.title)
+    if (title !== undefined) origin.title = title
+    origins.push(origin)
+  }
+  return origins
+}
+
+function objectValue(value: JsonValue | undefined): JsonObject | undefined {
+  return isJsonObject(value) ? value : undefined
+}
+
+function stringValue(value: JsonValue | undefined): string | undefined {
+  return isString(value) ? value : undefined
+}
+
+function numberValue(value: JsonValue | undefined): number | undefined {
+  return isNumber(value) ? value : undefined
+}
+
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return (
+    value !== undefined &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.prototype.toString.call(value) === "[object Object]"
+  )
+}
+
+function isString(value: JsonValue | undefined): value is string {
+  return Object.prototype.toString.call(value) === "[object String]"
+}
+
+function isNumber(value: JsonValue | undefined): value is number {
+  return Object.prototype.toString.call(value) === "[object Number]"
 }
 
 /**
@@ -65,7 +146,11 @@ export function chainOf(ref: ThreadRef): ThreadOrigin[] {
 }
 
 /** A continuation just started; bind its chain to the session that appears. */
-export function expectLineage(harness: string, cwd: string | undefined, chain: ThreadOrigin[]): void {
+export function expectLineage(
+  harness: string,
+  cwd: string | undefined,
+  chain: ThreadOrigin[]
+): void {
   prune()
   state.pending.push({ harness, cwd, at: Date.now(), chain })
   scheduleSave()
@@ -82,7 +167,9 @@ export function bindLineage(ref: ThreadRef): boolean {
   const index = state.pending.findIndex(
     (pending) =>
       pending.harness === ref.harness &&
-      (pending.cwd === undefined || ref.cwd === undefined || pending.cwd === ref.cwd) &&
+      (pending.cwd === undefined ||
+        ref.cwd === undefined ||
+        pending.cwd === ref.cwd) &&
       started >= pending.at - 60_000 &&
       Date.now() - pending.at < EXPECT_TTL_MS
   )
@@ -119,7 +206,9 @@ export function annotate(ref: ThreadRef): ThreadRef {
 
 function prune(): void {
   const now = Date.now()
-  state.pending = state.pending.filter((pending) => now - pending.at < EXPECT_TTL_MS)
+  state.pending = state.pending.filter(
+    (pending) => now - pending.at < EXPECT_TTL_MS
+  )
 }
 
 function scheduleSave(): void {

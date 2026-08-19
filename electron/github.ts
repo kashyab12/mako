@@ -3,7 +3,13 @@ import { execFile } from "node:child_process"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { promisify } from "node:util"
-import type { PullRequest, GitHubStatus, CheckSummary, ReviewSummary } from "./shared.js"
+import type { JsonObject, JsonValue } from "./codex-app-protocol.js"
+import type {
+  PullRequest,
+  GitHubStatus,
+  CheckSummary,
+  ReviewSummary,
+} from "./shared.js"
 
 const run = promisify(execFile)
 
@@ -25,15 +31,53 @@ const TIMEOUT = 15_000
 const MAX_BUFFER = 8 * 1024 * 1024
 
 async function gh(cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await run("gh", args, { cwd, timeout: TIMEOUT, maxBuffer: MAX_BUFFER })
+  const { stdout } = await run("gh", args, {
+    cwd,
+    timeout: TIMEOUT,
+    maxBuffer: MAX_BUFFER,
+  })
   return stdout
 }
 
-async function ghJson<T>(cwd: string, args: string[]): Promise<T | null> {
+type GitHubParser<TResult> = (value: JsonValue) => TResult | null
+
+interface GitHubUser {
+  login?: string
+}
+
+interface GitHubRepository {
+  nameWithOwner?: string
+  defaultBranch?: string
+}
+
+interface ProcessFailure {
+  message: string
+}
+
+async function ghJson<TResult>(
+  cwd: string,
+  args: string[],
+  parse: GitHubParser<TResult>
+): Promise<TResult | null> {
   try {
-    return JSON.parse(await gh(cwd, args)) as T
+    const value: JsonValue = JSON.parse(await gh(cwd, args))
+    return parse(value)
   } catch {
     return null
+  }
+}
+
+function parseGitHubUser(value: JsonValue): GitHubUser | null {
+  if (!isJsonObject(value)) return null
+  return { login: stringValue(value.login) }
+}
+
+function parseGitHubRepository(value: JsonValue): GitHubRepository | null {
+  if (!isJsonObject(value)) return null
+  const defaultBranchRef = objectValue(value.defaultBranchRef)
+  return {
+    nameWithOwner: stringValue(value.nameWithOwner),
+    defaultBranch: stringValue(defaultBranchRef?.name),
   }
 }
 
@@ -51,28 +95,26 @@ export async function githubStatus(cwd: string): Promise<GitHubStatus> {
     return { installed: false, authenticated: false }
   }
 
-  let login: string | undefined
-  try {
-    const who = await ghJson<{ login?: string }>(cwd, ["api", "user", "--jq", "{login: .login}"])
-    login = who?.login
-  } catch {
-    login = undefined
-  }
+  const who = await ghJson(
+    cwd,
+    ["api", "user", "--jq", "{login: .login}"],
+    parseGitHubUser
+  )
+  const login = who?.login
   if (!login) return { installed: true, authenticated: false }
 
-  const repo = await ghJson<{ nameWithOwner?: string; defaultBranchRef?: { name?: string } }>(cwd, [
-    "repo",
-    "view",
-    "--json",
-    "nameWithOwner,defaultBranchRef",
-  ])
+  const repo = await ghJson(
+    cwd,
+    ["repo", "view", "--json", "nameWithOwner,defaultBranchRef"],
+    parseGitHubRepository
+  )
 
   return {
     installed: true,
     authenticated: true,
     login,
     repo: repo?.nameWithOwner,
-    defaultBranch: repo?.defaultBranchRef?.name,
+    defaultBranch: repo?.defaultBranch,
   }
 }
 
@@ -84,6 +126,11 @@ interface RawCheck {
   status?: string
   detailsUrl?: string
   targetUrl?: string
+}
+
+interface RawReview {
+  state?: string
+  author?: GitHubUser
 }
 
 interface RawPull {
@@ -102,9 +149,9 @@ interface RawPull {
   reviewDecision?: string
   createdAt?: string
   updatedAt?: string
-  author?: { login?: string }
+  author?: GitHubUser
   statusCheckRollup?: RawCheck[]
-  latestReviews?: Array<{ state?: string; author?: { login?: string } }>
+  latestReviews?: RawReview[]
 }
 
 const PULL_FIELDS = [
@@ -128,6 +175,102 @@ const PULL_FIELDS = [
   "latestReviews",
 ].join(",")
 
+function parseRawCheck(value: JsonValue): RawCheck | null {
+  if (!isJsonObject(value)) return null
+  return {
+    name: stringValue(value.name),
+    context: stringValue(value.context),
+    state: stringValue(value.state),
+    conclusion: stringValue(value.conclusion),
+    status: stringValue(value.status),
+    detailsUrl: stringValue(value.detailsUrl),
+    targetUrl: stringValue(value.targetUrl),
+  }
+}
+
+function parseRawReview(value: JsonValue): RawReview | null {
+  if (!isJsonObject(value)) return null
+  const author =
+    value.author === undefined ? undefined : parseGitHubUser(value.author)
+  return {
+    state: stringValue(value.state),
+    author: author ?? undefined,
+  }
+}
+
+function parseRawPull(value: JsonValue): RawPull | null {
+  if (!isJsonObject(value)) return null
+  const number = numberValue(value.number)
+  const title = stringValue(value.title)
+  const state = stringValue(value.state)
+  const isDraft = booleanValue(value.isDraft)
+  const url = stringValue(value.url)
+  const headRefName = stringValue(value.headRefName)
+  const baseRefName = stringValue(value.baseRefName)
+  if (
+    number === undefined ||
+    title === undefined ||
+    state === undefined ||
+    isDraft === undefined ||
+    url === undefined ||
+    headRefName === undefined ||
+    baseRefName === undefined
+  ) {
+    return null
+  }
+
+  return {
+    number,
+    title,
+    body: stringValue(value.body),
+    state,
+    isDraft,
+    url,
+    headRefName,
+    baseRefName,
+    additions: numberValue(value.additions),
+    deletions: numberValue(value.deletions),
+    changedFiles: numberValue(value.changedFiles),
+    mergeable: stringValue(value.mergeable),
+    reviewDecision: stringValue(value.reviewDecision),
+    createdAt: stringValue(value.createdAt),
+    updatedAt: stringValue(value.updatedAt),
+    author: parseOptionalUser(value.author),
+    statusCheckRollup: parseJsonArray(value.statusCheckRollup, parseRawCheck),
+    latestReviews: parseJsonArray(value.latestReviews, parseRawReview),
+  }
+}
+
+function parseRawPullList(value: JsonValue): RawPull[] | null {
+  if (!Array.isArray(value)) return null
+  const pulls: RawPull[] = []
+  for (const entry of value) {
+    const pull = parseRawPull(entry)
+    if (pull !== null) pulls.push(pull)
+  }
+  return pulls
+}
+
+function parseOptionalUser(
+  value: JsonValue | undefined
+): GitHubUser | undefined {
+  if (value === undefined) return undefined
+  return parseGitHubUser(value) ?? undefined
+}
+
+function parseJsonArray<TResult>(
+  value: JsonValue | undefined,
+  parse: GitHubParser<TResult>
+): TResult[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const entries: TResult[] = []
+  for (const item of value) {
+    const entry = parse(item)
+    if (entry !== null) entries.push(entry)
+  }
+  return entries
+}
+
 /**
  * Normalize a check.
  *
@@ -142,13 +285,23 @@ function toCheck(raw: RawCheck): CheckSummary {
   const verdict = (raw.conclusion ?? raw.state ?? "").toUpperCase()
   const running = (raw.status ?? "").toUpperCase()
 
-  if (running === "IN_PROGRESS" || running === "QUEUED" || running === "PENDING" || verdict === "PENDING") {
+  if (
+    running === "IN_PROGRESS" ||
+    running === "QUEUED" ||
+    running === "PENDING" ||
+    verdict === "PENDING"
+  ) {
     return { name, state: "running", url }
   }
   if (verdict === "SUCCESS" || verdict === "NEUTRAL" || verdict === "SKIPPED") {
     return { name, state: "passed", url }
   }
-  if (verdict === "FAILURE" || verdict === "ERROR" || verdict === "TIMED_OUT" || verdict === "CANCELLED") {
+  if (
+    verdict === "FAILURE" ||
+    verdict === "ERROR" ||
+    verdict === "TIMED_OUT" ||
+    verdict === "CANCELLED"
+  ) {
     return { name, state: "failed", url }
   }
   return { name, state: "unknown", url }
@@ -171,7 +324,12 @@ function toPull(raw: RawPull): PullRequest {
     number: raw.number,
     title: raw.title,
     body: raw.body ?? "",
-    state: raw.state === "MERGED" ? "merged" : raw.state === "CLOSED" ? "closed" : "open",
+    state:
+      raw.state === "MERGED"
+        ? "merged"
+        : raw.state === "CLOSED"
+          ? "closed"
+          : "open",
     draft: Boolean(raw.isDraft),
     url: raw.url,
     head: raw.headRefName,
@@ -179,7 +337,12 @@ function toPull(raw: RawPull): PullRequest {
     additions: raw.additions ?? 0,
     deletions: raw.deletions ?? 0,
     files: raw.changedFiles ?? 0,
-    mergeable: raw.mergeable === "MERGEABLE" ? "clean" : raw.mergeable === "CONFLICTING" ? "conflicting" : "unknown",
+    mergeable:
+      raw.mergeable === "MERGEABLE"
+        ? "clean"
+        : raw.mergeable === "CONFLICTING"
+          ? "conflicting"
+          : "unknown",
     reviewDecision:
       raw.reviewDecision === "APPROVED"
         ? "approved"
@@ -197,20 +360,65 @@ function toPull(raw: RawPull): PullRequest {
 
 /** The pull request for the branch you are on, if there is one. */
 export async function pullForBranch(cwd: string): Promise<PullRequest | null> {
-  const raw = await ghJson<RawPull>(cwd, ["pr", "view", "--json", PULL_FIELDS])
-  return raw && typeof raw.number === "number" ? toPull(raw) : null
+  const raw = await ghJson(
+    cwd,
+    ["pr", "view", "--json", PULL_FIELDS],
+    parseRawPull
+  )
+  return raw ? toPull(raw) : null
 }
 
-export async function listPulls(cwd: string, limit = 20): Promise<PullRequest[]> {
-  const raw = await ghJson<RawPull[]>(cwd, [
-    "pr",
-    "list",
-    "--limit",
-    String(limit),
-    "--json",
-    PULL_FIELDS,
-  ])
-  return Array.isArray(raw) ? raw.map(toPull) : []
+export async function listPulls(
+  cwd: string,
+  limit = 20
+): Promise<PullRequest[]> {
+  const raw = await ghJson(
+    cwd,
+    ["pr", "list", "--limit", String(limit), "--json", PULL_FIELDS],
+    parseRawPullList
+  )
+  return raw ? raw.map(toPull) : []
+}
+
+function parseProcessFailure(cause: unknown): ProcessFailure {
+  return { message: cause instanceof Error ? cause.message : String(cause) }
+}
+
+function objectValue(value: JsonValue | undefined): JsonObject | undefined {
+  return isJsonObject(value) ? value : undefined
+}
+
+function stringValue(value: JsonValue | undefined): string | undefined {
+  return isString(value) ? value : undefined
+}
+
+function numberValue(value: JsonValue | undefined): number | undefined {
+  return isNumber(value) && Number.isFinite(value) ? value : undefined
+}
+
+function booleanValue(value: JsonValue | undefined): boolean | undefined {
+  return isBoolean(value) ? value : undefined
+}
+
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return (
+    value !== undefined &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.prototype.toString.call(value) === "[object Object]"
+  )
+}
+
+function isString(value: JsonValue | undefined): value is string {
+  return Object.prototype.toString.call(value) === "[object String]"
+}
+
+function isNumber(value: JsonValue | undefined): value is number {
+  return Object.prototype.toString.call(value) === "[object Number]"
+}
+
+function isBoolean(value: JsonValue | undefined): value is boolean {
+  return Object.prototype.toString.call(value) === "[object Boolean]"
 }
 
 export interface CreatePullOptions {
@@ -228,16 +436,27 @@ export interface CreatePullOptions {
  * rather than a local one. Everything else is left to `gh`, including the
  * default base, which respects whatever the repository has configured.
  */
-export async function createPull(cwd: string, options: CreatePullOptions): Promise<PullRequest | null> {
-  await run("git", ["push", "--set-upstream", "origin", "HEAD"], { cwd, timeout: 120_000 }).catch(
-    async (error: unknown) => {
-      // Already published is not a failure; anything else is.
-      const message = error instanceof Error ? error.message : String(error)
-      if (!/everything up-to-date|up to date/i.test(message)) throw error
-    }
-  )
+export async function createPull(
+  cwd: string,
+  options: CreatePullOptions
+): Promise<PullRequest | null> {
+  await run("git", ["push", "--set-upstream", "origin", "HEAD"], {
+    cwd,
+    timeout: 120_000,
+  }).catch(async (cause) => {
+    // Already published is not a failure; anything else is.
+    const failure = parseProcessFailure(cause)
+    if (!/everything up-to-date|up to date/i.test(failure.message)) throw cause
+  })
 
-  const args = ["pr", "create", "--title", options.title, "--body", options.body]
+  const args = [
+    "pr",
+    "create",
+    "--title",
+    options.title,
+    "--body",
+    options.body,
+  ]
   if (options.base) args.push("--base", options.base)
   if (options.draft) args.push("--draft")
   await gh(cwd, args)
@@ -256,7 +475,10 @@ export async function createPull(cwd: string, options: CreatePullOptions): Promi
  * Failure is silent and returns nothing. A missing logo is a folder icon; it
  * is not worth a toast, a retry, or a line in a crash report.
  */
-export async function repoAvatar(cwd: string, repo: string): Promise<string | undefined> {
+export async function repoAvatar(
+  cwd: string,
+  repo: string
+): Promise<string | undefined> {
   const owner = repo.split("/")[0]
   if (!owner) return undefined
 
@@ -269,7 +491,9 @@ export async function repoAvatar(cwd: string, repo: string): Promise<string | un
   }
 
   try {
-    const url = (await gh(cwd, ["api", `repos/${repo}`, "--jq", ".owner.avatar_url"])).trim()
+    const url = (
+      await gh(cwd, ["api", `repos/${repo}`, "--jq", ".owner.avatar_url"])
+    ).trim()
     if (!url.startsWith("https://")) return undefined
     const response = await fetch(`${url}${url.includes("?") ? "&" : "?"}s=128`)
     if (!response.ok) return undefined

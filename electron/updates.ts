@@ -21,6 +21,16 @@ import { record } from "./crash.js"
 
 type Updater = typeof import("electron-updater").autoUpdater
 
+type ReleaseNotes =
+  | { kind: "text"; text: string }
+  | { kind: "entries"; entries: Array<{ note: string | null }> }
+  | { kind: "none" }
+
+interface UpdaterModule {
+  autoUpdater?: Updater
+  default?: { autoUpdater?: Updater }
+}
+
 let updater: Updater | null = null
 let state: UpdateState = { status: "idle", version: app.getVersion() }
 let emit: (event: HostEvent) => void = () => {}
@@ -45,25 +55,39 @@ async function load(): Promise<Updater | null> {
   if (updater) return updater
   if (!app.isPackaged) return null
   try {
-    const module = await import("electron-updater")
+    const module: UpdaterModule = await import("electron-updater")
     // The package is CJS; the default export is what carries `autoUpdater`.
-    const auto = (module.autoUpdater ?? module.default?.autoUpdater) as Updater | undefined
+    const auto = module.autoUpdater ?? module.default?.autoUpdater
     if (!auto) return null
 
     auto.autoDownload = true
     // The one thing that must never happen without being asked.
     auto.autoInstallOnAppQuit = false
 
-    auto.on("checking-for-update", () => publish({ status: "checking", error: undefined }))
-    auto.on("update-not-available", () => publish({ status: "current", error: undefined }))
+    auto.on("checking-for-update", () =>
+      publish({ status: "checking", error: undefined })
+    )
+    auto.on("update-not-available", () =>
+      publish({ status: "current", error: undefined })
+    )
     auto.on("update-available", (info) =>
-      publish({ status: "downloading", available: info.version, progress: 0, error: undefined })
+      publish({
+        status: "downloading",
+        available: info.version,
+        progress: 0,
+        error: undefined,
+      })
     )
     auto.on("download-progress", (progress) =>
       publish({ status: "downloading", progress: Math.round(progress.percent) })
     )
     auto.on("update-downloaded", (info) =>
-      publish({ status: "ready", available: info.version, progress: 100, notes: notesFrom(info) })
+      publish({
+        status: "ready",
+        available: info.version,
+        progress: 100,
+        notes: notesFrom(parseReleaseNotes(info.releaseNotes)),
+      })
     )
     auto.on("error", (error) => {
       // An update that cannot be fetched is not a crash and must not read like
@@ -79,18 +103,30 @@ async function load(): Promise<Updater | null> {
   }
 }
 
-function notesFrom(info: { releaseNotes?: string | Array<{ note: string | null }> | null }) {
-  const notes = info.releaseNotes
-  if (typeof notes === "string") return notes.replace(/<[^>]+>/g, "").trim().slice(0, 4000)
-  if (Array.isArray(notes)) {
-    return notes
-      .map((entry) => entry.note ?? "")
-      .join("\n")
-      .replace(/<[^>]+>/g, "")
-      .trim()
-      .slice(0, 4000)
-  }
-  return undefined
+function parseReleaseNotes(
+  notes: string | Array<{ note: string | null }> | null | undefined
+): ReleaseNotes {
+  if (isString(notes)) return { kind: "text", text: notes }
+  if (Array.isArray(notes)) return { kind: "entries", entries: notes }
+  return { kind: "none" }
+}
+
+function notesFrom(notes: ReleaseNotes): string | undefined {
+  if (notes.kind === "none") return undefined
+  const text =
+    notes.kind === "text"
+      ? notes.text
+      : notes.entries.map((entry) => entry.note ?? "").join("\n")
+  return text
+    .replace(/<[^>]+>/g, "")
+    .trim()
+    .slice(0, 4000)
+}
+
+function isString(
+  value: string | Array<{ note: string | null }> | null | undefined
+): value is string {
+  return Object.prototype.toString.call(value) === "[object String]"
 }
 
 export function installUpdates(send: (event: HostEvent) => void) {
@@ -114,7 +150,10 @@ export async function check(): Promise<UpdateState> {
   try {
     await auto.checkForUpdates()
   } catch (error) {
-    publish({ status: "error", error: error instanceof Error ? error.message : String(error) })
+    publish({
+      status: "error",
+      error: error instanceof Error ? error.message : String(error),
+    })
   }
   return state
 }
