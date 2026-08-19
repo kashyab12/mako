@@ -509,7 +509,7 @@ export function Composer() {
             void attach([...event.dataTransfer.files])
           }}
           className={cn(
-            "relative rounded-2xl bg-popover shadow-[var(--elevation-card)] ring-1 transition-[box-shadow] duration-150",
+            "relative rounded-2xl bg-popover shadow-[var(--elevation-floating)] ring-1 transition-[box-shadow] duration-150",
             dragging
               ? "ring-foreground/40"
               : focused
@@ -583,7 +583,7 @@ export function Composer() {
             />
           </div>
 
-          <div className="flex items-center gap-1 px-1.5 pb-1.5">
+          <div className="flex flex-wrap items-center gap-1 px-1.5 pb-1.5">
             <IconAction
               label="Reference a file"
               keys={["@"]}
@@ -607,9 +607,11 @@ export function Composer() {
               <PaperclipIcon />
             </IconAction>
             <Slot name="composer.controls" meta={meta} disabled={busy} />
+            <ComposerRouting />
 
             <div className="ml-auto flex items-center gap-1">
               <Slot name="composer.trailing" meta={meta} disabled={busy} />
+              <ContextDial />
               {status.streaming ? (
                 <IconAction
                   label="Stop"
@@ -628,18 +630,6 @@ export function Composer() {
               />
             </div>
           </div>
-        </div>
-
-        {/*
-         * The context line, below the field the way Cursor keeps its branch
-         * and machine: who answers, on what model, at what effort — read
-         * without opening anything, changed without leaving the keyboard's
-         * neighborhood. The key hints share the line and yield while typing.
-         */}
-        <div className="mt-1.5 flex min-h-7 items-center gap-1 px-1">
-          <ComposerRouting />
-          <span className="ml-auto" />
-          <ContextDial />
         </div>
       </div>
     </div>

@@ -302,32 +302,12 @@
     background: var(--fill-selected);
   }
 
-  /* Thin, self-effacing scrollbars — visible only while scrolling matters. */
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in oklch, var(--foreground) 18%, transparent) transparent;
-  }
-
-  ::-webkit-scrollbar {
-    width: 9px;
-    height: 9px;
-  }
-
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    background: color-mix(in oklch, var(--foreground) 14%, transparent);
-    border: 2px solid transparent;
-    background-clip: content-box;
-    border-radius: 99px;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in oklch, var(--foreground) 26%, transparent);
-    background-clip: content-box;
-  }
+  /*
+   * No drawn scrollbars. Styling ::-webkit-scrollbar forces Chromium to
+   * paint always-visible custom bars; leaving it alone hands scrolling back
+   * to macOS's own overlay scrollers, which appear only while scrolling —
+   * the quietest possible chrome, and the platform's, not ours.
+   */
 
   :focus-visible {
     outline: 2px solid var(--ring);
