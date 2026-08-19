@@ -1,12 +1,19 @@
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Eyebrow } from "@/components/ui/kit"
 import { HarnessIcon } from "@/components/ui/provider-icon"
-import { harnessLabel } from "@/components/rail/agent-threads"
-import { harnessDefault, rememberHarnessDefault, setComposerTuning, useThreads } from "@/state/threads"
+import { harnessLabel } from "@/components/rail/harness-meta"
+import {
+  harnessDefault,
+  rememberHarnessDefault,
+  setComposerTuning,
+  threadsStore,
+  useThreads,
+} from "@/state/threads"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { fuzzy } from "@/lib/fuzzy"
 import { cn } from "@/lib/utils"
+import { harnessModelByIdentity } from "@/lib/types"
 import type { HarnessModel, HarnessProfile } from "@/lib/types"
 import { CheckIcon, ChevronDownIcon } from "lucide-react"
 
@@ -16,29 +23,62 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
   const [profile, setProfile] = useState<HarnessProfile | null>(null)
   const chosen = useThreads((state) => state.composerTuning[harness]?.model)
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!hasBridge()) return
-    setProfile(null)
     void getPi()
       .harnessTuning(harness)
       .then((next) => {
         setProfile(next)
-        rememberHarnessDefault(harness, { model: next.defaultModel })
+        rememberHarnessDefault(harness, {
+          model: next.configuredModel ?? next.defaultModel,
+        })
+        const current = threadsStore.get().composerTuning[harness]?.model
+        if (!current) return
+        const canonical = harnessModelByIdentity(next, current)
+        if (canonical?.id !== current) {
+          setComposerTuning(harness, {
+            model: canonical?.id,
+            effort: undefined,
+            fast: undefined,
+            options: undefined,
+          })
+        }
       })
       .catch(() => {})
   }, [harness])
 
-  const effective = chosen ?? profile?.defaultModel ?? harnessDefault(harness).model
-  const selected = profile?.models.find((model) => model.id === effective)
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const inherited = profile
+    ? harnessModelByIdentity(
+        profile,
+        profile.configuredModel ?? profile.defaultModel
+      )?.id
+    : harnessDefault(harness).model
+  const effective = harnessModelByIdentity(profile ?? undefined, chosen)?.id ?? inherited
+  const selected = harnessModelByIdentity(profile ?? undefined, effective)
   const models = useMemo(() => rankModels(profile?.models ?? [], query), [profile?.models, query])
 
   const set = (model?: string) => {
-    setComposerTuning(harness, { model, effort: undefined, fast: undefined })
+    setComposerTuning(harness, {
+      model,
+      effort: undefined,
+      fast: undefined,
+      options: undefined,
+    })
     setOpen(false)
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) load()
+      }}
+    >
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -124,9 +164,14 @@ function ModelRow({
           {model.label}
           {inherited ? <span className="ml-1.5 text-[10px] font-normal text-faint">provider setting</span> : null}
         </span>
-        <span className="mt-0.5 block truncate text-[10.5px] text-faint">
-          {model.description ?? optionSummary ?? model.id}
+        <span className="mt-0.5 block truncate font-mono text-[10.5px] text-faint">
+          {model.id}
         </span>
+        {model.description || optionSummary ? (
+          <span className="mt-0.5 block truncate text-[10.5px] text-faint/80">
+            {model.description || optionSummary}
+          </span>
+        ) : null}
       </span>
       {model.contextWindow ? (
         <span className="shrink-0 text-[10px] text-faint">{Math.round(model.contextWindow / 1000)}K context</span>
@@ -141,7 +186,10 @@ function rankModels(models: HarnessModel[], query: string): HarnessModel[] {
   if (!term) return models
   return models
     .flatMap((model) => {
-      const match = fuzzy(term, `${model.label} ${model.id} ${model.description ?? ""}`)
+      const match = fuzzy(
+        term,
+        `${model.label} ${model.id} ${model.launchId ?? ""} ${(model.aliases ?? []).join(" ")} ${model.description ?? ""}`
+      )
       return match ? [{ model, score: match.score }] : []
     })
     .sort((left, right) => right.score - left.score)

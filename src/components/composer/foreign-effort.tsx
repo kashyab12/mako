@@ -3,8 +3,15 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { setComposerTuning, useThreads } from "@/state/threads"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
+import { harnessModelByIdentity } from "@/lib/types"
 import type { HarnessModelOption, HarnessProfile } from "@/lib/types"
 import { CheckIcon, SlidersHorizontalIcon, ZapIcon } from "lucide-react"
+
+interface TuningPatch {
+  options: Record<string, string | boolean>
+  effort?: string
+  fast?: boolean
+}
 
 export function ForeignEffortPicker({ harness }: { harness: string }) {
   const [open, setOpen] = useState(false)
@@ -13,12 +20,13 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
 
   useEffect(() => {
     if (!hasBridge()) return
-    setProfile(null)
     void getPi().harnessTuning(harness).then(setProfile).catch(() => {})
   }, [harness])
 
-  const modelId = chosen.model ?? profile?.defaultModel
-  const model = profile?.models.find((entry) => entry.id === modelId) ?? profile?.models[0]
+  const model = harnessModelByIdentity(
+    profile ?? undefined,
+    chosen.model ?? profile?.configuredModel ?? profile?.defaultModel
+  )
   const options = model?.options ?? []
   if (options.length === 0) return null
 
@@ -27,20 +35,24 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
     (option) => option.kind === "select" && /effort|reason/i.test(`${option.id} ${option.label}`)
   )
   const fast = options.find(
-    (option) => option.kind === "boolean" && /fast|speed/i.test(`${option.id} ${option.label}`)
+    (option) =>
+      /fast|speed/i.test(`${option.id} ${option.label}`) &&
+      (option.kind === "boolean" || option.presentation === "toggle")
   )
   const effortValue = effort?.kind === "select"
     ? String(selected[effort.id] ?? chosen.effort ?? effort.current ?? effort.values.find((value) => value.default)?.value ?? "")
     : ""
-  const fastOn = fast?.kind === "boolean" ? Boolean(selected[fast.id] ?? chosen.fast ?? fast.current) : false
+  const fastValue = fast
+    ? (selected[fast.id] ?? chosen.fast ?? fast.current)
+    : undefined
+  const fastOn = fastValue === true || fastValue === "true"
 
   const setOption = (option: HarnessModelOption, value: string | boolean) => {
     const next = { ...selected, [option.id]: value }
-    setComposerTuning(harness, {
-      options: next,
-      ...(option === effort && typeof value === "string" ? { effort: value } : {}),
-      ...(option === fast && typeof value === "boolean" ? { fast: value } : {}),
-    })
+    const patch: TuningPatch = { options: next }
+    if (option === effort && value !== true && value !== false) patch.effort = value
+    if (option === fast) patch.fast = value === true || value === "true"
+    setComposerTuning(harness, patch)
   }
 
   return (
@@ -77,12 +89,17 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
           ))}
         </PopoverContent>
       </Popover>
-      {fast?.kind === "boolean" ? (
+      {fast ? (
         <button
           type="button"
           aria-label={fastOn ? "Fast mode on" : "Fast mode off"}
           title={fastOn ? "Fast mode on" : "Fast mode off"}
-          onClick={() => setOption(fast, !fastOn)}
+          onClick={() =>
+            setOption(
+              fast,
+              fast.kind === "boolean" ? !fastOn : String(!fastOn)
+            )
+          }
           className={cn(
             "pressable no-drag flex h-7 items-center rounded-md px-1.5 hover:bg-raised",
             fastOn ? "text-caution" : "text-faint hover:text-foreground"
@@ -104,12 +121,17 @@ function OptionSection({
   value: string | boolean | undefined
   onChange: (value: string | boolean) => void
 }) {
-  if (option.kind === "boolean") {
-    const active = typeof value === "boolean" ? value : option.current
+  if (option.kind === "boolean" || option.presentation === "toggle") {
+    const current = value ?? option.current
+    const active = current === true || current === "true"
     return (
       <button
         type="button"
-        onClick={() => onChange(!active)}
+        onClick={() =>
+          onChange(
+            option.kind === "boolean" ? !active : String(!active)
+          )
+        }
         className={cn(
           "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[12.5px] hover:bg-raised",
           active && "bg-raised"
@@ -121,7 +143,9 @@ function OptionSection({
     )
   }
 
-  const current = typeof value === "string" ? value : option.current ?? option.values.find((entry) => entry.default)?.value
+  const current = value === true || value === false
+    ? option.current ?? option.values.find((entry) => entry.default)?.value
+    : value ?? option.current ?? option.values.find((entry) => entry.default)?.value
   return (
     <section className="pb-1">
       <p className="px-2 pt-1.5 pb-1 text-[10.5px] font-medium text-faint">{option.label}</p>

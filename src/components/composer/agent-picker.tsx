@@ -1,12 +1,18 @@
 import { useEffect, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { HarnessIcon } from "@/components/ui/provider-icon"
-import { harnessLabel } from "@/components/rail/agent-threads"
-import { harnessDefault, setComposerHarness, useThreads } from "@/state/threads"
-import { decomposeModelId } from "@/lib/model-id"
+import { harnessLabel } from "@/components/rail/harness-meta"
+import {
+  harnessDefault,
+  setComposerHarness,
+  setComposerTuning,
+  threadsStore,
+  useThreads,
+} from "@/state/threads"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
 import { CheckIcon, ChevronDownIcon } from "lucide-react"
+import { harnessModelByIdentity } from "@/lib/types"
 import type { HarnessProfile } from "@/lib/types"
 
 /**
@@ -58,14 +64,37 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
     if (!hasBridge()) return
     void getPi()
       .harnessProfiles()
-      .then((items) => setProfiles(Object.fromEntries(items.map((profile) => [profile.id, profile]))))
+      .then((items) => {
+        const next = Object.fromEntries(items.map((profile) => [profile.id, profile]))
+        setProfiles(next)
+        for (const [harness, current] of Object.entries(
+          threadsStore.get().composerTuning
+        )) {
+          if (!current.model || !next[harness]) continue
+          const canonical = harnessModelByIdentity(next[harness], current.model)
+          if (canonical?.id === current.model) continue
+          setComposerTuning(harness, {
+            model: canonical?.id,
+            effort: undefined,
+            fast: undefined,
+            options: undefined,
+          })
+        }
+      })
       .catch(() => {})
   }, [])
 
   const choices = ORDER.filter((harness) => profiles[harness]?.available)
 
-  const modelFor = (harness: string): string | undefined =>
-    tuning[harness]?.model ?? profiles[harness]?.defaultModel ?? harnessDefault(harness).model
+  const modelFor = (harness: string): string | undefined => {
+    const profile = profiles[harness]
+    if (!profile) return harnessDefault(harness).model
+    return harnessModelByIdentity(profile, tuning[harness]?.model)?.id ??
+      harnessModelByIdentity(
+        profile,
+        profile.configuredModel ?? profile.defaultModel
+      )?.id
+  }
 
   const pick = (harness: string) => {
     setComposerHarness(harness)
@@ -106,7 +135,7 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
                 {harnessLabel(harness)}
               </span>
               <span className="mt-px block truncate font-mono text-[10.5px] text-faint">
-                {model ? decomposeModelId(harness, model).base : ""}
+                {model ?? ""}
               </span>
             </span>
             {active ? <CheckIcon className="size-3.5 shrink-0 text-brand" /> : null}
