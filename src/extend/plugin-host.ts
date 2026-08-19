@@ -77,7 +77,17 @@ export interface LoadedPlugin {
   error?: string
 }
 
+interface PluginModule {
+  setup?: (api: MakoApi) => void
+}
+
 export const plugins = new Registry<LoadedPlugin>()
+
+const pluginApis = new Map<string, MakoApi>()
+Object.defineProperty(globalThis, "__makoApi__", {
+  configurable: true,
+  value: pluginApis,
+})
 
 /** Disposers for everything a given plugin registered, so a reload can undo it. */
 const disposers = new Map<string, Array<() => void>>()
@@ -85,6 +95,7 @@ const disposers = new Map<string, Array<() => void>>()
 function dispose(id: string) {
   for (const undo of disposers.get(id) ?? []) undo()
   disposers.delete(id)
+  pluginApis.delete(id)
 }
 
 /**
@@ -146,24 +157,21 @@ export async function loadPlugin(id: string, source: string): Promise<LoadedPlug
     // them from the global is what lets the module be plain ESM while still
     // receiving a per-plugin API object.
     const wrapped = [
-      `const mako = globalThis.__makoApi__["${id}"];`,
+      `const mako = globalThis.__makoApi__.get(${JSON.stringify(id)});`,
       `const React = mako.React;`,
       compiled,
     ].join("\n")
 
-    const registry = ((globalThis as Record<string, unknown>).__makoApi__ ??= {}) as Record<
-      string,
-      MakoApi
-    >
-    registry[id] = apiFor(id)
+    const api = apiFor(id)
+    pluginApis.set(id, api)
 
     url = URL.createObjectURL(new Blob([wrapped], { type: "text/javascript" }))
-    const module = (await import(/* @vite-ignore */ url)) as { setup?: (api: MakoApi) => void }
+    const module: PluginModule = await import(/* @vite-ignore */ url)
 
     // `setup` is optional: a plugin may do its registration at module top
     // level. Both are legitimate, and neither needs explaining to someone
     // writing their first one.
-    module.setup?.(registry[id])
+    module.setup?.(api)
 
     const loaded = { id, source }
     plugins.register(id, loaded)

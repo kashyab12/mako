@@ -47,7 +47,8 @@ export function useCommands(): DeskCommand[] {
 /* keyboard                                                            */
 /* ------------------------------------------------------------------ */
 
-const isMac = typeof navigator !== "undefined" && navigator.platform.toLowerCase().includes("mac")
+const isMac =
+  globalThis.navigator?.platform.toLowerCase().includes("mac") ?? false
 
 export function matchesChord(event: KeyboardEvent, chord: string): boolean {
   const parts = chord.toLowerCase().split("+")
@@ -66,24 +67,30 @@ export function matchesChord(event: KeyboardEvent, chord: string): boolean {
   return (
     event.code.toLowerCase() === `key${key}` ||
     event.code.toLowerCase() === `digit${key}` ||
-    event.code === PHYSICAL[key]
+    event.code ===
+      PHYSICAL_KEYS.find(({ character }) => character === key)?.code
   )
 }
 
-/** Physical keys whose reported character changes under a modifier. */
-const PHYSICAL: Record<string, string> = {
-  "[": "BracketLeft",
-  "]": "BracketRight",
-  "\\": "Backslash",
-  "/": "Slash",
-  ".": "Period",
-  ",": "Comma",
-  ";": "Semicolon",
-  "'": "Quote",
-  "-": "Minus",
-  "=": "Equal",
-  "`": "Backquote",
+interface PhysicalKey {
+  character: string
+  code: string
 }
+
+/** Physical keys whose reported character changes under a modifier. */
+const PHYSICAL_KEYS: PhysicalKey[] = [
+  { character: "[", code: "BracketLeft" },
+  { character: "]", code: "BracketRight" },
+  { character: "\\", code: "Backslash" },
+  { character: "/", code: "Slash" },
+  { character: ".", code: "Period" },
+  { character: ",", code: "Comma" },
+  { character: ";", code: "Semicolon" },
+  { character: "'", code: "Quote" },
+  { character: "-", code: "Minus" },
+  { character: "=", code: "Equal" },
+  { character: "`", code: "Backquote" },
+]
 
 /** Render a chord for display: "mod+k" → "⌘K" on macOS, "Ctrl K" elsewhere. */
 export function formatChord(chord?: string): string[] {

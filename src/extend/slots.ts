@@ -1,11 +1,35 @@
-import type { ComponentType, ReactNode } from "react"
+import type { ComponentType, ElementType, ReactNode } from "react"
 import { Registry, useRegistry } from "@/extend/registry"
 import type { GitFile, PiMessage, SessionMeta, SessionSummary } from "@/lib/types"
 import type { Checkpoint } from "@/lib/thread"
 
 /** A slot whose contributions receive nothing from the render site. */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface NoProps {}
+export type NoProps = Record<never, never>
+
+export interface RailSessionSlotProps {
+  session: SessionSummary
+  active: boolean
+}
+
+export interface SessionMetaSlotProps {
+  meta: SessionMeta | undefined
+}
+
+export interface TranscriptTurnSlotProps {
+  message: PiMessage
+}
+
+export interface ComposerControlSlotProps extends SessionMetaSlotProps {
+  disabled: boolean
+}
+
+export interface HistoryCheckpointSlotProps {
+  checkpoint: Checkpoint
+}
+
+export interface ChangedFileSlotProps {
+  file: GitFile
+}
 
 /**
  * Slots are the desk's declared seams. This map is the contract: adding a key
@@ -19,16 +43,16 @@ export interface SlotMap {
   "titlebar.trailing": NoProps
   "rail.header": NoProps
   "rail.footer": NoProps
-  "rail.session.trailing": { session: SessionSummary; active: boolean }
-  "transcript.header": { meta?: SessionMeta }
-  "transcript.empty": { meta?: SessionMeta }
-  "transcript.turn.trailing": { message: PiMessage }
-  "composer.controls": { meta?: SessionMeta; disabled: boolean }
-  "composer.trailing": { meta?: SessionMeta; disabled: boolean }
-  "composer.above": { meta?: SessionMeta }
-  "inspector.history.trailing": { checkpoint: Checkpoint }
-  "inspector.changes.file.trailing": { file: GitFile }
-  "statusbar.trailing": { meta?: SessionMeta }
+  "rail.session.trailing": RailSessionSlotProps
+  "transcript.header": SessionMetaSlotProps
+  "transcript.empty": SessionMetaSlotProps
+  "transcript.turn.trailing": TranscriptTurnSlotProps
+  "composer.controls": ComposerControlSlotProps
+  "composer.trailing": ComposerControlSlotProps
+  "composer.above": SessionMetaSlotProps
+  "inspector.history.trailing": HistoryCheckpointSlotProps
+  "inspector.changes.file.trailing": ChangedFileSlotProps
+  "statusbar.trailing": SessionMetaSlotProps
 }
 
 export type SlotName = keyof SlotMap
@@ -36,7 +60,7 @@ export type SlotName = keyof SlotMap
 export interface Contribution {
   slot: SlotName
   order: number
-  render: ComponentType<never>
+  render: ElementType
 }
 
 export const contributions = new Registry<Contribution>()
@@ -48,11 +72,7 @@ export function registerSlot<K extends SlotName>(
   render: ComponentType<SlotMap[K]>,
   order = 0
 ) {
-  return contributions.register(`${slot}:${id}`, {
-    slot,
-    order,
-    render: render as ComponentType<never>,
-  })
+  return contributions.register(`${slot}:${id}`, { slot, order, render })
 }
 
 /* ------------------------------------------------------------------ */
