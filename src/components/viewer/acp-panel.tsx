@@ -173,7 +173,7 @@ function Block({ block }: { block: AcpBlock }) {
           {block.entries.map((entry, index) => (
             <p key={index} className="flex items-center gap-1.5 py-px text-[11.5px] text-muted-foreground">
               {entry.status === "completed" ? (
-                <CheckIcon className="size-3 text-emerald-400/80" />
+                <CheckIcon className="size-3 text-positive/80" />
               ) : entry.status === "in_progress" ? (
                 <Loader2Icon className="size-3 animate-spin text-faint" />
               ) : (
@@ -216,9 +216,9 @@ function Tool({ block }: { block: AcpBlock & { type: "tool" } }) {
         className="flex w-full items-center gap-1.5 px-2 py-1 text-left"
       >
         {block.status === "completed" ? (
-          <CheckIcon className="size-3 shrink-0 text-emerald-400/70" />
+          <CheckIcon className="size-3 shrink-0 text-positive/70" />
         ) : block.status === "failed" ? (
-          <XIcon className="size-3 shrink-0 text-red-400/80" />
+          <XIcon className="size-3 shrink-0 text-negative/80" />
         ) : (
           <Loader2Icon className="size-3 shrink-0 animate-spin text-faint" />
         )}
@@ -255,7 +255,7 @@ function Permission() {
   return (
     <div className="shrink-0 border-t border-hairline bg-surface/60 px-4 py-2.5">
       <p className="flex items-center gap-1.5 pb-1.5 text-[11.5px] text-foreground/90">
-        <ShieldQuestionIcon className="size-3.5 shrink-0 text-amber-300/90" />
+        <ShieldQuestionIcon className="size-3.5 shrink-0 text-caution/90" />
         <span className="min-w-0 truncate font-mono">{permission.title}</span>
       </p>
       <div className="flex flex-wrap gap-1.5">

@@ -26,7 +26,7 @@ export function ConversionOverlay() {
           </span>
           <span className="relative flex w-10 items-center justify-center">
             {converting.done ? (
-              <CheckIcon className="size-5 text-emerald-400/90" />
+              <CheckIcon className="size-5 text-positive/90" />
             ) : (
               <>
                 <MoveRightIcon className="size-5 text-faint" />

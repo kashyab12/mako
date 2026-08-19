@@ -115,14 +115,14 @@ export function PluginsSection() {
                 <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{plugin.id}</span>
                 {plugin.error ? (
                   <span
-                    className="flex min-w-0 items-center gap-1 text-[10.5px] text-red-400"
+                    className="flex min-w-0 items-center gap-1 text-[10.5px] text-negative"
                     title={plugin.error}
                   >
                     <AlertTriangleIcon className="size-3 shrink-0" />
                     <span className="max-w-56 truncate">{plugin.error}</span>
                   </span>
                 ) : (
-                  <span className="flex items-center gap-1 text-[10.5px] text-emerald-400/80">
+                  <span className="flex items-center gap-1 text-[10.5px] text-positive/80">
                     <CheckIcon className="size-3" />
                     loaded
                   </span>
@@ -136,7 +136,7 @@ export function PluginsSection() {
                     void getMako().deletePlugin(plugin.id)
                     if (open === plugin.id) setOpen(null)
                   }}
-                  className="shrink-0 rounded p-1 text-faint transition-colors hover:text-red-400"
+                  className="shrink-0 rounded p-1 text-faint transition-colors hover:text-negative"
                 >
                   <Trash2Icon className="size-3" />
                 </span>
@@ -163,7 +163,7 @@ export function PluginsSection() {
                     </Action>
                     <span className="text-[10.5px] text-faint">⌘S saves too</span>
                     {plugin.error ? (
-                      <span className="min-w-0 truncate text-[10.5px] text-red-400">{plugin.error}</span>
+                      <span className="min-w-0 truncate text-[10.5px] text-negative">{plugin.error}</span>
                     ) : null}
                   </div>
                 </div>

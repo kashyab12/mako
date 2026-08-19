@@ -754,7 +754,7 @@ function ComposerRouting() {
       <span className="flex h-7 items-center gap-1.5 rounded-md bg-raised px-2 text-[11.5px] text-foreground/85">
         <HarnessIcon harness={live.harness} className="size-3.5" />
         {harnessTitle(live.harness)}
-        <span className="text-[10px] text-emerald-400/80">live</span>
+        <span className="text-[10px] text-positive/80">live</span>
         {live.status === "running" ? (
           <button
             type="button"
@@ -784,7 +784,7 @@ function ComposerRouting() {
           onClick={() => void threads.abortReply(viewing)}
           className="pressable flex h-7 items-center gap-1.5 rounded-md bg-raised px-2 text-[11px] text-faint hover:text-foreground"
         >
-          <span className="size-1.5 animate-pulse rounded-full bg-emerald-400/90" />
+          <span className="size-1.5 animate-pulse rounded-full bg-positive/90" />
           working — stop
         </button>
       ) : null}

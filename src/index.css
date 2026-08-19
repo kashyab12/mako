@@ -280,6 +280,22 @@
     -webkit-app-region: no-drag;
   }
 
+  /*
+   * An open menu must dismiss on any outside click, but two Electron surfaces
+   * swallow pointerdown before the DOM ever sees it: drag regions (the title
+   * strip) hand the event to the window manager, and <webview> delivers it to
+   * the guest process. Radix's dismissable layer never fires and the menu
+   * sticks open. While a popover is up, suspend both — the same tradeoff as a
+   * native menu, which also blocks window dragging while open.
+   */
+  body:has([data-slot="popover-content"][data-state="open"]) .drag-region {
+    -webkit-app-region: no-drag;
+  }
+
+  body:has([data-slot="popover-content"][data-state="open"]) webview {
+    pointer-events: none;
+  }
+
   .tabular {
     font-variant-numeric: tabular-nums;
   }
