@@ -19,20 +19,19 @@ const CHUNK = 4 * 1024 * 1024
 export interface LineTranslator {
   push(raw: string): void
   snapshot(): ThreadEntry[]
+  commitBatch?(): void
+  readonly needsReset?: boolean
+}
+
+type JsonScalar = boolean | number | string | null
+type JsonValue = JsonScalar | JsonRecord | JsonValue[]
+
+interface JsonRecord {
+  [key: string]: JsonValue | undefined
 }
 
 export function snapshotSink(sink: EntrySink): ThreadEntry[] {
-  const droppedUsers = (sink as unknown as { droppedUsers: number }).droppedUsers
-  return droppedUsers > 0
-    ? [
-        {
-          kind: "event",
-          label: "Earlier history not shown",
-          detail: `${droppedUsers} earlier turns remain in the native session file`,
-        },
-        ...sink.entries,
-      ]
-    : sink.entries
+  return sink.snapshot()
 }
 
 interface LineRead {
@@ -43,15 +42,19 @@ interface LineRead {
 }
 
 /** Parse one JSONL line, returning null rather than throwing on torn writes. */
-export function parseLine(line: string): Record<string, unknown> | null {
+export function parseLine(line: string): JsonRecord | null {
   const trimmed = line.trim()
   if (!trimmed) return null
   try {
-    const value = JSON.parse(trimmed) as unknown
-    return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null
+    const value: JsonValue = JSON.parse(trimmed)
+    return isJsonRecord(value) ? value : null
   } catch {
     return null
   }
+}
+
+function isJsonRecord(value: JsonValue | undefined): value is JsonRecord {
+  return Object.prototype.toString.call(value) === "[object Object]"
 }
 
 /** The first `bytes` of a file, decoded. */
@@ -113,13 +116,26 @@ async function readLineBatch(
       }
       for (const line of buffer.toString("utf8", 0, lastBreak).split("\n")) {
         if (onLine(line) === false) {
-          return { nextByte: consumed, reset, size, identity: `${info.dev}:${info.ino}` }
+          return {
+            nextByte: consumed,
+            reset,
+            size,
+            identity: `${info.dev}:${info.ino}`,
+          }
         }
       }
       consumed += lastBreak + 1
-      carry = lastBreak + 1 < buffer.length ? Buffer.from(buffer.subarray(lastBreak + 1)) : null
+      carry =
+        lastBreak + 1 < buffer.length
+          ? Buffer.from(buffer.subarray(lastBreak + 1))
+          : null
     }
-    return { nextByte: consumed, reset, size, identity: `${info.dev}:${info.ino}` }
+    return {
+      nextByte: consumed,
+      reset,
+      size,
+      identity: `${info.dev}:${info.ino}`,
+    }
   } finally {
     await handle.close()
   }
@@ -141,20 +157,22 @@ export function createJsonlFollower(
   let parser = createTranslator()
   let cursor = fromByte
   let identity: string | null = null
+  let synchronized = false
   try {
     const info = statSync(path)
     identity = `${info.dev}:${info.ino}`
   } catch {
     identity = null
   }
-  let previousRefs: ThreadEntry[] = []
   let previousValues: string[] = []
 
+  const serializeEntries = (entries: ThreadEntry[]): string[] =>
+    entries.map((entry) => JSON.stringify(entry))
   const remember = (entries: ThreadEntry[]) => {
-    previousRefs = [...entries]
-    previousValues = entries.map((entry) => JSON.stringify(entry))
+    previousValues = serializeEntries(entries)
   }
-  const cloneEntries = (entries: ThreadEntry[]): ThreadEntry[] => structuredClone(entries)
+  const cloneEntries = (entries: ThreadEntry[]): ThreadEntry[] =>
+    structuredClone(entries)
 
   return {
     get offset() {
@@ -165,28 +183,68 @@ export function createJsonlFollower(
       if (read.reset || (identity !== null && read.identity !== identity)) {
         parser = createTranslator()
         read = await readLineBatch(path, 0, parser.push)
+        parser.commitBatch?.()
         cursor = read.nextByte
         identity = read.identity
+        synchronized = true
         const current = parser.snapshot()
         remember(current)
-        return { entries: cloneEntries(current), nextByte: cursor, replace: true, reset: true }
+        return {
+          entries: cloneEntries(current),
+          nextByte: cursor,
+          replace: true,
+          replaceFrom: 0,
+          reset: true,
+        }
+      }
+
+      parser.commitBatch?.()
+      if (!synchronized && parser.needsReset) {
+        parser = createTranslator()
+        read = await readLineBatch(path, 0, parser.push)
+        parser.commitBatch?.()
+        cursor = read.nextByte
+        identity = read.identity
+        synchronized = true
+        const current = parser.snapshot()
+        remember(current)
+        return {
+          entries: cloneEntries(current),
+          nextByte: cursor,
+          replace: true,
+          replaceFrom: 0,
+          reset: true,
+        }
       }
 
       cursor = Math.max(cursor, read.nextByte)
       identity = read.identity
       const current = parser.snapshot()
+      const currentValues = serializeEntries(current)
       const appended =
-        current.length >= previousRefs.length &&
-        previousRefs.every(
-          (entry, index) => entry === current[index] && previousValues[index] === JSON.stringify(entry)
-        )
-      const entries = appended ? current.slice(previousRefs.length) : current
+        current.length >= previousValues.length &&
+        previousValues.every((entry, index) => entry === currentValues[index])
+      let replaceFrom: number | undefined
+      if (!appended) {
+        replaceFrom = 0
+        const shared = Math.min(previousValues.length, current.length)
+        while (
+          replaceFrom < shared &&
+          previousValues[replaceFrom] === currentValues[replaceFrom]
+        ) {
+          replaceFrom += 1
+        }
+      }
+      const entries = appended
+        ? current.slice(previousValues.length)
+        : current.slice(replaceFrom)
       const update: SessionUpdate = {
         entries: cloneEntries(entries),
         nextByte: cursor,
         replace: !appended,
       }
-      remember(current)
+      if (replaceFrom !== undefined) update.replaceFrom = replaceFrom
+      previousValues = currentValues
       return update
     },
   }
