@@ -11,15 +11,21 @@ import {
 import { getMako, hasBridge } from "@/lib/bridge"
 import { fuzzy } from "@/lib/fuzzy"
 import { cn } from "@/lib/utils"
+import {
+  modelKey,
+  toggleFavoriteModel,
+  usePrefs,
+} from "@/state/prefs"
 import { harnessModelByIdentity } from "@/lib/types"
 import type { HarnessModel, HarnessProfile } from "@/lib/types"
-import { CheckIcon, ChevronDownIcon } from "lucide-react"
+import { CheckIcon, ChevronDownIcon, StarIcon } from "lucide-react"
 
 export function ForeignModelPicker({ harness }: { harness: string }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [profile, setProfile] = useState<HarnessProfile | null>(null)
   const chosen = useThreads((state) => state.composerTuning[harness]?.model)
+  const favorites = usePrefs((prefs) => prefs.favoriteModels)
 
   const load = useCallback(() => {
     if (!hasBridge()) return
@@ -39,7 +45,10 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
   const effective =
     harnessModelByIdentity(profile ?? undefined, chosen)?.id ?? chosen
   const selected = harnessModelByIdentity(profile ?? undefined, effective)
-  const models = useMemo(() => rankModels(profile?.models ?? [], query), [profile?.models, query])
+  const models = useMemo(
+    () => rankModels(profile?.models ?? [], query, favorites, harness),
+    [favorites, harness, profile?.models, query]
+  )
 
   const set = (model: string) => {
     setComposerTuning(harness, {
@@ -91,7 +100,9 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
               key={model.id}
               model={model}
               selected={effective === model.id}
+              favorite={favorites.includes(modelKey(harness, model.id))}
               onChoose={() => set(model.id)}
+              onFavorite={() => toggleFavoriteModel(modelKey(harness, model.id))}
             />
           ))}
           {profile && models.length === 0 ? (
@@ -109,11 +120,15 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
 function ModelRow({
   model,
   selected,
+  favorite,
   onChoose,
+  onFavorite,
 }: {
   model: HarnessModel
   selected: boolean
+  favorite: boolean
   onChoose: () => void
+  onFavorite: () => void
 }) {
   const optionSummary = model.options
     .map((option) =>
@@ -123,38 +138,81 @@ function ModelRow({
     )
     .join(" · ")
   return (
-    <button
-      type="button"
-      onClick={onChoose}
+    <div
       className={cn(
-        "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors duration-100",
+        "group/model flex items-center rounded-md transition-colors duration-100",
         selected ? "bg-fill-selected" : "hover:bg-fill-hover"
       )}
     >
-      <span className="min-w-0 flex-1">
-        <span className={cn("block truncate text-ui", selected ? "font-medium text-foreground" : "text-foreground/90")}>
-          {model.label}
+      <button
+        type="button"
+        onClick={onChoose}
+        className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left"
+      >
+        <span className="min-w-0 flex-1">
+          <span
+            className={cn(
+              "block truncate text-ui",
+              selected
+                ? "font-medium text-foreground"
+                : "text-foreground/90"
+            )}
+          >
+            {model.label}
+          </span>
+          <span className="mt-0.5 block truncate font-mono text-label text-faint">
+            {model.id}
+          </span>
+          {model.description || optionSummary ? (
+            <span className="mt-0.5 block truncate text-label text-faint/80">
+              {model.description || optionSummary}
+            </span>
+          ) : null}
         </span>
-        <span className="mt-0.5 block truncate font-mono text-label text-faint">
-          {model.id}
-        </span>
-        {model.description || optionSummary ? (
-          <span className="mt-0.5 block truncate text-label text-faint/80">
-            {model.description || optionSummary}
+        {model.contextWindow ? (
+          <span className="shrink-0 text-label text-faint">
+            {Math.round(model.contextWindow / 1000)}K context
           </span>
         ) : null}
-      </span>
-      {model.contextWindow ? (
-        <span className="shrink-0 text-label text-faint">{Math.round(model.contextWindow / 1000)}K context</span>
-      ) : null}
-      {selected ? <CheckIcon className="size-3.5 shrink-0 text-foreground" /> : null}
-    </button>
+        {selected ? (
+          <CheckIcon className="size-3.5 shrink-0 text-foreground" />
+        ) : null}
+      </button>
+      <button
+        type="button"
+        aria-label={favorite ? `Unfavorite ${model.label}` : `Favorite ${model.label}`}
+        onClick={onFavorite}
+        className={cn(
+          "mr-1.5 rounded p-1 text-faint transition-opacity duration-150 hover:text-foreground",
+          favorite
+            ? "text-foreground/70"
+            : "opacity-0 group-hover/model:opacity-100 focus:opacity-100"
+        )}
+      >
+        <StarIcon className={cn("size-3.5", favorite && "fill-current")} />
+      </button>
+    </div>
   )
 }
 
-function rankModels(models: HarnessModel[], query: string): HarnessModel[] {
+function rankModels(
+  models: HarnessModel[],
+  query: string,
+  favorites: string[],
+  harness: string
+): HarnessModel[] {
   const term = query.trim()
-  if (!term) return models
+  if (!term) {
+    const order = new Map(favorites.map((key, index) => [key, index]))
+    return [...models].sort((left, right) => {
+      const leftOrder = order.get(modelKey(harness, left.id))
+      const rightOrder = order.get(modelKey(harness, right.id))
+      if (leftOrder === undefined && rightOrder === undefined) return 0
+      if (leftOrder === undefined) return 1
+      if (rightOrder === undefined) return -1
+      return leftOrder - rightOrder
+    })
+  }
   return models
     .flatMap((model) => {
       const match = fuzzy(

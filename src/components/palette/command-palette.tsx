@@ -49,6 +49,8 @@ export function CommandPalette() {
   const files = useWorkspaceFiles(open && mode === "files")
   const deskCommands = useCommands()
   const keybindings = usePrefs((prefs) => prefs.keybindings)
+  const favoriteModels = usePrefs((prefs) => prefs.favoriteModels)
+  const recentModels = usePrefs((prefs) => prefs.recentModels)
   const sessions = useSession((state) => state.sessions)
   const models = useSession((state) => state.models)
   const piCommands = useSession((state) => state.capabilities.commands)
@@ -118,7 +120,11 @@ export function CommandPalette() {
       const current = activeModel?.provider === model.provider && activeModel.id === model.id
       list.push({
         id: `model:${key}`,
-        section: "Switch model",
+        section: favoriteModels.includes(key)
+          ? "Favorite models"
+          : recentModels.includes(key)
+            ? "Recent models"
+            : "Switch model",
         title: model.name,
         hint: current ? `${model.provider} · current` : model.provider,
         run: () => {
@@ -139,14 +145,29 @@ export function CommandPalette() {
     }
 
     return list
-  }, [activeModel, deskCommands, keybindings, models, piCommands, sessions])
+  }, [
+    activeModel,
+    deskCommands,
+    favoriteModels,
+    keybindings,
+    models,
+    piCommands,
+    recentModels,
+    sessions,
+  ])
 
   const results = useMemo(() => {
     if (mode === "files") return fileEntries
     const term = query.trim()
     if (!term) {
-      // No query: show only the desk's own verbs, in registration order.
-      return entries.filter((entry) => !entry.id.startsWith("session:") && !entry.id.startsWith("model:"))
+      // No query: show the desk's own verbs plus models the user chose to keep close.
+      return entries.filter(
+        (entry) =>
+          !entry.id.startsWith("session:") &&
+          (!entry.id.startsWith("model:") ||
+            entry.section === "Favorite models" ||
+            entry.section === "Recent models")
+      )
     }
     const scored: Array<{ entry: Entry; score: number }> = []
     for (const entry of entries) {
