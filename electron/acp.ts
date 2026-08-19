@@ -16,7 +16,7 @@
  * process lifecycle — stays here.
  */
 
-import { spawn, type ChildProcess } from "node:child_process"
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
@@ -29,34 +29,94 @@ import {
   PROTOCOL_VERSION,
   type Client,
   type ClientSideConnection as Connection,
+  type ContentBlock,
+  type LoadSessionRequest,
+  type LoadSessionResponse,
+  type NewSessionRequest,
+  type NewSessionResponse,
   type RequestPermissionRequest,
+  type SessionConfigOption,
+  type SessionModeState,
   type SessionNotification,
+  type SessionUpdate,
 } from "@agentclientprotocol/sdk"
 import { accountEnv } from "./accounts.js"
 import { devinExecutable, normalizeAcpOptions } from "./harnesses.js"
-import type { AcpPermissionRequest, AcpPromptAttachment, AcpSessionState, AcpUpdate, HostEvent } from "./shared.js"
+import type {
+  AcpPermissionRequest,
+  AcpPromptAttachment,
+  AcpSessionState,
+  AcpUpdate,
+  HostEvent,
+} from "./shared.js"
 
 interface AgentSpec {
   command: string
   args: string[]
 }
 
+interface AcpTuning {
+  model?: string
+  effort?: string
+  fast?: boolean
+  options?: Record<string, string | boolean>
+}
+
+interface ClaudeCodeOptions {
+  model?: string
+  effort?: string
+  fastMode?: boolean
+}
+
+interface OpenedAcpSession {
+  sessionId: string
+  modes: SessionModeState | null
+  configOptions: SessionConfigOption[]
+}
+
+interface LegacySessionModelRequest {
+  sessionId: string
+  modelId: string
+}
+
+interface AcpToolOutputBoundary {
+  value: Extract<
+    SessionUpdate,
+    { sessionUpdate: "tool_call_update" }
+  >["rawOutput"]
+}
+
 /**
  * How each harness is spawned as an ACP agent. The Claude adapter is bundled
  * with the app (it is an npm dependency); Cursor's is the CLI itself.
  */
-function specFor(harness: string): AgentSpec | null {
+function specFor(harness: string, tuning?: AcpTuning): AgentSpec | null {
   switch (harness) {
     case "claude": {
       // The adapter is a bin script; run it with our own Node (Electron).
-      const script = join(app.getAppPath(), "node_modules", "@zed-industries", "claude-code-acp", "dist", "index.js")
-      return existsSync(script) ? { command: process.execPath, args: [script] } : null
+      const script = join(
+        app.getAppPath(),
+        "node_modules",
+        "@zed-industries",
+        "claude-code-acp",
+        "dist",
+        "index.js"
+      )
+      return existsSync(script)
+        ? { command: process.execPath, args: [script] }
+        : null
     }
     case "cursor":
       return { command: "cursor-agent", args: ["acp"] }
     case "grok": {
       const command = join(homedir(), ".grok", "bin", "grok")
-      return { command: existsSync(command) ? command : "grok", args: ["agent", "--no-leader", "stdio"] }
+      const args = ["agent", "--no-leader"]
+      if (tuning?.effort) args.push("--reasoning-effort", tuning.effort)
+      args.push("stdio")
+      return {
+        command: existsSync(command) ? command : "grok",
+        args,
+      }
     }
     case "devin":
       return { command: devinExecutable() ?? "devin", args: ["acp"] }
@@ -70,7 +130,10 @@ export function acpHarnesses(): string[] {
     const spec = specFor(harness)
     return Boolean(
       spec &&
-        (spec.command === "cursor-agent" || spec.command === "grok" || spec.command === "devin" || existsSync(spec.command))
+      (spec.command === "cursor-agent" ||
+        spec.command === "grok" ||
+        spec.command === "devin" ||
+        existsSync(spec.command))
     )
   })
 }
@@ -79,12 +142,16 @@ interface Live {
   id: string
   harness: string
   cwd: string
-  child: ChildProcess
-  connection: Connection
+  child: ChildProcessWithoutNullStreams
+  connection: Connection | null
   sessionId: string | null
   state: AcpSessionState
   pendingPermissions: Map<string, (optionId: string | null) => void>
-  promptCapabilities: { image?: boolean; audio?: boolean; embeddedContext?: boolean }
+  promptCapabilities: {
+    image?: boolean
+    audio?: boolean
+    embeddedContext?: boolean
+  }
   turn: Promise<unknown> | null
 }
 
@@ -112,10 +179,10 @@ export async function acpStart(
   options: {
     resume?: string
     title?: string
-    tuning?: { model?: string; effort?: string; fast?: boolean; options?: Record<string, string | boolean> }
+    tuning?: AcpTuning
   } = {}
 ): Promise<AcpSessionState> {
-  const spec = specFor(harness)
+  const spec = specFor(harness, options.tuning)
   if (!spec) throw new Error(`${harness} does not speak ACP here yet`)
 
   const id = `acp-${++counter}`
@@ -145,7 +212,7 @@ export async function acpStart(
     harness,
     cwd: workingDir,
     child,
-    connection: null as unknown as Connection,
+    connection: null,
     sessionId: null,
     state: {
       id,
@@ -164,7 +231,7 @@ export async function acpStart(
   sessions.set(id, live)
 
   let stderr = ""
-  child.stderr?.on("data", (chunk: Buffer) => {
+  child.stderr.on("data", (chunk: Buffer) => {
     stderr = (stderr + chunk.toString()).slice(-4000)
   })
   child.on("exit", () => {
@@ -202,42 +269,61 @@ export async function acpStart(
     },
   }
 
-  live.connection = new ClientSideConnection(
+  const connection = new ClientSideConnection(
     () => client,
-    ndJsonStream(
-      Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>,
-      Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>
-    )
+    ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(child.stdout))
   )
+  live.connection = connection
 
   try {
-    const initialized = await live.connection.initialize({
+    const initialized = await connection.initialize({
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: {
         fs: { readTextFile: false, writeTextFile: false },
         session: { configOptions: { boolean: {} } },
       },
     })
-    live.promptCapabilities = initialized.agentCapabilities?.promptCapabilities ?? {}
-    const canLoad = typeof live.connection.loadSession === "function"
-    const session =
-      options.resume && canLoad
-        ? await live.connection
-            .loadSession({ sessionId: options.resume, cwd: workingDir, mcpServers: [] })
-            .then(() => ({ sessionId: options.resume as string, modes: undefined }))
-            .catch(async () => live.connection.newSession({ cwd: workingDir, mcpServers: [] }))
-        : await live.connection.newSession({ cwd: workingDir, mcpServers: [] })
-    if (!session) throw new Error("The agent did not open a session")
+    live.promptCapabilities =
+      initialized.agentCapabilities?.promptCapabilities ?? {}
+    const session = options.resume
+      ? parseLoadedAcpSession(
+          await connection.loadSession(
+            loadSessionRequest(
+              options.resume,
+              workingDir,
+              harness,
+              options.tuning
+            )
+          ),
+          options.resume
+        )
+      : parseNewAcpSession(
+          await connection.newSession(
+            newSessionRequest(workingDir, harness, options.tuning)
+          )
+        )
     live.sessionId = session.sessionId
-    const response = session as {
-      modes?: { availableModes?: Array<{ id: string; name: string }>; currentModeId?: string }
-      configOptions?: unknown[] | null
+    const initialOptions = session.configOptions
+    const hasModelOption = Boolean(
+      options.tuning?.model &&
+      findConfigOption(initialOptions, "model", options.tuning.model)
+    )
+    const rawOptions = await applyInitialTuning(
+      live,
+      initialOptions,
+      options.tuning
+    )
+    if (options.tuning?.model && !hasModelOption) {
+      await setLegacySessionModel(live, options.tuning.model)
     }
-    const rawOptions = await applyInitialTuning(live, response.configOptions ?? [], options.tuning)
     update(live, {
       status: "ready",
-      modes: response.modes?.availableModes?.map((mode) => ({ id: mode.id, name: mode.name })) ?? [],
-      currentMode: response.modes?.currentModeId ?? null,
+      modes:
+        session.modes?.availableModes.map((mode) => ({
+          id: mode.id,
+          name: mode.name,
+        })) ?? [],
+      currentMode: session.modes?.currentModeId ?? null,
       configOptions: normalizeAcpOptions(rawOptions),
     })
     return live.state
@@ -246,57 +332,165 @@ export async function acpStart(
     sessions.delete(id)
     const detail = lastLine(stderr)
     throw new Error(
-      detail || (error instanceof Error ? error.message : `The ${harness} agent failed to start`)
+      detail ||
+        (error instanceof Error
+          ? error.message
+          : `The ${harness} agent failed to start`),
+      { cause: error }
     )
+  }
+}
+
+function addClaudeSessionMetadata(
+  request: NewSessionRequest | LoadSessionRequest,
+  harness: string,
+  tuning?: AcpTuning
+): void {
+  if (harness !== "claude" || !tuning) return
+  const options: ClaudeCodeOptions = {}
+  if (tuning.model) options.model = tuning.model
+  if (tuning.effort) options.effort = tuning.effort
+  if (tuning.fast !== undefined) options.fastMode = tuning.fast
+  request._meta = { claudeCode: { options } }
+}
+
+function newSessionRequest(
+  cwd: string,
+  harness: string,
+  tuning?: AcpTuning
+): NewSessionRequest {
+  const request: NewSessionRequest = { cwd, mcpServers: [] }
+  addClaudeSessionMetadata(request, harness, tuning)
+  return request
+}
+
+function loadSessionRequest(
+  sessionId: string,
+  cwd: string,
+  harness: string,
+  tuning?: AcpTuning
+): LoadSessionRequest {
+  const request: LoadSessionRequest = { sessionId, cwd, mcpServers: [] }
+  addClaudeSessionMetadata(request, harness, tuning)
+  return request
+}
+
+function parseNewAcpSession(response: NewSessionResponse): OpenedAcpSession {
+  return {
+    sessionId: response.sessionId,
+    modes: response.modes ?? null,
+    configOptions: response.configOptions ?? [],
+  }
+}
+
+function parseLoadedAcpSession(
+  response: LoadSessionResponse,
+  sessionId: string
+): OpenedAcpSession {
+  return {
+    sessionId,
+    modes: response.modes ?? null,
+    configOptions: response.configOptions ?? [],
   }
 }
 
 async function applyInitialTuning(
   live: Live,
-  initial: unknown[],
-  tuning?: { model?: string; effort?: string; fast?: boolean; options?: Record<string, string | boolean> }
-): Promise<unknown[]> {
-  if (!live.sessionId || !tuning) return initial
+  initial: SessionConfigOption[],
+  tuning?: AcpTuning
+): Promise<SessionConfigOption[]> {
+  const connection = live.connection
+  const sessionId = live.sessionId
+  if (!connection || !sessionId || !tuning) return initial
+
   let options = initial
-  const selected: Record<string, string | boolean> = { ...(tuning.options ?? {}) }
-  if (tuning.effort !== undefined && selected.effort === undefined) selected.effort = tuning.effort
-  if (tuning.fast !== undefined && selected.fast === undefined) selected.fast = tuning.fast
+  const selected = new Map<string, string | boolean>()
+  if (tuning.options) {
+    for (const [id, value] of Object.entries(tuning.options)) {
+      selected.set(id, value)
+    }
+  }
+  if (tuning.effort !== undefined && !selected.has("effort")) {
+    selected.set("effort", tuning.effort)
+  }
+  if (tuning.fast !== undefined && !selected.has("fast")) {
+    selected.set("fast", tuning.fast)
+  }
+
   if (tuning.model) {
     const model = findConfigOption(options, "model", tuning.model)
     if (model) {
-      const response = await live.connection.setSessionConfigOption({
-        sessionId: live.sessionId,
+      const response = await connection.setSessionConfigOption({
+        sessionId,
         configId: model.id,
         value: tuning.model,
       })
       options = response.configOptions
     }
   }
-  for (const [id, value] of Object.entries(selected)) {
+
+  const optionOrder = ["thinking", "context", "effort", "reasoning", "fast"]
+  const ordered = Array.from(selected.entries()).sort(
+    ([left], [right]) => optionOrder.indexOf(left) - optionOrder.indexOf(right)
+  )
+  for (const [id, value] of ordered) {
     const option = findConfigOption(options, id, value)
     if (!option) continue
-    const response = await live.connection.setSessionConfigOption(
-      typeof value === "boolean"
-        ? { sessionId: live.sessionId, configId: option.id, type: "boolean", value }
-        : { sessionId: live.sessionId, configId: option.id, value }
-    )
+    const response =
+      value === true || value === false
+        ? await connection.setSessionConfigOption({
+            sessionId,
+            configId: option.id,
+            type: "boolean",
+            value,
+          })
+        : await connection.setSessionConfigOption({
+            sessionId,
+            configId: option.id,
+            value,
+          })
     options = response.configOptions
   }
   return options
 }
 
-function findConfigOption(options: unknown[], requestedId: string, value: string | boolean): { id: string } | null {
+function findConfigOption(
+  options: SessionConfigOption[],
+  requestedId: string,
+  value: string | boolean
+): SessionConfigOption | null {
   const normalized = requestedId.toLowerCase()
-  for (const raw of options) {
-    const option = raw as { id?: unknown; name?: unknown; category?: unknown; options?: unknown }
-    if (typeof option.id !== "string") continue
-    const identity = `${option.id} ${typeof option.name === "string" ? option.name : ""} ${typeof option.category === "string" ? option.category : ""}`.toLowerCase()
-    if (identity.includes(normalized)) return { id: option.id }
-    if (requestedId === "model" && typeof value === "string" && JSON.stringify(option.options ?? "").includes(value)) {
-      return { id: option.id }
+  for (const option of options) {
+    const identity =
+      `${option.id} ${option.name} ${option.category ?? ""}`.toLowerCase()
+    if (identity.includes(normalized)) return option
+    if (
+      requestedId === "model" &&
+      value !== true &&
+      value !== false &&
+      option.type === "select" &&
+      JSON.stringify(option.options).includes(value)
+    ) {
+      return option
     }
   }
   return null
+}
+
+async function setLegacySessionModel(
+  live: Live,
+  modelId: string
+): Promise<void> {
+  const connection = live.connection
+  const sessionId = live.sessionId
+  if (!connection || !sessionId) return
+  await connection.request<void, LegacySessionModelRequest>(
+    "session/set_model",
+    {
+      sessionId,
+      modelId,
+    }
+  )
 }
 
 /** Send the next message. Resolves when the turn ends; updates stream meanwhile. */
@@ -306,18 +500,24 @@ export async function acpPrompt(
   attachments: AcpPromptAttachment[] = []
 ): Promise<void> {
   const live = sessions.get(id)
-  if (!live?.sessionId) throw new Error("This interactive session is not running")
-  if (live.state.status === "running") throw new Error("The agent is already working")
+  if (!live?.sessionId || !live.connection)
+    throw new Error("This interactive session is not running")
+  if (live.state.status === "running")
+    throw new Error("The agent is already working")
   update(live, { status: "running" })
   emit({ type: "acp-update", id, update: { kind: "user", text } })
-  const prompt: Array<
-    | { type: "text"; text: string }
-    | { type: "image"; data: string; mimeType: string }
-    | { type: "resource_link"; name: string; uri: string; mimeType: string; size: number }
-  > = [{ type: "text", text }]
+  const prompt: ContentBlock[] = [{ type: "text", text }]
   for (const attachment of attachments) {
-    if (attachment.data && attachment.mimeType.startsWith("image/") && live.promptCapabilities.image) {
-      prompt.push({ type: "image", data: attachment.data, mimeType: attachment.mimeType })
+    if (
+      attachment.data &&
+      attachment.mimeType.startsWith("image/") &&
+      live.promptCapabilities.image
+    ) {
+      prompt.push({
+        type: "image",
+        data: attachment.data,
+        mimeType: attachment.mimeType,
+      })
     } else if (attachment.path) {
       prompt.push({
         type: "resource_link",
@@ -333,30 +533,37 @@ export async function acpPrompt(
     .then((result) => {
       update(live, { status: "ready", lastStop: result.stopReason })
     })
-    .catch((error: unknown) => {
+    .catch((error) => {
       if (live.state.status !== "closed") {
-        update(live, { status: "ready", error: error instanceof Error ? error.message : String(error) })
+        update(live, {
+          status: "ready",
+          error: error instanceof Error ? error.message : String(error),
+        })
       }
     })
   live.turn = turn
   await Promise.resolve()
 }
 
-export function acpRespondPermission(id: string, requestId: string, optionId: string | null): void {
+export function acpRespondPermission(
+  id: string,
+  requestId: string,
+  optionId: string | null
+): void {
   sessions.get(id)?.pendingPermissions.get(requestId)?.(optionId)
 }
 
 export async function acpSetMode(id: string, modeId: string): Promise<void> {
   const live = sessions.get(id)
-  if (!live?.sessionId) return
-  await live.connection.setSessionMode?.({ sessionId: live.sessionId, modeId })
+  if (!live?.sessionId || !live.connection) return
+  await live.connection.setSessionMode({ sessionId: live.sessionId, modeId })
   update(live, { currentMode: modeId })
 }
 
 export async function acpCancel(id: string): Promise<void> {
   const live = sessions.get(id)
-  if (!live?.sessionId) return
-  await live.connection.cancel?.({ sessionId: live.sessionId }).catch(() => {})
+  if (!live?.sessionId || !live.connection) return
+  await live.connection.cancel({ sessionId: live.sessionId }).catch(() => {})
 }
 
 export function acpClose(id: string): void {
@@ -369,7 +576,7 @@ export function acpClose(id: string): void {
 }
 
 export function stopAcp(): void {
-  for (const id of [...sessions.keys()]) acpClose(id)
+  for (const id of sessions.keys()) acpClose(id)
 }
 
 /* ------------------------------------------------------------ translation */
@@ -381,7 +588,7 @@ export function stopAcp(): void {
  */
 function forward(live: Live, notification: SessionNotification): void {
   const raw = notification.update
-  let update: AcpUpdate | null = null
+  let update: AcpUpdate
   switch (raw.sessionUpdate) {
     case "user_message_chunk":
       // Replayed history (session/load streams the past back). Live user
@@ -401,7 +608,10 @@ function forward(live: Live, notification: SessionNotification): void {
         title: raw.title ?? "tool",
         toolKind: raw.kind,
         status: raw.status ?? "pending",
-        input: raw.rawInput === undefined ? undefined : JSON.stringify(raw.rawInput, null, 2),
+        input:
+          raw.rawInput === undefined
+            ? undefined
+            : JSON.stringify(raw.rawInput, null, 2),
       }
       break
     case "tool_call_update":
@@ -410,13 +620,11 @@ function forward(live: Live, notification: SessionNotification): void {
         id: raw.toolCallId,
         title: raw.title ?? undefined,
         status: raw.status ?? undefined,
-        input: raw.rawInput === undefined ? undefined : JSON.stringify(raw.rawInput, null, 2),
-        output:
-          typeof raw.rawOutput === "string"
-            ? raw.rawOutput.slice(0, 256_000)
-            : raw.rawOutput === undefined
-              ? undefined
-              : JSON.stringify(raw.rawOutput, null, 2).slice(0, 256_000),
+        input:
+          raw.rawInput === undefined
+            ? undefined
+            : JSON.stringify(raw.rawInput, null, 2),
+        output: parseAcpToolOutput({ value: raw.rawOutput }),
       }
       break
     case "plan":
@@ -432,19 +640,31 @@ function forward(live: Live, notification: SessionNotification): void {
       updateState(live, { currentMode: raw.currentModeId })
       return
     case "config_option_update":
-      updateState(live, { configOptions: normalizeAcpOptions(raw.configOptions) })
+      updateState(live, {
+        configOptions: normalizeAcpOptions(raw.configOptions),
+      })
       return
     default:
       return // Command lists and the rest are not rendered yet.
   }
-  if (update && ((update.kind !== "text" && update.kind !== "user") || update.text)) {
+  if ((update.kind !== "text" && update.kind !== "user") || update.text) {
     emit({ type: "acp-update", id: live.id, update })
   }
 }
 
-function contentText(content: unknown): string {
-  const rec = content as { type?: string; text?: string } | undefined
-  return rec?.type === "text" && typeof rec.text === "string" ? rec.text : ""
+function parseAcpToolOutput(
+  boundary: AcpToolOutputBoundary
+): string | undefined {
+  const { value } = boundary
+  if (value === undefined) return undefined
+  if (Object.prototype.toString.call(value) === "[object String]") {
+    return String(value).slice(0, 256_000)
+  }
+  return JSON.stringify(value, null, 2).slice(0, 256_000)
+}
+
+function contentText(content: ContentBlock): string {
+  return content.type === "text" ? content.text : ""
 }
 
 function update(live: Live, patch: Partial<AcpSessionState>): void {
