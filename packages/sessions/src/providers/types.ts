@@ -22,6 +22,7 @@ export interface SessionUpdate {
   entries: ThreadEntry[]
   nextByte: number
   replace: boolean
+  replaceFrom?: number
   reset?: boolean
 }
 
@@ -66,5 +67,8 @@ export interface SessionProvider {
    * (Cursor's SQLite) fall back to a full re-read by omitting this.
    */
   createFollower?(path: string, fromByte: number): SessionFollower
-  tail?(path: string, fromByte: number): Promise<{ entries: ThreadEntry[]; nextByte: number }>
+  tail?(
+    path: string,
+    fromByte: number
+  ): Promise<{ entries: ThreadEntry[]; nextByte: number }>
 }

@@ -128,29 +128,57 @@ export function clip(text: string | undefined, max = 256_000): string | undefine
  */
 export class EntrySink {
   private max: number
+  private maxCharacters: number
+  private droppedEntries = 0
   private droppedUsers = 0
   entries: ThreadEntry[] = []
 
-  constructor(max = 6000) {
+  constructor(max = 6000, maxCharacters = 32 * 1024 * 1024) {
     this.max = max
+    this.maxCharacters = maxCharacters
   }
 
   push(entry: ThreadEntry): void {
     this.entries.push(entry)
-    if (this.entries.length > this.max) {
-      const cut = this.entries.splice(0, Math.ceil(this.max / 4))
-      this.droppedUsers += cut.filter((dropped) => dropped.kind === "user").length
+    if (this.entries.length > this.max) this.drop(Math.ceil(this.max / 4))
+  }
+
+  snapshot(): ThreadEntry[] {
+    let characters = this.entries.reduce((sum, entry) => sum + entryCharacters(entry), 0)
+    while (this.entries.length > 1 && characters > this.maxCharacters) {
+      const count = Math.max(1, Math.ceil(this.entries.length / 8))
+      const removed = this.entries.slice(0, count)
+      characters -= removed.reduce((sum, entry) => sum + entryCharacters(entry), 0)
+      this.drop(count)
     }
+    return this.droppedEntries > 0
+      ? [
+          {
+            kind: "event",
+            label: "Earlier history not shown",
+            detail: `${this.droppedEntries} earlier entries (${this.droppedUsers} user turns) remain in the native session file`,
+          },
+          ...this.entries,
+        ]
+      : this.entries
   }
 
   done(): ThreadEntry[] {
-    if (this.droppedUsers > 0) {
-      this.entries.unshift({
-        kind: "event",
-        label: "Earlier history not shown",
-        detail: `${this.droppedUsers} earlier turns remain in the native session file`,
-      })
-    }
-    return this.entries
+    return this.snapshot()
   }
+
+  private drop(count: number): void {
+    const cut = this.entries.splice(0, count)
+    this.droppedEntries += cut.length
+    this.droppedUsers += cut.filter((entry) => entry.kind === "user").length
+  }
+}
+
+function entryCharacters(entry: ThreadEntry): number {
+  if (entry.kind === "user") return entry.text.length
+  if (entry.kind === "event") return entry.label.length + (entry.detail?.length ?? 0)
+  return entry.blocks.reduce((sum, block) => {
+    if (block.type === "text" || block.type === "thinking") return sum + block.text.length
+    return sum + block.name.length + (block.input?.length ?? 0) + (block.output?.length ?? 0)
+  }, 0)
 }
