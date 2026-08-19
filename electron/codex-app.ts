@@ -14,22 +14,23 @@ import {
   type PendingServerRequest,
   type PermissionCallbacks,
 } from "./codex-app-permissions.js"
+import { boundedText, type JsonObject } from "./codex-app-json.js"
 import {
-  boundedText,
   consumeStdout,
   replayHistory,
   rpcRequest,
   sendRpc,
   sendRpcError,
   sendRpcResult,
-  type ItemTracker,
-  type JsonObject,
-  type PendingRpc,
-  type ProtocolCallbacks,
-  type RpcParams,
-  type ThreadResponse,
-  type Tuning,
 } from "./codex-app-protocol.js"
+import type {
+  ItemTracker,
+  PendingRpc,
+  ProtocolCallbacks,
+  RpcParams,
+  ThreadResponse,
+  Tuning,
+} from "./codex-app-types.js"
 import type {
   AcpPromptAttachment,
   AcpSessionState,

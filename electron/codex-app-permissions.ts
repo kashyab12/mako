@@ -1,9 +1,12 @@
 import {
+  booleanValue,
   boundedText,
+  objectValue,
+  stringValue,
   type JsonObject,
   type JsonRpcId,
   type JsonValue,
-} from "./codex-app-protocol.js"
+} from "./codex-app-json.js"
 import type { AcpPermissionRequest, HostEvent } from "./shared.js"
 
 type CommandDecision =
@@ -693,33 +696,4 @@ function nullableString(value: JsonValue | undefined): Parsed<string | null> {
   return parsed === undefined
     ? { valid: false }
     : { valid: true, value: parsed }
-}
-
-function objectValue(value: JsonValue | undefined): JsonObject | undefined {
-  return isJsonObject(value) ? value : undefined
-}
-
-function stringValue(value: JsonValue | undefined): string | undefined {
-  return isString(value) ? value : undefined
-}
-
-function booleanValue(value: JsonValue | undefined): boolean | undefined {
-  return isBoolean(value) ? value : undefined
-}
-
-function isJsonObject(value: JsonValue | undefined): value is JsonObject {
-  return (
-    value !== undefined &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.prototype.toString.call(value) === "[object Object]"
-  )
-}
-
-function isString(value: JsonValue | undefined): value is string {
-  return Object.prototype.toString.call(value) === "[object String]"
-}
-
-function isBoolean(value: JsonValue | undefined): value is boolean {
-  return Object.prototype.toString.call(value) === "[object Boolean]"
 }

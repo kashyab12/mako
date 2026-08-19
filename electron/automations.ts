@@ -1,7 +1,7 @@
 import { watch, type FSWatcher } from "node:fs"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join, relative, sep } from "node:path"
-import type { JsonObject, JsonValue } from "./codex-app-protocol.js"
+import type { JsonObject, JsonValue } from "./codex-app-json.js"
 import type { Automation, AutomationRun, HostEvent } from "./shared.js"
 
 /**

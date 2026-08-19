@@ -8,7 +8,7 @@ import { promisify } from "node:util"
 import { z } from "zod"
 import { accountEnv, selectedAccount } from "./accounts.js"
 import { devinExecutable } from "./harnesses.js"
-import type { JsonValue } from "./codex-app-protocol.js"
+import type { JsonValue } from "./codex-app-json.js"
 import type {
   McpRegistryProviderStatus,
   McpRegistrySnapshot,

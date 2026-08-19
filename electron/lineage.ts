@@ -20,7 +20,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { app } from "electron"
 import type { ThreadOrigin, ThreadRef } from "@mako/sessions"
-import type { JsonObject, JsonValue } from "./codex-app-protocol.js"
+import type { JsonObject, JsonValue } from "./codex-app-json.js"
 
 interface Expectation {
   harness: string

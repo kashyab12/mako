@@ -1,6 +1,6 @@
 import { readdir, readFile, stat } from "node:fs/promises"
 import { join } from "node:path"
-import type { JsonObject, JsonValue } from "./codex-app-protocol.js"
+import type { JsonObject, JsonValue } from "./codex-app-json.js"
 import type { UsageSummary, UsageTotals } from "./shared.js"
 
 /**

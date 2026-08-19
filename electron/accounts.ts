@@ -44,7 +44,7 @@ import {
 import { homedir, userInfo } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
-import type { JsonValue } from "./codex-app-protocol.js"
+import type { JsonValue } from "./codex-app-json.js"
 
 const run = promisify(execFile)
 

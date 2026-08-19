@@ -6,7 +6,7 @@ import type {
   McpServerDefinition,
   McpTransport,
 } from "./shared.js"
-import type { JsonObject } from "./codex-app-protocol.js"
+import type { JsonObject } from "./codex-app-json.js"
 
 function localEnvironment(definition: McpServerDefinition): Array<{
   name: string

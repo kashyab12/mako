@@ -1,269 +1,55 @@
-import type { ChildProcessWithoutNullStreams } from "node:child_process"
-import type { StringDecoder } from "node:string_decoder"
-import type { AcpSessionState, AcpUpdate } from "./shared.js"
+import {
+  boundedText,
+  isNumber,
+  stringValue,
+  type JsonObject,
+  type JsonRpcId,
+  type JsonValue,
+} from "./codex-app-json.js"
+import {
+  parseJsonRpcEnvelope,
+  parseNotification,
+  parseObjectResult,
+  parseThreadResponse,
+  parseTurnResponse,
+  type JsonRpcEnvelope,
+  type PatchNotification,
+  type ProtocolNotification,
+  type StreamDeltaNotification,
+  type ToolOutputNotification,
+} from "./codex-app-parse.js"
+import type {
+  ItemTracker,
+  PendingRpc,
+  ProtocolContext,
+  RpcMethod,
+  RpcParams,
+  RpcResultParser,
+  RpcResults,
+  ThreadItem,
+  Turn,
+} from "./codex-app-types.js"
 
-export type JsonRpcId = string | number
-export type JsonScalar = boolean | number | string | null
-export type JsonValue = JsonScalar | JsonObject | JsonValue[]
-
-export interface JsonObject {
-  [key: string]: JsonValue
-}
-
-export type Tuning = {
-  model?: string
-  effort?: string
-  fast?: boolean
-  options?: Record<string, string | boolean>
-}
-
-type UserMessageContent = { type?: string; text?: string }
-type FileChange = { path?: string; diff?: string; kind?: JsonValue }
-type McpToolError = { message?: string }
-
-export type ThreadItem =
-  | {
-      type: "userMessage"
-      id: string
-      content: UserMessageContent[]
-    }
-  | { type: "agentMessage"; id: string; text: string }
-  | { type: "reasoning"; id: string; summary: string[]; content: string[] }
-  | {
-      type: "commandExecution"
-      id: string
-      command: string
-      cwd: string
-      status: string
-      aggregatedOutput: string | null
-      exitCode: number | null
-    }
-  | {
-      type: "fileChange"
-      id: string
-      changes: FileChange[]
-      status: string
-    }
-  | {
-      type: "mcpToolCall"
-      id: string
-      server: string
-      tool: string
-      status: string
-      result: JsonValue
-      error: McpToolError | null
-    }
-  | {
-      type: "dynamicToolCall"
-      id: string
-      namespace: string | null
-      tool: string
-      status: string
-      contentItems: JsonValue[] | null
-      success: boolean | null
-    }
-  | { type: "plan"; id: string; text: string }
-
-export type Turn = {
-  id: string
-  items: ThreadItem[]
-  status: string
-  error: { message?: string; additionalDetails?: string | null } | null
-}
-
-export type ThreadResponse = {
-  thread: { id: string; cwd?: string; turns?: Turn[] }
-  model?: string
-  serviceTier?: string | null
-  reasoningEffort?: string | null
-}
-
-export type RpcParams = {
-  initialize: {
-    clientInfo: { name: string; title: string; version: string }
-    capabilities: { experimentalApi: true; requestAttestation: false }
-  }
-  "thread/start": {
-    cwd: string
-    model?: string
-    serviceTier?: string
-    config?: JsonObject
-  }
-  "thread/resume": {
-    threadId: string
-    cwd: string
-    model?: string
-    serviceTier?: string
-    config?: JsonObject
-  }
-  "turn/start": {
-    threadId: string
-    input: Array<
-      | { type: "text"; text: string; textElements?: JsonValue[] }
-      | { type: "localImage"; path: string }
-    >
-    cwd: string
-    model?: string
-    effort?: string
-    serviceTier?: string
-  }
-  "turn/interrupt": { threadId: string; turnId: string }
-}
-
-export type RpcResults = {
-  initialize: JsonObject
-  "thread/start": ThreadResponse
-  "thread/resume": ThreadResponse
-  "turn/start": { turn: Turn }
-  "turn/interrupt": JsonObject
-}
-
-export type RpcMethod = keyof RpcParams
-
-type ParseResult<T> =
-  { valid: true; value: T } | { valid: false; message: string }
-
-type RpcResultParser<M extends RpcMethod> = (
-  value: JsonValue | undefined
-) => ParseResult<RpcResults[M]>
-
-export type PendingRpc<M extends RpcMethod = RpcMethod> = {
-  method: M
-  resolve(value: RpcResults[M]): void
-  reject(error: Error): void
-  parseResult: RpcResultParser<M>
-  settleResult(value: JsonValue | undefined): void
-  timer: ReturnType<typeof setTimeout>
-}
-
-export type ItemTracker = {
-  acpId: string
-  started: boolean
-  textDelta: boolean
-  text: string | null
-  thinkingDelta: boolean
-  thinking: string | null
-  output: string
-}
-
-export interface ProtocolCallbacks {
-  handleFatal(message: string): void
-  updateState(patch: Partial<AcpSessionState>): void
-  emitUpdate(update: AcpUpdate): void
-  handleServerRequest(id: JsonRpcId, method: string, params: JsonObject): void
-  resolveServerRequest(id: JsonRpcId): void
-  clearTurnServerRequests(turnId: string): void
-}
-
-export interface ProtocolContext {
-  child: ChildProcessWithoutNullStreams
-  threadId: string | null
-  currentTurnId: string | null
-  state: AcpSessionState
-  nextRequestId: number
-  pending: Map<string, PendingRpc>
-  items: Map<string, ItemTracker>
-  stdoutBuffer: string
-  decoder: StringDecoder
-  exited: boolean
-  protocol: ProtocolCallbacks
-}
-
-type JsonRpcEnvelope =
-  | {
-      kind: "response"
-      id: JsonRpcId
-      result: JsonValue | undefined
-      error: JsonObject | null
-    }
-  | { kind: "request"; id: JsonRpcId; method: string; params: JsonObject }
-  | { kind: "notification"; method: string; params: JsonObject }
-  | { kind: "ignored" }
-  | { kind: "invalid" }
-
-type StartedTurnNotification = {
-  method: "turn/started"
-  threadId: string
-  turnId: string
-}
-
-type CompletedTurnNotification = {
-  method: "turn/completed"
-  threadId: string
-  turn: Turn
-}
-
-type ItemNotification = {
-  method: "item/started" | "item/completed"
-  threadId: string
-  turnId: string
-  item: ThreadItem
-}
-
-type StreamDeltaNotification = {
-  method:
-    | "item/agentMessage/delta"
-    | "item/reasoning/summaryTextDelta"
-    | "item/reasoning/textDelta"
-  threadId: string
-  turnId: string
-  itemId: string
-  delta: string
-}
-
-type ToolOutputNotification = {
-  method:
-    | "item/commandExecution/outputDelta"
-    | "item/fileChange/outputDelta"
-    | "item/mcpToolCall/progress"
-  threadId: string
-  turnId: string
-  itemId: string
-  delta: string
-}
-
-type PatchNotification = {
-  method: "item/fileChange/patchUpdated"
-  threadId: string
-  turnId: string
-  itemId: string
-  changes: JsonValue
-}
-
-type PlanNotification = {
-  method: "turn/plan/updated"
-  threadId: string
-  plan: Array<{ step: string; status: string }>
-}
-
-type ErrorNotification = {
-  method: "error"
-  threadId?: string
-  message: string
-}
-
-type ResolvedNotification = {
-  method: "serverRequest/resolved"
-  threadId?: string
-  requestId: JsonRpcId
-}
-
-type TokenUsageNotification = {
-  method: "thread/tokenUsage/updated"
-  threadId: string
-}
-
-type ProtocolNotification =
-  | StartedTurnNotification
-  | CompletedTurnNotification
-  | ItemNotification
-  | StreamDeltaNotification
-  | ToolOutputNotification
-  | PatchNotification
-  | PlanNotification
-  | ErrorNotification
-  | ResolvedNotification
-  | TokenUsageNotification
+export { boundedText } from "./codex-app-json.js"
+export type {
+  JsonObject,
+  JsonRpcId,
+  JsonScalar,
+  JsonValue,
+} from "./codex-app-json.js"
+export type {
+  ItemTracker,
+  PendingRpc,
+  ProtocolCallbacks,
+  ProtocolContext,
+  RpcMethod,
+  RpcParams,
+  RpcResults,
+  ThreadItem,
+  ThreadResponse,
+  Tuning,
+  Turn,
+} from "./codex-app-types.js"
 
 const RPC_TIMEOUT_MS = 30_000
 const MAX_STDOUT_BUFFER = 8 * 1024 * 1024
@@ -314,34 +100,6 @@ function processLine(context: ProtocolContext, line: string): void {
   if (notification) handleNotification(context, notification)
 }
 
-function parseJsonRpcEnvelope(line: string): JsonRpcEnvelope {
-  let value: JsonValue
-  try {
-    value = JSON.parse(line)
-  } catch {
-    return { kind: "invalid" }
-  }
-  if (!isJsonObject(value)) return { kind: "ignored" }
-  const id = rpcIdValue(value.id)
-  if (
-    id !== undefined &&
-    (Object.hasOwn(value, "result") || Object.hasOwn(value, "error"))
-  ) {
-    return {
-      kind: "response",
-      id,
-      result: value.result,
-      error: isJsonObject(value.error) ? value.error : null,
-    }
-  }
-  const method = stringValue(value.method)
-  if (method === undefined) return { kind: "ignored" }
-  const params = isJsonObject(value.params) ? value.params : {}
-  return id === undefined
-    ? { kind: "notification", method, params }
-    : { kind: "request", id, method, params }
-}
-
 function settleRpc(
   context: ProtocolContext,
   message: Extract<JsonRpcEnvelope, { kind: "response" }>
@@ -360,100 +118,6 @@ function settleRpc(
     return
   }
   pending.settleResult(message.result)
-}
-
-function parseNotification(
-  method: string,
-  params: JsonObject
-): ProtocolNotification | null {
-  const threadId = stringValue(params.threadId)
-  switch (method) {
-    case "turn/started": {
-      const turn = objectValue(params.turn)
-      const turnId = stringValue(turn?.id)
-      return threadId !== undefined && turnId !== undefined
-        ? { method, threadId, turnId }
-        : null
-    }
-    case "turn/completed": {
-      const turn = parseTurn(params.turn)
-      return threadId !== undefined && turn ? { method, threadId, turn } : null
-    }
-    case "item/started":
-    case "item/completed": {
-      const turnId = stringValue(params.turnId)
-      const item = parseThreadItem(params.item)
-      return threadId !== undefined && turnId !== undefined && item
-        ? { method, threadId, turnId, item }
-        : null
-    }
-    case "item/agentMessage/delta":
-    case "item/reasoning/summaryTextDelta":
-    case "item/reasoning/textDelta": {
-      const turnId = stringValue(params.turnId)
-      const itemId = stringValue(params.itemId)
-      const delta = stringValue(params.delta)
-      return threadId !== undefined &&
-        turnId !== undefined &&
-        itemId !== undefined &&
-        delta !== undefined
-        ? { method, threadId, turnId, itemId, delta }
-        : null
-    }
-    case "item/commandExecution/outputDelta":
-    case "item/fileChange/outputDelta": {
-      const turnId = stringValue(params.turnId)
-      const itemId = stringValue(params.itemId)
-      const delta = stringValue(params.delta)
-      return threadId !== undefined &&
-        turnId !== undefined &&
-        itemId !== undefined &&
-        delta !== undefined
-        ? { method, threadId, turnId, itemId, delta }
-        : null
-    }
-    case "item/mcpToolCall/progress": {
-      const turnId = stringValue(params.turnId)
-      const itemId = stringValue(params.itemId)
-      const message = stringValue(params.message)
-      return threadId !== undefined &&
-        turnId !== undefined &&
-        itemId !== undefined &&
-        message !== undefined
-        ? { method, threadId, turnId, itemId, delta: `${message}\n` }
-        : null
-    }
-    case "item/fileChange/patchUpdated": {
-      const turnId = stringValue(params.turnId)
-      const itemId = stringValue(params.itemId)
-      return threadId !== undefined &&
-        turnId !== undefined &&
-        itemId !== undefined &&
-        params.changes !== undefined
-        ? { method, threadId, turnId, itemId, changes: params.changes }
-        : null
-    }
-    case "turn/plan/updated": {
-      const plan = parsePlan(params.plan)
-      return threadId !== undefined && plan ? { method, threadId, plan } : null
-    }
-    case "error": {
-      const error = objectValue(params.error)
-      return {
-        method,
-        threadId,
-        message: stringValue(error?.message) ?? "Codex encountered an error",
-      }
-    }
-    case "serverRequest/resolved": {
-      const requestId = rpcIdValue(params.requestId)
-      return requestId === undefined ? null : { method, threadId, requestId }
-    }
-    case "thread/tokenUsage/updated":
-      return threadId === undefined ? null : { method, threadId }
-    default:
-      return null
-  }
 }
 
 function handleNotification(
@@ -874,328 +538,6 @@ export function sendRpcError(
   sendRpc(context, { jsonrpc: "2.0", id, error: { code, message } })
 }
 
-function parseObjectResult(
-  value: JsonValue | undefined
-): ParseResult<JsonObject> {
-  return isJsonObject(value)
-    ? { valid: true, value }
-    : invalidResult("Codex app-server returned an invalid object result")
-}
-
-function parseThreadResponse(
-  value: JsonValue | undefined
-): ParseResult<ThreadResponse> {
-  const root = objectValue(value)
-  const thread = objectValue(root?.thread)
-  const id = stringValue(thread?.id)
-  if (!root || !thread || id === undefined)
-    return invalidResult("Codex app-server returned an invalid thread result")
-  const cwd = optionalString(thread.cwd)
-  if (!cwd.valid)
-    return invalidResult("Codex app-server returned an invalid thread cwd")
-  const turns = optionalArray(thread.turns, parseTurn)
-  if (!turns.valid)
-    return invalidResult("Codex app-server returned invalid thread turns")
-  const model = optionalString(root.model)
-  const serviceTier = optionalNullableString(root.serviceTier)
-  const reasoningEffort = optionalNullableString(root.reasoningEffort)
-  if (!model.valid || !serviceTier.valid || !reasoningEffort.valid)
-    return invalidResult("Codex app-server returned invalid thread metadata")
-  const parsedThread: ThreadResponse["thread"] = { id }
-  if (cwd.value !== undefined) parsedThread.cwd = cwd.value
-  if (turns.value !== undefined) parsedThread.turns = turns.value
-  const response: ThreadResponse = { thread: parsedThread }
-  if (model.value !== undefined) response.model = model.value
-  if (serviceTier.value !== undefined) response.serviceTier = serviceTier.value
-  if (reasoningEffort.value !== undefined)
-    response.reasoningEffort = reasoningEffort.value
-  return { valid: true, value: response }
-}
-
-function parseTurnResponse(
-  value: JsonValue | undefined
-): ParseResult<{ turn: Turn }> {
-  const root = objectValue(value)
-  const turn = parseTurn(root?.turn)
-  return root && turn
-    ? { valid: true, value: { turn } }
-    : invalidResult("Codex app-server returned an invalid turn result")
-}
-
-function parseTurn(value: JsonValue | undefined): Turn | null {
-  const root = objectValue(value)
-  const id = stringValue(root?.id)
-  const status = stringValue(root?.status)
-  const items = parseArray(root?.items, parseThreadItem)
-  const error = parseTurnError(root?.error)
-  return root &&
-    id !== undefined &&
-    status !== undefined &&
-    items &&
-    error.valid
-    ? { id, status, items, error: error.value }
-    : null
-}
-
-function parseTurnError(
-  value: JsonValue | undefined
-): ParseResult<Turn["error"]> {
-  if (value === null) return { valid: true, value: null }
-  const root = objectValue(value)
-  if (!root) return invalidResult("invalid turn error")
-  const message = optionalString(root.message)
-  const additionalDetails = optionalNullableString(root.additionalDetails)
-  if (!message.valid || !additionalDetails.valid)
-    return invalidResult("invalid turn error")
-  const error: Exclude<Turn["error"], null> = {}
-  if (message.value !== undefined) error.message = message.value
-  if (additionalDetails.value !== undefined)
-    error.additionalDetails = additionalDetails.value
-  return { valid: true, value: error }
-}
-
-function parseThreadItem(value: JsonValue | undefined): ThreadItem | null {
-  const root = objectValue(value)
-  const type = stringValue(root?.type)
-  const id = stringValue(root?.id)
-  if (!root || type === undefined || id === undefined) return null
-  switch (type) {
-    case "userMessage": {
-      const content = parseArray(root.content, parseUserContent)
-      return content ? { type, id, content } : null
-    }
-    case "agentMessage": {
-      const text = stringValue(root.text)
-      return text === undefined ? null : { type, id, text }
-    }
-    case "reasoning": {
-      const summary = stringArray(root.summary)
-      const content = stringArray(root.content)
-      return summary && content ? { type, id, summary, content } : null
-    }
-    case "commandExecution": {
-      const command = stringValue(root.command)
-      const cwd = stringValue(root.cwd)
-      const status = stringValue(root.status)
-      const aggregatedOutput = nullableString(root.aggregatedOutput)
-      const exitCode = nullableNumber(root.exitCode)
-      return command !== undefined &&
-        cwd !== undefined &&
-        status !== undefined &&
-        aggregatedOutput.valid &&
-        exitCode.valid
-        ? {
-            type,
-            id,
-            command,
-            cwd,
-            status,
-            aggregatedOutput: aggregatedOutput.value,
-            exitCode: exitCode.value,
-          }
-        : null
-    }
-    case "fileChange": {
-      const changes = parseArray(root.changes, parseFileChange)
-      const status = stringValue(root.status)
-      return changes && status !== undefined
-        ? { type, id, changes, status }
-        : null
-    }
-    case "mcpToolCall": {
-      const server = stringValue(root.server)
-      const tool = stringValue(root.tool)
-      const status = stringValue(root.status)
-      const error = parseItemError(root.error)
-      return server !== undefined &&
-        tool !== undefined &&
-        status !== undefined &&
-        root.result !== undefined &&
-        error.valid
-        ? {
-            type,
-            id,
-            server,
-            tool,
-            status,
-            result: root.result,
-            error: error.value,
-          }
-        : null
-    }
-    case "dynamicToolCall": {
-      const namespace = nullableString(root.namespace)
-      const tool = stringValue(root.tool)
-      const status = stringValue(root.status)
-      const contentItems = nullableJsonArray(root.contentItems)
-      const success = nullableBoolean(root.success)
-      return namespace.valid &&
-        tool !== undefined &&
-        status !== undefined &&
-        contentItems.valid &&
-        success.valid
-        ? {
-            type,
-            id,
-            namespace: namespace.value,
-            tool,
-            status,
-            contentItems: contentItems.value,
-            success: success.value,
-          }
-        : null
-    }
-    case "plan": {
-      const text = stringValue(root.text)
-      return text === undefined ? null : { type, id, text }
-    }
-    default:
-      return null
-  }
-}
-
-function parseUserContent(value: JsonValue): UserMessageContent | null {
-  const root = objectValue(value)
-  if (!root) return null
-  const type = optionalString(root.type)
-  const text = optionalString(root.text)
-  if (!type.valid || !text.valid) return null
-  const content: UserMessageContent = {}
-  if (type.value !== undefined) content.type = type.value
-  if (text.value !== undefined) content.text = text.value
-  return content
-}
-
-function parseFileChange(value: JsonValue): FileChange | null {
-  const root = objectValue(value)
-  if (!root) return null
-  const path = optionalString(root.path)
-  const diff = optionalString(root.diff)
-  if (!path.valid || !diff.valid) return null
-  const change: FileChange = {}
-  if (path.value !== undefined) change.path = path.value
-  if (diff.value !== undefined) change.diff = diff.value
-  if (root.kind !== undefined) change.kind = root.kind
-  return change
-}
-
-function parseItemError(
-  value: JsonValue | undefined
-): ParseResult<McpToolError | null> {
-  if (value === null) return { valid: true, value: null }
-  const root = objectValue(value)
-  const message = optionalString(root?.message)
-  if (!root || !message.valid) return invalidResult("invalid item error")
-  const error: McpToolError = {}
-  if (message.value !== undefined) error.message = message.value
-  return { valid: true, value: error }
-}
-
-function parsePlan(
-  value: JsonValue | undefined
-): Array<{ step: string; status: string }> | null {
-  return parseArray(value, (entry) => {
-    const root = objectValue(entry)
-    const step = stringValue(root?.step)
-    const status = stringValue(root?.status)
-    return root && step !== undefined && status !== undefined
-      ? { step, status }
-      : null
-  })
-}
-
-function invalidResult<T>(message: string): ParseResult<T> {
-  return { valid: false, message }
-}
-
-function parseArray<T>(
-  value: JsonValue | undefined,
-  parse: (entry: JsonValue) => T | null
-): T[] | null {
-  if (!Array.isArray(value)) return null
-  const result: T[] = []
-  for (const entry of value) {
-    const parsed = parse(entry)
-    if (parsed === null) return null
-    result.push(parsed)
-  }
-  return result
-}
-
-function optionalArray<T>(
-  value: JsonValue | undefined,
-  parse: (entry: JsonValue) => T | null
-): ParseResult<T[] | undefined> {
-  if (value === undefined) return { valid: true, value: undefined }
-  const parsed = parseArray(value, parse)
-  return parsed
-    ? { valid: true, value: parsed }
-    : invalidResult("invalid array")
-}
-
-function stringArray(value: JsonValue | undefined): string[] | null {
-  return parseArray(value, (entry) => stringValue(entry) ?? null)
-}
-
-function optionalString(
-  value: JsonValue | undefined
-): ParseResult<string | undefined> {
-  if (value === undefined) return { valid: true, value: undefined }
-  const parsed = stringValue(value)
-  return parsed === undefined
-    ? invalidResult("invalid string")
-    : { valid: true, value: parsed }
-}
-
-function optionalNullableString(
-  value: JsonValue | undefined
-): ParseResult<string | null | undefined> {
-  if (value === undefined || value === null) return { valid: true, value }
-  const parsed = stringValue(value)
-  return parsed === undefined
-    ? invalidResult("invalid nullable string")
-    : { valid: true, value: parsed }
-}
-
-function nullableString(
-  value: JsonValue | undefined
-): ParseResult<string | null> {
-  if (value === null) return { valid: true, value: null }
-  const parsed = stringValue(value)
-  return parsed === undefined
-    ? invalidResult("invalid nullable string")
-    : { valid: true, value: parsed }
-}
-
-function nullableNumber(
-  value: JsonValue | undefined
-): ParseResult<number | null> {
-  if (value === null) return { valid: true, value: null }
-  const parsed = numberValue(value)
-  return parsed === undefined
-    ? invalidResult("invalid nullable number")
-    : { valid: true, value: parsed }
-}
-
-function nullableBoolean(
-  value: JsonValue | undefined
-): ParseResult<boolean | null> {
-  if (value === null) return { valid: true, value: null }
-  const parsed = booleanValue(value)
-  return parsed === undefined
-    ? invalidResult("invalid nullable boolean")
-    : { valid: true, value: parsed }
-}
-
-function nullableJsonArray(
-  value: JsonValue | undefined
-): ParseResult<JsonValue[] | null> {
-  if (value === null) return { valid: true, value: null }
-  return Array.isArray(value)
-    ? { valid: true, value }
-    : invalidResult("invalid nullable array")
-}
-
 function toolStatus(status: string): string {
   if (status === "inProgress" || status === "pending") return "pending"
   if (status === "completed") return "completed"
@@ -1219,57 +561,10 @@ function boundedJson(value: JsonValue): string {
   }
 }
 
-export function boundedText(value: string, limit: number): string {
-  if (value.length <= limit) return value
-  const half = Math.floor((limit - 32) / 2)
-  return `${value.slice(0, half)}\n… output truncated …\n${value.slice(-half)}`
-}
-
 function tail(value: string, limit: number): string {
   return value.length <= limit ? value : value.slice(-limit)
 }
 
 function rpcKey(id: JsonRpcId): string {
   return `${isNumber(id) ? "number" : "string"}:${id}`
-}
-
-function rpcIdValue(value: JsonValue | undefined): JsonRpcId | undefined {
-  return stringValue(value) ?? numberValue(value)
-}
-
-function objectValue(value: JsonValue | undefined): JsonObject | undefined {
-  return isJsonObject(value) ? value : undefined
-}
-
-function stringValue(value: JsonValue | undefined): string | undefined {
-  return isString(value) ? value : undefined
-}
-
-function numberValue(value: JsonValue | undefined): number | undefined {
-  return isNumber(value) && Number.isFinite(value) ? value : undefined
-}
-
-function booleanValue(value: JsonValue | undefined): boolean | undefined {
-  return isBoolean(value) ? value : undefined
-}
-
-function isJsonObject(value: JsonValue | undefined): value is JsonObject {
-  return (
-    value !== undefined &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.prototype.toString.call(value) === "[object Object]"
-  )
-}
-
-function isString(value: JsonValue | undefined): value is string {
-  return Object.prototype.toString.call(value) === "[object String]"
-}
-
-function isNumber(value: JsonValue | undefined): value is number {
-  return Object.prototype.toString.call(value) === "[object Number]"
-}
-
-function isBoolean(value: JsonValue | undefined): value is boolean {
-  return Object.prototype.toString.call(value) === "[object Boolean]"
 }

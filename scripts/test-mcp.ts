@@ -28,7 +28,7 @@ import {
 } from "../electron/cua-embedded.js"
 import { atomicJsonMcpMerge, mergeJsonMcpConfig } from "../electron/mcp-sync.js"
 import type { McpDiscoveredDefinition } from "../electron/mcp-registry.js"
-import type { JsonValue } from "../electron/codex-app-protocol.js"
+import type { JsonValue } from "../electron/codex-app-json.js"
 import type { McpProvider, McpRegistrySnapshot } from "../electron/shared.js"
 
 function discovered(
