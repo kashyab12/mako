@@ -12,6 +12,7 @@
 
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { stat } from "node:fs/promises"
 import {
   clip,
@@ -55,17 +56,64 @@ export class ClaudeProvider implements SessionProvider {
   harness = "claude" as const
   displayName = "Claude Code"
   private root: string
+  private home: string
+  private extraRoots: { at: number; value: string[] } | null = null
 
   constructor(home = homedir()) {
+    this.home = home
     this.root = join(home, ".claude", "projects")
   }
 
+  /**
+   * Claude does not always live in ~/.claude. A CLAUDE_CONFIG_DIR moves the
+   * whole store; router setups (subrouter and friends) fan Claude out into
+   * per-profile homes like ~/.subrouter/<x>/claude/<id>/projects — sessions
+   * as real as any, invisible to a provider that only knows the default
+   * path. Roots therefore are: the default, the env override, anything
+   * declared in ~/.mako/roots.json ({"claude": ["/abs/projects", …]}), and
+   * auto-discovered subrouter profiles. Discovery is a couple of readdirs,
+   * cached briefly — roots() is called on every watch/scan setup.
+   */
   roots(): string[] {
-    return [this.root]
+    if (this.extraRoots && Date.now() - this.extraRoots.at < 60_000) {
+      return [this.root, ...this.extraRoots.value]
+    }
+    const extras: string[] = []
+    const push = (dir: string) => {
+      if (dir && dir !== this.root && existsSync(dir) && !extras.includes(dir)) extras.push(dir)
+    }
+    const env = process.env["CLAUDE_CONFIG_DIR"]
+    if (env) push(join(env, "projects"))
+    try {
+      const declared = JSON.parse(
+        readFileSync(join(this.home, ".mako", "roots.json"), "utf8")
+      ) as { claude?: string[] }
+      for (const dir of declared.claude ?? []) push(dir)
+    } catch {
+      // No declaration file: nothing declared.
+    }
+    try {
+      const subrouter = join(this.home, ".subrouter")
+      for (const group of readdirSync(subrouter)) {
+        const claudeDir = join(subrouter, group, "claude")
+        if (!existsSync(claudeDir)) continue
+        for (const profile of readdirSync(claudeDir)) {
+          push(join(claudeDir, profile, "projects"))
+        }
+      }
+    } catch {
+      // No subrouter: the common case.
+    }
+    this.extraRoots = { at: Date.now(), value: extras }
+    return [this.root, ...extras]
   }
 
   async discover(): Promise<NativeFile[]> {
-    const paths = await walkFiles(this.root, (name) => name.endsWith(".jsonl"), 2)
+    const paths = (
+      await Promise.all(
+        this.roots().map((root) => walkFiles(root, (name) => name.endsWith(".jsonl"), 2))
+      )
+    ).flat()
     const files = await Promise.all(
       paths.map(async (path) => {
         try {
