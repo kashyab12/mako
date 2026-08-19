@@ -78,6 +78,8 @@
     "files": [
       "dist/**",
       "dist-electron/**",
+      "mako-icons/_masters/desktop-light.png",
+      "mako-icons/_masters/desktop-dark.png",
       "package.json",
       "!**/*.map"
     ],

@@ -260,6 +260,7 @@ function shortPath(path: string): string {
  * and never displayed back beyond the last four characters.
  */
 function Agents() {
+  const conversionMode = usePrefs((prefs) => prefs.conversionMode)
   const [availability, setAvailability] = useState<Record<string, boolean> | null>(null)
   const [daemon, setDaemon] = useState<{ pid: number; startedAt: number; sessions: number } | null>(null)
   const [loginStart, setLoginStart] = useState<boolean | null>(null)
@@ -299,6 +300,19 @@ function Agents() {
 
   return (
     <Section title="Agents">
+      <Row
+        label="Moving conversations"
+        hint="Native replay writes a real session in the target's own store. Transcript hands the new agent a file of the full conversation — newest turn first — and tells it to read everything before continuing."
+      >
+        <Segmented<"native" | "transcript">
+          value={conversionMode}
+          options={[
+            { value: "native", label: "Native replay" },
+            { value: "transcript", label: "Transcript file" },
+          ]}
+          onChange={(next) => setPref("conversionMode", next)}
+        />
+      </Row>
       <p className="pb-3 text-[12px] leading-relaxed text-muted-foreground">
         Every agent whose sessions appear in the Threads rail, and whether its
         CLI is on this machine. Installing a CLI is all it takes — sessions

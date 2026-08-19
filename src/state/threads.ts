@@ -352,8 +352,9 @@ export const threads = {
       return true
     }
     try {
+      const mode = prefsStore.get().conversionMode
       const result = await withConversion(ref.harness, harness, ref.title, () =>
-        getPi().continueThreadWith(ref.path, harness, prompt)
+        getPi().continueThreadWith(ref.path, harness, prompt, mode)
       )
       if (result.kind === "emitted") {
         const thread = await getPi().openThread(result.path)
@@ -414,7 +415,7 @@ export const threads = {
     if (!hasBridge()) return false
     try {
       const result = await withConversion(ref.harness, harness, ref.title, () =>
-        getPi().continueThreadWith(ref.path, harness)
+        getPi().continueThreadWith(ref.path, harness, undefined, prefsStore.get().conversionMode)
       )
       if (result.kind === "emitted") {
         // The conversation now exists natively in the target's store. Open

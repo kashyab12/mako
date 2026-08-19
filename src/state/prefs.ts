@@ -55,6 +55,13 @@ export interface Prefs {
   composerHarness?: string
   /** Per-harness model/effort/fast choices — Mako's own memory of them. */
   composerTuning: Record<string, { model?: string; effort?: string; fast?: boolean }>
+  /**
+   * How a conversation moves to another harness: "native" emits it into the
+   * target's own store (a real resumable session); "transcript" writes the
+   * full conversation to a file — newest turn first — and opens a fresh
+   * session told to read it end to end before continuing.
+   */
+  conversionMode: "native" | "transcript"
   /** Each harness's own defaults as last read from its config — never invented. */
   harnessDefaults: Record<string, { model?: string; effort?: string }>
   /** Overrides the host's default commit-drafting prompt. */
@@ -92,6 +99,7 @@ const defaults: Prefs = {
   agentHarnessFilter: [],
   composerTuning: {},
   harnessDefaults: {},
+  conversionMode: "native",
 }
 
 function load(): Prefs {

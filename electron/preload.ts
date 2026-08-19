@@ -48,10 +48,15 @@ const api = {
   unfollowThread: () => invoke<void>("pi:thread-unfollow"),
   resumableHarnesses: () => invoke<string[]>("pi:thread-resumable"),
   continueTargets: () => invoke<string[]>("pi:thread-continue-targets"),
-  continueThreadWith: (path: string, harness: string, instruction?: string) =>
+  continueThreadWith: (
+    path: string,
+    harness: string,
+    instruction?: string,
+    mode?: "native" | "transcript"
+  ) =>
     invoke<
       { kind: "emitted"; path: string } | { kind: "spawned"; run: ThreadRunState }
-    >("pi:thread-continue-with", path, harness, instruction),
+    >("pi:thread-continue-with", path, harness, instruction, mode),
   threadRun: (path: string) => invoke<ThreadRunState | null>("pi:thread-run", path),
   startHarness: (
     harness: string,

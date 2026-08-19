@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron"
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell, systemPreferences } from "electron"
 import { watch } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -51,8 +51,18 @@ const isDev = !app.isPackaged && !process.env.MAKO_PROD
  * (824 of 1024, 185.4pt corner radius, transparent margin) and is preferred
  * wherever it is present; the PNG is only a fallback.
  */
-function appIcon() {
+function appIcon(appearance?: "light" | "dark") {
+  // The dock icon follows the SYSTEM appearance, not the app's forced dark
+  // theme: the chrome-on-light master for light docks, the blue-on-dark
+  // master for dark ones — each drawn for its own backdrop's contrast.
+  const themed =
+    appearance === "light"
+      ? join(__dirname, "../mako-icons/_masters/desktop-light.png")
+      : appearance === "dark"
+        ? join(__dirname, "../mako-icons/_masters/desktop-dark.png")
+        : null
   const candidates = [
+    ...(themed ? [themed] : []),
     join(__dirname, "../build/Mako.icns"),
     isDev
       ? join(__dirname, "../public/icons/app-icon.png")
@@ -63,6 +73,18 @@ function appIcon() {
     if (!image.isEmpty()) return image
   }
   return undefined
+}
+
+/** Point the dock at whichever variant the system's appearance wants. */
+function syncDockIcon() {
+  if (process.platform !== "darwin") return
+  const appearance = systemPreferences
+    .getEffectiveAppearance()
+    .includes("dark")
+    ? ("dark" as const)
+    : ("light" as const)
+  const icon = appIcon(appearance)
+  if (icon) app.dock?.setIcon(icon)
 }
 
 let window: BrowserWindow | null = null
@@ -108,7 +130,14 @@ async function withHost<T>(run: (host: AgentHost) => T | Promise<T>): Promise<T>
 async function createWindow() {
   nativeTheme.themeSource = "dark"
   const icon = appIcon()
-  if (icon && process.platform === "darwin") app.dock?.setIcon(icon)
+  syncDockIcon()
+  if (process.platform === "darwin") {
+    // The OS announces appearance flips; the fin changes clothes with it.
+    systemPreferences.subscribeNotification("AppleInterfaceThemeChangedNotification", () =>
+      // The effective appearance updates a beat after the notification.
+      setTimeout(syncDockIcon, 150)
+    )
+  }
 
   window = new BrowserWindow({
     title: "Mako",
@@ -432,22 +461,58 @@ function bindIpc() {
    * open it as the first prompt of a fresh session there. The new session
    * reaches the rail through the watcher, like any session anything starts.
    */
-  handle("pi:thread-continue-with", async (_e, path: string, harness: string, instruction?: string) => {
-    // Every harness whose store we can write gets the real thing: the
-    // thread emitted as a *native* session in its format, instantly
-    // replyable — no tokens spent until someone actually says something.
-    const materialized = await emitThreadAs(path, harness)
-    if (materialized) {
-      bindLineageDirect(materialized.sessionPath, chainOf(materialized.thread.ref))
-      return { kind: "emitted" as const, path: materialized.sessionPath }
+  handle(
+    "pi:thread-continue-with",
+    async (
+      _e,
+      path: string,
+      harness: string,
+      instruction?: string,
+      mode?: "native" | "transcript"
+    ) => {
+      if (mode === "transcript") {
+        // The user's chosen alternative to native replay: the whole
+        // conversation rendered newest-first into a file, and a fresh
+        // session opened with orders to read it end to end before touching
+        // anything. The transcript stays out of the prompt, so the first
+        // turn is cheap and the reading happens through the agent's own
+        // file tools at its own pace.
+        const [thread, transcript] = await Promise.all([openThread(path), handoffFor(path)])
+        if (!thread || !transcript) throw new Error("This session could not be read for continuation")
+        const { writeFile, mkdir } = await import("node:fs/promises")
+        const { homedir } = await import("node:os")
+        const dir = join(homedir(), ".mako", "handoffs")
+        await mkdir(dir, { recursive: true })
+        const file = join(dir, `${harness}-${Date.now()}.md`)
+        await writeFile(file, transcript, "utf8")
+        const prompt = [
+          `Before doing anything else, read ${file} in full — every line, top to bottom.`,
+          "It is the complete conversation you are joining, formatted NEWEST TURN FIRST:",
+          "the first turn you read is the most recent, and the story runs backwards from there.",
+          "Do not skim it. Read all of it, then continue the work with that full context.",
+          "",
+          instruction?.trim() ? `Then: ${instruction.trim()}` : "Then continue where it left off.",
+        ].join("\n")
+        expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
+        return { kind: "spawned" as const, run: await startFresh(harness, thread.ref.cwd, prompt) }
+      }
+      // Native replay, the default: every harness whose store we can write
+      // gets the real thing — the thread emitted as a *native* session in
+      // its format, instantly replyable, no tokens spent until someone
+      // actually says something.
+      const materialized = await emitThreadAs(path, harness)
+      if (materialized) {
+        bindLineageDirect(materialized.sessionPath, chainOf(materialized.thread.ref))
+        return { kind: "emitted" as const, path: materialized.sessionPath }
+      }
+      // A harness without an emitter takes the universal transcript as the
+      // first prompt of a fresh headless session instead.
+      const [thread, handoff] = await Promise.all([openThread(path), handoffFor(path, instruction)])
+      if (!thread || !handoff) throw new Error("This session could not be read for continuation")
+      expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
+      return { kind: "spawned" as const, run: await startFresh(harness, thread.ref.cwd, handoff) }
     }
-    // A harness without an emitter takes the universal transcript as the
-    // first prompt of a fresh headless session instead.
-    const [thread, handoff] = await Promise.all([openThread(path), handoffFor(path, instruction)])
-    if (!thread || !handoff) throw new Error("This session could not be read for continuation")
-    expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
-    return { kind: "spawned" as const, run: await startFresh(harness, thread.ref.cwd, handoff) }
-  })
+  )
   /* Harness accounts: several logins per CLI, Orca-style isolated homes. */
   handle("pi:accounts", () => listAccounts())
   handle("pi:account-capture", (_e, harness: "claude" | "codex", name: string) =>
