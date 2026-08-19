@@ -19,7 +19,7 @@
 import { existsSync, watch, type FSWatcher } from "node:fs"
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
-import type { Thread, ThreadEntry, ThreadRef } from "./format.js"
+import type { Thread, ThreadEntry, ThreadOrigin, ThreadRef } from "./format.js"
 import type {
   NativeFile,
   SessionFollower,
@@ -53,11 +53,20 @@ interface CacheEntry {
   ref: ThreadRef | null
 }
 
+type JsonScalar = boolean | number | string | null
+type JsonValue = JsonScalar | JsonRecord | JsonValue[]
+
+interface JsonRecord {
+  [key: string]: JsonValue | undefined
+}
+
 interface FollowState {
-  listeners: Set<(entries: ThreadEntry[], replaced: boolean) => void>
+  listeners: Set<
+    (entries: ThreadEntry[], replaced: boolean, replaceFrom?: number) => void
+  >
   follower: SessionFollower | null
   fromByte: number
-  baseline: ThreadEntry[] | null
+  baselineCount: number | null
 }
 
 interface RefreshState {
@@ -92,7 +101,12 @@ export class SessionCatalog {
   private listeners = new Set<(event: CatalogEvent) => void>()
   private follows = new Map<string, FollowState>()
   private refreshes = new Map<string, RefreshState>()
-  private opened: { path: string; throughByte: number; entries: ThreadEntry[] } | null = null
+  private rescans = new Map<string, RefreshState>()
+  private opened: {
+    path: string
+    throughByte: number
+    entryCount: number
+  } | null = null
 
   private archive: SessionArchive | null = null
 
@@ -102,7 +116,8 @@ export class SessionCatalog {
   ) {
     this.providers = providers
     this.cachePath = options.cachePath
-    if (options.archivePath) this.archive = new SessionArchive(options.archivePath)
+    if (options.archivePath)
+      this.archive = new SessionArchive(options.archivePath)
   }
 
   /** Register a remote store. Included in every scan and poll from then on. */
@@ -139,9 +154,18 @@ export class SessionCatalog {
           files.map(async (file) => {
             seen.add(file.path)
             const cached = this.byPath.get(file.path)
-            if (cached && cached.bytes === file.bytes && cached.mtimeMs === file.mtimeMs) return
+            if (
+              cached &&
+              cached.bytes === file.bytes &&
+              (provider.rescanRoot || cached.mtimeMs === file.mtimeMs)
+            )
+              return
             const ref = await provider.peek(file).catch(() => null)
-            this.byPath.set(file.path, { bytes: file.bytes, mtimeMs: file.mtimeMs, ref })
+            this.byPath.set(file.path, {
+              bytes: file.bytes,
+              mtimeMs: file.mtimeMs,
+              ref,
+            })
             if (options.emitChanges && ref) {
               this.emit({ type: cached?.ref ? "updated" : "added", ref })
             }
@@ -183,7 +207,8 @@ export class SessionCatalog {
       if (
         !held ||
         (held.archived && !ref.archived) ||
-        (held.archived === ref.archived && (ref.updatedAt ?? "") > (held.updatedAt ?? ""))
+        (held.archived === ref.archived &&
+          (ref.updatedAt ?? "") > (held.updatedAt ?? ""))
       ) {
         byIdentity.set(key, ref)
       }
@@ -194,16 +219,18 @@ export class SessionCatalog {
   }
 
   /** Full translation of one session, via whichever store owns its path. */
-  async open(path: string): Promise<Thread | null> {
+  async open(path: string, trackForFollow = true): Promise<Thread | null> {
     const remote = this.remoteFor(path)
     if (remote) return remote.read(path)
     const provider = this.ownerOf(path)
     const native = provider ? await provider.read(path).catch(() => null) : null
     if (native) {
-      this.opened = {
-        path,
-        throughByte: native.ref.bytes ?? 0,
-        entries: structuredClone(native.entries),
+      if (trackForFollow) {
+        this.opened = {
+          path,
+          throughByte: native.ref.bytes ?? 0,
+          entryCount: native.entries.length,
+        }
       }
       return native
     }
@@ -226,10 +253,14 @@ export class SessionCatalog {
       for (const root of provider.roots()) {
         if (!existsSync(root)) continue // Not installed: nothing to watch.
         try {
-          const watcher = watch(root, { recursive: true }, (_event, filename) => {
-            if (!filename) return
-            this.noticed(`${root}/${filename.toString()}`)
-          })
+          const watcher = watch(
+            root,
+            { recursive: true },
+            (_event, filename) => {
+              if (!filename) return
+              this.noticed(`${root}/${filename.toString()}`)
+            }
+          )
           watcher.on("error", () => {})
           this.watchers.push(watcher)
         } catch {
@@ -262,18 +293,24 @@ export class SessionCatalog {
   follow(
     path: string,
     fromByte: number,
-    onEntries: (entries: ThreadEntry[], replaced: boolean) => void
+    onEntries: (
+      entries: ThreadEntry[],
+      replaced: boolean,
+      replaceFrom?: number
+    ) => void
   ): () => void {
     const provider = this.ownerOf(path)
+    const opened =
+      this.opened?.path === path && this.opened.throughByte === fromByte
+        ? this.opened
+        : null
     const state = this.follows.get(path) ?? {
       listeners: new Set(),
       follower: provider ? this.makeFollower(provider, path, fromByte) : null,
       fromByte,
-      baseline:
-        this.opened?.path === path && this.opened.throughByte === fromByte
-          ? structuredClone(this.opened.entries)
-          : null,
+      baselineCount: opened?.entryCount ?? null,
     }
+    if (opened) this.opened = null
     state.listeners.add(onEntries)
     this.follows.set(path, state)
     return () => {
@@ -319,7 +356,8 @@ export class SessionCatalog {
           const previous = this.remoteRefs.get(ref.path)
           this.remoteRefs.set(ref.path, ref)
           if (!previous) this.emit({ type: "added", ref })
-          else if (previous.updatedAt !== ref.updatedAt) this.emit({ type: "updated", ref })
+          else if (previous.updatedAt !== ref.updatedAt)
+            this.emit({ type: "updated", ref })
         }
       })
     )
@@ -339,10 +377,15 @@ export class SessionCatalog {
     let ticks = 0
     this.remoteTimer = setInterval(() => {
       ticks += 1
-      const followingRemote = [...this.follows.keys()].some((path) => this.remoteFor(path))
+      const followingRemote = [...this.follows.keys()].some((path) =>
+        this.remoteFor(path)
+      )
       // The full re-list runs on the slow cadence; the fast cadence exists
       // only while someone is actually looking at a remote thread.
-      if (followingRemote || ticks % Math.round(REMOTE_POLL_MS / REMOTE_FOLLOW_MS) === 0) {
+      if (
+        followingRemote ||
+        ticks % Math.round(REMOTE_POLL_MS / REMOTE_FOLLOW_MS) === 0
+      ) {
         void this.pollRemotes()
       }
     }, REMOTE_FOLLOW_MS)
@@ -353,7 +396,11 @@ export class SessionCatalog {
 
   private ownerOf(path: string): SessionProvider | null {
     for (const provider of this.providers) {
-      if (provider.roots().some((root) => path.startsWith(`${root}/`) || path === root)) {
+      if (
+        provider
+          .roots()
+          .some((root) => path.startsWith(`${root}/`) || path === root)
+      ) {
         return provider
       }
     }
@@ -366,7 +413,9 @@ export class SessionCatalog {
     // Shared-database stores have no per-session file to stat: any write
     // under the root re-runs that provider's discovery, debounced under
     // one key so a burst costs one rescan.
-    const key = provider.rescanRoot ? `rescan:${provider.harness}:${provider.roots()[0]}` : path
+    const key = provider.rescanRoot
+      ? `rescan:${provider.harness}:${provider.roots()[0]}`
+      : path
     clearTimeout(this.pending.get(key))
     this.pending.set(
       key,
@@ -378,28 +427,82 @@ export class SessionCatalog {
     )
   }
 
+  private rescanProvider(provider: SessionProvider): Promise<void> {
+    const key = provider.harness
+    const active = this.rescans.get(key)
+    if (active) {
+      active.requested = true
+      return active.promise
+    }
+    const state: RefreshState = { requested: false, promise: Promise.resolve() }
+    state.promise = (async () => {
+      try {
+        do {
+          state.requested = false
+          await this.rescanProviderOnce(provider)
+        } while (state.requested)
+      } finally {
+        if (this.rescans.get(key) === state) this.rescans.delete(key)
+      }
+    })()
+    this.rescans.set(key, state)
+    return state.promise
+  }
+
   /** Re-discover one provider's synthetic files; diff against the cache. */
-  private async rescanProvider(provider: SessionProvider): Promise<void> {
+  private async rescanProviderOnce(provider: SessionProvider): Promise<void> {
     const files = await provider.discover().catch((): NativeFile[] => [])
     const seen = new Set<string>()
     for (const file of files) {
       seen.add(file.path)
       const cached = this.byPath.get(file.path)
-      if (cached && cached.bytes === file.bytes && cached.mtimeMs === file.mtimeMs) continue
+      if (
+        cached &&
+        cached.bytes === file.bytes &&
+        (provider.rescanRoot || cached.mtimeMs === file.mtimeMs)
+      )
+        continue
       const ref = await provider.peek(file).catch(() => null)
-      this.byPath.set(file.path, { bytes: file.bytes, mtimeMs: file.mtimeMs, ref })
+      this.byPath.set(file.path, {
+        bytes: file.bytes,
+        mtimeMs: file.mtimeMs,
+        ref,
+      })
       if (ref) this.emit({ type: cached?.ref ? "updated" : "added", ref })
-      // A grown session with watchers gets the honest live view: a re-read.
       const follow = this.follows.get(file.path)
       if (follow && follow.listeners.size > 0) {
-        const thread = await provider.read(file.path).catch(() => null)
-        if (thread) {
-          for (const listener of follow.listeners) listener(thread.entries, true)
+        if (!follow.follower) {
+          follow.follower = this.makeFollower(
+            provider,
+            file.path,
+            follow.fromByte
+          )
+        }
+        if (follow.follower) {
+          const update = await follow.follower.next().catch(() => null)
+          if (update && (update.replace || update.entries.length > 0)) {
+            await this.deliverFollowerUpdate(
+              provider,
+              file.path,
+              follow,
+              update
+            )
+          }
+        } else {
+          const thread = await provider.read(file.path).catch(() => null)
+          if (thread) {
+            this.deliver(follow, {
+              entries: thread.entries,
+              nextByte: file.bytes,
+              replace: true,
+              replaceFrom: 0,
+            })
+          }
         }
       }
     }
     const prefix = provider.roots()[0] ?? ""
-    for (const path of [...this.byPath.keys()]) {
+    for (const path of this.byPath.keys()) {
       if (path.startsWith(prefix) && !seen.has(path)) {
         this.byPath.delete(path)
         this.emit({ type: "removed", path })
@@ -429,7 +532,10 @@ export class SessionCatalog {
     return state.promise
   }
 
-  private async refreshOnce(provider: SessionProvider, path: string): Promise<void> {
+  private async refreshOnce(
+    provider: SessionProvider,
+    path: string
+  ): Promise<void> {
     const info = await stat(path).catch(() => null)
     if (!info || !info.isFile()) {
       if (this.byPath.delete(path)) {
@@ -441,8 +547,13 @@ export class SessionCatalog {
     const file: NativeFile = { path, bytes: info.size, mtimeMs: info.mtimeMs }
     const cached = this.byPath.get(path)
     const follow = this.follows.get(path)
-    const unchanged = cached && cached.bytes === file.bytes && cached.mtimeMs === file.mtimeMs
-    if (unchanged && (!follow?.follower || follow.follower.offset >= file.bytes)) return
+    const unchanged =
+      cached && cached.bytes === file.bytes && cached.mtimeMs === file.mtimeMs
+    if (
+      unchanged &&
+      (!follow?.follower || follow.follower.offset >= file.bytes)
+    )
+      return
 
     const grew = cached && file.bytes > cached.bytes
     const ref =
@@ -458,44 +569,80 @@ export class SessionCatalog {
     if (ref) this.emit({ type: cached?.ref ? "updated" : "added", ref })
 
     if (!follow || follow.listeners.size === 0) return
-    if (!follow.follower) follow.follower = this.makeFollower(provider, path, follow.fromByte)
+    if (!follow.follower)
+      follow.follower = this.makeFollower(provider, path, follow.fromByte)
     if (follow.follower) {
       if (!provider.createFollower && file.bytes < follow.follower.offset) {
         const thread = await provider.read(path).catch(() => null)
         follow.follower = this.makeFollower(provider, path, file.bytes)
         if (thread) {
-          follow.baseline = structuredClone(thread.entries)
-          this.deliver(follow, { entries: thread.entries, nextByte: file.bytes, replace: true })
+          follow.baselineCount = thread.entries.length
+          this.deliver(follow, {
+            entries: thread.entries,
+            nextByte: file.bytes,
+            replace: true,
+          })
         }
         return
       }
       const update = await follow.follower.next().catch(() => null)
       if (update?.reset && grew && cached.ref) {
         const resetRef = await provider.peek(file).catch(() => null)
-        this.byPath.set(path, { bytes: file.bytes, mtimeMs: file.mtimeMs, ref: resetRef })
+        this.byPath.set(path, {
+          bytes: file.bytes,
+          mtimeMs: file.mtimeMs,
+          ref: resetRef,
+        })
         if (resetRef) this.emit({ type: "updated", ref: resetRef })
       }
       if (update && (update.replace || update.entries.length > 0)) {
-        if (update.reset) {
-          follow.baseline = []
-          this.deliver(follow, update)
-        } else if (update.replace && follow.baseline) {
-          this.deliver(follow, {
-            ...update,
-            entries: [...follow.baseline, ...update.entries],
-          })
-        } else if (update.replace) {
-          const thread = await provider.read(path).catch(() => null)
-          if (thread) this.deliver(follow, { ...update, entries: thread.entries })
-        } else {
-          this.deliver(follow, update)
-        }
+        await this.deliverFollowerUpdate(provider, path, follow, update)
       }
       return
     }
 
     const thread = await provider.read(path).catch(() => null)
-    if (thread) this.deliver(follow, { entries: thread.entries, nextByte: file.bytes, replace: true })
+    if (thread)
+      this.deliver(follow, {
+        entries: thread.entries,
+        nextByte: file.bytes,
+        replace: true,
+      })
+  }
+
+  private async deliverFollowerUpdate(
+    provider: SessionProvider,
+    path: string,
+    follow: FollowState,
+    update: SessionUpdate
+  ): Promise<void> {
+    if (update.reset) {
+      follow.baselineCount = 0
+      this.deliver(follow, update)
+      return
+    }
+    if (update.replace && follow.baselineCount !== null) {
+      this.deliver(follow, {
+        ...update,
+        replaceFrom: Math.max(
+          0,
+          follow.baselineCount + (update.replaceFrom ?? 0)
+        ),
+      })
+      return
+    }
+    if (update.replace) {
+      const thread = await provider.read(path).catch(() => null)
+      if (thread) {
+        this.deliver(follow, {
+          ...update,
+          entries: thread.entries,
+          replaceFrom: 0,
+        })
+      }
+      return
+    }
+    this.deliver(follow, update)
   }
 
   private makeFollower(
@@ -519,7 +666,8 @@ export class SessionCatalog {
   }
 
   private deliver(follow: FollowState, update: SessionUpdate): void {
-    for (const listener of follow.listeners) listener(update.entries, update.replace)
+    for (const listener of follow.listeners)
+      listener(update.entries, update.replace, update.replaceFrom)
   }
 
   private emit(event: CatalogEvent): void {
@@ -527,7 +675,8 @@ export class SessionCatalog {
     // copy that survives the native store. Lazy read, throttled inside.
     if (this.archive && (event.type === "added" || event.type === "updated")) {
       const ref = event.ref
-      if (!ref.archived) this.archive.note(ref, () => this.open(ref.path))
+      if (!ref.archived)
+        this.archive.note(ref, () => this.open(ref.path, false))
     }
     for (const listener of this.listeners) listener(event)
   }
@@ -542,12 +691,8 @@ export class SessionCatalog {
     this.cacheLoaded = true
     try {
       const raw = await readFile(this.cachePath, "utf8")
-      const parsed = JSON.parse(raw) as { version?: number; entries?: Record<string, CacheEntry> }
-      if (parsed.version === 1 && parsed.entries) {
-        for (const [path, entry] of Object.entries(parsed.entries)) {
-          this.byPath.set(path, entry)
-        }
-      }
+      const entries = parseCache(raw)
+      if (entries) this.byPath = entries
     } catch {
       // No cache yet, or an unreadable one: the scan simply peeks everything.
     }
@@ -567,9 +712,124 @@ export class SessionCatalog {
       await mkdir(dirname(this.cachePath), { recursive: true })
       const entries: Record<string, CacheEntry> = {}
       for (const [path, entry] of this.byPath) entries[path] = entry
-      await writeFile(this.cachePath, JSON.stringify({ version: 1, entries }), "utf8")
+      await writeFile(
+        this.cachePath,
+        JSON.stringify({ version: 1, entries }),
+        "utf8"
+      )
     } catch {
       // A failed cache write costs the next start a re-peek, nothing more.
     }
   }
+}
+
+function parseCache(raw: string): Map<string, CacheEntry> | null {
+  try {
+    const value: JsonValue = JSON.parse(raw)
+    if (!isJsonRecord(value) || readNumber(value, "version") !== 1) return null
+    const stored = value.entries
+    if (!isJsonRecord(stored)) return null
+    const entries = new Map<string, CacheEntry>()
+    for (const [path, candidate] of Object.entries(stored)) {
+      const entry = parseCacheEntry(candidate)
+      if (!entry) return null
+      entries.set(path, entry)
+    }
+    return entries
+  } catch {
+    return null
+  }
+}
+
+function parseCacheEntry(value: JsonValue | undefined): CacheEntry | null {
+  if (!isJsonRecord(value)) return null
+  const bytes = readNumber(value, "bytes")
+  const mtimeMs = readNumber(value, "mtimeMs")
+  if (bytes === undefined || mtimeMs === undefined) return null
+  if (value.ref === null) return { bytes, mtimeMs, ref: null }
+  const ref = parseCachedThreadRef(value.ref)
+  return ref ? { bytes, mtimeMs, ref } : null
+}
+
+function parseCachedThreadRef(value: JsonValue | undefined): ThreadRef | null {
+  if (!isJsonRecord(value)) return null
+  const harness = readString(value, "harness")
+  const nativeId = readString(value, "nativeId")
+  const path = readString(value, "path")
+  if (!harness || !nativeId || !path) return null
+  const ref: ThreadRef = { harness, nativeId, path }
+  const cwd = readString(value, "cwd")
+  const title = readString(value, "title")
+  const model = readString(value, "model")
+  const startedAt = readString(value, "startedAt")
+  const updatedAt = readString(value, "updatedAt")
+  const bytes = readNumber(value, "bytes")
+  const lineage = parseArray(value.lineage, parseThreadOrigin)
+  const modelProvider = readString(value, "modelProvider")
+  const archived = readBoolean(value, "archived")
+  if (cwd !== undefined) ref.cwd = cwd
+  if (title !== undefined) ref.title = title
+  if (model !== undefined) ref.model = model
+  if (startedAt !== undefined) ref.startedAt = startedAt
+  if (updatedAt !== undefined) ref.updatedAt = updatedAt
+  if (bytes !== undefined) ref.bytes = bytes
+  if (lineage) ref.lineage = lineage
+  if (modelProvider !== undefined) ref.modelProvider = modelProvider
+  if (archived !== undefined) ref.archived = archived
+  return ref
+}
+
+function parseThreadOrigin(value: JsonValue): ThreadOrigin | null {
+  if (!isJsonRecord(value)) return null
+  const harness = readString(value, "harness")
+  if (!harness) return null
+  const origin: ThreadOrigin = { harness }
+  const title = readString(value, "title")
+  if (title !== undefined) origin.title = title
+  return origin
+}
+
+function parseArray<T>(
+  value: JsonValue | undefined,
+  parse: (item: JsonValue) => T | null
+): T[] | null {
+  if (!Array.isArray(value)) return null
+  const parsed: T[] = []
+  for (const item of value) {
+    const result = parse(item)
+    if (result === null) return null
+    parsed.push(result)
+  }
+  return parsed
+}
+
+function isJsonRecord(value: JsonValue | undefined): value is JsonRecord {
+  return Object.prototype.toString.call(value) === "[object Object]"
+}
+
+function isStringValue(value: JsonValue | undefined): value is string {
+  return Object.prototype.toString.call(value) === "[object String]"
+}
+
+function isNumberValue(value: JsonValue | undefined): value is number {
+  return Object.prototype.toString.call(value) === "[object Number]"
+}
+
+function isBooleanValue(value: JsonValue | undefined): value is boolean {
+  return Object.prototype.toString.call(value) === "[object Boolean]"
+}
+
+function readString(record: JsonRecord, key: string): string | undefined {
+  const value = record[key]
+  return isStringValue(value) ? value : undefined
+}
+
+function readNumber(record: JsonRecord, key: string): number | undefined {
+  const value = record[key]
+  return isNumberValue(value) && Number.isFinite(value) ? value : undefined
+}
+
+function readBoolean(record: JsonRecord, key: string): boolean | undefined {
+  const value = record[key]
+  return isBooleanValue(value) ? value : undefined
 }
