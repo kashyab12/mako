@@ -17,6 +17,8 @@ export interface GitHubState {
   loading: boolean
   /** The branch the current `pull` was fetched for, so a switch invalidates it. */
   branch?: string
+  /** The signed-in user's avatar as a data URL, for the identity badge. */
+  userAvatar?: string
 }
 
 export const githubStore = createStore<GitHubState>({ loading: false })
@@ -30,6 +32,16 @@ export const github = {
     if (!hasBridge() || githubStore.get().status) return
     const status = await getMako().githubStatus().catch(() => undefined)
     if (status) githubStore.set({ status })
+    void github.ensureUserAvatar()
+  },
+
+  /** Best effort and quiet: no avatar means a monogram, never a toast. */
+  async ensureUserAvatar() {
+    if (!hasBridge()) return
+    const { status, userAvatar } = githubStore.get()
+    if (userAvatar || !status?.authenticated) return
+    const avatar = await getMako().userAvatar().catch(() => undefined)
+    if (avatar) githubStore.set({ userAvatar: avatar })
   },
 
   async refresh(branch?: string) {

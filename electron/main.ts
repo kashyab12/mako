@@ -55,6 +55,7 @@ import {
   repoAvatar,
   rerunChecks,
   type CreatePullOptions,
+  userAvatar,
 } from "./github.js"
 import { HostPool } from "./pool.js"
 import {
@@ -588,6 +589,7 @@ function bindIpc() {
   handle("mako:threads", (_e, filter?: { cwd?: string; harness?: string }) => ({
     ready: threadsReady(),
     threads: listThreads(filter),
+  handle("mako:user-avatar", () => withHost((h) => userAvatar(h.workspace)))
   }))
   handle("mako:thread-open", (_e, path: string) => openThread(path))
   handle(

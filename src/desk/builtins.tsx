@@ -6,8 +6,10 @@ import {
   MonitorIcon,
   TerminalSquareIcon,
 } from "lucide-react"
-import { registerToolView, type ToolCall } from "@/extend/slots"
+import { registerSlot, registerToolView, type ToolCall } from "@/extend/slots"
 import { registerSurface } from "@/extend/surfaces"
+import { IdentityBadge } from "@/components/identity/identity-badge"
+import { IdentityRow } from "@/components/identity/identity-row"
 import { ChangesPanel } from "@/components/inspector/changes-lazy"
 import { FileTree } from "@/components/rail/file-tree"
 import { ContextPanel } from "@/components/inspector/context-panel"
@@ -70,6 +72,10 @@ export function installBuiltins(): () => void {
       order: 5,
       minWidth: 460,
     }),
+
+    // Identity, through the same slots a plugin would use.
+    registerSlot("identity", "titlebar.trailing", IdentityBadge, -10),
+    registerSlot("identity", "rail.footer", IdentityRow, -10),
 
     registerToolView("bash", {
       summary: (call: ToolCall) => argAt(call.arguments, "command") ?? "",

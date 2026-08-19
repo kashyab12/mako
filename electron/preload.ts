@@ -353,6 +353,7 @@ const api = {
   rerunChecks: () => invokeTrustedHost<void>("mako:rerun-checks"),
   repoAvatar: (repo: string) =>
     invokeTrustedHost<string | undefined>("mako:repo-avatar", repo),
+  userAvatar: () => invokeTrustedHost<string | undefined>("mako:user-avatar"),
 
   usage: () => invokeTrustedHost<UsageSummary>("mako:usage"),
   automations: () => invokeTrustedHost<Automation[]>("mako:automations"),

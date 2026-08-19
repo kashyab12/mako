@@ -530,6 +530,38 @@ export async function repoAvatar(
   }
 }
 
+/**
+ * The signed-in user's avatar, as a data URL — the identity mark for the
+ * titlebar. Same discipline as the repo avatar: fetched here, cached to
+ * disk, silent on failure (a missing avatar is a monogram, not a toast),
+ * and every request Mako makes to GitHub stays in this one file.
+ */
+export async function userAvatar(cwd: string): Promise<string | undefined> {
+  const dir = join(app.getPath("userData"), "avatars")
+  try {
+    const login = (await gh(cwd, ["api", "user", "--jq", ".login"])).trim()
+    if (!login) return undefined
+    const file = join(dir, `user-${login.replace(/[^\w.-]/g, "-")}.png`)
+    try {
+      return `data:image/png;base64,${(await readFile(file)).toString("base64")}`
+    } catch {
+      // Not cached yet.
+    }
+    const url = (await gh(cwd, ["api", "user", "--jq", ".avatar_url"])).trim()
+    if (!url.startsWith("https://")) return undefined
+    const response = await fetch(`${url}${url.includes("?") ? "&" : "?"}s=128`)
+    if (!response.ok) return undefined
+    const bytes = Buffer.from(await response.arrayBuffer())
+    // An avatar is a few kilobytes; anything much larger is not one.
+    if (bytes.length > 512_000) return undefined
+    await mkdir(dir, { recursive: true })
+    await writeFile(file, bytes)
+    return `data:image/png;base64,${bytes.toString("base64")}`
+  } catch {
+    return undefined
+  }
+}
+
 /** Ask GitHub to re-run whatever failed, rather than making the user leave. */
 export async function rerunChecks(cwd: string): Promise<void> {
   await gh(cwd, ["run", "rerun", "--failed"]).catch(async () => {

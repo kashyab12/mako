@@ -86,10 +86,11 @@ export function PullRequestCard() {
   const unpublished = Boolean(branch) && !upstream
   const hasWork = onDefault ? ahead > 0 : ahead > 0 || unpublished
 
-  if ((!status.installed || !status.authenticated || !status.repo) && !hasWork) {
-    return null
-  }
   if (!status.installed || !status.authenticated || !status.repo) {
+    // The one place a "connect" affordance belongs is exactly where the
+    // feature would live — hiding it from the people who have not set it
+    // up is how a capability stays undiscovered.
+    if (!hasWork) return <ConnectGitHubRow status={status} />
     return <GitHubSetup status={status} />
   }
 
@@ -129,6 +130,39 @@ export function PullRequestCard() {
             : `Open a pull request for ${branch}`}
         </span>
         <span className="tabular shrink-0 text-label text-faint">{commits}</span>
+      </button>
+    </div>
+  )
+}
+
+/**
+ * A quiet doorway where the PR flow will live once GitHub is connected.
+ * Three different "no"s keep three different sentences — a missing CLI, a
+ * missing login, and a repo with no GitHub remote are fixed differently.
+ */
+function ConnectGitHubRow({ status }: { status: GitHubStatus }) {
+  const label = !status.installed
+    ? "Install the gh CLI to track pull requests"
+    : !status.authenticated
+      ? "Sign in to GitHub to track pull requests"
+      : "Add a GitHub remote to track pull requests"
+  const copy = () => {
+    void navigator.clipboard.writeText("gh auth login")
+    toast.success("Copied gh auth login")
+  }
+  return (
+    <div className="shrink-0 border-t border-hairline px-2.5 py-2">
+      <button
+        type="button"
+        onClick={status.installed && !status.authenticated ? copy : undefined}
+        className={cn(
+          "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-label text-faint",
+          status.installed && !status.authenticated &&
+            "pressable transition-colors duration-100 hover:bg-fill-hover hover:text-foreground"
+        )}
+      >
+        <GitPullRequestIcon className="size-3.5 shrink-0" />
+        <span className="min-w-0 flex-1 truncate">{label}</span>
       </button>
     </div>
   )

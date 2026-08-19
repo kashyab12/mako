@@ -844,6 +844,9 @@ export function installMockBridge() {
     mergePull: async () => null,
     rerunChecks: async () => {},
     repoAvatar: async () => undefined,
+    // A 1x1 warm-grey png; enough for the identity badge to show an image path.
+    userAvatar: async () =>
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPcv2H9fwAHmwM6iEyzTAAAAABJRU5ErkJggg==",
     openUrl: async () => {},
     threads: async () => ({
       ready: true,
