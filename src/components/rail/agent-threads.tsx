@@ -1,5 +1,6 @@
-import { memo, useDeferredValue, useMemo, useRef, useState } from "react"
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { displayHarness, harnessLabel } from "@/components/rail/harness-meta"
 import { formatRelative, workspaceName } from "@/lib/format"
 import { threads, useThreads } from "@/state/threads"
 import { actions, useSession } from "@/state/session"
@@ -19,7 +20,7 @@ import {
   SearchIcon,
   XIcon,
 } from "lucide-react"
-import type { Harness, ThreadRef } from "@/lib/types"
+import type { ThreadRef } from "@/lib/types"
 
 /**
  * The threads rail: every agent's conversations, arranged the way work is —
@@ -34,26 +35,6 @@ import type { Harness, ThreadRef } from "@/lib/types"
  * marks carry the multi-harness story; everything else stays out of the way.
  */
 
-export const HARNESS_LABEL: Record<string, string> = {
-  codex: "Codex",
-  claude: "Claude Code",
-  cursor: "Cursor",
-  grok: "Grok",
-  devin: "Devin",
-}
-
-/**
- * Legacy engine-owned sessions read as Devin conversations. Pi is an
- * implementation detail and never appears as a selectable agent.
- */
-export function displayHarness(ref: ThreadRef): string {
-  return ref.harness === "pi" ? "devin" : ref.harness
-}
-
-export function harnessLabel(harness: Harness): string {
-  return HARNESS_LABEL[harness] ?? harness
-}
-
 /** Rows a folder shows before "More": generous for the folder being worked. */
 const LEAD_ROWS = 5
 const REST_ROWS = 3
@@ -61,6 +42,8 @@ const REST_ROWS = 3
 const PAGE_ROWS = 5
 /** Folders quiet longer than this start out collapsed. */
 const COLD_MS = 7 * 24 * 3600_000
+const LIVE_TIME_MS = 60_000
+const INITIAL_TIME = Date.now()
 
 interface Folder {
   key: string
@@ -69,6 +52,17 @@ interface Folder {
   refs: ThreadRef[]
   current: boolean
   latest: string
+}
+
+function useLiveTime(): number {
+  const [now, setNow] = useState(INITIAL_TIME)
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), LIVE_TIME_MS)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  return now
 }
 
 export function AgentThreads() {
@@ -86,6 +80,7 @@ export function AgentThreads() {
   const scope = usePrefs((prefs) => prefs.railScope)
   const sortBy = usePrefs((prefs) => prefs.railSortBy)
   const cwd = useSession((state) => state.meta?.cwd)
+  const now = useLiveTime()
 
   // The haystack is built once per catalog push, not once per keystroke.
   const indexed = useMemo(
@@ -209,6 +204,7 @@ export function AgentThreads() {
               <FolderSection
                 key={folder.key}
                 folder={folder}
+                now={now}
                 collapsed={collapsed.includes(`ws:${folder.key}`)}
                 onToggle={() => {
                   const key = `ws:${folder.key}`
@@ -467,12 +463,14 @@ function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter
  */
 function FolderSection({
   folder,
+  now,
   collapsed,
   onToggle,
   pages,
   onPages,
 }: {
   folder: Folder
+  now: number
   collapsed: boolean
   onToggle: () => void
   pages: number
@@ -481,7 +479,7 @@ function FolderSection({
   // A cold folder starts closed, a warm one open; the stored flag means
   // "the user flipped this one from its default", so both kinds remember.
   const cold =
-    !folder.current && folder.latest !== "" && Date.now() - Date.parse(folder.latest) > COLD_MS
+    !folder.current && folder.latest !== "" && now - Date.parse(folder.latest) > COLD_MS
   const closed = collapsed ? !cold : cold
 
   const lead = folder.current ? LEAD_ROWS : REST_ROWS
