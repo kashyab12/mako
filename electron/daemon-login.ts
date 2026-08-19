@@ -33,6 +33,27 @@ function daemonScript(): string {
   return join(app.getAppPath(), "node_modules", "@mako", "sessions", "dist", "daemon-main.js")
 }
 
+/** The user said no, once, explicitly. Recorded so the default stays off. */
+function optOutPath(): string {
+  return join(homedir(), ".mako", "syncd-login-optout")
+}
+
+/**
+ * Sync-at-login defaults ON: the first boot installs the LaunchAgent
+ * quietly, and only an explicit settings opt-out (which writes a marker)
+ * keeps it off from then on.
+ */
+export async function ensureDaemonLoginDefault(): Promise<void> {
+  if (process.platform !== "darwin") return
+  try {
+    if (existsSync(optOutPath())) return
+    if (await daemonLoginEnabled()) return
+    await setDaemonLogin(true)
+  } catch {
+    // A failed install stays quiet; the settings toggle still works.
+  }
+}
+
 export async function daemonLoginEnabled(): Promise<boolean> {
   if (process.platform !== "darwin") return false
   try {
@@ -43,6 +64,13 @@ export async function daemonLoginEnabled(): Promise<boolean> {
 }
 
 export async function setDaemonLogin(enabled: boolean): Promise<void> {
+  const { mkdir: makeDir, rm: remove, writeFile: write } = await import("node:fs/promises")
+  if (enabled) {
+    await remove(optOutPath(), { force: true }).catch(() => {})
+  } else {
+    await makeDir(join(homedir(), ".mako"), { recursive: true }).catch(() => {})
+    await write(optOutPath(), "").catch(() => {})
+  }
   if (process.platform !== "darwin") {
     throw new Error("Login start is only wired up for macOS so far")
   }

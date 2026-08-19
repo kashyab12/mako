@@ -11,7 +11,7 @@ import type { CrashReport } from "../../../electron/crash.ts"
 import type { UsageSummary } from "@/lib/types"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { PluginsSection } from "@/components/settings/plugins-section"
-import { RotateCcwIcon, XIcon } from "lucide-react"
+import { CheckIcon, RotateCcwIcon, XIcon } from "lucide-react"
 
 const SECTIONS = [
   { id: "appearance", label: "Appearance" },
@@ -275,11 +275,11 @@ function Agents() {
 
 
   const HARNESSES = [
-    { id: "pi", name: "Pi", how: "built in" },
-    { id: "codex", name: "Codex", how: "codex CLI" },
     { id: "claude", name: "Claude Code", how: "claude CLI" },
+    { id: "codex", name: "Codex", how: "codex CLI" },
     { id: "cursor", name: "Cursor", how: "cursor-agent CLI" },
     { id: "grok", name: "Grok", how: "agent CLI" },
+    { id: "devin", name: "Devin", how: "devin-cli / Zed / IDE" },
   ]
 
   return (
@@ -360,7 +360,13 @@ function Agents() {
  */
 function HarnessAccounts() {
   const [accounts, setAccounts] = useState<
-    Array<{ harness: "claude" | "codex"; name: string; email?: string; active: boolean }>
+    Array<{
+      harness: "claude" | "codex"
+      name: string
+      email?: string
+      active: boolean
+      source?: "mako" | "subrouter"
+    }>
   >([])
   const [usage, setUsage] = useState<Record<string, { status: string; plan?: string; detail?: string; session?: { usedPercent: number; resetsAt: number | null } | null; weekly?: { usedPercent: number; resetsAt: number | null } | null }>>({})
   const [capturing, setCapturing] = useState<"claude" | "codex" | null>(null)
@@ -412,24 +418,48 @@ function HarnessAccounts() {
             </p>
             {rows.map((account) => {
               const stats = usage[`${harness}:${account.name}`]
+              const identity = account.email ?? account.name
               return (
-                <div key={account.name} className="flex items-center gap-2.5 border-b border-hairline py-2 last:border-b-0">
-                  <input
-                    type="radio"
-                    name={`account-${harness}`}
-                    checked={account.active}
-                    onChange={() =>
-                      void getPi()
-                        .selectAccount(harness, account.name === "default" ? null : account.name)
-                        .then(load)
-                    }
-                    className="size-3 accent-current"
-                  />
-                  <span className="min-w-0 flex-none basis-52 truncate text-[12.5px]">
-                    {account.email ?? account.name}
-                    {account.email && account.name !== "default" ? (
-                      <span className="ml-1.5 text-[10px] text-faint">{account.name}</span>
-                    ) : null}
+                <button
+                  key={account.name}
+                  type="button"
+                  onClick={() =>
+                    void getPi()
+                      .selectAccount(harness, account.name === "default" ? null : account.name)
+                      .then(load)
+                  }
+                  className={cn(
+                    "group/account flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left",
+                    "transition-colors duration-100",
+                    account.active
+                      ? "bg-raised ring-1 ring-hairline"
+                      : "hover:bg-raised/60"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold uppercase",
+                      account.active ? "bg-brand-soft text-brand" : "bg-raised text-faint"
+                    )}
+                  >
+                    {identity.slice(0, 1)}
+                  </span>
+                  <span className="min-w-0 flex-none basis-56">
+                    <span
+                      className={cn(
+                        "block truncate text-[12.5px]",
+                        account.active ? "font-medium text-foreground" : "text-foreground/85"
+                      )}
+                    >
+                      {identity}
+                    </span>
+                    <span className="block text-[10px] text-faint">
+                      {account.source === "subrouter"
+                        ? "via subrouter"
+                        : account.name === "default"
+                          ? "the CLI's own login"
+                          : `captured as ${account.name}`}
+                    </span>
                   </span>
                   <span className="min-w-0 flex-1">
                     {stats?.status === "ok" ? (
@@ -450,17 +480,24 @@ function HarnessAccounts() {
                       <span className="shimmer text-[10.5px] text-faint">…</span>
                     )}
                   </span>
-                  {account.name !== "default" ? (
-                    <button
-                      type="button"
+                  {account.active ? (
+                    <CheckIcon className="size-3.5 shrink-0 text-brand" />
+                  ) : null}
+                  {account.name !== "default" && account.source !== "subrouter" ? (
+                    <span
+                      role="button"
+                      tabIndex={-1}
                       aria-label={`Remove ${account.name}`}
-                      onClick={() => void getPi().removeAccount(harness, account.name).then(load)}
-                      className="pressable rounded p-1 text-faint hover:text-foreground"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void getPi().removeAccount(harness, account.name).then(load)
+                      }}
+                      className="pressable rounded p-1 text-faint opacity-0 transition-opacity duration-100 group-hover/account:opacity-100 hover:text-foreground"
                     >
                       <XIcon className="size-3.5" />
-                    </button>
+                    </span>
                   ) : null}
-                </div>
+                </button>
               )
             })}
             {capturing === harness ? (

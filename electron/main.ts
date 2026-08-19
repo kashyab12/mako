@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell, systemPreferences } from "electron"
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron"
 import { watch } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -51,18 +51,8 @@ const isDev = !app.isPackaged && !process.env.MAKO_PROD
  * (824 of 1024, 185.4pt corner radius, transparent margin) and is preferred
  * wherever it is present; the PNG is only a fallback.
  */
-function appIcon(appearance?: "light" | "dark") {
-  // The dock icon follows the SYSTEM appearance, not the app's forced dark
-  // theme: the chrome-on-light master for light docks, the blue-on-dark
-  // master for dark ones — each drawn for its own backdrop's contrast.
-  const themed =
-    appearance === "light"
-      ? join(__dirname, "../mako-icons/_masters/desktop-light.png")
-      : appearance === "dark"
-        ? join(__dirname, "../mako-icons/_masters/desktop-dark.png")
-        : null
+function appIcon() {
   const candidates = [
-    ...(themed ? [themed] : []),
     join(__dirname, "../build/Mako.icns"),
     isDev
       ? join(__dirname, "../public/icons/app-icon.png")
@@ -73,18 +63,6 @@ function appIcon(appearance?: "light" | "dark") {
     if (!image.isEmpty()) return image
   }
   return undefined
-}
-
-/** Point the dock at whichever variant the system's appearance wants. */
-function syncDockIcon() {
-  if (process.platform !== "darwin") return
-  const appearance = systemPreferences
-    .getEffectiveAppearance()
-    .includes("dark")
-    ? ("dark" as const)
-    : ("light" as const)
-  const icon = appIcon(appearance)
-  if (icon) app.dock?.setIcon(icon)
 }
 
 let window: BrowserWindow | null = null
@@ -130,14 +108,7 @@ async function withHost<T>(run: (host: AgentHost) => T | Promise<T>): Promise<T>
 async function createWindow() {
   nativeTheme.themeSource = "dark"
   const icon = appIcon()
-  syncDockIcon()
-  if (process.platform === "darwin") {
-    // The OS announces appearance flips; the fin changes clothes with it.
-    systemPreferences.subscribeNotification("AppleInterfaceThemeChangedNotification", () =>
-      // The effective appearance updates a beat after the notification.
-      setTimeout(syncDockIcon, 150)
-    )
-  }
+  if (icon && process.platform === "darwin") app.dock?.setIcon(icon)
 
   window = new BrowserWindow({
     title: "Mako",

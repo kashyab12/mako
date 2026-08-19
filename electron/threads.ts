@@ -41,6 +41,7 @@ import {
   type ThreadRef,
 } from "@mako/sessions"
 import { annotate, bindLineage, loadLineage } from "./lineage.js"
+import { ensureDaemonLoginDefault } from "./daemon-login.js"
 import type { HostEvent } from "./shared.js"
 
 /** Refs sent to the renderer per push. Nobody scrolls ten years of history. */
@@ -72,6 +73,9 @@ export function installThreads(send: (event: HostEvent) => void): void {
   void (async () => {
     try {
       await loadLineage()
+      // Sync should simply be on: the LaunchAgent installs itself the first
+      // time, and only an explicit opt-out in settings keeps it off.
+      void ensureDaemonLoginDefault()
       devinSender = new DevinRemote(await devinAccounts())
       if (await connectViaDaemon()) return
       spawnDaemon()

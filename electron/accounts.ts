@@ -48,6 +48,8 @@ export interface HarnessAccount {
   /** The isolated config home this account materializes as. */
   dir: string
   active: boolean
+  /** Where the login came from: captured here, or found in a router's config. */
+  source?: "mako" | "subrouter"
 }
 
 export interface UsageWindow {
@@ -143,6 +145,61 @@ function identityDir(harness: "claude" | "codex", dir: string): string {
   return harness === "claude" ? join(dir, "..") : dir
 }
 
+/**
+ * Accounts a router already manages. Subrouter keeps Claude profiles in
+ * <router>/claude.json (each with its own config dir — directly usable as
+ * CLAUDE_CONFIG_DIR) and Codex logins as <router>/accounts/<email>.json
+ * (tokens only — selecting one materializes a home). People with a router
+ * installed already did the multi-account work; Mako meets them there.
+ */
+async function subrouterAccounts(): Promise<HarnessAccount[]> {
+  const accounts: HarnessAccount[] = []
+  const root = join(homedir(), ".subrouter")
+  let routers: string[] = []
+  try {
+    routers = (await readdir(root)).filter((name) => !name.startsWith(".") && !name.includes("."))
+  } catch {
+    return accounts
+  }
+  for (const router of routers) {
+    try {
+      const state = JSON.parse(await readFile(join(root, router, "claude.json"), "utf8")) as {
+        profiles?: Record<string, { dir?: string }>
+      }
+      for (const [email, profile] of Object.entries(state.profiles ?? {})) {
+        if (!profile.dir) continue
+        accounts.push({
+          harness: "claude",
+          name: email,
+          email,
+          dir: join(root, router, "claude", profile.dir),
+          active: false,
+          source: "subrouter",
+        })
+      }
+    } catch {
+      // This router has no claude profiles.
+    }
+    try {
+      for (const file of await readdir(join(root, router, "accounts"))) {
+        if (!file.endsWith(".json")) continue
+        const email = file.slice(0, -".json".length)
+        accounts.push({
+          harness: "codex",
+          name: email,
+          email,
+          dir: join(root, router, "accounts", file),
+          active: false,
+          source: "subrouter",
+        })
+      }
+    } catch {
+      // This router has no codex accounts.
+    }
+  }
+  return accounts
+}
+
 export async function listAccounts(): Promise<HarnessAccount[]> {
   const selection = await readSelection()
   const accounts: HarnessAccount[] = []
@@ -171,6 +228,13 @@ export async function listAccounts(): Promise<HarnessAccount[]> {
     } catch {
       // No captured accounts for this harness yet.
     }
+  }
+  // Router-managed logins ride along, deduped by identity against what
+  // Mako captured itself.
+  const known = new Set(accounts.map((account) => `${account.harness}:${account.email ?? account.name}`))
+  for (const account of await subrouterAccounts()) {
+    if (known.has(`${account.harness}:${account.email ?? account.name}`)) continue
+    accounts.push(account)
   }
   return accounts
 }
@@ -278,7 +342,31 @@ export async function accountEnv(harness: string, base: NodeJS.ProcessEnv): Prom
     const selection = await readSelection()
     const name = selection[harness]
     if (name) {
-      const dir = join(accountsRoot(), harness, name)
+      let dir = join(accountsRoot(), harness, name)
+      if (!existsSync(dir)) {
+        // A router-managed login. Claude profiles are real config homes and
+        // route directly; a Codex account file materializes into a Mako
+        // home once (auth copied, sessions/skills symlinked) and routes
+        // like any captured account from then on.
+        const routed = (await subrouterAccounts()).find(
+          (account) => account.harness === harness && account.name === name
+        )
+        if (routed && harness === "claude") {
+          dir = routed.dir
+        } else if (routed && harness === "codex") {
+          dir = join(accountsRoot(), "codex", name)
+          if (!existsSync(join(dir, "auth.json"))) {
+            try {
+              const wrapped = JSON.parse(await readFile(routed.dir, "utf8")) as { auth?: unknown }
+              await mkdir(dir, { recursive: true })
+              await writeFile(join(dir, "auth.json"), JSON.stringify(wrapped.auth ?? {}), "utf8")
+              await chmod(join(dir, "auth.json"), 0o600)
+            } catch {
+              // Unreadable router file: fall through to the default home.
+            }
+          }
+        }
+      }
       if (existsSync(dir)) {
         await ensureLinks(harness, dir)
         if (harness === "claude") env.CLAUDE_CONFIG_DIR = dir
@@ -298,10 +386,17 @@ export async function accountUsage(harness: AccountHarness, name: string): Promi
   const key = `${harness}:${name}`
   const cached = usageCache.get(key)
   if (cached && Date.now() - cached.at < USAGE_CACHE_MS) return cached.usage
+  // Router-managed accounts resolve by identity, not by a Mako-owned dir.
+  const routed = (await subrouterAccounts()).find(
+    (account) => account.harness === harness && account.name === name
+  )
   const dir =
-    name === "default" ? join(homedir(), SHARED[harness].home) : join(accountsRoot(), harness, name)
+    routed?.dir ??
+    (name === "default" ? join(homedir(), SHARED[harness].home) : join(accountsRoot(), harness, name))
   const usage =
-    harness === "claude" ? await claudeUsage(dir, name === "default") : await codexUsage(dir)
+    harness === "claude"
+      ? await claudeUsage(dir, name === "default")
+      : await codexUsage(dir)
   usageCache.set(key, { at: Date.now(), usage })
   return usage
 }
@@ -358,7 +453,14 @@ async function claudeUsage(dir: string, isDefault: boolean): Promise<AccountUsag
 async function codexUsage(dir: string): Promise<AccountUsage> {
   let auth: { tokens?: { access_token?: string; account_id?: string } }
   try {
-    auth = JSON.parse(await readFile(join(dir, "auth.json"), "utf8")) as typeof auth
+    if (dir.endsWith(".json")) {
+      // A router's account file: {email, auth: {tokens}} — same tokens,
+      // different wrapper.
+      const wrapped = JSON.parse(await readFile(dir, "utf8")) as { auth?: typeof auth }
+      auth = wrapped.auth ?? {}
+    } else {
+      auth = JSON.parse(await readFile(join(dir, "auth.json"), "utf8")) as typeof auth
+    }
   } catch {
     return { status: "missing-credentials" }
   }
