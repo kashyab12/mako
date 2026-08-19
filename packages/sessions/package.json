@@ -10,6 +10,7 @@
   },
   "files": ["dist"],
   "scripts": {
-    "build": "tsc -b"
+    "build": "tsc -b",
+    "test:matrix": "npm run -s build && node test/resume-matrix.mjs"
   }
 }
