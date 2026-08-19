@@ -35,7 +35,7 @@ export function TabStrip() {
   if (tabs.length < 2) return null
 
   return (
-    <div className="flex h-[34px] shrink-0 items-stretch border-b border-hairline bg-surface">
+    <div className="flex h-[34px] shrink-0 items-stretch border-b border-hairline">
       <div
         ref={scroller}
         className="flex min-w-0 flex-1 items-stretch overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -50,7 +50,7 @@ export function TabStrip() {
         onClick={() => void actions.openTab()}
         className={cn(
           "pressable flex w-9 shrink-0 items-center justify-center border-l border-hairline",
-          "text-faint transition-colors duration-100 hover:bg-raised hover:text-foreground"
+          "text-faint transition-colors duration-100 hover:bg-fill-hover hover:text-foreground"
         )}
       >
         <PlusIcon className="size-3.5" />
@@ -79,18 +79,9 @@ const Tab = memo(function Tab({
         // Colour only. Tabs are switched dozens of times an hour, so the change
         // has to land on the first frame — no movement, nothing to wait out.
         "transition-colors duration-100",
-        active ? "bg-background text-foreground" : "text-faint hover:bg-raised/60 hover:text-muted-foreground"
+        active ? "bg-fill-selected text-foreground" : "text-faint hover:bg-fill-hover hover:text-muted-foreground"
       )}
     >
-      {/* The active marker sits on the seam with the transcript below, so the
-          selected tab reads as continuous with the pane it controls. */}
-      <span
-        aria-hidden
-        className={cn(
-          "absolute inset-x-0 -bottom-px h-px bg-background transition-opacity duration-100",
-          active ? "opacity-100" : "opacity-0"
-        )}
-      />
 
       <button
         type="button"
@@ -132,7 +123,7 @@ function Status({ tab }: { tab: TabInfo }) {
     return (
       <span
         aria-label={tab.streaming ? "Responding" : "Working"}
-        className="size-1.5 shrink-0 animate-live rounded-full bg-brand"
+        className="size-1.5 shrink-0 animate-live rounded-full bg-ember"
       />
     )
   }

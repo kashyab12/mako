@@ -355,12 +355,6 @@ const DESK_COMMANDS: DeskCommand[] = [
     },
   },
   {
-    id: "view.toggle-depth",
-    title: "Toggle translucency and depth",
-    section: "View",
-    run: () => togglePref("glass"),
-  },
-  {
     id: "view.toggle-theme",
     title: "Toggle light and dark",
     section: "View",

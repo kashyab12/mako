@@ -38,7 +38,6 @@ export interface Prefs {
   collapsedDirs: string[]
   /** Folders open in the project tree. Keys are folded paths, not path prefixes. */
   openDirs: string[]
-  glass: boolean
   autoOpenDiff: boolean
   /** The dev-server preview, beside the conversation. */
   previewOpen: boolean
@@ -98,7 +97,6 @@ const defaults: Prefs = {
   collapsedGroups: [],
   collapsedDirs: [],
   openDirs: [],
-  glass: true,
   autoOpenDiff: true,
   previewOpen: false,
   previewWidth: 460,
@@ -249,7 +247,6 @@ function parsePrefs(value: JsonValue): Prefs | null {
     ),
     collapsedDirs: readStringList(value.collapsedDirs, defaults.collapsedDirs),
     openDirs: readStringList(value.openDirs, defaults.openDirs),
-    glass: readBoolean(value.glass, defaults.glass),
     autoOpenDiff: readBoolean(value.autoOpenDiff, defaults.autoOpenDiff),
     previewOpen: readBoolean(value.previewOpen, defaults.previewOpen),
     previewWidth: readNumber(value.previewWidth, defaults.previewWidth),
@@ -384,13 +381,10 @@ export function noteModelUse(key: string) {
 export function bindTheme(): () => void {
   const media = window.matchMedia("(prefers-color-scheme: light)")
   const paint = () => {
-    const { theme, glass } = prefsStore.get()
+    const { theme } = prefsStore.get()
     const light = theme === "light" || (theme === "system" && media.matches)
     document.documentElement.classList.toggle("light", light)
     document.documentElement.style.colorScheme = light ? "light" : "dark"
-    // An attribute rather than a class so the depth rules can be written as
-    // one scoped block instead of being sprinkled through components.
-    document.documentElement.dataset.glass = glass ? "on" : "off"
   }
   paint()
   const off = prefsStore.subscribe(paint)

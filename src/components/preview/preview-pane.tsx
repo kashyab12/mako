@@ -33,7 +33,7 @@ export function PreviewPane() {
   }, [])
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col border-l border-hairline bg-background">
+    <div className="flex h-full min-h-0 min-w-0 flex-col border-l border-hairline bg-shell">
       <Toolbar />
       <div className="relative min-h-0 flex-1">
         {status === "running" && url ? (
@@ -243,7 +243,7 @@ function Ports() {
             title={`${entry.command} · pid ${entry.pid}${entry.loopbackOnly ? " · loopback only" : ""}`}
             className={cn(
               "flex w-full items-center gap-2 rounded-md px-2 py-1 text-left",
-              "transition-colors duration-100 hover:bg-raised"
+              "transition-colors duration-100 hover:bg-fill-hover"
             )}
           >
             <span className="tabular shrink-0 text-[11.5px] text-foreground/85">{entry.port}</span>

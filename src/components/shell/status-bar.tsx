@@ -27,7 +27,7 @@ function UpdatePill() {
       type="button"
       onClick={() => updates.install()}
       title={`Restart into ${version ?? "the new version"}`}
-      className="no-drag flex items-center gap-1 rounded px-1.5 text-foreground/80 transition-colors duration-100 hover:bg-raised hover:text-foreground"
+      className="no-drag flex items-center gap-1 rounded px-1.5 text-foreground/80 transition-colors duration-100 hover:bg-fill-hover hover:text-foreground"
     >
       <ArrowUpCircleIcon className="size-3" />
       <span>Update ready</span>
@@ -63,12 +63,12 @@ export function StatusBar() {
   const tone = percent > 90 ? "text-negative" : percent > 72 ? "text-caution" : "text-faint"
 
   return (
-    <footer className="flex h-[22px] shrink-0 items-center gap-3 border-t border-hairline bg-surface px-2.5 text-[11px] text-faint">
+    <footer className="flex h-[22px] shrink-0 items-center gap-3 border-t border-hairline bg-shell px-2.5 text-[11px] text-faint">
       <button
         type="button"
         onClick={() => void actions.pickWorkspace()}
         title={cwd}
-        className="no-drag flex min-w-0 items-center gap-1 rounded px-1 transition-colors duration-100 hover:bg-raised hover:text-foreground"
+        className="no-drag flex min-w-0 items-center gap-1 rounded px-1 transition-colors duration-100 hover:bg-fill-hover hover:text-foreground"
       >
         <FolderIcon className="size-3" />
         <span className="truncate">{workspaceName(cwd)}</span>

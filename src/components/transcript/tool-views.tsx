@@ -160,7 +160,7 @@ export function BashBody({ call }: ToolViewProps) {
   return (
     <div className="space-y-1.5 px-2.5 py-2">
       <div className="flex gap-2 font-mono text-[11.5px] text-foreground/90">
-        <span className="shrink-0 text-brand select-none">$</span>
+        <span className="shrink-0 text-muted-foreground select-none">$</span>
         <span className="whitespace-pre-wrap">{command}</span>
       </div>
       {call.result ? (

@@ -354,7 +354,7 @@ function RailHeader({
         type="button"
         aria-label="Search threads"
         onClick={() => onToggleSearch(true)}
-        className="pressable rounded-md p-1.5 text-faint transition-colors duration-100 hover:bg-raised hover:text-foreground"
+        className="pressable rounded-md p-1.5 text-faint transition-colors duration-100 hover:bg-fill-hover hover:text-foreground"
       >
         <SearchIcon className="size-3.5" />
       </button>
@@ -364,7 +364,7 @@ function RailHeader({
         aria-label="Open a folder"
         title="Open a folder"
         onClick={() => void actions.pickWorkspace()}
-        className="pressable rounded-md p-1.5 text-faint transition-colors duration-100 hover:bg-raised hover:text-foreground"
+        className="pressable rounded-md p-1.5 text-faint transition-colors duration-100 hover:bg-fill-hover hover:text-foreground"
       >
         <FolderPlusIcon className="size-3.5" />
       </button>
@@ -388,7 +388,7 @@ function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter
   const row = (active: boolean) =>
     cn(
       "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors duration-100",
-      active ? "bg-raised text-foreground" : "text-foreground/85 hover:bg-raised/60"
+      active ? "bg-fill-selected text-foreground" : "text-foreground/85 hover:bg-fill-hover"
     )
 
   return (
@@ -398,13 +398,13 @@ function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter
           type="button"
           aria-label="Filter and sort"
           className={cn(
-            "pressable relative rounded-md p-1.5 transition-colors duration-100 hover:bg-raised",
+            "pressable relative rounded-md p-1.5 transition-colors duration-100 hover:bg-fill-hover",
             on ? "text-foreground" : "text-faint hover:text-foreground"
           )}
         >
           <ListFilterIcon className="size-3.5" />
           {on ? (
-            <span className="absolute top-1 right-1 size-1.5 rounded-full bg-brand" />
+            <span className="absolute top-1 right-1 size-1.5 rounded-full bg-foreground" />
           ) : null}
         </button>
       </PopoverTrigger>
@@ -428,7 +428,7 @@ function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter
               >
                 <HarnessIcon harness={harness} className="size-3.5" tinted={active} />
                 <span className="flex-1">{harnessLabel(harness)}</span>
-                {active ? <CheckIcon className="size-3 text-brand" /> : null}
+                {active ? <CheckIcon className="size-3 text-foreground" /> : null}
                 <span className="tabular text-[10.5px] text-faint">{count}</span>
               </button>
             )
@@ -449,7 +449,7 @@ function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter
             className={row(sortBy === value)}
           >
             <span className="flex-1">{label}</span>
-            {sortBy === value ? <CheckIcon className="size-3 text-brand" /> : null}
+            {sortBy === value ? <CheckIcon className="size-3 text-foreground" /> : null}
           </button>
         ))}
 
@@ -467,7 +467,7 @@ function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter
             className={row(scope === value)}
           >
             <span className="flex-1">{label}</span>
-            {scope === value ? <CheckIcon className="size-3 text-brand" /> : null}
+            {scope === value ? <CheckIcon className="size-3 text-foreground" /> : null}
           </button>
         ))}
 
@@ -525,7 +525,7 @@ function FolderSection({
       <button
         type="button"
         onClick={onToggle}
-        className="group/folder flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 text-left transition-colors duration-100 hover:bg-raised/50"
+        className="group/folder flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 text-left transition-colors duration-100 hover:bg-fill-hover"
       >
         {closed ? (
           <FolderIcon className="size-3.5 shrink-0 text-faint" />
@@ -564,7 +564,7 @@ function FolderSection({
             <button
               type="button"
               onClick={() => onPages(pages + 1)}
-              className="flex h-6 w-full items-center rounded-md pl-8 text-left text-[11px] text-faint transition-colors duration-100 hover:bg-raised/50 hover:text-muted-foreground"
+              className="flex h-6 w-full items-center rounded-md pl-8 text-left text-[11px] text-faint transition-colors duration-100 hover:bg-fill-hover hover:text-muted-foreground"
             >
               More
               <span className="tabular ml-1 text-[10px] text-faint/60">{hidden}</span>
@@ -573,7 +573,7 @@ function FolderSection({
             <button
               type="button"
               onClick={() => onPages(0)}
-              className="flex h-6 w-full items-center rounded-md pl-8 text-left text-[11px] text-faint transition-colors duration-100 hover:bg-raised/50 hover:text-muted-foreground"
+              className="flex h-6 w-full items-center rounded-md pl-8 text-left text-[11px] text-faint transition-colors duration-100 hover:bg-fill-hover hover:text-muted-foreground"
             >
               Less
             </button>
@@ -631,7 +631,7 @@ const ThreadRow = memo(function ThreadRow({
       className={cn(
         "group flex h-7 w-full items-center gap-2 rounded-md pr-1.5 text-left",
         indent ? "pl-[26px]" : "pl-1.5",
-        "transition-colors duration-100 hover:bg-raised data-active:bg-raised"
+        "transition-colors duration-100 hover:bg-fill-hover data-active:bg-raised"
       )}
     >
       {/* Where this conversation has lived: earlier harnesses dimmed and
@@ -669,7 +669,7 @@ const ThreadRow = memo(function ThreadRow({
             if (event.key === "Escape") setEditing(null)
           }}
           onBlur={() => setEditing(null)}
-          className="min-w-0 flex-1 rounded bg-surface px-1 text-[12.5px] text-foreground ring-1 ring-hairline focus:outline-none"
+          className="min-w-0 flex-1 rounded bg-raised px-1 text-[12.5px] text-foreground ring-1 ring-hairline focus:outline-none"
         />
       ) : (
         <span
@@ -715,7 +715,7 @@ const ThreadRow = memo(function ThreadRow({
         />
       ) : null}
       {working ? (
-        <Loader2Icon className="size-3 shrink-0 animate-spin text-brand/80" aria-label="Working" />
+        <Loader2Icon className="size-3 shrink-0 animate-spin text-ember/80" aria-label="Working" />
       ) : ref.updatedAt ? (
         <span className="tabular shrink-0 text-[10px] text-faint">
           {formatRelative(ref.updatedAt)}

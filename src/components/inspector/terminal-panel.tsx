@@ -71,7 +71,7 @@ export function TerminalPanel() {
           title="New terminal"
           disabled={!cwd}
           onClick={() => cwd && void terminalActions.create(cwd)}
-          className="pressable mr-1 flex size-7 shrink-0 items-center justify-center rounded-md text-faint hover:bg-raised hover:text-foreground disabled:opacity-40"
+          className="pressable mr-1 flex size-7 shrink-0 items-center justify-center rounded-md text-faint hover:bg-fill-hover hover:text-foreground disabled:opacity-40"
         >
           <PlusIcon className="size-3.5" />
         </button>
@@ -124,7 +124,7 @@ function SessionTab({
     <div
       className={cn(
         "group flex h-7 max-w-44 items-center rounded-md text-[11px]",
-        active ? "bg-raised text-foreground" : "text-faint hover:text-muted-foreground"
+        active ? "bg-fill-selected text-foreground" : "text-faint hover:text-muted-foreground"
       )}
     >
       <button
@@ -276,7 +276,7 @@ function terminalTheme(style: CSSStyleDeclaration) {
     foreground: style.getPropertyValue("--foreground"),
     cursor: style.getPropertyValue("--foreground"),
     cursorAccent: style.getPropertyValue("--surface"),
-    selectionBackground: style.getPropertyValue("--brand-soft"),
+    selectionBackground: style.getPropertyValue("--fill-selected"),
     black: style.getPropertyValue("--background"),
     brightBlack: style.getPropertyValue("--faint"),
     white: style.getPropertyValue("--muted-foreground"),

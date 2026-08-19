@@ -48,7 +48,7 @@ export function AcpPanel() {
 
   if (starting) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center bg-background">
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-surface">
         <div className="flex items-center gap-2 text-[12px] text-faint">
           <Loader2Icon className="size-4 animate-spin" />
           Starting the agent…
@@ -59,7 +59,7 @@ export function AcpPanel() {
   if (!session) return null
 
   return (
-    <div className="animate-enter flex min-h-0 flex-1 flex-col bg-background">
+    <div className="animate-enter flex min-h-0 flex-1 flex-col bg-surface">
       <div className="flex h-11 shrink-0 items-center gap-2.5 border-b border-hairline px-3.5">
         <HarnessIcon harness={session.harness} className="size-3.5" />
         <div className="min-w-0 flex-1">

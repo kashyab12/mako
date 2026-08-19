@@ -95,7 +95,7 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
 
   return (
     <div className="shrink-0 border-t border-hairline p-2">
-      <div className="relative rounded-lg bg-raised/60 ring-1 ring-hairline focus-within:ring-border">
+      <div className="relative rounded-lg bg-raised ring-1 ring-hairline focus-within:ring-border">
         <textarea
           ref={field}
           rows={1}
@@ -147,7 +147,7 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
               </Action>
             ) : null}
             <Action
-              tone={message.trim() ? "brand" : "ghost"}
+              tone={message.trim() ? "solid" : "ghost"}
               size="xs"
               disabled={!message.trim() || busy || total === 0}
               onClick={() => void commit()}

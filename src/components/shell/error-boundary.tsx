@@ -59,7 +59,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
     if (!error) return <div key={this.state.attempt}>{this.props.children}</div>
 
     return (
-      <div className="flex h-svh flex-col items-center justify-center gap-5 bg-background px-8 text-foreground">
+      <div className="flex h-svh flex-col items-center justify-center gap-5 bg-shell px-8 text-foreground">
         <MakoMark className="size-8 text-foreground/40" />
         <div className="max-w-dialog text-center">
           <h1 className="text-[15px] font-medium">Something in the interface broke</h1>

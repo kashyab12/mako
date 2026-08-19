@@ -85,8 +85,8 @@ export function SettingsView({ initialSection = "agents" }: { initialSection?: s
             className={cn(
               "rounded-md px-2 py-1.5 text-left text-[12.5px] transition-colors duration-100",
               section === entry.id
-                ? "bg-raised font-medium text-foreground"
-                : "text-muted-foreground hover:bg-raised/60 hover:text-foreground"
+                ? "bg-fill-selected font-medium text-foreground"
+                : "text-muted-foreground hover:bg-fill-hover hover:text-foreground"
             )}
           >
             {entry.label}
@@ -97,7 +97,7 @@ export function SettingsView({ initialSection = "agents" }: { initialSection?: s
           onClick={() =>
             window.dispatchEvent(new CustomEvent("mako:close-settings"))
           }
-          className="pressable mt-auto flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[12px] text-faint hover:bg-raised hover:text-foreground"
+          className="pressable mt-auto flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[12px] text-faint hover:bg-fill-hover hover:text-foreground"
         >
           <XIcon className="size-3.5" />
           Close settings
@@ -551,7 +551,7 @@ function HarnessAccounts() {
                     "group/account flex w-full items-center rounded-lg transition-colors duration-100",
                     account.active
                       ? "bg-raised ring-1 ring-hairline"
-                      : "hover:bg-raised/60"
+                      : "hover:bg-fill-hover"
                   )}
                 >
                   <button
@@ -564,7 +564,7 @@ function HarnessAccounts() {
                       className={cn(
                         "flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
                         account.active
-                          ? "bg-brand-soft text-brand"
+                          ? "bg-fill-selected text-foreground"
                           : "bg-raised text-faint"
                       )}
                     >
@@ -617,7 +617,7 @@ function HarnessAccounts() {
                       )}
                     </span>
                     {account.active ? (
-                      <span className="flex shrink-0 items-center gap-1 text-[10.5px] text-brand">
+                      <span className="flex shrink-0 items-center gap-1 text-[10.5px] text-foreground">
                         <CheckIcon className="size-3.5" />
                         Active
                       </span>
@@ -670,7 +670,7 @@ function HarnessAccounts() {
               <button
                 type="button"
                 onClick={() => setCapturing(harness)}
-                className="pressable mt-2 rounded px-1 py-0.5 text-[11.5px] text-faint hover:bg-raised hover:text-foreground"
+                className="pressable mt-2 rounded px-1 py-0.5 text-[11.5px] text-faint hover:bg-fill-hover hover:text-foreground"
               >
                 Add another account
               </button>
@@ -832,14 +832,14 @@ function Updates() {
         </div>
 
         {notes ? (
-          <pre className="mt-2 max-h-40 overflow-auto rounded bg-raised/60 p-2 text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
+          <pre className="mt-2 max-h-40 overflow-auto rounded bg-raised p-2 text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
             {notes}
           </pre>
         ) : null}
 
         <div className="mt-3 flex items-center gap-2">
           {status === "ready" ? (
-            <Action tone="brand" onClick={() => updates.install()}>
+            <Action tone="solid" onClick={() => updates.install()}>
               Restart and install
             </Action>
           ) : null}
@@ -993,7 +993,6 @@ function Section({
 
 function Appearance() {
   const theme = usePrefs((prefs) => prefs.theme)
-  const glass = usePrefs((prefs) => prefs.glass)
 
   return (
     <Section title="Appearance">
@@ -1007,9 +1006,6 @@ function Appearance() {
           ]}
           onChange={(next) => setPref("theme", next)}
         />
-      </Row>
-      <Row label="Depth" hint="Translucent panels and a soft light wash">
-        <Toggle on={glass} onChange={() => togglePref("glass")} />
       </Row>
     </Section>
   )
@@ -1062,7 +1058,7 @@ function CommitPrompt({ fallback }: { fallback: string }) {
           setDraft(null)
         }}
         className={cn(
-          "w-full resize-y rounded-lg bg-raised/60 px-2.5 py-2 font-mono text-[11.5px] leading-relaxed",
+          "w-full resize-y rounded-lg bg-raised px-2.5 py-2 font-mono text-[11.5px] leading-relaxed",
           "ring-1 ring-hairline focus:outline-none focus-visible:ring-border"
         )}
       />
@@ -1148,7 +1144,7 @@ function Segmented<T extends string>({
   onChange: (next: T) => void
 }) {
   return (
-    <div className="flex h-6 shrink-0 items-center rounded-md bg-raised/70 p-[2px]">
+    <div className="flex h-6 shrink-0 items-center rounded-md bg-raised p-[2px]">
       {options.map((option) => (
         <button
           key={option.value}

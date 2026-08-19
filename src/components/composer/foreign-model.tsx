@@ -67,7 +67,7 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
             "pressable no-drag flex h-7 min-w-0 max-w-[15rem] items-center gap-1.5 rounded-md px-2",
             "text-[12.5px] font-medium text-foreground/85",
             "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease]",
-            "hover:bg-raised aria-expanded:bg-raised"
+            "hover:bg-fill-hover aria-expanded:bg-fill-selected"
           )}
         >
           <HarnessIcon harness={harness} className="size-3.5" />
@@ -128,7 +128,7 @@ function ModelRow({
       onClick={onChoose}
       className={cn(
         "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors duration-100",
-        selected ? "bg-raised" : "hover:bg-raised/60"
+        selected ? "bg-fill-selected" : "hover:bg-fill-hover"
       )}
     >
       <span className="min-w-0 flex-1">
@@ -147,7 +147,7 @@ function ModelRow({
       {model.contextWindow ? (
         <span className="shrink-0 text-[10px] text-faint">{Math.round(model.contextWindow / 1000)}K context</span>
       ) : null}
-      {selected ? <CheckIcon className="size-3.5 shrink-0 text-brand" /> : null}
+      {selected ? <CheckIcon className="size-3.5 shrink-0 text-foreground" /> : null}
     </button>
   )
 }

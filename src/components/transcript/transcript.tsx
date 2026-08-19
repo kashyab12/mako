@@ -176,7 +176,7 @@ function SessionTranscript({ sessionId }: { sessionId: string | undefined }) {
         // The navigator's gutter is reserved here rather than overlaid, so the
         // centred column shifts left instead of running underneath the ticks.
         style={{ paddingInlineEnd: showNavigator ? NAVIGATOR_WIDTH : 0 }}
-        className="transcript-field group/transcript min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        className="group/transcript min-h-0 flex-1 overflow-y-auto overscroll-contain"
       >
         {empty ? (
           <EmptyTranscript />
@@ -324,7 +324,7 @@ function Suggestion({
         "pressable group flex w-full animate-enter items-center gap-2.5 rounded-md border-t border-hairline",
         "px-2.5 py-2.5 text-left text-[12.5px] text-muted-foreground",
         "[transition:transform_var(--duration-press)_var(--ease-out),color_120ms_ease,background-color_120ms_ease]",
-        "first:border-t-0 hover:bg-raised hover:text-foreground"
+        "first:border-t-0 hover:bg-fill-hover hover:text-foreground"
       )}
     >
       <Icon className="size-3.5 shrink-0 text-faint transition-colors duration-120 group-hover:text-muted-foreground" />

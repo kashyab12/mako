@@ -39,7 +39,7 @@ export function AgentPicker() {
             "pressable no-drag flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2",
             "text-[12.5px] font-medium text-foreground/85",
             "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease]",
-            "hover:bg-raised aria-expanded:bg-raised"
+            "hover:bg-fill-hover aria-expanded:bg-fill-selected"
           )}
         >
           <HarnessIcon harness={selected} className="size-3.5" />
@@ -98,14 +98,14 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
             onClick={() => pick(harness)}
             className={cn(
               "group flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors duration-100",
-              active ? "bg-raised" : "hover:bg-raised/60"
+              active ? "bg-fill-selected" : "hover:bg-fill-hover"
             )}
           >
             <span
               className={cn(
                 "flex size-7 shrink-0 items-center justify-center rounded-md border border-hairline",
-                "bg-raised/70 transition-colors duration-100",
-                active && "border-brand/25 bg-brand-soft"
+                "bg-raised transition-colors duration-100",
+                active && "border-border bg-fill-selected"
               )}
             >
               <HarnessIcon harness={harness} className="size-3.5" tinted={active} />
@@ -123,7 +123,7 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
                 {model ?? ""}
               </span>
             </span>
-            {active ? <CheckIcon className="size-3.5 shrink-0 text-brand" /> : null}
+            {active ? <CheckIcon className="size-3.5 shrink-0 text-foreground" /> : null}
           </button>
         )
       })}

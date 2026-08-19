@@ -113,7 +113,7 @@ export function PullRequestCard() {
         disabled={pushing}
         className={cn(
           "pressable flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left",
-          "text-[12px] text-muted-foreground transition-colors duration-100 hover:bg-raised hover:text-foreground"
+          "text-[12px] text-muted-foreground transition-colors duration-100 hover:bg-fill-hover hover:text-foreground"
         )}
       >
         {onDefault ? (
@@ -307,7 +307,7 @@ function ComposePull({
       />
 
       <div className="mt-1.5 flex items-center gap-2">
-        <Action tone="brand" disabled={!title.trim() || busy} onClick={() => void create()}>
+        <Action tone="solid" disabled={!title.trim() || busy} onClick={() => void create()}>
           {busy ? "Opening…" : draft ? "Open as draft" : "Create pull request"}
         </Action>
         <button
@@ -315,7 +315,7 @@ function ComposePull({
           onClick={() => setDraft(!draft)}
           className={cn(
             "pressable rounded px-1.5 py-1 text-[11px] transition-colors duration-100",
-            draft ? "bg-raised text-foreground" : "text-faint hover:text-foreground"
+            draft ? "bg-fill-selected text-foreground" : "text-faint hover:text-foreground"
           )}
         >
           Draft
@@ -377,7 +377,7 @@ function PullSummary({ pull, loading }: { pull: Pull; loading: boolean }) {
           className={cn(
             "size-3.5 shrink-0",
             pull.state === "merged"
-              ? "text-brand"
+              ? "text-foreground"
               : pull.state === "closed"
                 ? "text-removed"
                 : pull.draft
@@ -484,7 +484,7 @@ function MergeMenu({
           type="button"
           disabled={disabled || merging}
           title={reason ?? "Merge pull request"}
-          className="pressable flex h-6 items-center gap-0.5 rounded px-1.5 text-[10.5px] text-faint hover:bg-raised hover:text-foreground disabled:opacity-40"
+          className="pressable flex h-6 items-center gap-0.5 rounded px-1.5 text-[10.5px] text-faint hover:bg-fill-hover hover:text-foreground disabled:opacity-40"
         >
           <GitMergeIcon className="size-3" />
           {merging ? "Merging…" : "Merge"}
@@ -502,7 +502,7 @@ function MergeMenu({
             key={strategy}
             type="button"
             onClick={() => onMerge(strategy)}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11.5px] text-foreground/90 hover:bg-raised"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11.5px] text-foreground/90 hover:bg-fill-hover"
           >
             <GitMergeIcon className="size-3.5 text-faint" />
             {label}

@@ -44,7 +44,7 @@ export function FileViewer() {
 
   if (diff) {
     return (
-      <div className="animate-enter absolute inset-0 z-20 flex min-h-0 flex-col bg-background">
+      <div className="animate-enter absolute inset-0 z-20 flex min-h-0 flex-col bg-surface">
         <div className="flex h-9 shrink-0 items-center gap-2 border-b border-hairline px-2.5">
           <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted-foreground">
             {diff.title}
@@ -61,7 +61,7 @@ export function FileViewer() {
   }
 
   return (
-    <div className="animate-enter absolute inset-0 z-20 flex min-h-0 flex-col bg-background">
+    <div className="animate-enter absolute inset-0 z-20 flex min-h-0 flex-col bg-surface">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-hairline px-2.5">
         <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted-foreground">
           {path}

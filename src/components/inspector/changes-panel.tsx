@@ -437,7 +437,7 @@ function DirRow({
   return (
     <div
       style={{ paddingInlineStart: 4 + row.depth * 11 }}
-      className="group flex h-6 items-center gap-1.5 rounded pr-1 transition-colors duration-100 hover:bg-raised"
+      className="group flex h-6 items-center gap-1.5 rounded pr-1 transition-colors duration-100 hover:bg-fill-hover"
     >
       <StageBox
         state={state}
@@ -488,8 +488,8 @@ function FileRow({
       style={{ paddingInlineStart: 4 + row.depth * 11 }}
       className={cn(
         "group flex h-6 items-center gap-1.5 rounded pr-1 transition-colors duration-100",
-        "hover:bg-raised",
-        active && "bg-raised"
+        "hover:bg-fill-hover",
+        active && "bg-fill-selected"
       )}
     >
       <StageBox

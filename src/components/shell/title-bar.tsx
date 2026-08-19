@@ -38,7 +38,7 @@ export function TitleBar() {
   const inspectorOpen = usePrefs((prefs) => prefs.inspectorOpen)
 
   return (
-    <header className="drag-region relative flex h-[38px] shrink-0 items-center border-b border-hairline bg-surface pr-2">
+    <header className="drag-region relative flex h-[38px] shrink-0 items-center border-b border-hairline bg-shell pr-2">
       <div
         style={railOpen ? { width: railWidth } : undefined}
         className={cn(
@@ -70,7 +70,7 @@ export function TitleBar() {
         <div className="pointer-events-auto flex min-w-0 max-w-[46%] items-center gap-2">
           <MakoMark className="size-3.5 text-foreground/60" />
           {streaming ? (
-            <span className="size-1.5 shrink-0 animate-live rounded-full bg-brand" aria-label="Streaming" />
+            <span className="size-1.5 shrink-0 animate-live rounded-full bg-ember" aria-label="Streaming" />
           ) : null}
           <SessionTitle name={name} fallback={workspaceName(cwd)} />
         </div>
@@ -155,7 +155,7 @@ function SessionTitle({ name, fallback }: { name?: string; fallback: string }) {
             setEditing(false)
           }
         }}
-        className="no-drag h-6 w-56 rounded-md bg-raised px-2 text-center text-[12.5px] font-medium outline-none ring-1 ring-brand/40"
+        className="no-drag h-6 w-56 rounded-md bg-raised px-2 text-center text-[12.5px] font-medium outline-none ring-1 ring-ring"
       />
     )
   }
@@ -169,7 +169,7 @@ function SessionTitle({ name, fallback }: { name?: string; fallback: string }) {
         setEditing(true)
       }}
       className={cn(
-        "no-drag truncate rounded-md px-2 py-0.5 text-[12.5px] font-medium transition-colors duration-100 hover:bg-raised",
+        "no-drag truncate rounded-md px-2 py-0.5 text-[12.5px] font-medium transition-colors duration-100 hover:bg-fill-hover",
         name ? "text-foreground" : "text-faint"
       )}
     >

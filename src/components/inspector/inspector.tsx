@@ -72,7 +72,7 @@ export function Inspector() {
               className={cn(
                 "pressable relative flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium",
                 "[transition:transform_var(--duration-press)_var(--ease-out),color_120ms_ease,background-color_120ms_ease]",
-                on ? "bg-raised text-foreground" : "text-faint hover:text-muted-foreground"
+                on ? "bg-fill-selected text-foreground" : "text-faint hover:text-muted-foreground"
               )}
             >
               {Icon ? <Icon className="size-3.5" /> : null}

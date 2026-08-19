@@ -214,7 +214,7 @@ export function CommandPalette() {
     >
       <div
         onKeyDown={onKeyDown}
-        className="glass-panel w-full max-w-dialog overflow-hidden rounded-xl"
+        className="overlay-panel w-full max-w-dialog overflow-hidden rounded-xl"
       >
         <input
           autoFocus
@@ -246,7 +246,7 @@ export function CommandPalette() {
                     }}
                     className={cn(
                       "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left",
-                      index === cursor && "bg-raised"
+                      index === cursor && "bg-fill-selected"
                     )}
                   >
                     <span className="min-w-0 flex-1 truncate text-[12.5px]">{entry.title}</span>

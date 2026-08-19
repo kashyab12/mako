@@ -30,7 +30,7 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center gap-2 px-2 py-1.5 text-left transition-colors duration-100 hover:bg-raised/60"
+        className="flex w-full items-center gap-2 px-2 py-1.5 text-left transition-colors duration-100 hover:bg-fill-hover"
       >
         <ChevronRightIcon
           className={cn(
@@ -43,7 +43,7 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
           override={view?.icon}
           className={cn(
             "size-3.5 shrink-0",
-            call.isError ? "text-negative" : call.pending ? "text-brand" : "text-faint"
+            call.isError ? "text-negative" : call.pending ? "text-foreground/80" : "text-faint"
           )}
         />
         <span className="shrink-0 text-[12px] font-medium text-foreground/90">
@@ -69,8 +69,8 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
 function Status({ call }: { call: ToolCall }) {
   if (call.pending) {
     return (
-      <span className="flex shrink-0 items-center gap-1 text-[10.5px] text-brand">
-        <span className="size-1 animate-live rounded-full bg-brand" />
+      <span className="flex shrink-0 items-center gap-1 text-[10.5px] text-ember">
+        <span className="size-1 animate-live rounded-full bg-ember" />
         running
       </span>
     )
@@ -140,7 +140,7 @@ export function Output({
         <button
           type="button"
           onClick={() => setFull(true)}
-          className="mt-1 text-[11px] text-brand hover:underline"
+          className="mt-1 text-[11px] text-muted-foreground hover:underline"
         >
           Show all {text.length.toLocaleString()} characters
         </button>
@@ -177,7 +177,7 @@ function CopyableBlock({
           setTimeout(() => setCopied(false), 1200)
         }}
         className={cn(
-          "absolute top-1 right-1 rounded-md bg-raised/90 p-1 ring-1 ring-hairline backdrop-blur-sm",
+          "absolute top-1 right-1 rounded-md bg-raised p-1 ring-1 ring-hairline backdrop-blur-sm",
           "text-faint transition-opacity duration-100 hover:text-foreground",
           copied ? "opacity-100" : "opacity-0 group-hover/copyblock:opacity-100"
         )}

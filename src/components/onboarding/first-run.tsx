@@ -164,7 +164,7 @@ export function FirstRun() {
                       new CustomEvent("mako:settings", { detail: "agents" })
                     )
                   }
-                  className="pressable shrink-0 rounded px-1.5 py-0.5 text-[10.5px] text-faint hover:bg-raised hover:text-foreground"
+                  className="pressable shrink-0 rounded px-1.5 py-0.5 text-[10.5px] text-faint hover:bg-fill-hover hover:text-foreground"
                 >
                   Set up
                 </button>

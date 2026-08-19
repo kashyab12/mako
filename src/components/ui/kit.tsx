@@ -15,11 +15,10 @@ const base =
 
 const tones = {
   ghost:
-    "text-muted-foreground hover:not-disabled:bg-raised hover:not-disabled:text-foreground data-[on=true]:bg-raised data-[on=true]:text-foreground",
-  quiet: "text-foreground/80 hover:not-disabled:bg-raised hover:not-disabled:text-foreground",
+    "text-muted-foreground hover:not-disabled:bg-fill-hover hover:not-disabled:text-foreground data-[on=true]:bg-fill-selected data-[on=true]:text-foreground",
+  quiet: "text-foreground/80 hover:not-disabled:bg-fill-hover hover:not-disabled:text-foreground",
   solid: "bg-primary text-primary-foreground hover:not-disabled:opacity-90",
-  brand: "bg-brand text-background hover:not-disabled:opacity-90",
-  outline: "border border-border text-foreground hover:not-disabled:bg-raised",
+  outline: "border border-border text-foreground hover:not-disabled:bg-fill-hover",
   danger: "text-negative hover:not-disabled:bg-negative/12",
 } as const
 
@@ -103,10 +102,9 @@ export function Chip({
   tone = "neutral",
   children,
   ...props
-}: ComponentProps<"span"> & { tone?: "neutral" | "brand" | "positive" | "negative" | "caution" }) {
+}: ComponentProps<"span"> & { tone?: "neutral" | "positive" | "negative" | "caution" }) {
   const palette = {
     neutral: "bg-raised text-muted-foreground ring-hairline",
-    brand: "bg-brand-soft text-brand ring-brand/25",
     positive: "bg-positive/12 text-positive ring-positive/25",
     negative: "bg-negative/12 text-negative ring-negative/25",
     caution: "bg-caution/12 text-caution ring-caution/25",
@@ -193,15 +191,15 @@ export function Blank({
 /** Horizontal usage bar — context window, diff ratio, anything 0..1. */
 export function Meter({
   value,
-  tone = "brand",
+  tone = "neutral",
   className,
 }: {
   value: number
-  tone?: "brand" | "caution" | "negative" | "positive"
+  tone?: "neutral" | "caution" | "negative" | "positive"
   className?: string
 }) {
   const color = {
-    brand: "bg-brand",
+    neutral: "bg-foreground/45",
     caution: "bg-caution",
     negative: "bg-negative",
     positive: "bg-positive",

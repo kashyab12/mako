@@ -47,12 +47,15 @@
   --color-ring: var(--ring);
 
   /* Product tokens */
+  --color-shell: var(--shell);
   --color-surface: var(--surface);
   --color-raised: var(--raised);
   --color-hairline: var(--hairline);
   --color-faint: var(--faint);
-  --color-brand: var(--brand);
-  --color-brand-soft: var(--brand-soft);
+  --color-fill-hover: var(--fill-hover);
+  --color-fill-selected: var(--fill-selected);
+  --color-ember: var(--ember);
+  --color-ember-soft: var(--ember-soft);
   --color-positive: var(--positive);
   --color-negative: var(--negative);
   --color-caution: var(--caution);
@@ -62,7 +65,7 @@
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
-  --radius-xl: 11px;
+  --radius-xl: 10px;
   --radius-2xl: 14px;
   --radius-3xl: 18px;
 
@@ -89,93 +92,140 @@
   color-scheme: dark;
 
   /*
-   * A strictly achromatic ramp. Every attempt to give a tool like this a
-   * "brand hue" makes it look like a landing page; the interface reads as an
-   * instrument when the only colour in it is the colour that means something.
+   * Warm ember neutrals — red-shifted near-blacks with a warm off-white,
+   * after Superset's material. Four planes, not a continuous ramp:
    *
-   * The ramp is also wider than it looks like it needs to be: at this
-   * darkness a 0.03 lightness step reads as noise rather than as structure,
-   * and the rail, the transcript, and the inspector have to sit on visibly
-   * different planes or the window collapses into one flat sheet.
+   *   shell    the window itself: titlebar, rail, chrome. Shadowless.
+   *   surface  a content card floating on the shell (radius 10, elevated).
+   *   raised   layer two *within* a card: inputs, code, chips, keycaps.
+   *   popover  floating surfaces — menus, palette, dialogs — always paired
+   *            with --elevation-overlay.
+   *
+   * Chroma falls as lightness rises, so the warmth reads as material, not
+   * as tint.
    */
-  --background: oklch(0.1450 0 0);
-  --surface: oklch(0.1900 0 0);
-  --raised: oklch(0.2380 0 0);
-  --foreground: oklch(0.9350 0 0);
-  --muted-foreground: oklch(0.6850 0 0);
-  --faint: oklch(0.5300 0 0);
+  --shell: oklch(0.182 0.007 38);
+  --surface: oklch(0.23 0.0055 55);
+  --raised: oklch(0.278 0.0045 50);
+  --popover: oklch(0.248 0.0055 55);
+  --foreground: oklch(0.932 0.0035 68);
+  --muted-foreground: oklch(0.724 0.0045 56);
+  --faint: oklch(0.55 0.0045 50);
 
-  --card: var(--surface);
-  --card-foreground: var(--foreground);
-  --popover: oklch(0.2050 0 0);
-  --popover-foreground: var(--foreground);
-
-  --primary: oklch(0.9350 0 0);
-  --primary-foreground: oklch(0.1450 0 0);
-  --secondary: var(--raised);
-  --secondary-foreground: var(--foreground);
-  --muted: oklch(0.2200 0 0);
-  --accent: oklch(0.2600 0 0);
-  --accent-foreground: var(--foreground);
-
-  --hairline: oklch(1 0 0 / 10%);
-  --border: oklch(1 0 0 / 13%);
-  --input: oklch(1 0 0 / 16%);
-  --ring: oklch(1 0 0 / 32%);
+  /* Hairlines are warm-white alphas so they tint whatever they sit on. */
+  --hairline: oklch(0.93 0.01 55 / 10%);
+  --border: oklch(0.93 0.01 55 / 14%);
+  --input: oklch(0.93 0.01 55 / 17%);
+  --ring: oklch(0.93 0.01 55 / 34%);
 
   /*
-   * The accent is light, not coloured. Selection, focus, and the live
-   * indicator all read as "brighter", which is legible against a neutral
-   * ramp without spending the one thing colour is reserved for.
+   * Interaction state is a tint of the text colour, never the accent and
+   * never another ramp step. Two tokens replace every per-site hover alpha.
    */
-  --brand: oklch(0.9350 0 0);
-  --brand-soft: oklch(1 0 0 / 9%);
+  --fill-hover: color-mix(in oklab, var(--foreground) 7%, transparent);
+  --fill-selected: color-mix(in oklab, var(--foreground) 10%, transparent);
 
-  /* Hue appears only where it carries meaning. Kept desaturated so a diff
-   * reads as information rather than as decoration. */
-  --positive: oklch(0.7350 0.1050 152);
-  --negative: oklch(0.6900 0.1450 22);
+  /*
+   * Ember is punctuation, not brand. It may appear on: the live/working
+   * dot, the composer caret, at most one badge. Never on links, borders,
+   * focus, selection, hover fills, icons at rest, or any fill larger than
+   * a badge. If two ember moments are visible in one pane, one is wrong.
+   */
+  --ember: oklch(0.682 0.14 41);
+  --ember-soft: color-mix(in oklab, var(--ember) 14%, transparent);
+
+  /*
+   * Elevation: every level bakes a 0.5px hairline ring in, and dark mode
+   * adds a 0.5px top rim light — a surface catching light from above.
+   */
+  --rim-light: oklch(0.93 0.01 55 / 6%);
+  --elevation-card:
+    0 1px 2px oklch(0.05 0.005 38 / 35%),
+    0 0 0 0.5px var(--hairline),
+    0 -0.5px 0 0 var(--rim-light);
+  --elevation-floating:
+    0 8px 16px oklch(0.05 0.005 38 / 30%),
+    0 4px 8px oklch(0.05 0.005 38 / 30%),
+    0 0 0 0.5px oklch(0.93 0.01 55 / 16%),
+    0 -0.5px 0 0 var(--rim-light);
+  --elevation-overlay:
+    0 16px 32px oklch(0.05 0.005 38 / 30%),
+    0 8px 16px oklch(0.05 0.005 38 / 30%),
+    0 0 0 0.5px oklch(0.93 0.01 55 / 16%),
+    0 -0.5px 0 0 var(--rim-light);
+
+  /* Hue appears only where it carries meaning, re-tuned warm. */
+  --positive: oklch(0.72 0.1 150);
+  --negative: oklch(0.68 0.14 25);
   --destructive: var(--negative);
-  --caution: oklch(0.7900 0.0850 85);
-  --added: oklch(0.7350 0.1050 152);
-  --removed: oklch(0.6900 0.1450 22);
+  --caution: oklch(0.78 0.09 80);
+  --added: var(--positive);
+  --removed: var(--negative);
+
+  /* shadcn contract — vendored components keep compiling untouched. */
+  --background: var(--shell);
+  --card: var(--surface);
+  --card-foreground: var(--foreground);
+  --popover-foreground: var(--foreground);
+  --primary: var(--foreground);
+  --primary-foreground: var(--shell);
+  --secondary: var(--raised);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.26 0.005 52);
+  --accent: var(--raised);
+  --accent-foreground: var(--foreground);
 
   --titlebar-height: 38px;
+
+  /* Lets height/width: auto transition (collapsibles, status labels). */
+  interpolate-size: allow-keywords;
 }
 
 .light {
   color-scheme: light;
 
-  --background: oklch(0.9740 0 0);
-  --surface: oklch(1 0 0);
-  --raised: oklch(0.9480 0 0);
-  --foreground: oklch(0.2050 0 0);
-  --muted-foreground: oklch(0.4750 0 0);
-  --faint: oklch(0.6200 0 0);
+  /* The shell is the recessed plane in both modes: darker than the card. */
+  --shell: oklch(0.943 0.0025 48);
+  --surface: oklch(0.988 0.0015 67);
+  --raised: oklch(0.956 0.0025 55);
+  --popover: oklch(0.994 0.001 67);
+  --foreground: oklch(0.21 0.005 40);
+  --muted-foreground: oklch(0.44 0.004 48);
+  --faint: oklch(0.59 0.0035 48);
 
-  --card: var(--surface);
-  --popover: oklch(1 0 0);
-  --popover-foreground: var(--foreground);
+  --hairline: oklch(0.25 0.01 40 / 9%);
+  --border: oklch(0.25 0.01 40 / 12%);
+  --input: oklch(0.25 0.01 40 / 15%);
+  --ring: oklch(0.25 0.01 40 / 36%);
 
-  --primary: oklch(0.2050 0 0);
-  --primary-foreground: oklch(0.9880 0 0);
-  --secondary: var(--raised);
-  --muted: oklch(0.9550 0 0);
-  --accent: oklch(0.9300 0 0);
+  --fill-hover: color-mix(in oklab, var(--foreground) 4%, transparent);
+  --fill-selected: color-mix(in oklab, var(--foreground) 6%, transparent);
 
-  --hairline: oklch(0 0 0 / 9%);
-  --border: oklch(0 0 0 / 12%);
-  --input: oklch(0 0 0 / 15%);
-  --ring: oklch(0 0 0 / 32%);
+  --ember: oklch(0.59 0.135 41);
+  --ember-soft: color-mix(in oklab, var(--ember) 12%, transparent);
 
-  --brand: oklch(0.2050 0 0);
-  --brand-soft: oklch(0 0 0 / 7%);
+  /* No rim light in daylight; the ring darkens instead. */
+  --rim-light: transparent;
+  --elevation-card:
+    0 1px 2px oklch(0 0 0 / 6%),
+    0 0 0 0.5px oklch(0.2 0.01 40 / 12%);
+  --elevation-floating:
+    0 8px 16px oklch(0 0 0 / 5%),
+    0 4px 8px oklch(0 0 0 / 8%),
+    0 0 0 0.5px oklch(0.2 0.01 40 / 12%);
+  --elevation-overlay:
+    0 16px 32px oklch(0 0 0 / 6%),
+    0 8px 16px oklch(0 0 0 / 8%),
+    0 0 0 0.5px oklch(0.2 0.01 40 / 12%);
 
-  --positive: oklch(0.5350 0.1000 152);
-  --negative: oklch(0.5400 0.1550 25);
-  --caution: oklch(0.5900 0.0850 75);
-  --added: oklch(0.5350 0.1000 152);
-  --removed: oklch(0.5400 0.1550 25);
+  --positive: oklch(0.53 0.095 150);
+  --negative: oklch(0.545 0.15 26);
+  --caution: oklch(0.59 0.085 75);
+
+  --primary: oklch(0.21 0.005 40);
+  --primary-foreground: oklch(0.988 0.0015 67);
+  --muted: oklch(0.95 0.0025 55);
+  --accent: oklch(0.935 0.003 50);
 }
 
 /* ------------------------------------------------------------------ *
@@ -208,7 +258,7 @@
   }
 
   ::selection {
-    background: var(--brand-soft);
+    background: var(--fill-selected);
   }
 
   /* Thin, self-effacing scrollbars — visible only while scrolling matters. */
@@ -240,7 +290,7 @@
 
   :focus-visible {
     outline: 2px solid var(--ring);
-    outline-offset: 1px;
+    outline-offset: 2px;
   }
 
   /*
@@ -325,187 +375,37 @@
     transform: scale(0.97);
   }
 
-  /* Hover states only where a real pointer exists — touch fakes hover on tap. */
-  @media (hover: hover) and (pointer: fine) {
-    .hover-lift:hover {
-      background-color: var(--raised);
-    }
+  /*
+   * Depth. The chrome (--shell) carries no shadow, ever; content floats on
+   * it as cards. Elevation is mostly the baked 0.5px hairline ring — the
+   * blur layers are quiet enough to feel rather than see.
+   */
+  .card {
+    background: var(--surface);
+    border-radius: 10px;
+    box-shadow: var(--elevation-card);
   }
-}
 
-/* ------------------------------------------------------------------ *
- * Depth
- *
- * The previous pass was too timid to read as anything. The difference between
- * "translucent" and "glass" is not opacity — it is the three things a real
- * pane does to light:
- *
- *   1. It refracts, so the surface is never one flat fill. Every glass
- *      surface carries a gradient across it.
- *   2. It catches a specular highlight on the edge facing the light, and
- *      only that edge.
- *   3. It casts and receives shadow, so it sits *above* rather than *in*.
- *
- * All three are drawn rather than filtered, which is also what keeps them
- * cheap: `backdrop-filter` stays confined to small floating surfaces, while
- * the gradients and edges are static paint on an already-promoted layer and
- * cost nothing per frame.
- * ------------------------------------------------------------------ */
+  .card-floating {
+    background: var(--popover);
+    border-radius: 10px;
+    box-shadow: var(--elevation-floating);
+  }
 
-/* A floating pane: menus, palette, settings, dialogs. */
-.glass-panel {
-  position: relative;
-  background-image:
-    linear-gradient(160deg, color-mix(in oklch, var(--foreground) 7%, transparent) 0%, transparent 38%),
-    linear-gradient(
-      to bottom,
-      color-mix(in oklch, var(--popover) 92%, transparent),
-      color-mix(in oklch, var(--popover) 78%, transparent)
-    );
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  box-shadow:
-    0 0 0 1px var(--border),
-    0 24px 64px -16px oklch(0 0 0 / 65%),
-    0 4px 16px -8px oklch(0 0 0 / 45%),
-    inset 0 1px 0 oklch(1 0 0 / 10%),
-    inset 0 -1px 0 oklch(0 0 0 / 20%);
-}
+  .overlay-panel {
+    background: var(--popover);
+    border-radius: 10px;
+    box-shadow: var(--elevation-overlay);
+  }
 
-.light .glass-panel {
-  box-shadow:
-    0 0 0 1px var(--border),
-    0 24px 56px -18px oklch(0 0 0 / 22%),
-    inset 0 1px 0 oklch(1 0 0 / 80%);
-}
+  /* Hairlines drawn at half a pixel, outside the border box. */
+  .hairline-t {
+    box-shadow: inset 0 0.5px 0 0 var(--hairline);
+  }
 
-/*
- * The window's ambient light. Two sources at very low chroma — a cool key from
- * above, a warm bounce from below — which is what keeps a large dark field
- * from reading as flat black.
- */
-.app-wash::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  /* Static gradients only: atmosphere at zero runtime cost. Cool light
-     from above, a warm ember low-left, the faintest violet drift right —
-     depth without a single animation frame. */
-  background:
-    radial-gradient(90% 55% at 50% -12%, oklch(0.72 0.05 250 / 9%), transparent 62%),
-    radial-gradient(70% 45% at 12% 108%, oklch(0.7 0.05 60 / 5.5%), transparent 68%),
-    radial-gradient(50% 40% at 95% 40%, oklch(0.6 0.06 300 / 3.5%), transparent 70%);
-}
-
-.light [data-glass="on"] .app-wash::before,
-[data-glass="on"] .light .app-wash::before {
-  background:
-    radial-gradient(90% 55% at 50% -12%, oklch(0.55 0.06 250 / 7%), transparent 62%),
-    radial-gradient(70% 45% at 12% 108%, oklch(0.6 0.05 60 / 4%), transparent 68%);
-}
-
-/* Rails and the inspector, lit from the transcript's side. */
-[data-glass="on"] .panel-glass {
-  background-image: linear-gradient(
-    to bottom,
-    color-mix(in oklch, var(--foreground) 3%, var(--surface)),
-    var(--surface) 44%
-  );
-}
-
-/* The composer floats over the transcript and is the brightest chrome. */
-[data-glass="on"] .surface-glass {
-  background-image:
-    linear-gradient(150deg, color-mix(in oklch, var(--foreground) 8%, transparent) 0%, transparent 42%),
-    linear-gradient(
-      to bottom,
-      color-mix(in oklch, var(--surface) 86%, transparent),
-      color-mix(in oklch, var(--surface) 96%, transparent)
-    );
-  backdrop-filter: blur(20px) saturate(170%);
-  -webkit-backdrop-filter: blur(20px) saturate(170%);
-  box-shadow:
-    0 8px 28px -12px oklch(0 0 0 / 55%),
-    inset 0 1px 0 oklch(1 0 0 / 9%);
-}
-
-[data-glass="on"] [data-slot="popover-content"] {
-  background-image:
-    linear-gradient(160deg, color-mix(in oklch, var(--foreground) 7%, transparent) 0%, transparent 40%),
-    linear-gradient(
-      to bottom,
-      color-mix(in oklch, var(--popover) 93%, transparent),
-      color-mix(in oklch, var(--popover) 80%, transparent)
-    );
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  box-shadow:
-    0 18px 48px -14px oklch(0 0 0 / 60%),
-    inset 0 1px 0 oklch(1 0 0 / 9%);
-}
-
-/*
- * The transcript's own field. A very slight vertical lift keeps a long dark
- * column from reading as a void, and the composer's shadow has something to
- * fall onto.
- */
-[data-glass="on"] .transcript-field {
-  /* Top-lit only. A bottom lightening here met the composer's flat
-     background as a visible seam — the transcript appeared to cut off into
-     black. One light source, fading to nothing, and the two regions read as
-     one surface. */
-  background-image: radial-gradient(
-    120% 60% at 50% 0%,
-    color-mix(in oklch, var(--foreground) 3.5%, transparent),
-    transparent 70%
-  );
-}
-
-/* A card that should read as sitting on the surface rather than cut into it. */
-[data-glass="on"] .raised-card {
-  background-image: linear-gradient(
-    to bottom,
-    color-mix(in oklch, var(--foreground) 7%, transparent),
-    color-mix(in oklch, var(--foreground) 3.5%, transparent)
-  );
-  box-shadow:
-    inset 0 1px 0 oklch(1 0 0 / 7%),
-    0 1px 2px oklch(0 0 0 / 25%);
-}
-
-/* The user's own words, distinguished by light rather than by a border. */
-[data-glass="on"] .prompt-card {
-  background-image: linear-gradient(
-    150deg,
-    color-mix(in oklch, var(--foreground) 9%, transparent),
-    color-mix(in oklch, var(--foreground) 4%, transparent) 55%
-  );
-  box-shadow:
-    inset 0 1px 0 oklch(1 0 0 / 8%),
-    0 2px 6px -2px oklch(0 0 0 / 30%);
-}
-
-/* A hairline that catches the light along the top of a raised row. */
-.lit-edge {
-  box-shadow: inset 0 1px 0 oklch(1 0 0 / 6%);
-}
-
-/*
- * The one place a gradient is allowed to be obvious: the primary action. A
- * flat fill on a send button reads as a placeholder; a lit one reads as the
- * thing you are meant to press.
- */
-.action-primary {
-  background-image: linear-gradient(
-    to bottom,
-    color-mix(in oklch, var(--foreground) 100%, transparent),
-    color-mix(in oklch, var(--foreground) 86%, transparent)
-  );
-  box-shadow:
-    inset 0 1px 0 oklch(1 0 0 / 45%),
-    0 1px 2px oklch(0 0 0 / 35%);
+  .hairline-b {
+    box-shadow: inset 0 -0.5px 0 0 var(--hairline);
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -726,10 +626,10 @@
 }
 
 .mako-prose a {
-  color: var(--brand);
+  color: var(--foreground);
   text-decoration: underline;
   text-underline-offset: 2px;
-  text-decoration-color: color-mix(in oklch, var(--brand) 45%, transparent);
+  text-decoration-color: color-mix(in oklch, var(--foreground) 45%, transparent);
 }
 
 .mako-prose strong {

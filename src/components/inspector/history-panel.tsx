@@ -108,7 +108,7 @@ const Row = memo(function Row({
           // browser cannot interpolate — the edge snapped into existence
           // instead of fading up.
           "ring-1",
-          current ? "raised-card ring-border" : "ring-transparent hover:raised-card hover:ring-hairline"
+          current ? "bg-fill-selected ring-border" : "ring-transparent hover:bg-fill-hover hover:ring-hairline"
         )}
       >
         {/* The marker sits on the spine, not inside the card. */}
@@ -161,7 +161,7 @@ const Row = memo(function Row({
               {checkpoint.settings.map((setting) => (
                 <span
                   key={setting}
-                  className="truncate rounded bg-raised/70 px-1.5 py-px text-[10px] text-faint/80"
+                  className="truncate rounded bg-raised px-1.5 py-px text-[10px] text-faint/80"
                 >
                   {setting}
                 </span>
@@ -225,7 +225,7 @@ function Takes({ takes, onPick }: { takes: Checkpoint["takes"]; onPick: (id: str
   }
 
   return (
-    <div className="mt-1.5 flex items-center gap-1 rounded-md bg-raised/60 py-0.5 pr-1.5 pl-1">
+    <div className="mt-1.5 flex items-center gap-1 rounded-md bg-raised py-0.5 pr-1.5 pl-1">
       <SplitIcon className="size-2.5 shrink-0 text-faint" />
       <button
         type="button"

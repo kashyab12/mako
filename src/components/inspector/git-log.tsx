@@ -114,7 +114,7 @@ export function GitLog({
               onClick={() =>
                 onPickCommit ? onPickCommit(commit.hash, commit.subject) : toggle(commit.hash)
               }
-              className="contain-turn group flex w-full gap-2 rounded-md px-2.5 py-1 text-left transition-colors duration-100 hover:bg-raised/60 [contain-intrinsic-size:auto_38px]"
+              className="contain-turn group flex w-full gap-2 rounded-md px-2.5 py-1 text-left transition-colors duration-100 hover:bg-fill-hover [contain-intrinsic-size:auto_38px]"
             >
               <span className="relative flex w-3 shrink-0 justify-center">
                 {index < commits.length - 1 ? (
@@ -193,7 +193,7 @@ export function GitLog({
                           className={cn(
                             "flex w-full items-center gap-2 rounded py-[3px] pr-2.5 pl-10 text-left",
                             "transition-colors duration-100 data-active:bg-raised",
-                            onPickFile && "hover:bg-raised/60"
+                            onPickFile && "hover:bg-fill-hover"
                           )}
                         >
                           <span className={cn("w-2.5 shrink-0 text-[9.5px] font-semibold", mark?.tone)}>

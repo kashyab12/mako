@@ -85,7 +85,7 @@ export function SkillChip({ name }: { name: string }) {
     <span
       title={`Skill: ${name}`}
       className={cn(
-        "inline-flex items-baseline gap-1 rounded bg-brand-soft px-1 align-baseline",
+        "inline-flex items-baseline gap-1 rounded bg-fill-selected px-1 align-baseline",
         "font-mono text-[0.92em] leading-[1.35] text-foreground ring-1 ring-border ring-inset",
         "[&_svg]:translate-y-[1.5px]"
       )}

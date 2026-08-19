@@ -163,7 +163,7 @@ export function MentionMenu({
             onClick={() => onPick(item.value)}
             className={cn(
               "flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left",
-              index === cursor && "bg-raised"
+              index === cursor && "bg-fill-selected"
             )}
           >
             {item.type === "command" ? null : item.type === "thread" ? (

@@ -56,7 +56,7 @@ export function EffortPicker({ disabled }: { disabled?: boolean }) {
           className={cn(
             "pressable no-drag flex h-7 items-center gap-1.5 rounded-md px-2 text-[12.5px] font-medium",
             "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease]",
-            "hover:not-disabled:bg-raised aria-expanded:bg-raised disabled:opacity-40",
+            "hover:not-disabled:bg-fill-hover aria-expanded:bg-fill-selected disabled:opacity-40",
             level === "off" ? "text-faint" : "text-foreground/85"
           )}
         >
@@ -77,8 +77,8 @@ export function EffortPicker({ disabled }: { disabled?: boolean }) {
               }}
               className={cn(
                 "flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-100",
-                "hover:bg-raised",
-                active && "bg-raised"
+                "hover:bg-fill-hover",
+                active && "bg-fill-selected"
               )}
             >
               <Gauge level={option} className="mt-[3px]" />
@@ -88,7 +88,7 @@ export function EffortPicker({ disabled }: { disabled?: boolean }) {
                   {DESCRIPTIONS[option]}
                 </span>
               </span>
-              {active ? <CheckIcon className="mt-1 size-3.5 shrink-0 text-brand" /> : null}
+              {active ? <CheckIcon className="mt-1 size-3.5 shrink-0 text-foreground" /> : null}
             </button>
           )
         })}
@@ -110,7 +110,7 @@ function Gauge({ level, className }: { level: ThinkingLevel; className?: string 
           key={index}
           className={cn(
             "w-[2px] rounded-[1px] transition-colors duration-150",
-            index < filled ? "bg-brand" : "bg-foreground/20"
+            index < filled ? "bg-foreground" : "bg-foreground/20"
           )}
           style={{ height: 4 + index * 2 }}
         />

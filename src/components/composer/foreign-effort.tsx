@@ -74,7 +74,7 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
               className={cn(
                 "pressable no-drag flex h-7 items-center gap-1.5 rounded-md px-2 text-[12.5px] font-medium",
                 "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease]",
-                "text-faint hover:bg-raised hover:text-foreground aria-expanded:bg-raised"
+                "text-faint hover:bg-fill-hover hover:text-foreground aria-expanded:bg-fill-selected"
               )}
             >
               {effort?.kind === "select" ? (
@@ -110,7 +110,7 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
             )
           }
           className={cn(
-            "pressable no-drag flex h-7 items-center gap-1.5 rounded-md px-2 text-[12.5px] font-medium hover:bg-raised",
+            "pressable no-drag flex h-7 items-center gap-1.5 rounded-md px-2 text-[12.5px] font-medium hover:bg-fill-hover",
             fastOn
               ? "bg-caution/10 text-caution"
               : "text-faint hover:text-foreground"
@@ -145,12 +145,12 @@ function OptionSection({
           )
         }
         className={cn(
-          "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[12.5px] hover:bg-raised",
-          active && "bg-raised"
+          "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[12.5px] hover:bg-fill-hover",
+          active && "bg-fill-selected"
         )}
       >
         <span className="flex-1">{option.label}</span>
-        {active ? <CheckIcon className="size-3.5 text-brand" /> : null}
+        {active ? <CheckIcon className="size-3.5 text-foreground" /> : null}
       </button>
     )
   }
@@ -169,8 +169,8 @@ function OptionSection({
             type="button"
             onClick={() => onChange(entry.value)}
             className={cn(
-              "flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-raised",
-              active && "bg-raised"
+              "flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-fill-hover",
+              active && "bg-fill-selected"
             )}
           >
             {/effort|reason/i.test(`${option.id} ${option.label}`) ? (
@@ -180,7 +180,7 @@ function OptionSection({
               <span className="block text-[12.5px]">{entry.label}</span>
               {entry.description ? <span className="block text-[10.5px] leading-snug text-faint">{entry.description}</span> : null}
             </span>
-            {active ? <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-brand" /> : null}
+            {active ? <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-foreground" /> : null}
           </button>
         )
       })}
@@ -199,7 +199,7 @@ function Gauge({ filled, className }: { filled: number; className?: string }) {
       {[0, 1, 2, 3].map((index) => (
         <span
           key={index}
-          className={cn("w-[2px] rounded-[1px]", index < filled ? "bg-brand" : "bg-foreground/20")}
+          className={cn("w-[2px] rounded-[1px]", index < filled ? "bg-foreground" : "bg-foreground/20")}
           style={{ height: 4 + index * 2 }}
         />
       ))}

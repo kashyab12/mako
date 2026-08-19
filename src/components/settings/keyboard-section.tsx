@@ -151,7 +151,7 @@ function ShortcutRow({
             type="button"
             aria-label={`Change shortcut for ${command.title}`}
             onClick={onCapture}
-            className="pressable flex h-7 min-w-20 items-center justify-center rounded-md px-2 hover:bg-raised"
+            className="pressable flex h-7 min-w-20 items-center justify-center rounded-md px-2 hover:bg-fill-hover"
           >
             {current ? (
               <Keys keys={formatChord(current)} />

@@ -67,7 +67,7 @@ export function SearchView() {
   if (!open) return null
 
   return (
-    <div className="absolute inset-0 z-30 flex min-h-0 flex-col bg-background">
+    <div className="absolute inset-0 z-30 flex min-h-0 flex-col bg-surface">
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-hairline px-2.5">
         <SearchIcon className="size-3.5 shrink-0 text-faint" />
         <input
@@ -325,7 +325,7 @@ const LineRow = memo(function LineRow({
       onClick={onOpen}
       className={cn(
         "flex h-full w-full items-center gap-2 rounded px-1.5 text-left",
-        "transition-colors duration-100 hover:bg-raised"
+        "transition-colors duration-100 hover:bg-fill-hover"
       )}
     >
       <span className="tabular w-10 shrink-0 text-right text-[10px] text-faint/70">{gutter}</span>

@@ -54,7 +54,7 @@ function Budget() {
 
   if (!model) return null
   const percent = usage.percent ?? 0
-  const tone = percent > 90 ? "bg-negative" : percent > 72 ? "bg-caution" : "bg-brand"
+  const tone = percent > 90 ? "bg-negative" : percent > 72 ? "bg-caution" : "bg-foreground/45"
 
   return (
     <section className="border-b border-hairline px-2.5 py-2.5">
@@ -152,7 +152,7 @@ const FileRow = memo(function FileRow({
       type="button"
       title={`${file.path} · ${file.action}${file.count > 1 ? ` ${file.count}×` : ""}`}
       onClick={() => void getMako().revealPath(file.path)}
-      className="contain-turn flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors duration-100 hover:bg-raised [contain-intrinsic-size:auto_26px]"
+      className="contain-turn flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors duration-100 hover:bg-fill-hover [contain-intrinsic-size:auto_26px]"
     >
       <Icon className={cn("size-3 shrink-0", FILE_TONE[file.action])} />
       <span className="min-w-0 flex-1 truncate text-[11.5px] text-foreground/85">
@@ -218,7 +218,7 @@ const SkillRow = memo(function SkillRow({
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors duration-100 hover:bg-raised"
+        className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors duration-100 hover:bg-fill-hover"
       >
         <BookOpenIcon className="size-3 shrink-0 text-faint" />
         <span className="shrink-0 text-[11.5px] text-foreground/90">
@@ -299,12 +299,12 @@ function Tools() {
               aria-checked={tool.active}
               onClick={() => toggle(tool.name, !tool.active)}
               title={tool.description}
-              className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors duration-100 hover:bg-raised"
+              className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors duration-100 hover:bg-fill-hover"
             >
               <span
                 className={cn(
                   "flex h-3 w-5 shrink-0 items-center rounded-full p-[2px] transition-colors duration-150",
-                  tool.active ? "bg-brand/70" : "bg-foreground/15"
+                  tool.active ? "bg-foreground/60" : "bg-foreground/15"
                 )}
               >
                 <span

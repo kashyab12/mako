@@ -106,7 +106,7 @@ export function Guide() {
         if (event.target === event.currentTarget) setOpen(false)
       }}
     >
-      <div className="glass-panel flex max-h-[80vh] w-full max-w-content flex-col overflow-hidden rounded-xl">
+      <div className="overlay-panel flex max-h-[80vh] w-full max-w-content flex-col overflow-hidden rounded-xl">
         <div className="flex h-11 shrink-0 items-center gap-2 border-b border-hairline px-3.5">
           <span className="text-[13px] font-medium">What is where</span>
           <span className="text-[11.5px] text-faint">and every key that does something</span>

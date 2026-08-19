@@ -508,7 +508,7 @@ export function Composer() {
             void attach([...event.dataTransfer.files])
           }}
           className={cn(
-            "surface-glass lit-edge relative rounded-2xl bg-surface ring-1 transition-[box-shadow] duration-150",
+            "relative rounded-2xl bg-popover shadow-[var(--elevation-card)] ring-1 transition-[box-shadow] duration-150",
             dragging
               ? "ring-foreground/40"
               : focused
@@ -577,7 +577,7 @@ export function Composer() {
                 "font-sans text-[13.5px] leading-[1.55] placeholder:text-faint focus:outline-none",
                 // Transparent glyphs let the overlay show through; the caret
                 // and selection stay native and visible.
-                "text-transparent caret-foreground selection:bg-brand-soft selection:text-transparent"
+                "text-transparent caret-ember selection:bg-fill-selected selection:text-transparent"
               )}
             />
           </div>
@@ -754,7 +754,7 @@ function ComposerRouting() {
       <span className="flex h-7 items-center gap-1.5 rounded-md bg-raised px-2 text-[11.5px] text-foreground/85">
         <HarnessIcon harness={live.harness} className="size-3.5" />
         {harnessTitle(live.harness)}
-        <span className="text-[10px] text-positive/80">live</span>
+        <span className="text-[10px] text-ember/80">live</span>
         {live.status === "running" ? (
           <button
             type="button"
@@ -784,7 +784,7 @@ function ComposerRouting() {
           onClick={() => void threads.abortReply(viewing)}
           className="pressable flex h-7 items-center gap-1.5 rounded-md bg-raised px-2 text-[11px] text-faint hover:text-foreground"
         >
-          <span className="size-1.5 animate-pulse rounded-full bg-positive/90" />
+          <span className="size-1.5 animate-live rounded-full bg-ember" />
           working — stop
         </button>
       ) : null}
@@ -794,7 +794,7 @@ function ComposerRouting() {
         </span>
       ) : null}
       {moving ? (
-        <span className="animate-enter flex h-7 items-center gap-1 rounded-md bg-brand-soft px-2 text-[10.5px] font-medium text-brand">
+        <span className="animate-enter flex h-7 items-center gap-1 rounded-md bg-fill-selected px-2 text-[10.5px] font-medium text-foreground">
           moves here on send
         </span>
       ) : null}

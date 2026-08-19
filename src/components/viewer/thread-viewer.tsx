@@ -169,7 +169,7 @@ export function ThreadViewer() {
 
   if (busy) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center bg-background">
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-surface">
         <Loader2Icon className="size-5 animate-spin text-faint" />
       </div>
     )
@@ -177,7 +177,7 @@ export function ThreadViewer() {
   if (!thread) return null
 
   return (
-    <div className="animate-enter flex min-h-0 flex-1 flex-col bg-background">
+    <div className="animate-enter flex min-h-0 flex-1 flex-col bg-surface">
       <Conversation key={thread.ref.path} />
     </div>
   )

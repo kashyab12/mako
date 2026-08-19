@@ -19,7 +19,7 @@ export function ConversionOverlay() {
 
   return (
     <div className="pointer-events-none fixed inset-0 z-[70] flex items-center justify-center bg-background/60 backdrop-blur-[3px]">
-      <div className="glass-panel flex flex-col items-center gap-4 rounded-2xl px-10 py-8">
+      <div className="overlay-panel flex flex-col items-center gap-4 rounded-2xl px-10 py-8">
         <div className="flex items-center gap-5">
           <span className={cn("transition-opacity duration-300", converting.done && "opacity-40")}>
             <HarnessIcon harness={converting.from} className="size-8" />

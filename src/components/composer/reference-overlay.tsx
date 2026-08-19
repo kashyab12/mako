@@ -42,7 +42,7 @@ export const ReferenceOverlay = memo(function ReferenceOverlay({ text }: { text:
         return (
           <span
             key={index}
-            className="rounded-[3px] bg-brand-soft text-foreground ring-1 ring-border ring-inset"
+            className="rounded-[3px] bg-fill-selected text-foreground ring-1 ring-border ring-inset"
           >
             {segment.raw}
           </span>

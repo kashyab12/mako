@@ -191,7 +191,7 @@ const DirRow = memo(function DirRow({
       style={indent(row.depth)}
       className={cn(
         "group flex h-full w-full items-center gap-1.5 rounded pr-1.5 text-left",
-        "transition-colors duration-100 hover:bg-raised/70"
+        "transition-colors duration-100 hover:bg-fill-hover"
       )}
     >
       <ChevronRightIcon
@@ -243,7 +243,7 @@ const FileRow = memo(function FileRow({
       style={indent(row.depth)}
       className={cn(
         "flex h-full w-full items-center gap-1.5 rounded pr-1.5 text-left",
-        "transition-colors duration-100 hover:bg-raised data-active:bg-raised"
+        "transition-colors duration-100 hover:bg-fill-hover data-active:bg-raised"
       )}
     >
       <span className="w-3 shrink-0" />

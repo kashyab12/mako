@@ -172,7 +172,7 @@ export function ReviewBar() {
         Discard
       </button>
       <Action
-        tone="brand"
+        tone="solid"
         onClick={() => {
           window.dispatchEvent(new CustomEvent("mako:compose", { detail: composeReview(comments) }))
           review.clear()

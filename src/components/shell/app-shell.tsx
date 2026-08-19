@@ -96,7 +96,7 @@ export function AppShell() {
 
   return (
     <TooltipProvider delayDuration={350}>
-      <div className="app-wash relative flex h-svh flex-col overflow-hidden bg-background text-foreground">
+      <div className="relative flex h-svh flex-col overflow-hidden bg-shell text-foreground">
         <TitleBar />
         <div className="relative z-10 flex min-h-0 flex-1">
           {railOpen ? (
@@ -104,7 +104,7 @@ export function AppShell() {
               <div
                 ref={railRef}
                 style={{ width: prefsStore.get().railWidth }}
-                className="panel-glass flex min-h-0 shrink-0 flex-col overflow-hidden bg-surface"
+                className="flex min-h-0 shrink-0 flex-col overflow-hidden"
               >
                 <SessionRail />
               </div>
@@ -119,7 +119,9 @@ export function AppShell() {
             </>
           ) : null}
 
-          <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* The conversation floats on the shell as a card; the chrome
+              around it stays shadowless and recessed. */}
+          <main className="card relative m-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             {phase === "detached" ? (
               <Blank
                 icon={<PlugZapIcon />}
@@ -180,7 +182,7 @@ export function AppShell() {
               <div
                 ref={inspectorRef}
                 style={{ width: prefsStore.get().inspectorWidth }}
-                className="panel-glass flex min-h-0 shrink-0 flex-col overflow-hidden bg-surface"
+                className="flex min-h-0 shrink-0 flex-col overflow-hidden"
               >
                 <Inspector />
               </div>
@@ -198,7 +200,7 @@ export function AppShell() {
             put the traffic lights on top of the first section in the list. */}
         {settingsOpen ? (
           <div
-            className="absolute inset-x-0 bottom-0 z-40 flex flex-col bg-background"
+            className="absolute inset-x-0 bottom-0 z-40 flex flex-col bg-shell"
             style={{ top: "var(--titlebar-height)" }}
           >
             <SettingsView initialSection={settingsSection} />

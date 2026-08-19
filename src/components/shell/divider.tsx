@@ -66,7 +66,7 @@ export function Divider({
         className
       )}
     >
-      <span className="absolute inset-y-0 -left-1 -right-1 transition-colors duration-150 group-hover:bg-brand/35 group-active:bg-brand/60" />
+      <span className="absolute inset-y-0 -left-1 -right-1 transition-colors duration-150 group-hover:bg-foreground/20 group-active:bg-foreground/35" />
     </div>
   )
 }

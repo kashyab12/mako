@@ -95,7 +95,7 @@ function Prompt({ message }: { message: ChatMessage }) {
 
   return (
     <div className="group/prompt relative">
-      <div className="prompt-card rounded-xl bg-raised px-3.5 py-2.5 ring-1 ring-hairline ring-inset">
+      <div className="rounded-xl bg-raised px-3.5 py-2.5">
         <div className="text-[13.5px] leading-[1.6] whitespace-pre-wrap text-foreground">
           {segments.map((segment, index) =>
             segment.kind === "text" ? (
@@ -210,7 +210,7 @@ function Response({ message }: { message: ChatMessage }) {
 function Thinking({ text, live }: { text: string; live: boolean }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="rounded-md bg-raised/50">
+    <div className="rounded-md bg-fill-hover">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -335,7 +335,7 @@ function ForkButton({ exchange }: { exchange: ExchangeData }) {
               setOpen(false)
               void threads.forkAt(viewing, entryIndex, target)
             }}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-foreground/90 transition-colors duration-100 hover:bg-raised"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-foreground/90 transition-colors duration-100 hover:bg-fill-hover"
           >
             <HarnessIcon harness={target} className="size-3.5" />
             <span className="flex-1">{HARNESS_LABEL[target] ?? target}</span>
