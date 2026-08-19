@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { HarnessIcon } from "@/components/ui/provider-icon"
-import { harnessLabel } from "@/components/rail/agent-threads"
+import { harnessLabel } from "@/components/rail/harness-meta"
 import { acp, acpStore, useAcp, type AcpBlock } from "@/state/acp"
 import { cn } from "@/lib/utils"
 import {

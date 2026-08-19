@@ -1,4 +1,4 @@
-import { harnessLabel } from "@/components/rail/agent-threads"
+import { harnessLabel } from "@/components/rail/harness-meta"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { useThreads } from "@/state/threads"
 import { cn } from "@/lib/utils"

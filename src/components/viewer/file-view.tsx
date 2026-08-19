@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react"
 import { File, Virtualizer } from "@pierre/diffs/react"
+import { formatBytes } from "@/lib/format"
 import { usePrefs } from "@/state/prefs"
 import type { FileContents } from "@/lib/types"
 
@@ -66,10 +67,4 @@ export function FileView({ file, line }: { file: FileContents; line?: number }) 
       </Virtualizer>
     </div>
   )
-}
-
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
