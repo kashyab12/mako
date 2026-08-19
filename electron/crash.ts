@@ -23,6 +23,19 @@ export type CrashKind =
   | "renderer-gone"
   | "child-gone"
 
+interface CrashApp {
+  version: string
+  electron: string
+  chrome: string
+  node: string
+}
+
+interface CrashOs {
+  platform: string
+  arch: string
+  release: string
+}
+
 export interface CrashReport {
   id: string
   kind: CrashKind
@@ -31,10 +44,26 @@ export interface CrashReport {
   stack?: string
   /** Where it came from, when the renderer can say. */
   source?: string
-  app: { version: string; electron: string; chrome: string; node: string }
-  os: { platform: string; arch: string; release: string }
+  app: CrashApp
+  os: CrashOs
   /** What the app was doing just before. */
   breadcrumbs: string[]
+}
+
+interface JsonObject {
+  [key: string]: JsonValue
+}
+
+type JsonValue = null | boolean | number | string | JsonObject | JsonValue[]
+
+interface CaughtProperties {
+  message?: JsonValue
+  stack?: JsonValue
+}
+
+interface CrashDescription {
+  message: string
+  stack?: string
 }
 
 /** Reports kept on disk. Old ones are pruned so this cannot grow without end. */
@@ -60,20 +89,25 @@ export function crashesDir() {
   return join(app.getPath("userData"), "crashes")
 }
 
-function describe(error: unknown): { message: string; stack?: string } {
-  if (error instanceof Error) return { message: error.message || error.name, stack: error.stack }
-  if (typeof error === "object" && error !== null) {
-    const record = error as Record<string, unknown>
-    if (typeof record.message === "string") {
-      return { message: record.message, stack: typeof record.stack === "string" ? record.stack : undefined }
+function normalizeCause(cause: unknown): CrashDescription {
+  if (cause instanceof Error)
+    return { message: cause.message || cause.name, stack: cause.stack }
+
+  if (Object(cause) === cause && !(cause instanceof Function)) {
+    const value: CaughtProperties = Object(cause)
+    if (isString(value.message)) {
+      return {
+        message: value.message,
+        stack: isString(value.stack) ? value.stack : undefined,
+      }
     }
     try {
-      return { message: JSON.stringify(error).slice(0, 2000) }
+      return { message: JSON.stringify(cause).slice(0, 2000) }
     } catch {
-      return { message: String(error) }
+      return { message: String(cause) }
     }
   }
-  return { message: String(error) }
+  return { message: String(cause) }
 }
 
 /** Sortable and unique enough without pulling in a uuid for a filename. */
@@ -82,8 +116,8 @@ function nextId() {
   return `${new Date().toISOString().replace(/[:.]/g, "-")}-${(counter += 1)}`
 }
 
-export function record(kind: CrashKind, error: unknown, source?: string): CrashReport {
-  const { message, stack } = describe(error)
+export function record(kind: CrashKind, cause: unknown, source?: string): CrashReport {
+  const { message, stack } = normalizeCause(cause)
   const report: CrashReport = {
     id: nextId(),
     kind,
@@ -130,6 +164,133 @@ function prune(dir: string) {
   }
 }
 
+function parseCrashReport(raw: string): CrashReport | null {
+  const value: JsonValue = JSON.parse(raw)
+  const root = objectValue(value)
+  if (!root) return null
+
+  const id = stringValue(root.id)
+  const kind = crashKindValue(root.kind)
+  const at = stringValue(root.at)
+  const message = stringValue(root.message)
+  const stack = optionalStringValue(root.stack)
+  const source = optionalStringValue(root.source)
+  const reportApp = crashAppValue(root.app)
+  const reportOs = crashOsValue(root.os)
+  const breadcrumbs = breadcrumbValues(root.breadcrumbs)
+
+  if (
+    id === undefined ||
+    kind === null ||
+    at === undefined ||
+    message === undefined ||
+    stack === null ||
+    source === null ||
+    !reportApp ||
+    !reportOs ||
+    !breadcrumbs
+  )
+    return null
+
+  const report: CrashReport = {
+    id,
+    kind,
+    at,
+    message,
+    app: reportApp,
+    os: reportOs,
+    breadcrumbs,
+  }
+  if (stack !== undefined) report.stack = stack
+  if (source !== undefined) report.source = source
+  return report
+}
+
+function crashAppValue(value: JsonValue | undefined): CrashApp | null {
+  const root = objectValue(value)
+  const version = stringValue(root?.version)
+  const electron = stringValue(root?.electron)
+  const chrome = stringValue(root?.chrome)
+  const node = stringValue(root?.node)
+  if (
+    !root ||
+    version === undefined ||
+    electron === undefined ||
+    chrome === undefined ||
+    node === undefined
+  )
+    return null
+  return { version, electron, chrome, node }
+}
+
+function crashOsValue(value: JsonValue | undefined): CrashOs | null {
+  const root = objectValue(value)
+  const platform = stringValue(root?.platform)
+  const arch = stringValue(root?.arch)
+  const release = stringValue(root?.release)
+  if (
+    !root ||
+    platform === undefined ||
+    arch === undefined ||
+    release === undefined
+  )
+    return null
+  return { platform, arch, release }
+}
+
+function breadcrumbValues(value: JsonValue | undefined): string[] | null {
+  if (!Array.isArray(value)) return null
+  const breadcrumbs: string[] = []
+  for (const entry of value) {
+    if (!isString(entry)) return null
+    breadcrumbs.push(entry)
+  }
+  return breadcrumbs
+}
+
+function crashKindValue(value: JsonValue | undefined): CrashKind | null {
+  if (!isString(value)) return null
+  switch (value) {
+    case "main-uncaught":
+    case "main-rejection":
+    case "renderer-error":
+    case "renderer-rejection":
+    case "renderer-gone":
+    case "child-gone":
+      return value
+    default:
+      return null
+  }
+}
+
+function objectValue(value: JsonValue | undefined): JsonObject | null {
+  return isJsonObject(value) ? value : null
+}
+
+function stringValue(value: JsonValue | undefined): string | undefined {
+  return isString(value) ? value : undefined
+}
+
+function optionalStringValue(
+  value: JsonValue | undefined
+): string | null | undefined {
+  if (value === undefined) return undefined
+  return isString(value) ? value : null
+}
+
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return (
+    value !== undefined &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.prototype.toString.call(value) === "[object Object]"
+  )
+}
+
+function isString(value: JsonValue | undefined): value is string {
+  return Object.prototype.toString.call(value) === "[object String]"
+}
+
 export function listCrashes(): CrashReport[] {
   try {
     const dir = crashesDir()
@@ -140,7 +301,7 @@ export function listCrashes(): CrashReport[] {
       .reverse()
       .map((name) => {
         try {
-          return JSON.parse(readFileSync(join(dir, name), "utf8")) as CrashReport
+          return parseCrashReport(readFileSync(join(dir, name), "utf8"))
         } catch {
           return null
         }

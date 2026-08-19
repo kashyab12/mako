@@ -19,6 +19,10 @@ import type { DevServerState, HostEvent } from "./shared.js"
  *     holds its port and is invisible — the worst combination.
  */
 
+interface PackageJson {
+  scripts?: Record<string, string>
+}
+
 /** Scripts worth offering, in the order anyone would try them. */
 const CANDIDATES = ["dev", "start", "serve", "develop"]
 
@@ -46,7 +50,8 @@ export function bindDevServer(send: (event: HostEvent) => void) {
 export async function devScripts(cwd: string): Promise<string[]> {
   try {
     const raw = await readFile(join(cwd, "package.json"), "utf8")
-    const scripts = (JSON.parse(raw) as { scripts?: Record<string, string> }).scripts ?? {}
+    const packageJson: PackageJson = JSON.parse(raw)
+    const scripts = packageJson.scripts ?? {}
     const names = Object.keys(scripts)
     // Known names first, then anything else that smells like a server.
     const known = CANDIDATES.filter((name) => names.includes(name))

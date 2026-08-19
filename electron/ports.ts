@@ -1,8 +1,5 @@
 import { execFile } from "node:child_process"
-import { promisify } from "node:util"
 import type { ListeningPort } from "./shared.js"
-
-const run = promisify(execFile)
 
 /**
  * What is listening on this machine.
@@ -43,21 +40,22 @@ interface Row {
   addresses: string[]
 }
 
-export async function listPorts(): Promise<ListeningPort[]> {
-  let stdout = ""
-  try {
+function readListeningSockets(): Promise<string> {
+  return new Promise((resolve) => {
     // -P numeric ports, -n numeric hosts (both skip slow lookups), field mode
-    // for p(id), c(ommand) and n(ame).
-    const result = await run("lsof", ["-iTCP", "-sTCP:LISTEN", "-P", "-n", "-F", "pcn"], {
-      timeout: 5000,
-      maxBuffer: 4 * 1024 * 1024,
-    })
-    stdout = result.stdout
-  } catch (error) {
-    // lsof exits non-zero when it finds nothing, and may not exist at all.
-    stdout = (error as { stdout?: string }).stdout ?? ""
-  }
+    // for p(id), c(ommand) and n(ame). A non-zero exit can still include useful
+    // output; a missing lsof resolves with the callback's empty stdout.
+    execFile(
+      "lsof",
+      ["-iTCP", "-sTCP:LISTEN", "-P", "-n", "-F", "pcn"],
+      { encoding: "utf8", timeout: 5000, maxBuffer: 4 * 1024 * 1024 },
+      (_error, stdout) => resolve(stdout)
+    )
+  })
+}
 
+export async function listPorts(): Promise<ListeningPort[]> {
+  const stdout = await readListeningSockets()
   const rows: Row[] = []
   let current: Row | null = null
   for (const line of stdout.split("\n")) {
