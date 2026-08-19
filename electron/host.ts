@@ -1,52 +1,46 @@
-import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
-import { mkdir, open, readdir, readFile, stat, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { isAbsolute, join, relative } from "node:path"
-import { promisify } from "node:util"
+import { join, relative } from "node:path"
 import {
   createAgentSessionFromServices,
   createAgentSessionRuntime,
   createAgentSessionServices,
   getAgentDir,
-  parseSessionEntries,
   SessionManager,
   type AgentSession,
   type AgentSessionRuntime,
   type PromptOptions,
-  type SessionEntry,
-  type SessionTreeNode,
 } from "@earendil-works/pi-coding-agent"
+import { WorkspaceGit } from "./host-git.js"
+import { searchWorkspace } from "./host-search.js"
 import {
-  THINKING_LEVELS,
-  type Block,
-  type Capabilities,
-  type ChatRole,
-  type ContextUsage,
-  type FileContents,
-  type FileMatches,
-  type GitDiff,
-  type GitFile,
-  type GitFileStatus,
-  type GitStatus,
-  type HostEvent,
-  type ModelInfo,
-  type ChatMessage,
-  type SessionMeta,
-  type SessionState,
-  type SessionSummary,
-  type SearchOptions,
-  type SearchResults,
-  type StagedFile,
-  type ThinkingLevel,
-  type ThreadMatches,
-  type GitCommitEntry,
-  type ToolSummary,
-  type TreeNode,
-  type WorkspaceFile,
+  serializeMessage,
+  serializeTree,
+  thinkingLevelsFor,
+  toModelInfo,
+} from "./host-serialization.js"
+import { WorkspaceFiles } from "./host-workspace.js"
+import type {
+  Capabilities,
+  ChatMessage,
+  ContextUsage,
+  FileContents,
+  GitCommitEntry,
+  GitDiff,
+  GitFileStatus,
+  GitStatus,
+  HostEvent,
+  ModelInfo,
+  SessionMeta,
+  SessionState,
+  SessionSummary,
+  SearchOptions,
+  SearchResults,
+  StagedFile,
+  ThinkingLevel,
+  ToolSummary,
+  WorkspaceFile,
 } from "./shared.js"
-
-const execFileAsync = promisify(execFile)
 
 /** Run a reader that may throw, falling back rather than failing the caller. */
 function attempt<T>(read: () => T, fallback: T): T {
@@ -55,319 +49,6 @@ function attempt<T>(read: () => T, fallback: T): T {
   } catch {
     return fallback
   }
-}
-
-/** Untracked files above this size are not line-counted for the status list. */
-const UNTRACKED_STAT_LIMIT = 2_000_000
-
-/**
- * The most of a file the viewer will render.
- *
- * Two megabytes is far past any source file and far short of what freezes a
- * renderer. Above it the head is shown and the viewer says the rest was cut.
- */
-const FILE_VIEW_LIMIT = 2_000_000
-
-/**
- * Search ceilings.
- *
- * Every one of these exists so a two-character query in a monorepo returns in
- * a moment rather than filling the wire with a result nobody will scroll. What
- * gets cut is always reported — a truncated search that looks complete is the
- * one failure mode worse than a slow one.
- */
-const SEARCH_MAX_FILES = 200
-const SEARCH_MAX_PER_FILE = 20
-const SEARCH_MAX_THREADS = 40
-const SEARCH_MAX_PER_THREAD = 8
-/** Sessions read before giving up, and the total bytes allowed across them. */
-const SEARCH_SCAN_THREADS = 250
-const SEARCH_THREAD_BYTES = 64_000_000
-/** Files scanned by hand when there is no git index to lean on. */
-const SEARCH_WALK_FILES = 5_000
-
-/** The `@` picker re-queries per keystroke; the file set does not move that fast. */
-const FILE_CACHE_MS = 5_000
-
-/** Ceilings for the non-git walk, so a stray home directory cannot hang the picker. */
-const WALK_MAX_DEPTH = 8
-const WALK_MAX_FILES = 20_000
-const WALK_SKIP = new Set([
-  "node_modules", ".git", "dist", "build", "out", "target", ".next", ".venv",
-  "venv", "__pycache__", ".cache", "vendor", "Pods", ".turbo", "coverage",
-])
-
-/* ------------------------------------------------------------------ */
-/* serialization                                                       */
-/* ------------------------------------------------------------------ */
-
-type RuntimeMessage = AgentSession["messages"][number]
-type RuntimeContentMessage = Extract<
-  RuntimeMessage,
-  { role: "user" | "assistant" | "toolResult" | "custom" }
->
-type RuntimeContent = RuntimeContentMessage["content"]
-type RuntimeModel = NonNullable<AgentSession["model"]>
-
-interface EntryPreview {
-  preview: string
-  role?: ChatRole
-}
-
-/** Project engine-owned content blocks onto the renderer wire contract. */
-function blocksFrom(content: RuntimeContent): Block[] {
-  if (!Array.isArray(content)) {
-    return content ? [{ type: "text", text: content }] : []
-  }
-  const blocks: Block[] = []
-  for (const part of content) {
-    switch (part.type) {
-      case "thinking":
-        blocks.push({ type: "thinking", thinking: part.thinking })
-        break
-      case "toolCall":
-        blocks.push({
-          type: "toolCall",
-          id: part.id,
-          name: part.name,
-          arguments: part.arguments,
-        })
-        break
-      case "image":
-        blocks.push({ type: "image", mimeType: part.mimeType })
-        break
-      case "text":
-        blocks.push({ type: "text", text: part.text })
-        break
-    }
-  }
-  return blocks
-}
-
-function serializeMessage(message: RuntimeMessage, id: string): ChatMessage {
-  switch (message.role) {
-    case "toolResult":
-      return {
-        id,
-        role: "tool",
-        blocks: blocksFrom(message.content),
-        timestamp: message.timestamp,
-        toolName: message.toolName,
-        toolCallId: message.toolCallId,
-        isError: message.isError,
-      }
-    case "assistant":
-      return {
-        id,
-        role: "assistant",
-        blocks: blocksFrom(message.content),
-        timestamp: message.timestamp,
-        model: message.model,
-        provider: message.provider,
-        error: message.errorMessage,
-      }
-    case "user":
-      return {
-        id,
-        role: "user",
-        blocks: blocksFrom(message.content),
-        timestamp: message.timestamp,
-      }
-    case "custom":
-      return {
-        id,
-        role: "system",
-        blocks: blocksFrom(message.content),
-        timestamp: message.timestamp,
-      }
-    default:
-      return { id, role: "system", blocks: [], timestamp: message.timestamp }
-  }
-}
-
-function entryPreview(entry: SessionEntry): EntryPreview {
-  if (entry.type === "message") {
-    const message = serializeMessage(entry.message, entry.id)
-    const preview = message.blocks
-      .map((block) => block.text ?? block.thinking ?? (block.name ? `→ ${block.name}` : ""))
-      .join(" ")
-    return { preview: preview.replace(/\s+/g, " ").trim().slice(0, 200), role: message.role }
-  }
-  if (entry.type === "compaction") return { preview: `Compacted · ${entry.summary.slice(0, 140)}` }
-  if (entry.type === "branch_summary") return { preview: `Branch · ${entry.summary.slice(0, 140)}` }
-  if (entry.type === "model_change") return { preview: `${entry.provider}/${entry.modelId}` }
-  if (entry.type === "thinking_level_change") return { preview: `Thinking · ${entry.thinkingLevel}` }
-  if (entry.type === "session_info") return { preview: entry.name ? entry.name : "Session info" }
-  return { preview: entry.type }
-}
-
-/* ------------------------------------------------------------------ */
-/* search helpers                                                      */
-/* ------------------------------------------------------------------ */
-
-/**
- * One predicate for every scan that does not go through `git grep`.
- *
- * Literal queries use `includes` rather than a compiled regex: it is the
- * common case, it is faster, and it means a query full of punctuation does
- * what it looks like it does instead of throwing.
- */
-function matcher(term: string, options: SearchOptions): (text: string) => boolean {
-  if (options.regex || options.wholeWord) {
-    const source = options.regex ? term : term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-    const pattern = new RegExp(options.wholeWord ? `\\b(?:${source})\\b` : source, options.caseSensitive ? "" : "i")
-    return (text) => pattern.test(text)
-  }
-  if (options.caseSensitive) return (text) => text.includes(term)
-  const lower = term.toLowerCase()
-  return (text) => text.toLowerCase().includes(lower)
-}
-
-/**
- * Pull the readable part out of one session entry.
- *
- * A session line is a serialized entry, so the raw JSON matched — but showing
- * JSON as a search result is showing the storage rather than the conversation.
- * Only text and reasoning are surfaced; a hit inside a tool's arguments is
- * real but unreadable as a row, and is reported as the message that made it.
- */
-function entryText(line: string, test: (text: string) => boolean): { role: ChatRole; text: string } | null {
-  // The engine owns the JSONL format and parser. Keep malformed or non-message
-  // lines out before projecting the owner contract onto the search result.
-  const entry = parseSessionEntries(line)[0]
-  if (!entry || entry.type !== "message") return null
-
-  try {
-    const message = serializeMessage(entry.message, entry.id)
-    const pieces = message.blocks
-      .map((block) => block.text ?? block.thinking ?? (block.name ? `→ ${block.name}` : ""))
-      .filter(Boolean)
-
-    // Prefer the piece that actually matched, so the row shows the hit rather
-    // than whatever happened to come first in a long message.
-    const hit = pieces.find((piece) => test(piece)) ?? pieces[0]
-    if (!hit) return null
-    return { role: message.role, text: snippet(hit, test) }
-  } catch {
-    // Older extension entries may not honor the current owner contract.
-    return null
-  }
-}
-
-/** A window around the match, so the matched text is visible in one row. */
-function snippet(text: string, test: (piece: string) => boolean): string {
-  const flat = text.replace(/\s+/g, " ").trim()
-  if (flat.length <= 200) return flat
-  // Binary-search-free: walk in windows until one matches. Cheap at this size.
-  for (let start = 0; start < flat.length; start += 100) {
-    const window = flat.slice(start, start + 200)
-    if (test(window)) return `${start > 0 ? "…" : ""}${window}…`
-  }
-  return `${flat.slice(0, 200)}…`
-}
-
-/**
- * Flatten the engine-owned tree and mark the root→leaf path so the UI can dim abandoned
- * branches. The output is a flat list: see the note on `TreeNode` for why
- * nesting is not an option here.
- */
-function serializeTree(nodes: SessionTreeNode[], leafId: string | null): TreeNode[] {
-  const flat: TreeNode[] = []
-  const byId = new Map<string, TreeNode>()
-
-  const visit = (node: SessionTreeNode) => {
-    const { preview, role } = entryPreview(node.entry)
-    const serialized: TreeNode = {
-      id: node.entry.id,
-      parentId: node.entry.parentId,
-      type: node.entry.type,
-      label: node.label,
-      timestamp: node.entry.timestamp,
-      preview,
-      role,
-      onPath: false,
-      childIds: node.children.map((child) => child.entry.id),
-    }
-    flat.push(serialized)
-    byId.set(serialized.id, serialized)
-    for (const child of node.children) visit(child)
-  }
-  for (const root of nodes) visit(root)
-
-  // Walk up from the leaf rather than down from the roots: the path is one
-  // chain, so this is linear instead of a full traversal.
-  let cursor = leafId
-  const guard = new Set<string>()
-  while (cursor && !guard.has(cursor)) {
-    guard.add(cursor)
-    const node = byId.get(cursor)
-    if (!node) break
-    node.onPath = true
-    cursor = node.parentId
-  }
-
-  return flat
-}
-
-function thinkingLevelsFor(model: RuntimeModel): ThinkingLevel[] {
-  if (!model.reasoning) return ["off"]
-  const map = model.thinkingLevelMap
-  if (!map) return [...THINKING_LEVELS]
-  return THINKING_LEVELS.filter((level) => level === "off" || map[level] !== null)
-}
-
-function toModelInfo(model: RuntimeModel): ModelInfo {
-  return {
-    provider: model.provider,
-    id: model.id,
-    name: model.name,
-    reasoning: model.reasoning,
-    thinkingLevels: thinkingLevelsFor(model),
-    contextWindow: model.contextWindow,
-    maxTokens: model.maxTokens,
-    input: model.input,
-    cost: {
-      input: model.cost.input,
-      output: model.cost.output,
-      cacheRead: model.cost.cacheRead,
-      cacheWrite: model.cost.cacheWrite,
-    },
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/* git                                                                 */
-/* ------------------------------------------------------------------ */
-
-async function git(root: string, args: string[]) {
-  const { stdout } = await execFileAsync("git", args, { cwd: root, maxBuffer: 64 * 1024 * 1024 })
-  return stdout
-}
-
-async function findGitRoot(cwd: string): Promise<string | null> {
-  try {
-    return (await git(cwd, ["rev-parse", "--show-toplevel"])).trim() || null
-  } catch {
-    return null
-  }
-}
-
-async function readText(path: string): Promise<string | null> {
-  try {
-    const buf = await readFile(path)
-    if (buf.includes(0)) return null
-    return buf.toString("utf8")
-  } catch {
-    return null
-  }
-}
-
-function statusFor(xy: string): GitFileStatus {
-  if (xy === "??") return "untracked"
-  if (xy.includes("R")) return "renamed"
-  if (xy.includes("D")) return "deleted"
-  if (xy.includes("A")) return "added"
-  return "modified"
 }
 
 /* ------------------------------------------------------------------ */
@@ -389,16 +70,15 @@ export class AgentHost {
   readonly id: string
   private runtime: AgentSessionRuntime | null = null
   private unsubscribe: (() => void) | null = null
-  private cwd = homedir()
   private emit: (event: HostEvent) => void
+  private readonly workspaceGit: WorkspaceGit
+  private readonly workspaceFiles: WorkspaceFiles
 
   /** Coalescing state — the hot path batches into one emission per frame. */
   private pending = { meta: false, messages: false, tree: false, stream: false }
   private flushTimer: NodeJS.Timeout | null = null
   private gitTimer: NodeJS.Timeout | null = null
-  private gitRoot: string | null = null
   private lastStreamKey = ""
-  private fileCache: { at: number; files: WorkspaceFile[] } | null = null
   /**
    * Whether this tab is the one on screen.
    *
@@ -411,8 +91,11 @@ export class AgentHost {
   private foreground = true
 
   constructor(id: string, emit: (event: HostEvent) => void) {
+    const cwd = homedir()
     this.id = id
     this.emit = (event) => emit({ ...event, tabId: id })
+    this.workspaceGit = new WorkspaceGit(cwd)
+    this.workspaceFiles = new WorkspaceFiles(cwd, this.workspaceGit)
   }
 
   get session(): AgentSession {
@@ -426,7 +109,7 @@ export class AgentHost {
 
   /** The folder this tab's agent is working in. */
   get workspace(): string {
-    return this.cwd
+    return this.workspaceFiles.cwd
   }
 
   /** The session file backing this tab, if it has been written yet. */
@@ -447,8 +130,13 @@ export class AgentHost {
 
   /* -------------------------------------------------- lifecycle */
 
-  async start(cwd = this.cwd) {
-    this.cwd = cwd
+  private setWorkspace(cwd: string) {
+    this.workspaceGit.setCwd(cwd)
+    this.workspaceFiles.setCwd(cwd)
+  }
+
+  async start(cwd = this.workspace) {
+    this.setWorkspace(cwd)
     await this.teardown()
     const agentDir = getAgentDir()
     this.runtime = await createAgentSessionRuntime(
@@ -462,8 +150,7 @@ export class AgentHost {
       },
       { cwd, agentDir, sessionManager: SessionManager.create(cwd) }
     )
-    this.gitRoot = await findGitRoot(cwd)
-    this.fileCache = null
+    await this.workspaceGit.root()
     this.bind()
   }
 
@@ -597,7 +284,7 @@ export class AgentHost {
       sessionId: session.sessionId,
       sessionFile: session.sessionFile,
       sessionName: session.sessionName,
-      cwd: this.cwd,
+      cwd: this.workspace,
       leafId: manager.getLeafId(),
       model: model ? toModelInfo(model) : undefined,
       thinkingLevel: session.thinkingLevel,
@@ -643,7 +330,7 @@ export class AgentHost {
    * rather than only within the current one.
    */
   async listSessions(
-    cwd = this.cwd,
+    cwd = this.workspace,
     scope: "workspace" | "all" = "workspace"
   ): Promise<SessionSummary[]> {
     const sessions =
@@ -673,8 +360,8 @@ export class AgentHost {
   async openSession(path: string) {
     if (!this.runtime) throw new Error("The agent is not ready yet")
     await this.runtime.switchSession(path)
-    this.cwd = this.session.sessionManager.getCwd() || this.cwd
-    this.gitRoot = await findGitRoot(this.cwd)
+    this.setWorkspace(this.session.sessionManager.getCwd() || this.workspace)
+    await this.workspaceGit.root()
     this.bind()
     this.pushState()
     void this.pushGit()
@@ -737,7 +424,7 @@ export class AgentHost {
     if (!this.runtime) throw new Error("The agent is not ready yet")
     const result = await this.runtime.fork(entryId, { position })
     if (result.cancelled) return { cancelled: true as const }
-    this.cwd = this.session.sessionManager.getCwd() || this.cwd
+    this.setWorkspace(this.session.sessionManager.getCwd() || this.workspace)
     this.bind()
     this.pushState()
     void this.pushGit()
@@ -856,513 +543,83 @@ export class AgentHost {
   /* -------------------------------------------------- git */
 
   async gitStatus(): Promise<GitStatus> {
-    const root = this.gitRoot ?? (await findGitRoot(this.cwd))
-    this.gitRoot = root
-    if (!root) return { cwd: this.cwd, ahead: 0, behind: 0, files: [] }
-
-    const [branchOut, statusOut, numstatOut, cachedOut, headOut] = await Promise.all([
-      git(root, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => ""),
-      git(root, ["status", "--porcelain=v1", "-z", "-b", "--untracked-files=all"]),
-      git(root, ["diff", "--numstat", "-z", "HEAD"]).catch(() => ""),
-      git(root, ["diff", "--numstat", "-z", "--cached"]).catch(() => ""),
-      git(root, ["rev-parse", "HEAD"]).catch(() => ""),
-    ])
-
-    // numstat -z emits "adds\tdels\tpath\0", with renames as three NUL fields.
-    // Staged-only changes do not appear in `diff HEAD` once committed-to-index,
-    // so both sides are parsed and merged; otherwise a staged file shows 0/0.
-    const stats = parseNumstat(numstatOut)
-    for (const [path, stat] of parseNumstat(cachedOut)) {
-      if (!stats.has(path)) stats.set(path, stat)
-    }
-
-    const parts = statusOut.split("\0").filter(Boolean)
-    const header = parts.shift() ?? ""
-    const files: GitFile[] = []
-    for (let i = 0; i < parts.length; i += 1) {
-      const line = parts[i]
-      if (!line || line.length < 4) continue
-      const xy = line.slice(0, 2)
-      let path = line.slice(3)
-      let oldName: string | undefined
-      if (xy.includes("R") || xy.includes("C")) {
-        oldName = path
-        path = parts[i + 1] ?? path
-        i += 1
-      }
-      const status = statusFor(xy)
-      const stat = stats.get(path)
-      // Untracked files have no HEAD to diff against, so their "insertions"
-      // are simply their line count, read once here.
-      const counted =
-        status === "untracked" ? await countLines(join(root, path)) : null
-      const insertions = counted ? counted.lines : (stat?.insertions ?? 0)
-      const deletions = stat?.deletions ?? 0
-      const binary = counted?.binary ?? false
-      files.push({
-        path,
-        status,
-        oldName,
-        insertions,
-        deletions,
-        binary,
-        staged: xy[0] !== " " && xy[0] !== "?",
-      })
-    }
-
-    return {
-      cwd: this.cwd,
-      root,
-      branch: branchOut.trim() || undefined,
-      head: headOut.trim() || undefined,
-      upstream: /\.\.\.(\S+)/.exec(header)?.[1],
-      ahead: Number(/ahead (\d+)/.exec(header)?.[1] ?? 0),
-      behind: Number(/behind (\d+)/.exec(header)?.[1] ?? 0),
-      operation: await inProgressOperation(root),
-      files: files.sort((a, b) => a.path.localeCompare(b.path)),
-    }
+    return this.workspaceGit.status()
   }
 
-  /**
-   * The workspace file list backing the composer's `@` picker.
-   *
-   * `git ls-files` is the right source: it already respects .gitignore, so we
-   * never walk node_modules. The result is cached for a few seconds because
-   * the picker re-queries on every keystroke and the file set does not move
-   * that fast.
-   */
   async listFiles(): Promise<WorkspaceFile[]> {
-    const now = Date.now()
-    if (this.fileCache && now - this.fileCache.at < FILE_CACHE_MS) return this.fileCache.files
-
-    const root = this.gitRoot ?? (await findGitRoot(this.cwd))
-    this.gitRoot = root
-
-    const paths = root
-      ? await Promise.all([
-          git(root, ["ls-files", "-z"]).catch(() => ""),
-          git(root, ["ls-files", "-z", "--others", "--exclude-standard"]).catch(() => ""),
-        ]).then(([tracked, untracked]) =>
-          [...tracked.split("\0"), ...untracked.split("\0")].filter(Boolean)
-        )
-      : // Not a repo: a bounded walk, skipping the usual heavy directories.
-        await walk(this.cwd, this.cwd, 0)
-
-    const changed = new Set((await this.gitStatus().catch(() => null))?.files.map((f) => f.path) ?? [])
-    const files = paths
-      .sort((a, b) => a.localeCompare(b))
-      .map((path) => (changed.has(path) ? { path, changed: true } : { path }))
-
-    this.fileCache = { at: now, files }
-    return files
+    return this.workspaceFiles.list()
   }
 
-  /**
-   * Write an attachment the model cannot take inline into a scratch directory
-   * inside the agent dir, and return its path. Engine-owned tools can then reach
-   * it, which is the difference between "attach anything" and pretending
-   * to.
-   */
   async stageFile(name: string, base64: string): Promise<StagedFile> {
-    const dir = join(getAgentDir(), "attachments")
-    await mkdir(dir, { recursive: true })
-    // Keep the original name legible but collision-free, and never let a name
-    // escape the directory it is written into.
-    const safe = name.replace(/[/\\]/g, "_").slice(0, 120) || "attachment"
-    const stamp = `${Date.now().toString(36)}-${Math.round(Math.random() * 1e6).toString(36)}`
-    const target = join(dir, `${stamp}-${safe}`)
-    const bytes = Buffer.from(base64, "base64")
-    await writeFile(target, bytes)
-    return { path: target, name: safe, size: bytes.byteLength }
+    return this.workspaceFiles.stage(name, base64)
   }
 
-  /**
-   * Stage by copying from where the file already is. Drag-and-drop and the
-   * file picker know the OS path, so the fast route is a filesystem copy in
-   * this process — a 200MB video costs one clonefile-ish copy, not a
-   * 270MB base64 string marshalled across the IPC boundary.
-   */
   async stageFilePath(sourcePath: string): Promise<StagedFile> {
-    const dir = join(getAgentDir(), "attachments")
-    await mkdir(dir, { recursive: true })
-    const name = sourcePath.split("/").pop() ?? "attachment"
-    const safe = name.replace(/[/\\]/g, "_").slice(0, 120) || "attachment"
-    const stamp = `${Date.now().toString(36)}-${Math.round(Math.random() * 1e6).toString(36)}`
-    const target = join(dir, `${stamp}-${safe}`)
-    const { copyFile, stat } = await import("node:fs/promises")
-    await copyFile(sourcePath, target)
-    const info = await stat(target)
-    return { path: target, name: safe, size: info.size }
+    return this.workspaceFiles.stagePath(sourcePath)
   }
 
-  /** Absolute path for a workspace-relative one, for reveal/open. */
   /* -------------------------------------------------- search */
 
-  /**
-   * Search the working tree, and optionally past conversations.
-   *
-   * Two corpora in one answer, because in this app they are one question. "Where
-   * did that retry logic go" is answered either by the file that holds it or by
-   * the conversation where you decided it — and having to guess which before you
-   * search is the kind of small tax that stops people searching at all.
-   *
-   * Code goes through `git grep`, which is both far faster than anything this
-   * process could do and already knows what is ignored. Outside a repo it falls
-   * back to a bounded walk, which is slower and says so by being capped.
-   */
   async search(query: string, options: SearchOptions = {}): Promise<SearchResults> {
-    const started = Date.now()
-    const term = query.trim()
-    const empty: SearchResults = {
-      query: term,
-      files: [],
-      threads: [],
-      total: 0,
-      truncated: false,
-      elapsed: 0,
-    }
-    if (term.length < 2) return empty
-
-    if (options.regex) {
-      try {
-        new RegExp(term)
-      } catch (error) {
-        return { ...empty, error: error instanceof Error ? error.message : "Invalid pattern" }
-      }
-    }
-
-    const [files, threads] = await Promise.all([
-      this.searchFiles(term, options),
-      options.threads === false ? Promise.resolve([]) : this.searchThreads(term, options),
-    ])
-
-    const total =
-      files.reduce((sum, file) => sum + file.lines.length + file.more, 0) +
-      threads.reduce((sum, thread) => sum + thread.lines.length + thread.more, 0)
-
-    return {
-      query: term,
-      files,
-      threads,
-      total,
-      truncated: files.length >= SEARCH_MAX_FILES || threads.length >= SEARCH_MAX_THREADS,
-      elapsed: Date.now() - started,
-    }
+    return searchWorkspace(
+      this.workspace,
+      this.workspaceGit,
+      (cwd, scope) => this.listSessions(cwd, scope),
+      query,
+      options
+    )
   }
 
-  private async searchFiles(term: string, options: SearchOptions): Promise<FileMatches[]> {
-    const root = this.gitRoot ?? (await findGitRoot(this.cwd))
-    this.gitRoot = root
-
-    const raw = root
-      ? await this.gitGrep(root, term, options)
-      : await this.walkGrep(term, options)
-
-    // `path:line:text`, but a path may contain a colon, so split from the left
-    // on exactly two separators and leave the rest of the line alone.
-    const byPath = new Map<string, FileMatches>()
-    for (const entry of raw) {
-      const first = entry.indexOf(":")
-      const second = entry.indexOf(":", first + 1)
-      if (first < 0 || second < 0) continue
-      const path = entry.slice(0, first)
-      const line = Number(entry.slice(first + 1, second))
-      if (!Number.isFinite(line)) continue
-
-      let file = byPath.get(path)
-      if (!file) {
-        if (byPath.size >= SEARCH_MAX_FILES) continue
-        file = { path, lines: [], more: 0 }
-        byPath.set(path, file)
-      }
-      if (file.lines.length >= SEARCH_MAX_PER_FILE) {
-        file.more += 1
-        continue
-      }
-      // Long minified lines are useless in a result row and expensive to send.
-      file.lines.push({ line, text: entry.slice(second + 1).slice(0, 400) })
-    }
-    return [...byPath.values()]
-  }
-
-  private async gitGrep(root: string, term: string, options: SearchOptions): Promise<string[]> {
-    const args = ["grep", "--no-color", "-n", "-I", "--untracked"]
-    if (!options.caseSensitive) args.push("-i")
-    if (options.wholeWord) args.push("-w")
-    args.push(options.regex ? "-E" : "-F", "-e", term, "--")
-    try {
-      const out = await git(root, args)
-      return out.split("\n").filter(Boolean)
-    } catch {
-      // git grep exits 1 when nothing matched, which is not an error.
-      return []
-    }
-  }
-
-  /** Not a repo: read the bounded file list and scan it here. */
-  private async walkGrep(term: string, options: SearchOptions): Promise<string[]> {
-    const test = matcher(term, options)
-    const paths = (await this.listFiles()).slice(0, SEARCH_WALK_FILES)
-    const out: string[] = []
-    for (const file of paths) {
-      if (out.length >= SEARCH_MAX_FILES * SEARCH_MAX_PER_FILE) break
-      const text = await readText(join(this.cwd, file.path))
-      if (text === null || text.includes("\0")) continue
-      const lines = text.split("\n")
-      for (let index = 0; index < lines.length; index += 1) {
-        const line = lines[index] ?? ""
-        if (test(line)) out.push(`${file.path}:${index + 1}:${line}`)
-      }
-    }
-    return out
-  }
-
-  /**
-   * Search past conversations.
-   *
-   * Sessions are JSONL, so the cheap thing is right: test the raw line first
-   * and only parse the ones that hit. A miss costs a substring search, not a
-   * JSON parse, which is what makes scanning a few hundred sessions viable.
-   */
-  private async searchThreads(term: string, options: SearchOptions): Promise<ThreadMatches[]> {
-    const test = matcher(term, options)
-    const sessions = await this.listSessions(this.cwd, options.scope ?? "workspace").catch(() => [])
-    const results: ThreadMatches[] = []
-    let budget = SEARCH_THREAD_BYTES
-
-    for (const session of sessions.slice(0, SEARCH_SCAN_THREADS)) {
-      if (results.length >= SEARCH_MAX_THREADS || budget <= 0) break
-      const text = await readText(session.path)
-      if (text === null) continue
-      budget -= text.length
-      if (!test(text)) continue
-
-      const match: ThreadMatches = {
-        path: session.path,
-        title: session.name || session.firstMessage.slice(0, 80) || "Untitled session",
-        cwd: session.cwd,
-        modified: session.modified,
-        lines: [],
-        more: 0,
-      }
-      for (const line of text.split("\n")) {
-        if (!line || !test(line)) continue
-        if (match.lines.length >= SEARCH_MAX_PER_THREAD) {
-          match.more += 1
-          continue
-        }
-        const found = entryText(line, test)
-        if (found) match.lines.push(found)
-      }
-      if (match.lines.length > 0 || match.more > 0) results.push(match)
-    }
-    return results
-  }
-
-  /**
-   * Read a workspace file for the viewer.
-   *
-   * Two guards, both about not hanging the window on something it cannot show
-   * anyway: a byte ceiling, because a 40MB log renders as a frozen tab, and a
-   * NUL check, because a binary opened as text is a screenful of noise that
-   * takes longer to draw than to read. Both are reported rather than silently
-   * applied — a truncated file that does not say so is a lie about the code.
-   */
   async readWorkspaceFile(path: string): Promise<FileContents> {
-    const absolute = await this.resolvePath(path)
-    const info = await stat(absolute)
-    if (info.isDirectory()) throw new Error(`${path} is a directory`)
-
-    const handle = await open(absolute, "r")
-    try {
-      const length = Math.min(info.size, FILE_VIEW_LIMIT)
-      const buffer = Buffer.alloc(length)
-      await handle.read(buffer, 0, length, 0)
-      // A NUL byte in the first few KB is the same heuristic git uses, and it
-      // is right far more often than sniffing extensions.
-      if (buffer.subarray(0, 8000).includes(0)) {
-        return { path, contents: "", size: info.size, binary: true, truncated: false }
-      }
-      return {
-        path,
-        contents: buffer.toString("utf8"),
-        size: info.size,
-        binary: false,
-        truncated: info.size > FILE_VIEW_LIMIT,
-      }
-    } finally {
-      await handle.close()
-    }
+    return this.workspaceFiles.read(path)
   }
 
   async resolvePath(path: string): Promise<string> {
-    if (isAbsolute(path)) return path
-    const root = this.gitRoot ?? (await findGitRoot(this.cwd))
-    return join(root ?? this.cwd, path)
+    return this.workspaceFiles.resolvePath(path)
   }
 
-  /** Contents for one file — fetched only when the user opens it. */
   async gitDiff(path: string): Promise<GitDiff> {
-    const root = this.gitRoot ?? (await findGitRoot(this.cwd))
-    if (!root) return { path, binary: false, oldFile: null, newFile: null }
-    const abs = join(root, path)
-    const [head, work] = await Promise.all([
-      git(root, ["show", `HEAD:${path}`]).catch(() => null),
-      readText(abs),
-    ])
-    return {
-      path,
-      binary: head === null && work === null && existsSync(abs),
-      oldFile: head == null ? null : { name: path, contents: head },
-      newFile: work == null ? null : { name: path, contents: work },
-    }
+    return this.workspaceGit.diff(path)
   }
 
-  /**
-   * One commit, as the files it touched.
-   *
-   * `diff-tree` twice — numstat for the counts, name-status for what
-   * happened — because git offers no single porcelain that carries both.
-   */
   async gitCommitFiles(
     hash: string
   ): Promise<Array<{ path: string; status: GitFileStatus; insertions: number; deletions: number; binary: boolean }>> {
-    const root = await this.requireRoot()
-    const [numstat, names] = await Promise.all([
-      git(root, ["diff-tree", "--no-commit-id", "--numstat", "-r", "--root", hash]),
-      git(root, ["diff-tree", "--no-commit-id", "--name-status", "-r", "--root", "-M", hash]),
-    ])
-    const statusOf = new Map<string, GitFileStatus>()
-    for (const line of names.split("\n")) {
-      const parts = line.split("\t")
-      const code = parts[0]?.[0]
-      // A rename carries two paths; the new one is what the list shows.
-      const path = parts[parts.length - 1]
-      if (!code || !path) continue
-      statusOf.set(
-        path,
-        code === "A" ? "added" : code === "D" ? "deleted" : code === "R" ? "renamed" : "modified"
-      )
-    }
-    const files: Array<{ path: string; status: GitFileStatus; insertions: number; deletions: number; binary: boolean }> = []
-    for (const line of numstat.split("\n")) {
-      const [added, removed, ...rest] = line.split("\t")
-      const path = rest.join("\t")
-      if (!path) continue
-      const binary = added === "-"
-      files.push({
-        path: path.includes(" => ") ? (path.split(" => ").at(-1) ?? path).replace(/}$/, "") : path,
-        status: statusOf.get(path) ?? "modified",
-        insertions: binary ? 0 : Number(added) || 0,
-        deletions: binary ? 0 : Number(removed) || 0,
-        binary,
-      })
-    }
-    return files
+    return this.workspaceGit.commitFiles(hash)
   }
 
-  /**
-   * The whole commit as diffs, ready for the center stage. Capped: a
-   *5000-file commit is an archaeology project, not a click.
-   */
   async gitCommitDiffAll(hash: string): Promise<{ diffs: GitDiff[]; truncated: number }> {
-    const files = await this.gitCommitFiles(hash)
-    const shown = files.filter((file) => !file.binary).slice(0, 25)
-    const diffs = await Promise.all(
-      shown.map((file) => this.gitCommitFileDiff(hash, file.path))
-    )
-    return { diffs, truncated: files.length - shown.length }
+    return this.workspaceGit.commitDiffAll(hash)
   }
 
-  /** A file as one commit changed it: parent's version against the commit's. */
   async gitCommitFileDiff(hash: string, path: string): Promise<GitDiff> {
-    const root = await this.requireRoot()
-    const [before, after] = await Promise.all([
-      git(root, ["show", `${hash}^:${path}`]).catch(() => null),
-      git(root, ["show", `${hash}:${path}`]).catch(() => null),
-    ])
-    return {
-      path,
-      binary: before === null && after === null,
-      oldFile: before == null ? null : { name: path, contents: before },
-      newFile: after == null ? null : { name: path, contents: after },
-    }
+    return this.workspaceGit.commitFileDiff(hash, path)
   }
 
   /* -------------------------------------------------- git operations */
 
-  /**
-   * Staging. Paths are workspace-relative and passed after `--` so a file
-   * named like a flag can never be read as one.
-   */
   async gitStage(paths: string[]) {
-    const root = await this.requireRoot()
-    await git(root, ["add", "--", ...paths])
+    await this.workspaceGit.stage(paths)
     await this.pushGit()
   }
 
   async gitUnstage(paths: string[]) {
-    const root = await this.requireRoot()
-    // `reset` fails on a repo with no commits yet; `rm --cached` is the
-    // equivalent that works before the first commit exists.
-    try {
-      await git(root, ["reset", "-q", "HEAD", "--", ...paths])
-    } catch {
-      await git(root, ["rm", "-q", "--cached", "--", ...paths])
-    }
+    await this.workspaceGit.unstage(paths)
     await this.pushGit()
   }
 
   async gitStageAll() {
-    const root = await this.requireRoot()
-    await git(root, ["add", "-A"])
+    await this.workspaceGit.stageAll()
     await this.pushGit()
   }
 
   async gitUnstageAll() {
-    const root = await this.requireRoot()
-    try {
-      await git(root, ["reset", "-q"])
-    } catch {
-      // No HEAD yet: nothing was ever committed, so unstage everything.
-      await git(root, ["rm", "-rq", "--cached", "."]).catch(() => {})
-    }
+    await this.workspaceGit.unstageAll()
     await this.pushGit()
   }
 
-  /**
-   * The patch that a commit would record, for review and for the model.
-   *
-   * A repository with no commits has no HEAD, so `diff HEAD` fails outright —
-   * which is the state every freshly-initialized repo is in, and exactly when
-   * someone most wants a first commit message drafted. There the index is the
-   * only reference, and an empty index still has the untracked files to
-   * describe.
-   */
   async gitPatch(staged: boolean): Promise<string> {
-    const root = await this.requireRoot()
-    const hasHead = await git(root, ["rev-parse", "--verify", "HEAD"])
-      .then(() => true)
-      .catch(() => false)
-
-    if (hasHead) {
-      const args = staged ? ["diff", "--cached"] : ["diff", "HEAD"]
-      const patch = await git(root, [...args, "--no-color"]).catch(() => "")
-      if (patch.trim()) return patch
-    } else {
-      const patch = await git(root, ["diff", "--cached", "--no-color"]).catch(() => "")
-      if (patch.trim()) return patch
-    }
-
-    // Nothing diffable: fall back to the list of files that would be added, so
-    // an initial commit can still be described.
-    const status = await this.gitStatus()
-    if (status.files.length === 0) return ""
-    const lines = status.files
-      .slice(0, 400)
-      .map((file) => `${file.status}: ${file.path}`)
-      .join("\n")
-    return `The following files are being added in this commit:\n${lines}`
+    return this.workspaceGit.patch(staged)
   }
 
   /**
@@ -1382,7 +639,7 @@ export class AgentHost {
     const model = session.model
     if (!model) throw new Error("No model is selected")
 
-    const staged = await this.hasStagedChanges()
+    const staged = await this.workspaceGit.hasStagedChanges()
     const patch = await this.gitPatch(staged)
     if (!patch.trim()) throw new Error("There are no changes to describe")
 
@@ -1407,28 +664,13 @@ export class AgentHost {
   }
 
   async gitCommit(message: string, options: { amend?: boolean } = {}) {
-    const root = await this.requireRoot()
-    if (!message.trim()) throw new Error("A commit needs a message")
-    // Nothing staged means the user meant "commit what I changed".
-    if (!(await this.hasStagedChanges()) && !options.amend) {
-      await git(root, ["add", "-A"])
-    }
-    const args = ["commit", "-m", message]
-    if (options.amend) args.push("--amend")
-    await git(root, args)
+    await this.workspaceGit.commit(message, options)
     await this.pushGit()
     this.emit({ type: "notice", level: "success", message: "Committed" })
   }
 
-  /** Push the current branch, setting upstream on first push. */
   async gitPush(): Promise<void> {
-    const root = await this.requireRoot()
-    const branch = (await git(root, ["rev-parse", "--abbrev-ref", "HEAD"])).trim()
-    const hasUpstream = await git(root, ["rev-parse", "--abbrev-ref", `${branch}@{upstream}`])
-      .then(() => true)
-      .catch(() => false)
-    const args = hasUpstream ? ["push"] : ["push", "--set-upstream", "origin", branch]
-    const output = await git(root, args)
+    const { branch, output } = await this.workspaceGit.push()
     await this.pushGit()
     this.emit({
       type: "notice",
@@ -1438,48 +680,7 @@ export class AgentHost {
   }
 
   async gitLog(limit = 60): Promise<GitCommitEntry[]> {
-    const root = this.gitRoot ?? (await findGitRoot(this.cwd))
-    if (!root) return []
-    // A unit separator keeps subjects containing any punctuation intact.
-    const format = ["%H", "%h", "%s", "%an", "%aI"].join("%x1f")
-    const out = await git(root, [
-      "log",
-      `--max-count=${limit}`,
-      `--pretty=format:${format}`,
-      "--shortstat",
-    ]).catch(() => "")
-
-    const entries: GitCommitEntry[] = []
-    for (const block of out.split("\n")) {
-      const line = block.trim()
-      if (!line) continue
-      if (line.includes("\x1f")) {
-        const [hash, shortHash, subject, author, date] = line.split("\x1f")
-        entries.push({ hash, shortHash, subject, author, date, files: 0, insertions: 0, deletions: 0 })
-        continue
-      }
-      // A --shortstat line belongs to the commit just pushed.
-      const current = entries.at(-1)
-      if (!current) continue
-      current.files = Number(/(\d+) files? changed/.exec(line)?.[1] ?? 0)
-      current.insertions = Number(/(\d+) insertions?/.exec(line)?.[1] ?? 0)
-      current.deletions = Number(/(\d+) deletions?/.exec(line)?.[1] ?? 0)
-    }
-    return entries
-  }
-
-  private async hasStagedChanges(): Promise<boolean> {
-    const root = await this.requireRoot()
-    return git(root, ["diff", "--cached", "--quiet"])
-      .then(() => false)
-      .catch(() => true)
-  }
-
-  private async requireRoot(): Promise<string> {
-    const root = this.gitRoot ?? (await findGitRoot(this.cwd))
-    this.gitRoot = root
-    if (!root) throw new Error("This folder is not a git repository")
-    return root
+    return this.workspaceGit.log(limit)
   }
 
   async pushGit() {
@@ -1559,78 +760,6 @@ function truncatePatch(patch: string, maxBytes: number): string {
     file.length <= budget ? file : `${file.slice(0, budget)}\n… diff truncated …\n`
   )
   return trimmed.join("").slice(0, maxBytes)
-}
-
-/** `git diff --numstat -z` emits "adds\tdels\tpath\0"; renames use three fields. */
-function parseNumstat(output: string): Map<string, { insertions: number; deletions: number }> {
-  const stats = new Map<string, { insertions: number; deletions: number }>()
-  const fields = output.split("\0")
-  for (let i = 0; i < fields.length; i += 1) {
-    const field = fields[i]
-    if (!field) continue
-    const match = /^(\d+|-)\t(\d+|-)\t(.*)$/.exec(field)
-    if (!match) continue
-    let path = match[3]
-    if (path === "") {
-      // Rename: the next two fields are the old path then the new one.
-      path = fields[i + 2] ?? fields[i + 1] ?? ""
-      i += 2
-    }
-    stats.set(path, {
-      insertions: match[1] === "-" ? 0 : Number(match[1]),
-      deletions: match[2] === "-" ? 0 : Number(match[2]),
-    })
-  }
-  return stats
-}
-
-/** Merge, rebase, and cherry-pick leave marker files in the git dir. */
-async function inProgressOperation(root: string): Promise<string | undefined> {
-  const gitDir = join(root, ".git")
-  if (existsSync(join(gitDir, "MERGE_HEAD"))) return "merge"
-  if (existsSync(join(gitDir, "CHERRY_PICK_HEAD"))) return "cherry-pick"
-  if (existsSync(join(gitDir, "REVERT_HEAD"))) return "revert"
-  if (existsSync(join(gitDir, "rebase-merge")) || existsSync(join(gitDir, "rebase-apply"))) {
-    return "rebase"
-  }
-  return undefined
-}
-
-async function walk(root: string, dir: string, depth: number): Promise<string[]> {
-  if (depth > WALK_MAX_DEPTH) return []
-  let entries
-  try {
-    entries = await readdir(dir, { withFileTypes: true })
-  } catch {
-    return []
-  }
-  const out: string[] = []
-  for (const entry of entries) {
-    if (entry.name.startsWith(".") || WALK_SKIP.has(entry.name)) continue
-    const full = join(dir, entry.name)
-    if (entry.isDirectory()) {
-      out.push(...(await walk(root, full, depth + 1)))
-    } else if (entry.isFile()) {
-      out.push(relative(root, full))
-    }
-    if (out.length > WALK_MAX_FILES) break
-  }
-  return out
-}
-
-async function countLines(path: string): Promise<{ lines: number; binary: boolean }> {
-  try {
-    const info = await stat(path)
-    if (!info.isFile() || info.size > UNTRACKED_STAT_LIMIT) return { lines: 0, binary: false }
-    const buf = await readFile(path)
-    if (buf.includes(0)) return { lines: 0, binary: true }
-    if (buf.length === 0) return { lines: 0, binary: false }
-    let lines = 1
-    for (const byte of buf) if (byte === 10) lines += 1
-    return { lines, binary: false }
-  } catch {
-    return { lines: 0, binary: false }
-  }
 }
 
 export function defaultWorkspace(): string {

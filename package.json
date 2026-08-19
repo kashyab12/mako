@@ -14,6 +14,7 @@
     "lint:anti-slop": "oxlint --config oxlint.config.ts src electron packages/sessions/src scripts",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc -b --force",
+    "test:host": "tsx scripts/test-host-domains.ts",
     "test:mcp": "tsx scripts/test-mcp.ts",
     "test:performance": "tsx scripts/test-performance.ts",
     "test:skills": "tsx scripts/test-skills.ts",
