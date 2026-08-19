@@ -46,9 +46,10 @@ export function setup() {
 
 export function PluginsSection() {
   const registry = useRegistry(plugins)
+  const registryVersion = registry.getVersion()
   const loaded = useMemo(
     () => registry.list().filter((plugin) => plugin.source !== ""),
-    [registry, registry.getVersion()]
+    [registry, registryVersion]
   )
   const [open, setOpen] = useState<string | null>(null)
   const [draft, setDraft] = useState("")

@@ -16,11 +16,7 @@ import { RotateCcwIcon, ZapIcon } from "lucide-react"
  */
 export function HotIndicator() {
   const [update, setUpdate] = useState<HotUpdate | null>(null)
-  const [reloaded, setReloaded] = useState(false)
-
-  useEffect(() => {
-    setReloaded(consumeFullReload())
-  }, [])
+  const [reloaded, setReloaded] = useState(consumeFullReload)
 
   useEffect(() => onHotUpdate(setUpdate), [])
 
