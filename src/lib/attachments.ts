@@ -127,6 +127,20 @@ export function useAttachments() {
     return accepted.map((item) => `[Attachment ${item.index}]`).join(" ")
   }, [])
 
+  /**
+   * Resolves when no attachment is still reading or staging — the moment a
+   * prompt that references them can actually be sent. Sending earlier is
+   * how a message once went out with a dead [Attachment 1] marker and no
+   * file behind it.
+   */
+  const settled = useCallback(async (): Promise<Attachment[]> => {
+    const deadline = Date.now() + 20_000
+    while (live.current.some((item) => item.pending) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 40))
+    }
+    return live.current
+  }, [])
+
   const remove = useCallback((id: string) => {
     setItems((current) => {
       const found = current.find((item) => item.id === id)
@@ -167,7 +181,7 @@ export function useAttachments() {
     nextIndex.current = 1
   }, [])
 
-  return { items, add, remove, clear, detach, reattach, discard }
+  return { items, add, remove, clear, detach, reattach, discard, settled }
 }
 
 async function resolve(attachment: Attachment, file: File): Promise<Attachment> {
@@ -249,6 +263,35 @@ export function buildPrompt(
     text: `${body}${body ? "\n\n" : ""}---\n${appendix.join("\n\n")}`,
     images,
   }
+}
+
+/**
+ * The prompt for a harness reached through its CLI: no inline images, so
+ * every attachment — image included — resolves to its staged file, and the
+ * [Attachment N] markers the draft carries point at real paths the agent
+ * can open. Anything still unstaged is named honestly as unavailable
+ * rather than silently dropped.
+ */
+export function buildForeignPrompt(draft: string, items: Attachment[]): string {
+  const appendix: string[] = []
+  for (const item of items) {
+    if (item.stagedPath) {
+      appendix.push(
+        `[Attachment ${item.index}] ${item.name} — ${item.mimeType}, ${formatBytes(item.size)}. ` +
+          `Saved at ${item.stagedPath}; read it from there.`
+      )
+    } else if (item.kind === "text" && item.text !== undefined) {
+      appendix.push(`[Attachment ${item.index}] ${item.name}
+\`\`\`
+${item.text}
+\`\`\``)
+    } else {
+      appendix.push(`[Attachment ${item.index}] ${item.name} — could not be staged; ask for it again.`)
+    }
+  }
+  if (appendix.length === 0) return draft
+  const body = draft.trim()
+  return `${body}${body ? "\n\n" : ""}---\n${appendix.join("\n\n")}`
 }
 
 export function formatBytes(bytes: number) {

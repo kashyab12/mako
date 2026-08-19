@@ -148,24 +148,31 @@ export class SessionCatalog {
       if (filter.cwd && ref.cwd !== filter.cwd) return
       refs.push(ref)
     }
-    // One session, one row: the same conversation reachable through two
-    // paths (symlinked stores, copied homes) keeps its freshest ref only.
-    const byIdentity = new Map<string, ThreadRef>()
-    for (const entry of this.byPath.values()) {
-      const ref = entry.ref
-      if (!ref) continue
-      const key = `${ref.harness}:${ref.nativeId}`
-      const held = byIdentity.get(key)
-      if (!held || (ref.updatedAt ?? "") > (held.updatedAt ?? "")) byIdentity.set(key, ref)
-    }
-    for (const ref of byIdentity.values()) admit(ref)
+    for (const entry of this.byPath.values()) admit(entry.ref)
     for (const ref of this.remoteRefs.values()) admit(ref)
     // Sessions whose native store forgot them. The archive did not.
     if (this.archive) {
       const live = new Set(this.byPath.keys())
       for (const ref of this.archive.orphans(live)) admit(ref)
     }
-    return refs.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
+    // One session, one row — whatever the path. Symlinked roots and the
+    // archive can each present the same conversation twice; identity is the
+    // harness's own session id. Live beats archived; newest beats older.
+    const byIdentity = new Map<string, ThreadRef>()
+    for (const ref of refs) {
+      const key = `${ref.harness}:${ref.nativeId}`
+      const held = byIdentity.get(key)
+      if (
+        !held ||
+        (held.archived && !ref.archived) ||
+        (held.archived === ref.archived && (ref.updatedAt ?? "") > (held.updatedAt ?? ""))
+      ) {
+        byIdentity.set(key, ref)
+      }
+    }
+    return [...byIdentity.values()].sort((a, b) =>
+      (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")
+    )
   }
 
   /** Full translation of one session, via whichever store owns its path. */

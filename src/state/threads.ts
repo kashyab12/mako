@@ -155,8 +155,21 @@ export function applyThreadRun(run: ThreadRunState) {
 export function applyThreadEntries(path: string, entries: ThreadEntry[], replace?: boolean) {
   const { viewing } = threadsStore.get()
   if (!viewing || viewing.ref.path !== path) return
+  // The real turn arriving retires its optimistic echo: the reply was
+  // painted the instant it was sent, and the file tail is the truth that
+  // replaces it rather than doubling it.
+  const arrivedUserTexts = new Set(
+    entries.filter((entry) => entry.kind === "user").map((entry) => entry.text)
+  )
+  const base = replace
+    ? []
+    : viewing.entries.filter(
+        (entry) =>
+          !(entry as { echo?: boolean }).echo ||
+          !(entry.kind === "user" && arrivedUserTexts.has(entry.text))
+      )
   threadsStore.set({
-    viewing: { ...viewing, entries: replace ? entries : [...viewing.entries, ...entries] },
+    viewing: { ...viewing, entries: [...base, ...entries] },
   })
 }
 
@@ -267,6 +280,22 @@ export const threads = {
    */
   async reply(ref: ThreadRef, prompt: string): Promise<boolean> {
     if (!hasBridge()) return false
+    // Paint the message NOW. The CLI takes a second to launch and the tail
+    // another moment to land; a reply that vanishes into that gap reads as
+    // a send that failed. The echo carries a flag so the real turn from the
+    // file replaces it instead of doubling it.
+    const { viewing } = threadsStore.get()
+    let echoed = false
+    if (viewing && viewing.ref.path === ref.path) {
+      const echo = {
+        kind: "user",
+        at: new Date().toISOString(),
+        text: prompt,
+      } as ThreadEntry & { echo: boolean }
+      echo.echo = true
+      threadsStore.set({ viewing: { ...viewing, entries: [...viewing.entries, echo] } })
+      echoed = true
+    }
     try {
       // The composer's tuning rides on the reply: pick a different model or
       // effort while a conversation is open and the next turn uses it.
@@ -278,6 +307,23 @@ export const threads = {
       threadsStore.set({ run })
       return true
     } catch (error) {
+      // The send failed: take the echo back out so the transcript stays true.
+      if (echoed) {
+        const current = threadsStore.get().viewing
+        if (current && current.ref.path === ref.path) {
+          threadsStore.set({
+            viewing: {
+              ...current,
+              entries: current.entries.filter(
+                (entry) =>
+                  !(entry as { echo?: boolean }).echo ||
+                  entry.kind !== "user" ||
+                  entry.text !== prompt
+              ),
+            },
+          })
+        }
+      }
       toast.error(error instanceof Error ? error.message : String(error))
       return false
     }

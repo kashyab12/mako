@@ -7,7 +7,7 @@ import { HarnessIcon } from "@/components/ui/provider-icon"
 import { EffortPicker } from "@/components/composer/effort-picker"
 import { MentionMenu, type MentionKind } from "@/components/composer/mention-menu"
 import { AttachmentStrip } from "@/components/composer/attachments"
-import { buildPrompt, useAttachments } from "@/lib/attachments"
+import { buildForeignPrompt, buildPrompt, useAttachments } from "@/lib/attachments"
 import { ReferenceOverlay } from "@/components/composer/reference-overlay"
 import { Chip, IconAction, Keys } from "@/components/ui/kit"
 import { Slot } from "@/extend/slot"
@@ -16,6 +16,7 @@ import { mentionAt, replaceMention, type ActiveMention } from "@/lib/mentions"
 import { actions, shallowEqual, useSession } from "@/state/session"
 import { threads, threadsStore, useThreads } from "@/state/threads"
 import { acp, acpStore, useAcp } from "@/state/acp"
+import { getPi } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import {
@@ -176,13 +177,25 @@ export function Composer() {
       const harness = threadsStore.get().composerHarness
       const nativeHarness = harness === "pi" || harness === "devin"
       if ((liveSession || viewingRef || !nativeHarness) && !mode) {
-        const paths = attachments.items
-          .map((item) => item.stagedPath)
-          .filter((path): path is string => Boolean(path))
-        const full =
-          paths.length > 0
-            ? [text, "", "Attached files (read them from disk):", ...paths.map((path) => "- " + path)].join("\n")
-            : text
+        // Wait out staging — a screenshot mid-copy must not race the send
+        // and leave a dead [Attachment N] marker with no file behind it —
+        // then put even inline-shaped images on disk, since a CLI reads
+        // files, not base64.
+        const settledItems = attachments.items.some((item) => item.pending)
+          ? await attachments.settled()
+          : attachments.items
+        const staged = await Promise.all(
+          settledItems.map(async (item) => {
+            if (item.stagedPath || item.kind !== "image" || !item.data) return item
+            try {
+              const file = await getPi().stageFile(item.name, item.data)
+              return { ...item, stagedPath: file.path }
+            } catch {
+              return item
+            }
+          })
+        )
+        const full = buildForeignPrompt(text, staged)
         if (!full.trim()) return
         const previousDraft = draft
         const detached = attachments.detach()
