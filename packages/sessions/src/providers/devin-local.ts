@@ -17,26 +17,33 @@
  * nothing rather than failing.
  */
 
-import { homedir } from "node:os"
-import { join, basename } from "node:path"
 import { readdir, stat } from "node:fs/promises"
+import { homedir } from "node:os"
+import { basename, join } from "node:path"
+import type { DatabaseSync, SQLOutputValue, StatementSync } from "node:sqlite"
 import { clip, EntrySink, titleFrom, type Thread, type ThreadEntry, type ThreadRef } from "../format.js"
-import { createJsonlFollower, readLines, snapshotSink } from "../jsonl.js"
+import { createJsonlFollower, readLines, snapshotSink, type LineTranslator } from "../jsonl.js"
 import type { NativeFile, SessionProvider } from "./types.js"
 
-interface SqliteDatabase {
-  prepare(sql: string): { all(...args: unknown[]): unknown[]; get(...args: unknown[]): unknown }
-  close(): void
+type JsonScalar = boolean | number | string | null
+type JsonValue = JsonScalar | JsonRecord | JsonValue[]
+
+interface JsonRecord {
+  [key: string]: JsonValue | undefined
 }
 
-let sqliteOpen: ((path: string) => SqliteDatabase) | null | undefined
+type SqliteStatementResult = ReturnType<StatementSync["get"]>
 
-async function openDatabase(path: string): Promise<SqliteDatabase | null> {
+interface StateValueRow {
+  value: string
+}
+
+let sqliteOpen: ((path: string) => DatabaseSync) | null | undefined
+
+async function openDatabase(path: string): Promise<DatabaseSync | null> {
   if (sqliteOpen === undefined) {
     try {
-      const sqlite = (await import("node:sqlite")) as {
-        DatabaseSync: new (path: string, options?: { readOnly?: boolean }) => SqliteDatabase
-      }
+      const sqlite = await import("node:sqlite")
       sqliteOpen = (file) => new sqlite.DatabaseSync(file, { readOnly: true })
     } catch {
       sqliteOpen = null
@@ -59,16 +66,109 @@ interface SessionMeta {
   updatedAt?: string
 }
 
-interface EventLine {
-  notification?: {
-    sessionUpdate?: string
-    content?: { text?: string }
-    title?: string
-    rawInput?: unknown
-    toolCallId?: string
-    status?: string
-    _meta?: Record<string, unknown>
-  }
+interface EventLogEntry {
+  uuid: string
+  lastUpdated?: number
+}
+
+interface CachedSession {
+  sessionId: string
+  title?: string
+  cwd?: string
+  model?: string
+  createdAt?: string
+}
+
+interface SessionCache {
+  sessions: CachedSession[]
+}
+
+interface AcpMetadata {
+  timestamp?: string
+  clientMessageId?: string
+  inferenceToolName?: string
+}
+
+interface AcpEventBase {
+  at?: string
+}
+
+interface AcpUserMessage extends AcpEventBase {
+  sessionUpdate: "user_message_chunk"
+  text: string
+  clientMessageId?: string
+}
+
+interface AcpAgentMessage extends AcpEventBase {
+  sessionUpdate: "agent_message_chunk" | "agent_thought_chunk"
+  text: string
+}
+
+interface AcpToolCall extends AcpEventBase {
+  sessionUpdate: "tool_call"
+  name: string
+  input?: string
+  toolCallId?: string
+}
+
+interface AcpToolCallUpdate extends AcpEventBase {
+  sessionUpdate: "tool_call_update"
+  output: string
+  status?: string
+  toolCallId?: string
+}
+
+interface AcpPlanEntry {
+  content?: string
+  status?: string
+}
+
+interface AcpPlan extends AcpEventBase {
+  sessionUpdate: "plan"
+  entries: AcpPlanEntry[]
+}
+
+interface AcpCost {
+  amount: number
+  currency?: string
+}
+
+interface AcpUsage extends AcpEventBase {
+  sessionUpdate: "usage_update"
+  used?: number
+  size?: number
+  cost?: AcpCost
+}
+
+interface AcpSessionInfo extends AcpEventBase {
+  sessionUpdate: "session_info_update"
+  title?: string
+}
+
+interface AcpCurrentMode extends AcpEventBase {
+  sessionUpdate: "current_mode_update"
+}
+
+type AcpEvent =
+  | AcpUserMessage
+  | AcpAgentMessage
+  | AcpToolCall
+  | AcpToolCallUpdate
+  | AcpPlan
+  | AcpUsage
+  | AcpSessionInfo
+  | AcpCurrentMode
+
+type AssistantEntry = Extract<ThreadEntry, { kind: "assistant" }>
+type ToolBlock = Extract<AssistantEntry["blocks"][number], { type: "tool" }>
+
+interface TranslatorState {
+  title?: string
+}
+
+interface DevinTranslator extends LineTranslator {
+  done(): ThreadEntry[]
+  readonly title?: string
 }
 
 export class DevinLocalProvider implements SessionProvider {
@@ -90,7 +190,7 @@ export class DevinLocalProvider implements SessionProvider {
 
   async discover(): Promise<NativeFile[]> {
     const root = this.roots()[0]!
-    const names = await readdir(root).catch(() => [] as string[])
+    const names = await readdir(root).catch(() => new Array<string>())
     const files: NativeFile[] = []
     for (const name of names) {
       if (!name.endsWith(".ndjson")) continue
@@ -173,44 +273,26 @@ export class DevinLocalProvider implements SessionProvider {
     const db = await openDatabase(dbPath)
     if (!db) return
     try {
-      const row = (sql: string) =>
-        (db.prepare("SELECT value FROM ItemTable WHERE key = ?").get(sql) as
-          | { value?: string }
-          | undefined)?.value
-      const indexRaw = row("windsurf.acp.eventLog.index")
-      const metaRaw = row("windsurf.acp.metadataCache")
+      const statement = db.prepare("SELECT value FROM ItemTable WHERE key = ?")
+      const row = (key: string): StateValueRow | null => parseStateValueRow(statement.get(key))
+      const indexRaw = row("windsurf.acp.eventLog.index")?.value
+      const metaRaw = row("windsurf.acp.metadataCache")?.value
       if (!indexRaw || !metaRaw) return
-      const index = JSON.parse(indexRaw) as Record<
-        string,
-        { uuid?: string; lastUpdated?: number }
-      >
-      const cache = JSON.parse(metaRaw) as {
-        sessions?: Array<{
-          sessionId?: string
-          title?: string
-          cwd?: string
-          _meta?: Record<string, unknown>
-          configOptions?: Array<{ id?: string; currentValue?: unknown }>
-        }>
-      }
+      const index = parseEventLogIndex(indexRaw)
+      const cache = parseSessionCache(metaRaw)
+      if (!index || !cache) return
       const bySession = new Map<string, SessionMeta>()
-      for (const session of cache.sessions ?? []) {
-        if (!session.sessionId) continue
-        const model = session.configOptions?.find((option) => option.id === "model")
+      for (const session of cache.sessions) {
         bySession.set(session.sessionId, {
           sessionId: session.sessionId,
           title: session.title,
           cwd: session.cwd,
-          model: typeof model?.currentValue === "string" ? model.currentValue : undefined,
-          createdAt:
-            typeof session._meta?.["cognition.ai/createdAt"] === "string"
-              ? (session._meta["cognition.ai/createdAt"] as string)
-              : undefined,
+          model: session.model,
+          createdAt: session.createdAt,
         })
       }
       this.metaByUuid.clear()
-      for (const [sessionId, entry] of Object.entries(index)) {
-        if (!entry.uuid) continue
+      for (const [sessionId, entry] of index) {
         const meta = bySession.get(sessionId) ?? { sessionId }
         if (entry.lastUpdated) meta.updatedAt = new Date(entry.lastUpdated).toISOString()
         this.metaByUuid.set(entry.uuid, meta)
@@ -232,23 +314,19 @@ export class DevinLocalProvider implements SessionProvider {
  * block, and tool calls pick up their updates by id. User chunks group by
  * the client message id so a multi-chunk prompt stays one entry.
  */
-function translator(): {
-  push: (raw: string) => void
-  snapshot: () => ThreadEntry[]
-  done: () => ThreadEntry[]
-  title?: string
-} {
-  type AssistantEntry = Extract<ThreadEntry, { kind: "assistant" }>
+function translator(): DevinTranslator {
   const sink = new EntrySink()
-  const state: { title?: string } = {}
+  const state: TranslatorState = {}
   let assistant: AssistantEntry | null = null
   let userId: string | null = null
-  const toolsById = new Map<string, { type: "tool"; name: string; input?: string; output?: string; error?: boolean }>()
+  const toolsById = new Map<string, ToolBlock>()
+  let started = false
+  let needsReset = false
 
-  const flushAssistant = () => {
+  const flushAssistant = (preserveTools = false) => {
     if (assistant) sink.push(assistant)
     assistant = null
-    toolsById.clear()
+    if (!preserveTools) toolsById.clear()
   }
 
   const ensureAssistant = (at?: string): AssistantEntry => {
@@ -267,62 +345,38 @@ function translator(): {
   }
 
   const push = (raw: string): void => {
-    let line: EventLine
-    try {
-      line = JSON.parse(raw) as EventLine
-    } catch {
-      return
-    }
-    const event = line.notification
-    if (!event?.sessionUpdate) return
-    const meta = event._meta ?? {}
-    const at =
-      typeof meta["cognition.ai/timestamp"] === "string"
-        ? (meta["cognition.ai/timestamp"] as string)
-        : undefined
+    const event = parseAcpEvent(raw)
+    if (!event) return
 
     switch (event.sessionUpdate) {
       case "user_message_chunk": {
-        const text = event.content?.text ?? ""
-        if (!text) return
-        const id =
-          typeof meta["cognition.ai/clientMessageId"] === "string"
-            ? (meta["cognition.ai/clientMessageId"] as string)
-            : null
+        if (!event.text) return
         const lastEntry = sink.entries.at(-1)
-        if (id && id === userId && lastEntry?.kind === "user") {
-          lastEntry.text += text
+        if (event.clientMessageId && event.clientMessageId === userId && lastEntry?.kind === "user") {
+          lastEntry.text += event.text
           return
         }
         flushAssistant()
-        userId = id
-        sink.push({ kind: "user", at, text })
+        userId = event.clientMessageId ?? null
+        started = true
+        sink.push({ kind: "user", at: event.at, text: event.text })
         return
       }
       case "agent_message_chunk":
-        appendText("text", event.content?.text ?? "", at)
+        if (!started) needsReset = true
+        started = true
+        appendText("text", event.text, event.at)
         return
       case "agent_thought_chunk":
-        appendText("thinking", event.content?.text ?? "", at)
+        if (!started) needsReset = true
+        started = true
+        appendText("thinking", event.text, event.at)
         return
       case "tool_call": {
-        const entry = ensureAssistant(at)
-        const name =
-          (typeof meta["cognition.ai/inferenceToolName"] === "string"
-            ? (meta["cognition.ai/inferenceToolName"] as string)
-            : undefined) ??
-          (event as { title?: string }).title ??
-          "tool"
-        const block: { type: "tool"; name: string; input?: string; output?: string; error?: boolean } = {
-          type: "tool",
-          name,
-          input:
-            event.rawInput === undefined
-              ? undefined
-              : typeof event.rawInput === "string"
-                ? event.rawInput
-                : JSON.stringify(event.rawInput),
-        }
+        if (!started) needsReset = true
+        started = true
+        const entry = ensureAssistant(event.at)
+        const block = createToolBlock(event.name, event.input)
         entry.blocks.push(block)
         if (event.toolCallId) toolsById.set(event.toolCallId, block)
         return
@@ -330,19 +384,45 @@ function translator(): {
       case "tool_call_update": {
         const block = event.toolCallId ? toolsById.get(event.toolCallId) : undefined
         if (block) {
-          const output = event.content?.text
-          if (output) block.output = clip(`${block.output ?? ""}${output}`)
+          if (event.output)
+            block.output = clip(`${block.output ?? ""}${event.output}`)
           if (event.status === "failed") block.error = true
+        } else if (event.toolCallId) {
+          needsReset = true
         }
         return
       }
+      case "plan":
+        flushAssistant()
+        sink.push({
+          kind: "event",
+          at: event.at,
+          label: "Plan updated",
+          detail: event.entries
+            .map((entry) => [entry.status, entry.content].filter(Boolean).join(": "))
+            .join("\n"),
+        })
+        return
+      case "usage_update":
+        flushAssistant(true)
+        sink.push({
+          kind: "event",
+          at: event.at,
+          label: "Context usage",
+          detail: [
+            event.used !== undefined ? `${event.used} used` : "",
+            event.size !== undefined ? `${event.size} available` : "",
+            event.cost ? `${event.cost.amount}${event.cost.currency ? ` ${event.cost.currency}` : ""} spent` : "",
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        })
+        return
       case "session_info_update":
         if (event.title) state.title = event.title
         return
       case "current_mode_update":
         flushAssistant()
-        return
-      default:
         return
     }
   }
@@ -357,8 +437,206 @@ function translator(): {
       flushAssistant()
       return snapshotSink(sink)
     },
+    commitBatch: () => flushAssistant(true),
     get title() {
       return state.title
     },
+    get needsReset() {
+      return needsReset
+    },
   }
+}
+
+function createToolBlock(name: string, input?: string): ToolBlock {
+  return { type: "tool", name, input }
+}
+
+function parseStateValueRow(row: SqliteStatementResult): StateValueRow | null {
+  if (!row) return null
+  const value = row["value"]
+  return isStringValue(value) ? { value } : null
+}
+
+function parseEventLogIndex(raw: string): Map<string, EventLogEntry> | null {
+  const root = parseJson(raw)
+  if (!isJsonRecord(root)) return null
+  const index = new Map<string, EventLogEntry>()
+  for (const [sessionId, value] of Object.entries(root)) {
+    if (!isJsonRecord(value)) continue
+    const uuid = readString(value, "uuid")
+    if (!uuid) continue
+    const lastUpdated = readNumber(value, "lastUpdated")
+    index.set(sessionId, { uuid, lastUpdated })
+  }
+  return index
+}
+
+function parseSessionCache(raw: string): SessionCache | null {
+  const root = parseJson(raw)
+  if (!isJsonRecord(root)) return null
+  const value = root["sessions"]
+  if (value === undefined) return { sessions: [] }
+  if (!isJsonArray(value)) return null
+  const sessions: CachedSession[] = []
+  for (const candidate of value) {
+    if (!isJsonRecord(candidate)) continue
+    const sessionId = readString(candidate, "sessionId")
+    if (!sessionId) continue
+    sessions.push({
+      sessionId,
+      title: readString(candidate, "title"),
+      cwd: readString(candidate, "cwd"),
+      model: parseConfiguredModel(candidate["configOptions"]),
+      createdAt: parseCreatedAt(candidate["_meta"]),
+    })
+  }
+  return { sessions }
+}
+
+function parseConfiguredModel(value: JsonValue | undefined): string | undefined {
+  if (!isJsonArray(value)) return undefined
+  for (const option of value) {
+    if (!isJsonRecord(option) || readString(option, "id") !== "model") continue
+    return readString(option, "currentValue")
+  }
+  return undefined
+}
+
+function parseCreatedAt(value: JsonValue | undefined): string | undefined {
+  return isJsonRecord(value) ? readString(value, "cognition.ai/createdAt") : undefined
+}
+
+function parseAcpEvent(raw: string): AcpEvent | null {
+  const root = parseJson(raw)
+  if (!isJsonRecord(root)) return null
+  const notification = root["notification"]
+  if (!isJsonRecord(notification)) return null
+  const sessionUpdate = readString(notification, "sessionUpdate")
+  if (!sessionUpdate) return null
+  const metadata = parseAcpMetadata(notification["_meta"])
+  const at = metadata.timestamp
+
+  switch (sessionUpdate) {
+    case "user_message_chunk":
+      return {
+        sessionUpdate,
+        at,
+        text: parseAcpContent(notification["content"]),
+        clientMessageId: metadata.clientMessageId,
+      }
+    case "agent_message_chunk":
+    case "agent_thought_chunk":
+      return { sessionUpdate, at, text: parseAcpContent(notification["content"]) }
+    case "tool_call":
+      return {
+        sessionUpdate,
+        at,
+        name: metadata.inferenceToolName ?? readString(notification, "title") ?? "tool",
+        input: formatJson(notification["rawInput"]),
+        toolCallId: readString(notification, "toolCallId"),
+      }
+    case "tool_call_update":
+      return {
+        sessionUpdate,
+        at,
+        output: parseAcpContent(notification["content"]),
+        status: readString(notification, "status"),
+        toolCallId: readString(notification, "toolCallId"),
+      }
+    case "plan":
+      return { sessionUpdate, at, entries: parsePlanEntries(notification["entries"]) }
+    case "usage_update":
+      return {
+        sessionUpdate,
+        at,
+        used: readNumber(notification, "used"),
+        size: readNumber(notification, "size"),
+        cost: parseAcpCost(notification["cost"]),
+      }
+    case "session_info_update":
+      return { sessionUpdate, at, title: readString(notification, "title") }
+    case "current_mode_update":
+      return { sessionUpdate, at }
+    default:
+      return null
+  }
+}
+
+function parseAcpMetadata(value: JsonValue | undefined): AcpMetadata {
+  if (!isJsonRecord(value)) return {}
+  return {
+    timestamp: readString(value, "cognition.ai/timestamp"),
+    clientMessageId: readString(value, "cognition.ai/clientMessageId"),
+    inferenceToolName: readString(value, "cognition.ai/inferenceToolName"),
+  }
+}
+
+function parsePlanEntries(value: JsonValue | undefined): AcpPlanEntry[] {
+  if (!isJsonArray(value)) return []
+  const entries: AcpPlanEntry[] = []
+  for (const candidate of value) {
+    if (!isJsonRecord(candidate)) continue
+    const content = readString(candidate, "content")
+    const status = readString(candidate, "status")
+    if (content || status) entries.push({ content, status })
+  }
+  return entries
+}
+
+function parseAcpCost(value: JsonValue | undefined): AcpCost | undefined {
+  if (!isJsonRecord(value)) return undefined
+  const amount = readNumber(value, "amount")
+  if (amount === undefined) return undefined
+  return { amount, currency: readString(value, "currency") }
+}
+
+function parseAcpContent(value: JsonValue | undefined): string {
+  if (isStringValue(value)) return value
+  if (isJsonArray(value)) return value.map(parseAcpContent).filter(Boolean).join("\n")
+  if (!isJsonRecord(value)) return ""
+  const text = readString(value, "text")
+  if (text) return text
+  const content = parseAcpContent(value["content"])
+  return content || parseAcpContent(value["resource"])
+}
+
+function formatJson(value: JsonValue | undefined): string | undefined {
+  if (value === undefined) return undefined
+  if (isStringValue(value)) return value
+  return JSON.stringify(value)
+}
+
+function parseJson(raw: string): JsonValue | undefined {
+  try {
+    const value: JsonValue = JSON.parse(raw)
+    return value
+  } catch {
+    return undefined
+  }
+}
+
+function isJsonRecord(value: JsonValue | undefined): value is JsonRecord {
+  return Object.prototype.toString.call(value) === "[object Object]"
+}
+
+function isJsonArray(value: JsonValue | undefined): value is JsonValue[] {
+  return Array.isArray(value)
+}
+
+function isStringValue(value: JsonValue | SQLOutputValue | undefined): value is string {
+  return Object.prototype.toString.call(value) === "[object String]"
+}
+
+function isNumberValue(value: JsonValue | undefined): value is number {
+  return Object.prototype.toString.call(value) === "[object Number]"
+}
+
+function readString(record: JsonRecord, key: string): string | undefined {
+  const value = record[key]
+  return isStringValue(value) ? value : undefined
+}
+
+function readNumber(record: JsonRecord, key: string): number | undefined {
+  const value = record[key]
+  return isNumberValue(value) ? value : undefined
 }
