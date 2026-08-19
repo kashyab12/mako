@@ -2,7 +2,13 @@ import { createHook, createStore } from "@/state/store"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { toast } from "sonner"
 import { threadsStore, withConversion } from "@/state/threads"
-import type { AcpPermissionRequest, AcpPromptAttachment, AcpSessionState, AcpUpdate, ThreadRef } from "@/lib/types"
+import type {
+  AcpPermissionRequest,
+  AcpPromptAttachment,
+  AcpSessionState,
+  AcpUpdate,
+  ThreadRef,
+} from "@/lib/types"
 
 /**
  * One interactive foreign agent, live.
@@ -19,7 +25,15 @@ export type AcpBlock =
   | { type: "user"; text: string }
   | { type: "text"; text: string }
   | { type: "thinking"; text: string }
-  | { type: "tool"; id: string; title: string; toolKind?: string; status: string; input?: string; output?: string }
+  | {
+      type: "tool"
+      id: string
+      title: string
+      toolKind?: string
+      status: string
+      input?: string
+      output?: string
+    }
   | { type: "plan"; entries: Array<{ content: string; status: string }> }
 
 interface AcpState {
@@ -30,6 +44,10 @@ interface AcpState {
   /** Typed while the agent was working; sent the moment it goes quiet. */
   queued: { text: string; attachments: AcpPromptAttachment[] } | null
 }
+
+type AcpStartOptions = NonNullable<
+  Parameters<ReturnType<typeof getPi>["acpStart"]>[2]
+>
 
 export const acpStore = createStore<AcpState>({
   session: null,
@@ -64,7 +82,8 @@ export function applyAcpPermission(request: AcpPermissionRequest) {
   if (!session || session.id !== request.sessionId) {
     // Nobody is looking at this session; answering nothing cancels the tool,
     // which is the safe default for an unwatched agent.
-    if (hasBridge()) void getPi().acpPermission(request.sessionId, request.id, null)
+    if (hasBridge())
+      void getPi().acpPermission(request.sessionId, request.id, null)
     return
   }
   acpStore.set({ permission: request })
@@ -77,18 +96,31 @@ function reduce(blocks: AcpBlock[], update: AcpUpdate): AcpBlock[] {
       return [...blocks, { type: "user", text: update.text }]
     case "text":
       if (last?.type === "text") {
-        return [...blocks.slice(0, -1), { type: "text", text: last.text + update.text }]
+        return [
+          ...blocks.slice(0, -1),
+          { type: "text", text: last.text + update.text },
+        ]
       }
       return [...blocks, { type: "text", text: update.text }]
     case "thinking":
       if (last?.type === "thinking") {
-        return [...blocks.slice(0, -1), { type: "thinking", text: last.text + update.text }]
+        return [
+          ...blocks.slice(0, -1),
+          { type: "thinking", text: last.text + update.text },
+        ]
       }
       return [...blocks, { type: "thinking", text: update.text }]
     case "tool":
       return [
         ...blocks,
-        { type: "tool", id: update.id, title: update.title, toolKind: update.toolKind, status: update.status, input: update.input },
+        {
+          type: "tool",
+          id: update.id,
+          title: update.title,
+          toolKind: update.toolKind,
+          status: update.status,
+          input: update.input,
+        },
       ]
     case "tool-update":
       return blocks.map((block) =>
@@ -112,35 +144,40 @@ function reduce(blocks: AcpBlock[], update: AcpUpdate): AcpBlock[] {
 }
 
 export const acp = {
-  /**
-   * Open any thread's conversation, interactively.
-   *
-   * A Claude Code thread loads its *own* session over ACP — the same
-   * session, live. A Cursor thread does the same through Cursor's native
-   * ACP. Everything else is first written into Claude Code's store as a
-   * native session — the emitter, not a handoff — and then loaded, so a
-   * conversation that began on Codex or Grok or Devin is picked up by an
-   * agent that remembers it.
-   */
+  /** Open a provider-owned session directly when its live protocol can resume it. */
   async openInteractive(ref: ThreadRef) {
     if (!hasBridge()) return
     acpStore.set({ starting: true, blocks: [], permission: null })
     try {
-      let harness = ref.harness
-      let resume = ref.nativeId
-      if (!["claude", "cursor", "grok", "devin"].includes(ref.harness)) {
-        const emitted = await withConversion(ref.harness, "claude", ref.title, () =>
-          getPi().emitThreadToClaude(ref.path)
+      const canResume = ["claude", "codex", "cursor", "grok", "devin"].includes(
+        ref.harness
+      )
+      const harness = canResume
+        ? ref.harness
+        : threadsStore.get().composerHarness
+      let contextPrompt: string | null = null
+      if (!canResume) {
+        const prepared = await withConversion(
+          ref.harness,
+          harness,
+          ref.title,
+          async () => {
+            const [artifact] = await getPi().threadContexts([ref.path])
+            return artifact
+          }
         )
-        harness = "claude"
-        resume = emitted.sessionId
+        if (!prepared)
+          throw new Error("This conversation could not be prepared")
+        contextPrompt = `Read ${prepared.file} in full before continuing. It is ordered newest turn first.`
       }
-      const session = await getPi().acpStart(harness, ref.cwd ?? "", {
-        resume,
+      const options: AcpStartOptions = {
         title: ref.title,
         tuning: threadsStore.get().composerTuning[harness],
-      })
+      }
+      if (canResume) options.resume = ref.nativeId
+      const session = await getPi().acpStart(harness, ref.cwd ?? "", options)
       acpStore.set({ session, starting: false })
+      if (contextPrompt) await getPi().acpPrompt(session.id, contextPrompt)
     } catch (error) {
       acpStore.set({ starting: false })
       toast.error(error instanceof Error ? error.message : String(error))

@@ -2,18 +2,85 @@ import { createHook, createStore } from "@/state/store"
 import { prefsStore, setPref } from "@/state/prefs"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { toast } from "sonner"
+import type {
+  Thread,
+  ThreadEntry,
+  ThreadRef,
+  ThreadRunState,
+} from "@/lib/types"
 
-const HARNESS_NAMES: Record<string, string> = {
-  codex: "Codex",
-  claude: "Claude Code",
-  cursor: "Cursor",
-  grok: "Grok",
-  devin: "Devin",
-}
+const HARNESS_NAMES = new Map([
+  ["codex", "Codex"],
+  ["claude", "Claude Code"],
+  ["cursor", "Cursor"],
+  ["grok", "Grok"],
+  ["devin", "Devin"],
+])
+
 function harnessLabelOf(harness: string): string {
-  return HARNESS_NAMES[harness] ?? harness
+  return HARNESS_NAMES.get(harness) ?? harness
 }
-import type { Thread, ThreadEntry, ThreadRef, ThreadRunState } from "@/lib/types"
+
+interface HarnessOptionValues {
+  [option: string]: string | boolean
+}
+
+interface ComposerTuning {
+  model?: string
+  effort?: string
+  fast?: boolean
+  options?: HarnessOptionValues
+}
+
+interface ComposerTuningByHarness {
+  [harness: string]: ComposerTuning
+}
+
+interface RunningThreadsByPath {
+  [path: string]: boolean
+}
+
+interface QueuedReply {
+  ref: ThreadRef
+  prompts: string[]
+}
+
+interface QueuedRepliesByPath {
+  [path: string]: QueuedReply
+}
+
+type ViewedUserEntry = Extract<ThreadEntry, { kind: "user" }> & {
+  echo?: boolean
+}
+type ViewedThreadEntry =
+  ViewedUserEntry | Exclude<ThreadEntry, { kind: "user" }>
+
+interface ViewedThread extends Omit<Thread, "entries"> {
+  entries: ViewedThreadEntry[]
+  streamRevision?: number
+  streamReplaceFrom?: number
+}
+
+interface ThreadCatalog {
+  ready: boolean
+  threads: ThreadRef[]
+}
+
+type ThreadCatalogResponse = ThreadCatalog | ThreadRef[]
+
+function unavailableThreadCatalog(): ThreadCatalog {
+  return { ready: false, threads: [] }
+}
+
+function normalizeThreadCatalog(
+  response: ThreadCatalogResponse
+): ThreadCatalog {
+  return Array.isArray(response) ? { ready: true, threads: response } : response
+}
+
+function isOptimisticEcho(entry: ViewedThreadEntry): boolean {
+  return entry.kind === "user" && entry.echo === true
+}
 
 /**
  * Every coding agent's sessions on this machine — not just this app's.
@@ -28,7 +95,7 @@ interface ThreadsState {
   threads: ThreadRef[]
   loaded: boolean
   /** The foreign thread open in the viewer overlay, if any. */
-  viewing: Thread | null
+  viewing: ViewedThread | null
   viewingBusy: boolean
   /** Harnesses whose CLI can be driven headlessly from here. */
   resumable: string[]
@@ -39,15 +106,15 @@ interface ThreadsState {
   /** The native run for the viewed thread, if one was started. */
   run: ThreadRunState | null
   /** Every live native run, by thread path — the rail's working dots. */
-  running: Record<string, boolean>
+  running: RunningThreadsByPath
   /** A translation in flight: one conversation becoming another harness's. */
   converting: { from: string; to: string; title?: string; done: boolean } | null
   /** The composer's chosen harness for new conversations. */
   composerHarness: string
   /** Per-harness tuning chosen in the composer. */
-  composerTuning: Record<string, { model?: string; effort?: string; fast?: boolean; options?: Record<string, string | boolean> }>
+  composerTuning: ComposerTuningByHarness
   /** Prompts waiting for a thread's current run to end, per path. */
-  queuedReplies: Record<string, { ref: ThreadRef; prompts: string[] }>
+  queuedReplies: QueuedRepliesByPath
 }
 
 export const threadsStore = createStore<ThreadsState>({
@@ -85,7 +152,7 @@ export function setComposerHarness(harness: string) {
  */
 export function setComposerTuning(
   harness: string,
-  patch: Partial<{ model?: string; effort?: string; fast?: boolean; options?: Record<string, string | boolean> }>
+  patch: Partial<ComposerTuning>
 ) {
   const all = threadsStore.get().composerTuning
   const next = { ...all, [harness]: { ...all[harness], ...patch } }
@@ -98,7 +165,10 @@ export function setComposerTuning(
  * engine and remembered here — never invented. Until the first read lands
  * there is simply no name to show, and honesty beats a wrong model id.
  */
-export function harnessDefault(harness: string): { model?: string; effort?: string } {
+export function harnessDefault(harness: string): {
+  model?: string
+  effort?: string
+} {
   return prefsStore.get().harnessDefaults[harness] ?? {}
 }
 
@@ -106,8 +176,15 @@ export function rememberHarnessDefault(
   harness: string,
   next: { model?: string; effort?: string }
 ) {
-  if (!next.model && !next.effort) return
   const all = prefsStore.get().harnessDefaults
+  if (!next.model && !next.effort) {
+    if (all[harness]) {
+      const cleared = { ...all }
+      delete cleared[harness]
+      setPref("harnessDefaults", cleared)
+    }
+    return
+  }
   const current = all[harness]
   if (current?.model === next.model && current?.effort === next.effort) return
   setPref("harnessDefaults", { ...all, [harness]: next })
@@ -123,17 +200,43 @@ let harnessBeforeViewing: string | null = null
  * Stale-while-revalidate: the cached conversation shows instantly and the
  * fresh read replaces it the moment it lands. Bounded; oldest falls out.
  */
-const threadCache = new Map<string, Thread>()
-const THREAD_CACHE_MAX = 12
-function rememberThread(thread: Thread) {
+const threadCache = new Map<string, ViewedThread>()
+const THREAD_CACHE_MAX = 4
+const THREAD_CACHE_BYTES = 24 * 1024 * 1024
+function estimatedThreadBytes(thread: ViewedThread): number {
+  return Math.max(thread.ref.bytes ?? 0, thread.entries.length * 4096)
+}
+
+function rememberThread(thread: ViewedThread) {
   threadCache.delete(thread.ref.path)
   threadCache.set(thread.ref.path, thread)
-  if (threadCache.size > THREAD_CACHE_MAX) {
+  let bytes = 0
+  for (const cached of threadCache.values()) {
+    bytes += estimatedThreadBytes(cached)
+  }
+  while (threadCache.size > 1 && (threadCache.size > THREAD_CACHE_MAX || bytes > THREAD_CACHE_BYTES)) {
     const oldest = threadCache.keys().next().value
-    if (oldest) threadCache.delete(oldest)
+    if (!oldest) break
+    const removed = threadCache.get(oldest)
+    threadCache.delete(oldest)
+    if (removed) bytes -= estimatedThreadBytes(removed)
   }
 }
 let knownPaths = new Set<string>()
+
+export function applyThreadRef(ref: ThreadRef) {
+  const current = threadsStore.get().threads
+  const at = current.findIndex((entry) => entry.path === ref.path)
+  const next = at === -1 ? [...current, ref] : current.map((entry, index) => (index === at ? ref : entry))
+  next.sort((left, right) =>
+    (right.updatedAt ?? "").localeCompare(left.updatedAt ?? "")
+  )
+  applyThreads(next)
+}
+
+export function applyThreadRemoved(path: string) {
+  applyThreads(threadsStore.get().threads.filter((entry) => entry.path !== path))
+}
 
 export function applyThreads(list: ThreadRef[]) {
   threadsStore.set({ threads: list, loaded: true })
@@ -187,7 +290,12 @@ export function applyThreadRun(run: ThreadRunState) {
 }
 
 /** Entries appended — by whatever app is writing — to the viewed thread. */
-export function applyThreadEntries(path: string, entries: ThreadEntry[], replace?: boolean) {
+export function applyThreadEntries(
+  path: string,
+  entries: ThreadEntry[],
+  replace?: boolean,
+  replaceFrom?: number
+) {
   const { viewing } = threadsStore.get()
   if (!viewing || viewing.ref.path !== path) return
   // The real turn arriving retires its optimistic echo: the reply was
@@ -197,16 +305,19 @@ export function applyThreadEntries(path: string, entries: ThreadEntry[], replace
     entries.filter((entry) => entry.kind === "user").map((entry) => entry.text)
   )
   const base = replace
-    ? []
+    ? viewing.entries.slice(0, replaceFrom ?? 0)
     : viewing.entries.filter(
         (entry) =>
-          !(entry as { echo?: boolean }).echo ||
+          !isOptimisticEcho(entry) ||
           !(entry.kind === "user" && arrivedUserTexts.has(entry.text))
       )
-  const next = {
+  const next: ViewedThread = {
     ...viewing,
     entries: [...base, ...entries],
-    ...(replace ? { streamRevision: ((viewing as Thread & { streamRevision?: number }).streamRevision ?? 0) + 1 } : {}),
+  }
+  if (replace) {
+    next.streamRevision = (viewing.streamRevision ?? 0) + 1
+    next.streamReplaceFrom = replaceFrom ?? 0
   }
   threadsStore.set({ viewing: next })
   rememberThread(next)
@@ -230,7 +341,8 @@ export async function withConversion<T>(
     const result = await work()
     threadsStore.set({ converting: { from, to, title, done: true } })
     setTimeout(() => {
-      if (threadsStore.get().converting?.done) threadsStore.set({ converting: null })
+      if (threadsStore.get().converting?.done)
+        threadsStore.set({ converting: null })
     }, 300)
     return result
   } catch (error) {
@@ -244,25 +356,40 @@ let focusRefetch = false
 export const threads = {
   /** Re-ask on window focus: cheap, and heals any missed push for good. */
   watchFocus() {
-    if (focusRefetch || typeof window === "undefined") return
+    if (focusRefetch || globalThis.window === undefined) return
     focusRefetch = true
     window.addEventListener("focus", () => void this.load())
   },
 
   async load() {
     if (!hasBridge()) return
-    const [raw, resumable, targets, acpable] = await Promise.all([
+    const [raw, resumable, targets, acpable]: [
+      ThreadCatalogResponse,
+      string[],
+      string[],
+      string[],
+    ] = await Promise.all([
+      getPi().threads().catch(unavailableThreadCatalog),
       getPi()
-        .threads()
-        .catch(() => ({ ready: false, threads: [] as ThreadRef[] })),
-      getPi().resumableHarnesses().catch((): string[] => []),
-      getPi().continueTargets().catch((): string[] => []),
-      getPi().acpHarnesses().catch((): string[] => []),
+        .resumableHarnesses()
+        .catch((): string[] => []),
+      getPi()
+        .continueTargets()
+        .catch((): string[] => []),
+      getPi()
+        .acpHarnesses()
+        .catch((): string[] => []),
     ])
     // An engine one vintage older answers with a bare array; treat it as
     // ready rather than spinning forever against the shape difference.
-    const result = Array.isArray(raw) ? { ready: true, threads: raw as ThreadRef[] } : raw
-    threadsStore.set({ threads: result.threads, loaded: result.ready, resumable, targets, acpable })
+    const result = normalizeThreadCatalog(raw)
+    threadsStore.set({
+      threads: result.threads,
+      loaded: result.ready,
+      resumable,
+      targets,
+      acpable,
+    })
     // The catalog scans for a moment at boot, and its "here is the list"
     // push can fire while the window is still loading — a lossy first
     // handshake. Retrying until the host says ready is what makes the rail
@@ -285,12 +412,14 @@ export const threads = {
         viewing: cached,
         viewingBusy: false,
         run: null,
-        composerHarness: cached.ref.harness === "pi" ? "devin" : cached.ref.harness,
+        composerHarness:
+          cached.ref.harness === "pi" ? "devin" : cached.ref.harness,
       })
       void getPi()
         .threadRun(ref.path)
         .then((run) => {
-          if (threadsStore.get().viewing?.ref.path === ref.path) threadsStore.set({ run })
+          if (threadsStore.get().viewing?.ref.path === ref.path)
+            threadsStore.set({ run })
         })
         .catch(() => {})
       // One follow, registered only after the fresh read, from the fresh
@@ -300,10 +429,15 @@ export const threads = {
         .openThread(ref.path)
         .then((fresh) => {
           if (!fresh) return
-          rememberThread(fresh)
+          const replaced: ViewedThread = {
+            ...fresh,
+            streamRevision: (cached.streamRevision ?? 0) + 1,
+            streamReplaceFrom: 0,
+          }
+          rememberThread(replaced)
           if (threadsStore.get().viewing?.ref.path === ref.path) {
-            threadsStore.set({ viewing: fresh })
-            void getPi().followThread(ref.path, fresh.ref.bytes ?? 0)
+            threadsStore.set({ viewing: replaced })
+            void getPi().followThread(ref.path, replaced.ref.bytes ?? 0)
           }
         })
         .catch(() => {})
@@ -314,7 +448,9 @@ export const threads = {
       const thread = await getPi().openThread(ref.path)
       if (!thread) throw new Error("This session could not be read")
       rememberThread(thread)
-      const run = await getPi().threadRun(ref.path).catch(() => null)
+      const run = await getPi()
+        .threadRun(ref.path)
+        .catch(() => null)
       // The composer adopts this conversation: its agent picker shows the
       // harness that owns the session, and switching it moves the
       // conversation on the next send. No separate "move" ceremony.
@@ -325,7 +461,8 @@ export const threads = {
         viewing: thread,
         viewingBusy: false,
         run,
-        composerHarness: thread.ref.harness === "pi" ? "devin" : thread.ref.harness,
+        composerHarness:
+          thread.ref.harness === "pi" ? "devin" : thread.ref.harness,
       })
       // Live from here: the agent writing this session — in whatever app —
       // keeps appending, and those entries belong on screen.
@@ -339,11 +476,12 @@ export const threads = {
   closeViewer() {
     const restore = harnessBeforeViewing
     harnessBeforeViewing = null
-    threadsStore.set({
+    const patch: Partial<ThreadsState> = {
       viewing: null,
       run: null,
-      ...(restore !== null ? { composerHarness: restore } : {}),
-    })
+    }
+    if (restore !== null) patch.composerHarness = restore
+    threadsStore.set(patch)
     if (hasBridge()) void getPi().unfollowThread()
   },
 
@@ -363,11 +501,15 @@ export const threads = {
       threadsStore.set({ queuedReplies: all })
       const { viewing } = threadsStore.get()
       if (viewing && viewing.ref.path === ref.path) {
-        const echo = { kind: "user", at: new Date().toISOString(), text: prompt } as ThreadEntry & {
-          echo: boolean
+        const echo: ViewedUserEntry = {
+          kind: "user",
+          at: new Date().toISOString(),
+          text: prompt,
+          echo: true,
         }
-        echo.echo = true
-        threadsStore.set({ viewing: { ...viewing, entries: [...viewing.entries, echo] } })
+        threadsStore.set({
+          viewing: { ...viewing, entries: [...viewing.entries, echo] },
+        })
       }
       return true
     }
@@ -378,13 +520,15 @@ export const threads = {
     const { viewing } = threadsStore.get()
     let echoed = false
     if (viewing && viewing.ref.path === ref.path) {
-      const echo = {
+      const echo: ViewedUserEntry = {
         kind: "user",
         at: new Date().toISOString(),
         text: prompt,
-      } as ThreadEntry & { echo: boolean }
-      echo.echo = true
-      threadsStore.set({ viewing: { ...viewing, entries: [...viewing.entries, echo] } })
+        echo: true,
+      }
+      threadsStore.set({
+        viewing: { ...viewing, entries: [...viewing.entries, echo] },
+      })
       echoed = true
     }
     try {
@@ -407,7 +551,7 @@ export const threads = {
               ...current,
               entries: current.entries.filter(
                 (entry) =>
-                  !(entry as { echo?: boolean }).echo ||
+                  !isOptimisticEcho(entry) ||
                   entry.kind !== "user" ||
                   entry.text !== prompt
               ),
@@ -421,7 +565,11 @@ export const threads = {
   },
 
   /** Move and send through the selected provider, using transcript replay by default. */
-  async moveAndSend(ref: ThreadRef, harness: string, prompt: string): Promise<boolean> {
+  async moveAndSend(
+    ref: ThreadRef,
+    harness: string,
+    prompt: string
+  ): Promise<boolean> {
     if (!hasBridge()) return false
     try {
       const mode = prefsStore.get().conversionMode
@@ -439,7 +587,11 @@ export const threads = {
         threadsStore.set({ composerHarness: harness })
         const supportsLive = threadsStore.get().acpable.includes(harness)
         return supportsLive
-          ? (await import("@/state/acp")).acp.startFresh(harness, result.cwd, result.prompt)
+          ? (await import("@/state/acp")).acp.startFresh(
+              harness,
+              result.cwd,
+              result.prompt
+            )
           : this.startNew(harness, result.prompt)
       }
       return false
@@ -450,16 +602,25 @@ export const threads = {
   },
 
   /** Fork after one completed answer, using the transcript bundle as context. */
-  async forkAt(ref: ThreadRef, upto: number, harness: string): Promise<boolean> {
+  async forkAt(
+    ref: ThreadRef,
+    upto: number,
+    harness: string
+  ): Promise<boolean> {
     if (!hasBridge()) return false
     try {
-      const prepared = await withConversion(ref.harness, harness, ref.title, () =>
-        getPi().forkThread(ref.path, upto, harness)
+      const prepared = await withConversion(
+        ref.harness,
+        harness,
+        ref.title,
+        () => getPi().forkThread(ref.path, upto, harness)
       )
       threadsStore.set({ composerHarness: harness })
       const supportsLive = threadsStore.get().acpable.includes(harness)
       const ok = supportsLive
-        ? await (await import("@/state/acp")).acp.startFresh(harness, prepared.cwd, prepared.prompt)
+        ? await (
+            await import("@/state/acp")
+          ).acp.startFresh(harness, prepared.cwd, prepared.prompt)
         : await this.startNew(harness, prepared.prompt)
       if (ok) {
         toast("Forked", {
@@ -475,7 +636,9 @@ export const threads = {
 
   async abortReply(ref: ThreadRef) {
     if (!hasBridge()) return
-    await getPi().abortThreadRun(ref.path).catch(() => {})
+    await getPi()
+      .abortThreadRun(ref.path)
+      .catch(() => {})
   },
 
   /**
@@ -486,7 +649,9 @@ export const threads = {
     if (!hasBridge()) return false
     const ok = await this.reply(ref, prompt)
     if (ok && threadsStore.get().running[ref.path]) {
-      await getPi().abortThreadRun(ref.path).catch(() => {})
+      await getPi()
+        .abortThreadRun(ref.path)
+        .catch(() => {})
     }
     return ok
   },
@@ -504,7 +669,8 @@ export const threads = {
       const { cwd } = await getPi().startHarness(harness, prompt, options)
       pendingOpen = { harness, cwd, since: Date.now() }
       toast(`${harnessLabelOf(harness)} is on it`, {
-        description: "The conversation opens here as soon as its first write lands.",
+        description:
+          "The conversation opens here as soon as its first write lands.",
       })
       return true
     } catch (error) {
@@ -517,20 +683,29 @@ export const threads = {
     if (!hasBridge()) return false
     try {
       const result = await withConversion(ref.harness, harness, ref.title, () =>
-        getPi().continueThreadWith(ref.path, harness, undefined, prefsStore.get().conversionMode)
+        getPi().continueThreadWith(
+          ref.path,
+          harness,
+          undefined,
+          prefsStore.get().conversionMode
+        )
       )
       if (result.kind === "emitted") {
         const thread = await getPi().openThread(result.path)
         if (!thread) return false
         threadsStore.set({ viewing: thread, run: null })
         void getPi().followThread(result.path, thread.ref.bytes ?? 0)
-        toast(`${label} session imported`, { description: "Reply below when you are ready to continue." })
+        toast(`${label} session imported`, {
+          description: "Reply below when you are ready to continue.",
+        })
         return true
       }
       threadsStore.set({ composerHarness: harness })
       const supportsLive = threadsStore.get().acpable.includes(harness)
       const ok = supportsLive
-        ? await (await import("@/state/acp")).acp.startFresh(harness, result.cwd, result.prompt)
+        ? await (
+            await import("@/state/acp")
+          ).acp.startFresh(harness, result.cwd, result.prompt)
         : await this.startNew(harness, result.prompt)
       if (ok) toast(`${label} picked up the conversation`)
       return ok
