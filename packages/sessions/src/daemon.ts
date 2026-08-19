@@ -123,7 +123,7 @@ type ParsedDaemonResponse =
  * without it forever. Clients that see an older daemon retire it and let a
  * fresh one take the socket.
  */
-export const PROTOCOL_VERSION = 8
+export const PROTOCOL_VERSION = 9
 
 /** Serve one catalog over the socket. Resolves once listening. */
 export async function serveCatalog(
@@ -366,12 +366,13 @@ export async function connectDaemon(
   }
   const requestTimer = (
     id: number,
-    reject: (error: Error) => void
+    reject: (error: Error) => void,
+    requestTimeout = timeoutMs
   ): ReturnType<typeof setTimeout> =>
     setTimeout(() => {
       if (!pending.delete(id)) return
       reject(new Error("The sync daemon request timed out"))
-    }, timeoutMs)
+    }, requestTimeout)
 
   const requestPing = (): Promise<DaemonStats> =>
     new Promise((resolve, reject) => {
@@ -394,7 +395,7 @@ export async function connectDaemon(
   const requestOpen = (path: string): Promise<Thread | null> =>
     new Promise((resolve, reject) => {
       const id = nextId++
-      const timer = requestTimer(id, reject)
+      const timer = requestTimer(id, reject, Math.max(timeoutMs, 30_000))
       pending.set(id, { kind: "open", resolve, reject, timer })
       send({ id, op: "open", path })
     })

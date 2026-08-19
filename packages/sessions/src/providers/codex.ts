@@ -49,6 +49,7 @@ import type { NativeFile, SessionProvider } from "./types.js"
  * with `<div>` is still a real prompt.
  */
 const INJECTED = /^(?:<[a-z]+(?:_[a-z0-9]+)+>|# Files mentioned by the user:)/i
+const MAX_TRANSLATED_BYTES = 64 * 1024 * 1024
 
 type JsonScalar = boolean | number | string | null
 type JsonValue = JsonScalar | JsonObject | JsonValue[]
@@ -371,8 +372,17 @@ export class CodexProvider implements SessionProvider {
     const ref = await this.peek(native)
     if (!ref) return null
     const into = translator()
-    await readLines(path, 0, into.push)
-    return { ref, entries: into.done() }
+    const fromByte = Math.max(0, file.size - MAX_TRANSLATED_BYTES)
+    await readLines(path, fromByte, into.push)
+    const entries = into.done()
+    if (fromByte > 0) {
+      entries.unshift({
+        kind: "event",
+        label: "Earlier history not shown",
+        detail: `The most recent ${MAX_TRANSLATED_BYTES / 1024 / 1024} MB is shown; earlier history remains in the native session file`,
+      })
+    }
+    return { ref, entries }
   }
 
   createFollower(path: string, fromByte: number) {
