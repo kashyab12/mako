@@ -7,10 +7,9 @@ import { toast } from "sonner"
  *
  * Anything can be attached. What differs is how it reaches the agent:
  *
- *   image  → inline, through Pi's `images` field
+ *   image  → inline when the provider supports image blocks
  *   text   → inlined into the prompt as a labelled block
- *   binary → written to a scratch file, with the path handed over so Pi's
- *            own read and bash tools can open it
+ *   binary → written to a scratch file, with the path handed to the provider
  *
  * A PDF or a video therefore attaches like anything else and stays reachable,
  * rather than being refused for not fitting the model's inline contract.

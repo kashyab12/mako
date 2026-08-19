@@ -47,7 +47,6 @@ import { GrokProvider } from "./providers/grok.js"
 import { DevinLocalProvider } from "./providers/devin-local.js"
 import { DevinCliProvider } from "./providers/devin-cli.js"
 import { ClaudeProvider } from "./providers/claude.js"
-import { PiProvider } from "./providers/pi.js"
 
 import { DevinRemote, type DevinAccount } from "./providers/devin.js"
 
@@ -57,7 +56,6 @@ export function defaultCatalog(
 ): SessionCatalog {
   const catalog = new SessionCatalog(
     [
-      new PiProvider(),
       new CodexProvider(),
       new ClaudeProvider(),
       new CursorProvider(),

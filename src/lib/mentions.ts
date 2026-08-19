@@ -1,9 +1,9 @@
 /**
  * Composer references.
  *
- * `@path/to/file` and `$skill-name` are plain text in the prompt — Pi receives
- * exactly what is on screen, and nothing has to round-trip through a richer
- * document model. The tokenizer below is what lets the same string render as
+ * `@path/to/file`, `@thread:…`, and `$skill-name` are plain text in the draft.
+ * The selected provider receives exactly what is on screen plus any prepared
+ * transcript bundles they reference. The tokenizer lets the same string render as
  * chips in the composer and in the transcript.
  */
 
@@ -54,7 +54,7 @@ export function hasReferences(text: string): boolean {
 }
 
 export function threadToken(harness: string, nativeId: string): string {
-  return `@thread:${encodeURIComponent(harness)}:${encodeURIComponent(nativeId)}`
+  return `@thread:${encodeURIComponent(harness)}:${encodeURIComponent(nativeId.slice(0, 12))}`
 }
 
 export function parseThreadToken(body: string): { harness: string; nativeId: string } | null {

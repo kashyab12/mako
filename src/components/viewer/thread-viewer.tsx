@@ -80,19 +80,25 @@ function Conversation() {
    * conversation's markdown being re-parsed — which is what made long
    * sessions feel like replay instead of streaming.
    */
-  const built = useRef<{ path: string | null; count: number; exchanges: ExchangeData[] }>({
+  const built = useRef<{ path: string | null; revision: number; count: number; exchanges: ExchangeData[] }>({
     path: null,
+    revision: 0,
     count: 0,
     exchanges: [],
   })
   const exchanges = useMemo(() => {
     if (!thread) {
-      built.current = { path: null, count: 0, exchanges: [] }
+      built.current = { path: null, revision: 0, count: 0, exchanges: [] }
       return []
     }
     const { entries } = thread
-    if (built.current.path !== thread.ref.path || entries.length < built.current.count) {
-      built.current = { path: thread.ref.path, count: 0, exchanges: [] }
+    const revision = (thread as typeof thread & { streamRevision?: number }).streamRevision ?? 0
+    if (
+      built.current.path !== thread.ref.path ||
+      built.current.revision !== revision ||
+      entries.length < built.current.count
+    ) {
+      built.current = { path: thread.ref.path, revision, count: 0, exchanges: [] }
     }
     const cache = built.current
     if (entries.length === cache.count) return cache.exchanges
@@ -121,7 +127,7 @@ function Conversation() {
           : { ...last, response: [...last.response, message] }
       next = [...next.slice(0, -1), grown]
     }
-    built.current = { path: thread.ref.path, count: entries.length, exchanges: next }
+    built.current = { path: thread.ref.path, revision, count: entries.length, exchanges: next }
     return next
   }, [thread])
 

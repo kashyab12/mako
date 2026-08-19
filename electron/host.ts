@@ -741,9 +741,9 @@ export class AgentHost {
    * new session ends with that prompt ready to be re-answered differently
    * rather than replaying the answer you already have.
    */
-  async fork(entryId: string) {
+  async fork(entryId: string, position: "before" | "at" = "before") {
     if (!this.runtime) throw new Error("The agent is not ready yet")
-    const result = await this.runtime.fork(entryId, { position: "before" })
+    const result = await this.runtime.fork(entryId, { position })
     if (result.cancelled) return { cancelled: true as const }
     this.cwd = this.session.sessionManager.getCwd() || this.cwd
     this.bind()

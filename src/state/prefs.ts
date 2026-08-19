@@ -54,7 +54,7 @@ export interface Prefs {
   /** The composer's chosen agent, kept across launches. */
   composerHarness?: string
   /** Per-harness model/effort/fast choices — Mako's own memory of them. */
-  composerTuning: Record<string, { model?: string; effort?: string; fast?: boolean }>
+  composerTuning: Record<string, { model?: string; effort?: string; fast?: boolean; options?: Record<string, string | boolean> }>
   /**
    * How a conversation moves to another harness. Transcript replay is the
    * loss-aware default; session import is the compatibility path for stores

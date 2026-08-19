@@ -4,7 +4,6 @@ import { getPi, hasBridge } from "@/lib/bridge"
 import { toast } from "sonner"
 
 const HARNESS_NAMES: Record<string, string> = {
-  pi: "Pi",
   codex: "Codex",
   claude: "Claude Code",
   cursor: "Cursor",
@@ -31,7 +30,6 @@ interface ThreadsState {
   /** The foreign thread open in the viewer overlay, if any. */
   viewing: Thread | null
   viewingBusy: boolean
-  continuing: string | null
   /** Harnesses whose CLI can be driven headlessly from here. */
   resumable: string[]
   /** Harnesses a conversation can be continued on, "pi" first. */
@@ -47,7 +45,7 @@ interface ThreadsState {
   /** The composer's chosen harness for new conversations. */
   composerHarness: string
   /** Per-harness tuning chosen in the composer. */
-  composerTuning: Record<string, { model?: string; effort?: string; fast?: boolean }>
+  composerTuning: Record<string, { model?: string; effort?: string; fast?: boolean; options?: Record<string, string | boolean> }>
   /** Prompts waiting for a thread's current run to end, per path. */
   queuedReplies: Record<string, { ref: ThreadRef; prompts: string[] }>
 }
@@ -57,16 +55,18 @@ export const threadsStore = createStore<ThreadsState>({
   loaded: false,
   viewing: null,
   viewingBusy: false,
-  continuing: null,
   resumable: [],
   targets: [],
   acpable: [],
   run: null,
   running: {},
   converting: null,
-  // Mako fronts the harnesses; Pi is the engine room, not a choice on the
-  // menu. The last-used agent comes back across launches.
-  composerHarness: prefsStore.get().composerHarness ?? "claude",
+  // Pi was once persisted as a visible agent. It now migrates to Devin;
+  // the internal engine is not a provider choice.
+  composerHarness:
+    prefsStore.get().composerHarness === "pi"
+      ? "devin"
+      : (prefsStore.get().composerHarness ?? "claude"),
   composerTuning: prefsStore.get().composerTuning,
   queuedReplies: {},
 })
@@ -85,7 +85,7 @@ export function setComposerHarness(harness: string) {
  */
 export function setComposerTuning(
   harness: string,
-  patch: Partial<{ model?: string; effort?: string; fast?: boolean }>
+  patch: Partial<{ model?: string; effort?: string; fast?: boolean; options?: Record<string, string | boolean> }>
 ) {
   const all = threadsStore.get().composerTuning
   const next = { ...all, [harness]: { ...all[harness], ...patch } }
@@ -203,30 +203,11 @@ export function applyThreadEntries(path: string, entries: ThreadEntry[], replace
           !(entry as { echo?: boolean }).echo ||
           !(entry.kind === "user" && arrivedUserTexts.has(entry.text))
       )
-  // Offsets can drift (a stale follow, a store that rewrote itself): if the
-  // incoming batch starts with what the transcript already ends with, trim
-  // the overlap instead of doubling it. Identity is the entry's own shape.
-  let incoming = entries
-  if (!replace && base.length > 0 && incoming.length > 0) {
-    const signature = (entry: ThreadEntry) =>
-      `${entry.kind}|${(entry as { at?: string }).at ?? ""}|${
-        entry.kind === "user"
-          ? entry.text
-          : entry.kind === "event"
-            ? entry.label
-            : JSON.stringify(entry.blocks).slice(0, 200)
-      }`
-    const max = Math.min(base.length, incoming.length)
-    for (let size = max; size > 0; size--) {
-      const tail = base.slice(-size)
-      const head = incoming.slice(0, size)
-      if (tail.every((entry, i) => signature(entry) === signature(head[i]!))) {
-        incoming = incoming.slice(size)
-        break
-      }
-    }
+  const next = {
+    ...viewing,
+    entries: [...base, ...entries],
+    ...(replace ? { streamRevision: ((viewing as Thread & { streamRevision?: number }).streamRevision ?? 0) + 1 } : {}),
   }
-  const next = { ...viewing, entries: [...base, ...incoming] }
   threadsStore.set({ viewing: next })
   rememberThread(next)
 }
@@ -244,17 +225,17 @@ export async function withConversion<T>(
   title: string | undefined,
   work: () => Promise<T>
 ): Promise<T> {
-  const started = Date.now()
   threadsStore.set({ converting: { from, to, title, done: false } })
   try {
     const result = await work()
-    const remaining = Math.max(0, 900 - (Date.now() - started))
-    if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining))
     threadsStore.set({ converting: { from, to, title, done: true } })
-    await new Promise((resolve) => setTimeout(resolve, 700))
+    setTimeout(() => {
+      if (threadsStore.get().converting?.done) threadsStore.set({ converting: null })
+    }, 300)
     return result
-  } finally {
+  } catch (error) {
     threadsStore.set({ converting: null })
+    throw error
   }
 }
 
@@ -439,28 +420,9 @@ export const threads = {
     }
   },
 
-  /**
-   * Reply through a *different* harness: the move IS the reply. The
-   * conversation becomes a native session at the destination — emitted
-   * into its store when we can write it, spawned from the transcript when
-   * we cannot — and the message goes out as its first turn there.
-   */
+  /** Move and send through the selected provider, using transcript replay by default. */
   async moveAndSend(ref: ThreadRef, harness: string, prompt: string): Promise<boolean> {
     if (!hasBridge()) return false
-    if (harness === "pi" || harness === "devin") {
-      const moved = await this.continueHere(ref)
-      if (!moved) return false
-      const { actions, store } = await import("@/state/session")
-      if (harness === "devin") {
-        const devin = store.get().models.find((model) => model.provider === "devin")
-        const current = store.get().meta?.model
-        if (devin && current?.provider !== "devin") await actions.setModel(devin.provider, devin.id)
-      }
-      if (prompt.trim()) {
-        return Boolean(await actions.send(prompt))
-      }
-      return true
-    }
     try {
       const mode = prefsStore.get().conversionMode
       const result = await withConversion(ref.harness, harness, ref.title, () =>
@@ -473,12 +435,12 @@ export const threads = {
           void getPi().followThread(result.path, thread.ref.bytes ?? 0)
           return this.reply(thread.ref, prompt)
         }
-      } else if (result.kind === "spawned") {
-        // The prompt rode along as part of the handoff; the new session
-        // opens itself when the watcher sees its first write.
-        pendingOpen = { harness, cwd: ref.cwd ?? "", since: Date.now() }
-        threadsStore.set({ viewing: null, run: null })
-        return true
+      } else if (result.kind === "prepared") {
+        threadsStore.set({ composerHarness: harness })
+        const supportsLive = threadsStore.get().acpable.includes(harness)
+        return supportsLive
+          ? (await import("@/state/acp")).acp.startFresh(harness, result.cwd, result.prompt)
+          : this.startNew(harness, result.prompt)
       }
       return false
     } catch (error) {
@@ -487,28 +449,24 @@ export const threads = {
     }
   },
 
-  /**
-   * Fork at an answer: everything up to that turn becomes a new native
-   * session — same harness or any other — opened here immediately. Both
-   * lines stay alive; the fork carries lineage back to its origin.
-   */
+  /** Fork after one completed answer, using the transcript bundle as context. */
   async forkAt(ref: ThreadRef, upto: number, harness: string): Promise<boolean> {
     if (!hasBridge()) return false
     try {
-      const result = await withConversion(ref.harness, harness, ref.title, () =>
+      const prepared = await withConversion(ref.harness, harness, ref.title, () =>
         getPi().forkThread(ref.path, upto, harness)
       )
-      const thread = await getPi().openThread(result.path)
-      if (thread) {
-        rememberThread(thread)
-        threadsStore.set({ viewing: thread, run: null, composerHarness: harness === "pi" ? "devin" : harness })
-        void getPi().followThread(result.path, thread.ref.bytes ?? 0)
+      threadsStore.set({ composerHarness: harness })
+      const supportsLive = threadsStore.get().acpable.includes(harness)
+      const ok = supportsLive
+        ? await (await import("@/state/acp")).acp.startFresh(harness, prepared.cwd, prepared.prompt)
+        : await this.startNew(harness, prepared.prompt)
+      if (ok) {
         toast("Forked", {
-          description: `A new ${harnessLabelOf(harness)} session from that point — the original is untouched.`,
+          description: `A new ${harnessLabelOf(harness)} conversation starts after that answer.`,
         })
-        return true
       }
-      return false
+      return ok
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
       return false
@@ -555,58 +513,28 @@ export const threads = {
     }
   },
 
-  /**
-   * Continue this conversation on a different harness: the transcript
-   * becomes the first prompt of a fresh session there. "pi" opens a tab in
-   * this app; anything else runs headlessly and surfaces in the rail when
-   * its session store appears — which the watcher notices, not this code.
-   */
   async continueWith(ref: ThreadRef, harness: string, label: string) {
-    if (harness === "pi") return this.continueHere(ref)
     if (!hasBridge()) return false
     try {
       const result = await withConversion(ref.harness, harness, ref.title, () =>
         getPi().continueThreadWith(ref.path, harness, undefined, prefsStore.get().conversionMode)
       )
       if (result.kind === "emitted") {
-        // The conversation now exists natively in the target's store. Open
-        // it in the viewer — instantly replyable, nothing spent yet.
         const thread = await getPi().openThread(result.path)
-        if (thread) {
-          threadsStore.set({ viewing: thread, run: null })
-          void getPi().followThread(result.path, thread.ref.bytes ?? 0)
-          toast(`Now a native ${label} session`, {
-            description: "Same conversation, new harness. Reply below to set it working.",
-          })
-          return true
-        }
+        if (!thread) return false
+        threadsStore.set({ viewing: thread, run: null })
+        void getPi().followThread(result.path, thread.ref.bytes ?? 0)
+        toast(`${label} session imported`, { description: "Reply below when you are ready to continue." })
+        return true
       }
-      threadsStore.set({ viewing: null, run: null })
-      toast(`${label} picked up the conversation`, {
-        description: `Working in ${ref.cwd ?? "its workspace"} — it will appear under Agents.`,
-      })
-      return true
+      threadsStore.set({ composerHarness: harness })
+      const supportsLive = threadsStore.get().acpable.includes(harness)
+      const ok = supportsLive
+        ? await (await import("@/state/acp")).acp.startFresh(harness, result.cwd, result.prompt)
+        : await this.startNew(harness, result.prompt)
+      if (ok) toast(`${label} picked up the conversation`)
+      return ok
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error))
-      return false
-    }
-  },
-
-  /**
-   * Continue a foreign conversation here: a new tab in its working
-   * directory, seeded with the transcript. The tab opens on success; the
-   * session store's tab machinery takes it from there.
-   */
-  async continueHere(ref: ThreadRef, instruction?: string) {
-    if (!hasBridge()) return false
-    threadsStore.set({ continuing: ref.path })
-    try {
-      void instruction
-      await withConversion(ref.harness, "pi", ref.title, () => getPi().continueThread(ref.path))
-      threadsStore.set({ continuing: null, viewing: null })
-      return true
-    } catch (error) {
-      threadsStore.set({ continuing: null })
       toast.error(error instanceof Error ? error.message : String(error))
       return false
     }

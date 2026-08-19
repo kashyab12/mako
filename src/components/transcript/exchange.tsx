@@ -70,8 +70,11 @@ export const Exchange = memo(function Exchange({
 
 function Prompt({ message }: { message: PiMessage }) {
   const raw = textOf(message.blocks)
-  // A sent attachment appendix reads back as chips, not as a wall of paths.
-  const { body: text, files } = useMemo(() => parseAttachmentAppendix(raw), [raw])
+  // Sent context appendices read back as chips, not walls of implementation detail.
+  const { body: text, files } = useMemo(
+    () => parseAttachmentAppendix(stripThreadReferenceAppendix(raw)),
+    [raw]
+  )
   // References the user typed read back as the chips they were written as.
   const segments = useMemo(() => tokenize(text), [text])
   // Edit and Fork exist only where the session tree knows this message —
@@ -287,8 +290,25 @@ function ForkButton({ exchange }: { exchange: ExchangeData }) {
   const viewing = useThreads((state) => state.viewing?.ref)
   const targets = useThreads((state) => state.targets)
   const last = exchange.response.at(-1)
-  const at = last?.id.startsWith("foreign-") ? Number(last.id.slice("foreign-".length)) : null
-  if (!viewing || at === null || Number.isNaN(at)) return null
+  const nativeEntry = useSession((state) =>
+    last && state.tree.some((entry) => entry.id === last.id) ? last.id : null
+  )
+  const at = last ? /^foreign-entry-(\d+)$/.exec(last.id) : null
+  const entryIndex = at ? Number(at[1]) : null
+  if (!viewing && nativeEntry) {
+    return (
+      <button
+        type="button"
+        title="Fork from this completed answer into a new tab"
+        onClick={() => void actions.fork(nativeEntry, "at")}
+        className="pressable flex items-center gap-1 rounded px-1 hover:text-foreground"
+      >
+        <GitForkIcon className="size-3" />
+        Fork
+      </button>
+    )
+  }
+  if (!viewing || entryIndex === null || Number.isNaN(entryIndex)) return null
   const options = targets.filter((target) => target !== "pi")
 
   return (
@@ -304,7 +324,7 @@ function ForkButton({ exchange }: { exchange: ExchangeData }) {
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" sideOffset={6} className="w-56 p-1">
-        <p className="px-2 pt-1.5 pb-1 text-[10px] font-medium tracking-wide text-faint/80 uppercase">
+        <p className="px-2 pt-1.5 pb-1 text-[10.5px] font-medium text-faint/80">
           Fork from here into
         </p>
         {options.map((target) => (
@@ -313,7 +333,7 @@ function ForkButton({ exchange }: { exchange: ExchangeData }) {
             type="button"
             onClick={() => {
               setOpen(false)
-              void threads.forkAt(viewing, at, target)
+              void threads.forkAt(viewing, entryIndex, target)
             }}
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-foreground/90 transition-colors duration-100 hover:bg-raised"
           >

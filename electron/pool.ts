@@ -101,7 +101,8 @@ export class HostPool {
    * broken if we forked in place and re-opened the original afterwards.
    */
   async forkIntoTab(
-    entryId: string
+    entryId: string,
+    position: "before" | "at" = "before"
   ): Promise<{ cancelled: true } | { cancelled: false; text?: string; tab: TabSnapshot }> {
     const source = this.active
     const path = source.sessionFile
@@ -110,7 +111,7 @@ export class HostPool {
     const host = await this.spawn(source.workspace, { activate: false })
     try {
       await host.openSession(path)
-      const result = await host.fork(entryId)
+      const result = await host.fork(entryId, position)
       if (result.cancelled) {
         await this.destroy(host)
         return { cancelled: true }

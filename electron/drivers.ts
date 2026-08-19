@@ -49,7 +49,12 @@ const RESUME: Record<
       "workspace-write",
       "--skip-git-repo-check",
       ...(tuning?.model ? ["-m", tuning.model] : []),
-      ...(tuning?.effort ? ["-c", `model_reasoning_effort="${tuning.effort}"`] : []),
+      ...(tuning?.effort || typeof tuning?.options?.effort === "string"
+        ? ["-c", `model_reasoning_effort="${tuning.effort ?? tuning.options?.effort}"`]
+        : []),
+      ...(typeof tuning?.options?.serviceTier === "string"
+        ? ["-c", `service_tier="${tuning.options.serviceTier}"`]
+        : []),
     ],
   }),
   // No --fork-session: the default reuses the session id, so the turn lands
@@ -89,7 +94,9 @@ const RESUME: Record<
       id,
       "--always-approve",
       ...(tuning?.model ? ["--model", tuning.model] : []),
-      ...(tuning?.effort ? ["--reasoning-effort", tuning.effort] : []),
+      ...(tuning?.effort || typeof tuning?.options?.effort === "string"
+        ? ["--reasoning-effort", String(tuning.effort ?? tuning.options?.effort)]
+        : []),
     ],
   }),
 }
@@ -102,10 +109,9 @@ const RESUME: Record<
  */
 export interface FreshOptions {
   model?: string
-  /** Reasoning effort, in the harness's own vocabulary. */
   effort?: string
-  /** Cursor's fast mode; expressed as a bracket parameter on the model. */
   fast?: boolean
+  options?: Record<string, string | boolean>
 }
 
 /**
@@ -131,7 +137,12 @@ const FRESH: Record<string, (prompt: string, options: FreshOptions) => ResumeCom
       "workspace-write",
       "--skip-git-repo-check",
       ...(options.model ? ["-m", options.model] : []),
-      ...(options.effort ? ["-c", `model_reasoning_effort="${options.effort}"`] : []),
+      ...(options.effort || typeof options.options?.effort === "string"
+        ? ["-c", `model_reasoning_effort="${options.effort ?? options.options?.effort}"`]
+        : []),
+      ...(typeof options.options?.serviceTier === "string"
+        ? ["-c", `service_tier="${options.options.serviceTier}"`]
+        : []),
     ],
   }),
   claude: (prompt, options) => ({
@@ -158,173 +169,15 @@ const FRESH: Record<string, (prompt: string, options: FreshOptions) => ResumeCom
       prompt,
       "--always-approve",
       ...(options.model ? ["--model", options.model] : []),
-      ...(options.effort ? ["--reasoning-effort", options.effort] : []),
+      ...(options.effort || typeof options.options?.effort === "string"
+        ? ["--reasoning-effort", String(options.effort ?? options.options?.effort)]
+        : []),
     ],
   }),
 }
 
-/** What each harness's CLI actually accepts, for the composer to offer. */
-/**
- * What each harness would do if launched with no flags at all — read from
- * its own config files, because that is where the truth lives. Users change
- * these in the CLIs; a hardcoded guess rots the day they do. Cached briefly:
- * config files change at human speed, tuning popovers open at UI speed.
- */
-export interface HarnessDefaults {
-  model?: string
-  effort?: string
-  fast?: boolean
-}
-
-let defaultsCache: { at: number; value: Record<string, HarnessDefaults> } | null = null
-
-export async function readHarnessDefaults(): Promise<Record<string, HarnessDefaults>> {
-  if (defaultsCache && Date.now() - defaultsCache.at < 15_000) return defaultsCache.value
-  const { readFile } = await import("node:fs/promises")
-  const { homedir } = await import("node:os")
-  const { join } = await import("node:path")
-  const home = homedir()
-  const value: Record<string, HarnessDefaults> = {}
-
-  // Codex: ~/.codex/config.toml — `model = "…"`, `model_reasoning_effort = "…"`.
-  try {
-    const toml = await readFile(join(home, ".codex", "config.toml"), "utf8")
-    const model = /^\s*model\s*=\s*"([^"]+)"/m.exec(toml)?.[1]
-    const effort = /^\s*model_reasoning_effort\s*=\s*"([^"]+)"/m.exec(toml)?.[1]
-    value.codex = { model, effort }
-  } catch { value.codex = {} }
-
-  // Claude Code: ~/.claude/settings.json — `model`.
-  try {
-    const settings = JSON.parse(await readFile(join(home, ".claude", "settings.json"), "utf8")) as {
-      model?: string
-    }
-    value.claude = { model: settings.model }
-  } catch { value.claude = {} }
-
-  // Cursor: ~/.cursor/cli-config.json — `model.modelId`.
-  try {
-    const config = JSON.parse(await readFile(join(home, ".cursor", "cli-config.json"), "utf8")) as {
-      model?: { modelId?: string }
-    }
-    value.cursor = { model: config.model?.modelId }
-  } catch { value.cursor = {} }
-
-  // Grok: ~/.grok/models_cache.json — a dict of models, each carrying its
-  // own reasoning_effort. First visible model is the CLI's own ordering.
-  try {
-    const cache = JSON.parse(
-      await readFile(join(home, ".grok", "models_cache.json"), "utf8")
-    ) as { models?: Record<string, { info?: { hidden?: boolean; reasoning_effort?: string } }> }
-    const entries = Object.entries(cache.models ?? {}).filter(([, m]) => !m.info?.hidden)
-    const first = entries[0]
-    value.grok = { model: first?.[0], effort: first?.[1]?.info?.reasoning_effort ?? undefined }
-  } catch { value.grok = {} }
-
-  defaultsCache = { at: Date.now(), value }
-  return value
-}
-
-/**
- * Claude Code's model list, from its own caches: the additional-model
- * options Claude itself last fetched (full ids like claude-fable-5[1m])
- * over the evergreen aliases. The CLI's truth, not ours.
- */
-export async function claudeModels(): Promise<string[]> {
-  const aliases = ["opus", "sonnet", "haiku"]
-  try {
-    const { readFile } = await import("node:fs/promises")
-    const { homedir } = await import("node:os")
-    const { join } = await import("node:path")
-    const state = JSON.parse(await readFile(join(homedir(), ".claude.json"), "utf8")) as {
-      additionalModelOptionsCache?: Array<{ value?: string }>
-    }
-    const cached = (state.additionalModelOptionsCache ?? [])
-      .map((option) => option.value)
-      .filter((value): value is string => Boolean(value))
-    // The cache is Claude's own current catalog; the tier aliases only
-    // earn a place when there is no cache to speak from.
-    return cached.length > 0 ? cached : aliases
-  } catch {
-    return aliases
-  }
-}
-
-/** Grok's model list, from its own cache — the CLI's truth, not ours. */
-export async function grokModels(): Promise<string[]> {
-  try {
-    const { readFile } = await import("node:fs/promises")
-    const { homedir } = await import("node:os")
-    const { join } = await import("node:path")
-    const cache = JSON.parse(
-      await readFile(join(homedir(), ".grok", "models_cache.json"), "utf8")
-    ) as { models?: Record<string, { info?: { hidden?: boolean } }> }
-    return Object.entries(cache.models ?? {})
-      .filter(([, m]) => !m.info?.hidden)
-      .map(([id]) => id)
-  } catch {
-    return []
-  }
-}
-
-export const HARNESS_TUNING: Record<
-  string,
-  { efforts: string[]; fast: boolean; curatedModels: string[]; defaultModel: string }
-> = {
-  claude: {
-    // --effort low is the fast lever; max is the slow, thorough one.
-    efforts: ["low", "medium", "high", "xhigh", "max"],
-    fast: false,
-    curatedModels: ["opus", "sonnet", "haiku"],
-    defaultModel: "opus",
-  },
-  codex: {
-    efforts: ["minimal", "low", "medium", "high", "xhigh"],
-    fast: false,
-    curatedModels: ["gpt-5.3-codex", "gpt-5.2-codex", "gpt-5.2"],
-    defaultModel: "gpt-5.3-codex",
-  },
-  cursor: {
-    efforts: ["low", "medium", "high"],
-    fast: true,
-    curatedModels: ["auto", "gpt-5.2", "sonnet-4.5-thinking", "opus-4.5"],
-    defaultModel: "auto",
-  },
-  grok: {
-    efforts: ["low", "medium", "high"],
-    fast: false,
-    curatedModels: ["grok-4.6", "grok-code"],
-    defaultModel: "grok-4.6",
-  },
-}
-
 export function resumableHarnesses(): string[] {
   return Object.keys(RESUME)
-}
-
-/** Which harness CLIs exist on this machine, by actually looking. */
-export async function harnessAvailability(): Promise<Record<string, boolean>> {
-  const { execFile } = await import("node:child_process")
-  const { promisify } = await import("node:util")
-  const run = promisify(execFile)
-  const commands: Record<string, string> = {
-    codex: "codex",
-    claude: "claude",
-    cursor: "cursor-agent",
-    grok: "agent",
-  }
-  const out: Record<string, boolean> = { pi: true }
-  await Promise.all(
-    Object.entries(commands).map(async ([harness, command]) => {
-      try {
-        await run("which", [command])
-        out[harness] = true
-      } catch {
-        out[harness] = false
-      }
-    })
-  )
-  return out
 }
 
 export function freshHarnesses(): string[] {

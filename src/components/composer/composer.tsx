@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
-import { ModelPicker } from "@/components/composer/model-picker"
 import { AgentPicker } from "@/components/composer/agent-picker"
 import { ForeignEffortPicker } from "@/components/composer/foreign-effort"
 import { ForeignModelPicker } from "@/components/composer/foreign-model"
 import { HarnessIcon } from "@/components/ui/provider-icon"
-import { EffortPicker } from "@/components/composer/effort-picker"
 import { MentionMenu, type MentionKind } from "@/components/composer/mention-menu"
 import { AttachmentStrip } from "@/components/composer/attachments"
 import { buildForeignPrompt, buildPrompt, useAttachments } from "@/lib/attachments"
@@ -20,6 +18,7 @@ import { threads, threadsStore, useThreads } from "@/state/threads"
 import { acp, acpStore, useAcp } from "@/state/acp"
 import { getPi } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
+import type { AcpPromptAttachment } from "@/lib/types"
 import { toast } from "sonner"
 import {
   ArrowUpIcon,
@@ -222,6 +221,13 @@ export function Composer() {
         const attachmentPrompt = buildForeignPrompt(text, staged)
         const full = await appendThreadReferences(attachmentPrompt, threadsStore.get().threads)
         if (!full.trim()) return
+        const acpAttachments: AcpPromptAttachment[] = staged.map((item) => ({
+          name: item.name,
+          mimeType: item.mimeType,
+          size: item.size,
+          ...(item.kind === "image" && item.data ? { data: item.data } : {}),
+          ...(item.stagedPath ? { path: item.stagedPath } : {}),
+        }))
         const previousDraft = draft
         const detached = attachments.detach()
         update("")
@@ -231,7 +237,7 @@ export function Composer() {
           // Mod+Enter while the agent runs: stop the turn, then send — the
           // live protocol's own interrupt. Plain Enter queues agent-side.
           if (mode && liveSession.status === "running") acp.cancel()
-          await acp.send(full)
+          await acp.send(full, acpAttachments)
           ok = true
         } else if (viewingRef) {
           // An archived conversation has no native session to resume — a
@@ -244,8 +250,8 @@ export function Composer() {
                 ? await threads.interruptAndSend(viewingRef, full)
                 : await threads.reply(viewingRef, full)
               : await threads.moveAndSend(viewingRef, harness, full)
-        } else if (harness === "claude" || harness === "cursor" || harness === "devin") {
-          ok = await acp.startFresh(harness, meta?.cwd ?? "", full)
+        } else if (threadsStore.get().acpable.includes(harness)) {
+          ok = await acp.startFresh(harness, meta?.cwd ?? "", full, acpAttachments)
         } else {
           ok = await threads.startNew(harness, full)
         }
@@ -633,7 +639,6 @@ function Banner({ text }: { text: string }) {
 
 
 const HARNESS_TITLES: Record<string, string> = {
-  pi: "Pi",
   claude: "Claude Code",
   codex: "Codex",
   cursor: "Cursor",
@@ -646,8 +651,8 @@ const HARNESS_TITLES: Record<string, string> = {
  *
  * An open foreign conversation locks the composer to its harness — the mark
  * and name say so, and the run's state rides beside them. Otherwise the
- * harness picker chooses who answers next, with Pi keeping its full model
- * and effort pickers and foreign harnesses getting their own tuning.
+ * provider picker chooses who answers next; model options come directly
+ * from that provider's runtime catalog.
  */
 function ComposerRouting() {
   const viewing = useThreads((state) => state.viewing?.ref)
@@ -684,19 +689,8 @@ function ComposerRouting() {
   return (
     <>
       <AgentPicker />
-      {harness === "pi" || harness === "devin" ? (
-        viewing ? null : (
-          <>
-            <ModelPicker />
-            <EffortPicker />
-          </>
-        )
-      ) : (
-        <>
-          <ForeignModelPicker harness={harness} />
-          <ForeignEffortPicker harness={harness} />
-        </>
-      )}
+      <ForeignModelPicker harness={harness} />
+      <ForeignEffortPicker harness={harness} />
       {viewing && run?.status === "running" ? (
         <button
           type="button"

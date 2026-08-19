@@ -35,7 +35,6 @@ import type { Harness, ThreadRef } from "@/lib/types"
  */
 
 export const HARNESS_LABEL: Record<string, string> = {
-  pi: "Pi",
   codex: "Codex",
   claude: "Claude Code",
   cursor: "Cursor",
@@ -44,12 +43,11 @@ export const HARNESS_LABEL: Record<string, string> = {
 }
 
 /**
- * What a session should read as. A Pi session whose model comes from the
- * pi-devin provider is a Devin-local conversation — it wears Devin's mark
- * and counts under Devin's chip, because that is who was answering.
+ * Legacy engine-owned sessions read as Devin conversations. Pi is an
+ * implementation detail and never appears as a selectable agent.
  */
 export function displayHarness(ref: ThreadRef): string {
-  return ref.harness === "pi" && ref.modelProvider === "devin" ? "devin" : ref.harness
+  return ref.harness === "pi" ? "devin" : ref.harness
 }
 
 export function harnessLabel(harness: Harness): string {
@@ -320,7 +318,7 @@ function RailHeader({
 
   return (
     <div className="flex h-9 shrink-0 items-center px-2 pt-1.5">
-      <span className="px-1.5 text-[10.5px] font-medium tracking-wide text-faint">Workspaces</span>
+      <span className="px-1.5 text-[10.5px] font-medium text-faint">Workspaces</span>
       <span className="flex-1" />
       <button
         type="button"
@@ -356,7 +354,7 @@ function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter
   const scope = usePrefs((prefs) => prefs.railScope)
   const on = filter.length > 0 || scope === "workspace" || (sortBy !== "recent" && sortBy !== "size")
 
-  const section = "px-2 pt-2 pb-1 text-[10px] font-medium tracking-wide text-faint/80 uppercase"
+  const section = "px-2 pt-2 pb-1 text-[10.5px] font-medium text-faint/80"
   const row = (active: boolean) =>
     cn(
       "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors duration-100",

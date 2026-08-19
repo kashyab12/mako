@@ -1,8 +1,8 @@
 import { createHook, createStore } from "@/state/store"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { toast } from "sonner"
-import { withConversion } from "@/state/threads"
-import type { AcpPermissionRequest, AcpSessionState, AcpUpdate, ThreadRef } from "@/lib/types"
+import { threadsStore, withConversion } from "@/state/threads"
+import type { AcpPermissionRequest, AcpPromptAttachment, AcpSessionState, AcpUpdate, ThreadRef } from "@/lib/types"
 
 /**
  * One interactive foreign agent, live.
@@ -19,7 +19,7 @@ export type AcpBlock =
   | { type: "user"; text: string }
   | { type: "text"; text: string }
   | { type: "thinking"; text: string }
-  | { type: "tool"; id: string; title: string; toolKind?: string; status: string; output?: string }
+  | { type: "tool"; id: string; title: string; toolKind?: string; status: string; input?: string; output?: string }
   | { type: "plan"; entries: Array<{ content: string; status: string }> }
 
 interface AcpState {
@@ -28,7 +28,7 @@ interface AcpState {
   permission: AcpPermissionRequest | null
   starting: boolean
   /** Typed while the agent was working; sent the moment it goes quiet. */
-  queued: string | null
+  queued: { text: string; attachments: AcpPromptAttachment[] } | null
 }
 
 export const acpStore = createStore<AcpState>({
@@ -49,7 +49,7 @@ export function applyAcpSession(session: AcpSessionState) {
   // what queueing promised.
   if (current.status === "running" && session.status === "ready" && queued) {
     acpStore.set({ queued: null })
-    void acp.send(queued)
+    void acp.send(queued.text, queued.attachments)
   }
 }
 
@@ -88,7 +88,7 @@ function reduce(blocks: AcpBlock[], update: AcpUpdate): AcpBlock[] {
     case "tool":
       return [
         ...blocks,
-        { type: "tool", id: update.id, title: update.title, toolKind: update.toolKind, status: update.status },
+        { type: "tool", id: update.id, title: update.title, toolKind: update.toolKind, status: update.status, input: update.input },
       ]
     case "tool-update":
       return blocks.map((block) =>
@@ -97,6 +97,7 @@ function reduce(blocks: AcpBlock[], update: AcpUpdate): AcpBlock[] {
               ...block,
               title: update.title ?? block.title,
               status: update.status ?? block.status,
+              input: update.input ?? block.input,
               output: update.output ?? block.output,
             }
           : block
@@ -127,14 +128,18 @@ export const acp = {
     try {
       let harness = ref.harness
       let resume = ref.nativeId
-      if (ref.harness !== "claude" && ref.harness !== "cursor") {
+      if (!["claude", "cursor", "grok", "devin"].includes(ref.harness)) {
         const emitted = await withConversion(ref.harness, "claude", ref.title, () =>
           getPi().emitThreadToClaude(ref.path)
         )
         harness = "claude"
         resume = emitted.sessionId
       }
-      const session = await getPi().acpStart(harness, ref.cwd ?? "", { resume, title: ref.title })
+      const session = await getPi().acpStart(harness, ref.cwd ?? "", {
+        resume,
+        title: ref.title,
+        tuning: threadsStore.get().composerTuning[harness],
+      })
       acpStore.set({ session, starting: false })
     } catch (error) {
       acpStore.set({ starting: false })
@@ -149,13 +154,20 @@ export const acp = {
    * asking before they act — because they are actually running, not being
    * shelled out to.
    */
-  async startFresh(harness: string, cwd: string, prompt: string) {
+  async startFresh(
+    harness: string,
+    cwd: string,
+    prompt: string,
+    attachments: AcpPromptAttachment[] = []
+  ) {
     if (!hasBridge()) return false
     acpStore.set({ starting: true, blocks: [], permission: null })
     try {
-      const session = await getPi().acpStart(harness, cwd, {})
+      const session = await getPi().acpStart(harness, cwd, {
+        tuning: threadsStore.get().composerTuning[harness],
+      })
       acpStore.set({ session, starting: false })
-      await getPi().acpPrompt(session.id, prompt)
+      await getPi().acpPrompt(session.id, prompt, attachments)
       return true
     } catch (error) {
       acpStore.set({ starting: false })
@@ -164,16 +176,16 @@ export const acp = {
     }
   },
 
-  async send(text: string) {
+  async send(text: string, attachments: AcpPromptAttachment[] = []) {
     const { session } = acpStore.get()
     if (!session || !hasBridge()) return
     if (session.status === "running") {
       // Not lost, not an error: it goes next.
-      acpStore.set({ queued: text })
+      acpStore.set({ queued: { text, attachments } })
       return
     }
     try {
-      await getPi().acpPrompt(session.id, text)
+      await getPi().acpPrompt(session.id, text, attachments)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     }

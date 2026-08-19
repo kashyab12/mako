@@ -136,7 +136,7 @@ for (const row of report) {
   const bad = Object.entries(checks).filter(([, ok]) => ok !== true).map(([key]) => key)
   console.log(
     bad.length === 0 && !error
-      ? `  ✓ ${target.padEnd(7)} emit → native read-back: full fidelity`
+      ? `  ✓ ${target.padEnd(7)} emit → provider read-back: portable replay fidelity`
       : `  ✗ ${target.padEnd(7)} FAILED: ${error ?? bad.join(", ")}`
   )
 }
@@ -145,4 +145,4 @@ if (failures > 0) {
   console.error(`\n${failures} target(s) failed the resume matrix.`)
   process.exit(1)
 }
-console.log("\nResume matrix clean: every emitted session reads back natively.")
+console.log("\nResume matrix clean: every imported session preserves the portable replay contract.")

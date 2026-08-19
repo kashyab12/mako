@@ -1,225 +1,160 @@
 import { useEffect, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { harnessDefault, rememberHarnessDefault, setComposerTuning, useThreads } from "@/state/threads"
-import { decomposeModelId } from "@/lib/model-id"
+import { setComposerTuning, useThreads } from "@/state/threads"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
-import { CheckIcon, ZapIcon } from "lucide-react"
-
-/**
- * The reasoning gauge, for every harness.
- *
- * Pi's effort picker got this right — a four-bar gauge you can read without
- * reading a word, levels with one honest sentence each — so foreign
- * harnesses get the same control, not a row of chips in a panel. The levels
- * are each CLI's own vocabulary; the gauge scales across however many a
- * harness has. Fast mode lives here too, where speed belongs: a lightning
- * state on the same gauge, gently alive while it is on.
- */
-
-const DESCRIPTIONS: Record<string, string> = {
-  minimal: "A brief look before answering.",
-  low: "Light reasoning for routine work.",
-  medium: "Balanced. A good default for real tasks.",
-  high: "Deliberate. For tricky bugs and design work.",
-  xhigh: "Extended reasoning. Slow and expensive.",
-  max: "Everything the model has. Reserve for hard problems.",
-}
-
-interface Tuning {
-  efforts: string[]
-  fast: boolean
-  defaultEffort?: string
-  models: string[]
-}
+import type { HarnessModelOption, HarnessProfile } from "@/lib/types"
+import { CheckIcon, SlidersHorizontalIcon, ZapIcon } from "lucide-react"
 
 export function ForeignEffortPicker({ harness }: { harness: string }) {
   const [open, setOpen] = useState(false)
-  const [tuning, setTuning] = useState<Tuning | null>(null)
+  const [profile, setProfile] = useState<HarnessProfile | null>(null)
   const chosen = useThreads((state) => state.composerTuning[harness] ?? {})
 
   useEffect(() => {
     if (!hasBridge()) return
-    setTuning(null)
-    void getPi()
-      .harnessTuning(harness)
-      .then((next) => {
-        setTuning({
-          efforts: next.efforts,
-          fast: next.fast,
-          defaultEffort: next.defaultEffort,
-          models: next.models,
-        })
-        rememberHarnessDefault(harness, {
-          model: next.defaultModel || undefined,
-          effort: next.defaultEffort,
-        })
-      })
-      .catch(() =>
-        setTuning({
-          efforts: [],
-          fast: false,
-          defaultEffort: harnessDefault(harness).effort,
-          models: [],
-        })
-      )
+    setProfile(null)
+    void getPi().harnessTuning(harness).then(setProfile).catch(() => {})
   }, [harness])
 
-  if (!tuning || (tuning.efforts.length === 0 && !tuning.fast)) return null
+  const modelId = chosen.model ?? profile?.defaultModel
+  const model = profile?.models.find((entry) => entry.id === modelId) ?? profile?.models[0]
+  const options = model?.options ?? []
+  if (options.length === 0) return null
 
-  const set = (patch: Partial<{ model?: string; effort?: string; fast?: boolean }>) =>
-    setComposerTuning(harness, patch)
+  const selected = chosen.options ?? {}
+  const effort = options.find(
+    (option) => option.kind === "select" && /effort|reason/i.test(`${option.id} ${option.label}`)
+  )
+  const fast = options.find(
+    (option) => option.kind === "boolean" && /fast|speed/i.test(`${option.id} ${option.label}`)
+  )
+  const effortValue = effort?.kind === "select"
+    ? String(selected[effort.id] ?? chosen.effort ?? effort.current ?? effort.values.find((value) => value.default)?.value ?? "")
+    : ""
+  const fastOn = fast?.kind === "boolean" ? Boolean(selected[fast.id] ?? chosen.fast ?? fast.current) : false
 
-  const defaults = harnessDefault(harness)
-  const encoded = defaults.model ? decomposeModelId(harness, defaults.model) : undefined
-  const fallbackEffort = tuning?.defaultEffort ?? defaults.effort ?? encoded?.effort
-  const fallbackFast = encoded?.fast ?? false
-
-  /*
-   * Whether fast exists here is DATA, not a hardcoded table: the model in
-   * force either has a fast-lane sibling among the known ids (Devin's
-   * -priority variants), encodes fast itself, or the harness's launch
-   * contract takes a fast parameter (Cursor's bracket flag, reported by
-   * the engine). No sibling, no flag — no bolt. Models change; this reads
-   * whatever they become.
-   */
-  const effectiveModel = chosen.model ?? defaults.model
-  const effectiveDec = effectiveModel ? decomposeModelId(harness, effectiveModel) : undefined
-  const family = effectiveDec?.base
-  const siblings = (tuning?.models ?? []).map((id) => ({ id, dec: decomposeModelId(harness, id) }))
-  const familySiblings = family ? siblings.filter((entry) => entry.dec.base === family) : []
-  const fastSibling = familySiblings.find((entry) => entry.dec.fast)
-  const slowSibling = familySiblings.find((entry) => !entry.dec.fast)
-  const fastCapable = Boolean(tuning?.fast || fastSibling || effectiveDec?.fast)
-  const fastOn = chosen.fast ?? effectiveDec?.fast ?? fallbackFast
-  const label = fastOn ? "fast" : (chosen.effort ?? fallbackEffort ?? "effort")
+  const setOption = (option: HarnessModelOption, value: string | boolean) => {
+    const next = { ...selected, [option.id]: value }
+    setComposerTuning(harness, {
+      options: next,
+      ...(option === effort && typeof value === "string" ? { effort: value } : {}),
+      ...(option === fast && typeof value === "boolean" ? { fast: value } : {}),
+    })
+  }
 
   return (
     <>
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={`Reasoning effort: ${label}`}
-          className={cn(
-            "pressable no-drag flex h-7 items-center gap-1.5 rounded-md px-2 text-[12.5px] font-medium",
-            "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease]",
-            "hover:bg-raised aria-expanded:bg-raised",
-            chosen.effort || chosen.fast ? "text-foreground/85" : "text-faint"
-          )}
-        >
-          {(chosen.fast ?? fallbackFast) ? (
-            <ZapIcon className="size-3 animate-[fast-alive_1.6s_ease-in-out_infinite] fill-caution text-caution" />
-          ) : (
-            <Gauge filled={rankOf(chosen.effort ?? fallbackEffort, tuning.efforts)} />
-          )}
-          <span className="capitalize">{label}</span>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" side="top" sideOffset={8} className="w-[17rem] gap-0 p-1">
-        {tuning.fast ? (
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
           <button
             type="button"
-            onClick={() => {
-              set({ fast: chosen.fast ? undefined : true, effort: undefined })
-              setOpen(false)
-            }}
+            aria-label="Model options"
             className={cn(
-              "flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-100 hover:bg-raised",
-              chosen.fast && "bg-raised"
+              "pressable no-drag flex h-7 items-center gap-1.5 rounded-md px-2 text-[12.5px] font-medium",
+              "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease]",
+              "text-faint hover:bg-raised hover:text-foreground aria-expanded:bg-raised"
             )}
           >
-            <ZapIcon
-              className={cn(
-                "mt-[3px] size-3 shrink-0",
-                chosen.fast ? "fill-caution text-caution" : "text-faint"
-              )}
-            />
-            <span className="min-w-0 flex-1">
-              <span className="block text-[12.5px] font-medium">Fast mode</span>
-              <span className="block text-[11px] leading-snug text-faint">
-                Quicker answers, lighter reasoning. Off is the thorough one.
-              </span>
-            </span>
-            {chosen.fast ? <CheckIcon className="mt-1 size-3.5 shrink-0 text-brand" /> : null}
+            {fastOn ? (
+              <ZapIcon className="size-3 fill-caution text-caution" />
+            ) : effort?.kind === "select" ? (
+              <Gauge filled={rankOf(effortValue, effort.values.map((value) => value.value))} />
+            ) : (
+              <SlidersHorizontalIcon className="size-3" />
+            )}
+            <span className="capitalize">{fastOn ? "fast" : effortValue || "options"}</span>
           </button>
-        ) : null}
-
-        {tuning.efforts.map((effort) => {
-          const isConfigDefault = effort === fallbackEffort
-          const active = chosen.effort === effort || (!chosen.effort && !chosen.fast && isConfigDefault)
-          return (
-            <button
-              key={effort}
-              type="button"
-              onClick={() => {
-                set({ effort, fast: undefined })
-                setOpen(false)
-              }}
-              className={cn(
-                "flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-100 hover:bg-raised",
-                active && "bg-raised"
-              )}
-            >
-              <Gauge filled={rankOf(effort, tuning.efforts)} className="mt-[3px]" />
-              <span className="min-w-0 flex-1">
-                <span className="block text-[12.5px] font-medium capitalize">
-                  {effort}
-                  {isConfigDefault ? (
-                    <span className="ml-1.5 text-[10px] font-normal text-faint">config default</span>
-                  ) : null}
-                </span>
-                <span className="block text-[11px] leading-snug text-faint">
-                  {DESCRIPTIONS[effort] ?? "This harness's own level."}
-                </span>
-              </span>
-              {active ? <CheckIcon className="mt-1 size-3.5 shrink-0 text-brand" /> : null}
-            </button>
-          )
-        })}
-      </PopoverContent>
-    </Popover>
-    {fastCapable ? (
-      <button
-        type="button"
-        aria-label={fastOn ? "Fast mode on" : "Fast mode off"}
-        title={fastOn ? "Fast mode — quicker, lighter reasoning. Click for thorough." : "Fast mode off. Click for quicker answers."}
-        onClick={() => {
-          // A family with fast baked into the id swaps the variant; a
-          // harness with a fast launch flag flips the flag.
-          if (fastOn && slowSibling && effectiveDec?.fast) {
-            set({ model: slowSibling.id, fast: undefined })
-          } else if (!fastOn && fastSibling) {
-            set({ model: fastSibling.id, effort: undefined })
-          } else {
-            set({ fast: fastOn ? false : true, ...(fastOn ? {} : { effort: undefined }) })
-          }
-        }}
-        className={cn(
-          "pressable no-drag flex h-7 items-center rounded-md px-1.5",
-          "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease]",
-          "hover:bg-raised",
-          fastOn ? "text-caution" : "text-faint hover:text-foreground"
-        )}
-      >
-        <ZapIcon
+        </PopoverTrigger>
+        <PopoverContent align="start" side="top" sideOffset={8} className="max-h-[24rem] w-[19rem] overflow-y-auto p-1">
+          {options.map((option) => (
+            <OptionSection
+              key={option.id}
+              option={option}
+              value={selected[option.id] ?? option.current}
+              onChange={(value) => setOption(option, value)}
+            />
+          ))}
+        </PopoverContent>
+      </Popover>
+      {fast?.kind === "boolean" ? (
+        <button
+          type="button"
+          aria-label={fastOn ? "Fast mode on" : "Fast mode off"}
+          title={fastOn ? "Fast mode on" : "Fast mode off"}
+          onClick={() => setOption(fast, !fastOn)}
           className={cn(
-            "size-3.5",
-            fastOn && "animate-[fast-alive_1.6s_ease-in-out_infinite] fill-caution"
+            "pressable no-drag flex h-7 items-center rounded-md px-1.5 hover:bg-raised",
+            fastOn ? "text-caution" : "text-faint hover:text-foreground"
           )}
-        />
-      </button>
-    ) : null}
+        >
+          <ZapIcon className={cn("size-3.5", fastOn && "fill-caution")} />
+        </button>
+      ) : null}
     </>
   )
 }
 
-/** The chosen level's position, scaled onto four bars. */
-function rankOf(effort: string | undefined, efforts: string[]): number {
-  if (!effort) return 0
-  const at = efforts.indexOf(effort)
-  if (at === -1) return 0
-  return Math.max(1, Math.round(((at + 1) / efforts.length) * 4))
+function OptionSection({
+  option,
+  value,
+  onChange,
+}: {
+  option: HarnessModelOption
+  value: string | boolean | undefined
+  onChange: (value: string | boolean) => void
+}) {
+  if (option.kind === "boolean") {
+    const active = typeof value === "boolean" ? value : option.current
+    return (
+      <button
+        type="button"
+        onClick={() => onChange(!active)}
+        className={cn(
+          "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[12.5px] hover:bg-raised",
+          active && "bg-raised"
+        )}
+      >
+        <span className="flex-1">{option.label}</span>
+        {active ? <CheckIcon className="size-3.5 text-brand" /> : null}
+      </button>
+    )
+  }
+
+  const current = typeof value === "string" ? value : option.current ?? option.values.find((entry) => entry.default)?.value
+  return (
+    <section className="pb-1">
+      <p className="px-2 pt-1.5 pb-1 text-[10.5px] font-medium text-faint">{option.label}</p>
+      {option.values.map((entry) => {
+        const active = current === entry.value
+        return (
+          <button
+            key={entry.value}
+            type="button"
+            onClick={() => onChange(entry.value)}
+            className={cn(
+              "flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-raised",
+              active && "bg-raised"
+            )}
+          >
+            {/effort|reason/i.test(`${option.id} ${option.label}`) ? (
+              <Gauge filled={rankOf(entry.value, option.values.map((value) => value.value))} className="mt-[3px]" />
+            ) : null}
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12.5px]">{entry.label}</span>
+              {entry.description ? <span className="block text-[10.5px] leading-snug text-faint">{entry.description}</span> : null}
+            </span>
+            {active ? <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-brand" /> : null}
+          </button>
+        )
+      })}
+    </section>
+  )
+}
+
+function rankOf(value: string, values: string[]): number {
+  const at = values.indexOf(value)
+  return at < 0 ? 0 : Math.max(1, Math.round(((at + 1) / values.length) * 4))
 }
 
 function Gauge({ filled, className }: { filled: number; className?: string }) {
@@ -228,10 +163,7 @@ function Gauge({ filled, className }: { filled: number; className?: string }) {
       {[0, 1, 2, 3].map((index) => (
         <span
           key={index}
-          className={cn(
-            "w-[2px] rounded-[1px] transition-colors duration-150",
-            index < filled ? "bg-brand" : "bg-foreground/20"
-          )}
+          className={cn("w-[2px] rounded-[1px]", index < filled ? "bg-brand" : "bg-foreground/20")}
           style={{ height: 4 + index * 2 }}
         />
       ))}

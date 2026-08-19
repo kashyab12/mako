@@ -15,7 +15,7 @@ function references(text: string, threads: ThreadRef[]): ThreadRef[] {
   for (const segment of tokenize(text)) {
     if (segment.kind !== "thread") continue
     const thread = threads.find(
-      (entry) => entry.harness === segment.harness && entry.nativeId === segment.nativeId
+      (entry) => entry.harness === segment.harness && entry.nativeId.startsWith(segment.nativeId)
     )
     if (thread) found.set(thread.path, thread)
   }

@@ -64,7 +64,7 @@ export function FileChip({ path, interactive }: { path: string; interactive?: bo
 
 export function ThreadChip({ harness, nativeId }: { harness: string; nativeId: string }) {
   const thread = useThreads((state) =>
-    state.threads.find((entry) => entry.harness === harness && entry.nativeId === nativeId)
+    state.threads.find((entry) => entry.harness === harness && entry.nativeId.startsWith(nativeId))
   )
   return (
     <span

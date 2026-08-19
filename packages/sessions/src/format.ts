@@ -113,7 +113,7 @@ export function titleFrom(text: string | undefined): string | undefined {
 }
 
 /** Clip tool payloads: catalogues and handoffs need shape, not megabytes. */
-export function clip(text: string | undefined, max = 4000): string | undefined {
+export function clip(text: string | undefined, max = 256_000): string | undefined {
   if (text === undefined) return undefined
   return text.length > max ? `${text.slice(0, max)}\n… [${text.length - max} more characters]` : text
 }

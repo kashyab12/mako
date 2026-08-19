@@ -278,8 +278,8 @@ function Agents() {
     { id: "claude", name: "Claude Code", how: "claude CLI" },
     { id: "codex", name: "Codex", how: "codex CLI" },
     { id: "cursor", name: "Cursor", how: "cursor-agent CLI" },
-    { id: "grok", name: "Grok", how: "agent CLI" },
-    { id: "devin", name: "Devin", how: "devin-cli / Zed / IDE" },
+    { id: "grok", name: "Grok", how: "grok CLI" },
+    { id: "devin", name: "Devin", how: "devin CLI / Zed / IDE" },
   ]
 
   return (

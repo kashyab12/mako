@@ -1,241 +1,149 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Eyebrow } from "@/components/ui/kit"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { harnessLabel } from "@/components/rail/agent-threads"
 import { harnessDefault, rememberHarnessDefault, setComposerTuning, useThreads } from "@/state/threads"
-import { decomposeModelId, decorations } from "@/lib/model-id"
 import { getPi, hasBridge } from "@/lib/bridge"
+import { fuzzy } from "@/lib/fuzzy"
 import { cn } from "@/lib/utils"
-import { CheckIcon, ChevronDownIcon, ZapIcon } from "lucide-react"
+import type { HarnessModel, HarnessProfile } from "@/lib/types"
+import { CheckIcon, ChevronDownIcon } from "lucide-react"
 
-/**
- * The model picker, for harnesses that are not Pi.
- *
- * Same seat, same anatomy, same gestures as Pi's: a trigger wearing the
- * mark and the model's name, a panel of rows with a check on the current
- * one. The list is what this machine has actually run on that harness
- * (most recent first) over a curated floor, and free-type sits at the
- * bottom because a list must never be a cage. The toolbar reads the same
- * whoever answers — that is the entire point.
- */
 export function ForeignModelPicker({ harness }: { harness: string }) {
   const [open, setOpen] = useState(false)
-  const [models, setModels] = useState<string[]>([])
-  const [fallback, setFallback] = useState("")
-  const [typed, setTyped] = useState("")
+  const [query, setQuery] = useState("")
+  const [profile, setProfile] = useState<HarnessProfile | null>(null)
   const chosen = useThreads((state) => state.composerTuning[harness]?.model)
-
-  // Context-window variants of the model in force — claude-fable-5 versus
-  // claude-fable-5[1m] is one model with two windows, not two models. When
-  // the family has more than one, a small toggle appears beside this
-  // picker; the rows stay clean single entries.
-  const effective = chosen ?? fallback
-  const family = effective ? decomposeModelId(harness, effective).base : ""
-  const contextVariants = family
-    ? [...new Set([fallback, ...models])]
-        .filter(Boolean)
-        .map((id) => ({ id, dec: decomposeModelId(harness, id) }))
-        .filter((entry) => entry.dec.base === family)
-    : []
 
   useEffect(() => {
     if (!hasBridge()) return
-    setModels([])
-    // The last real answer, remembered — the engine's fresh read replaces
-    // it the moment it lands. Nothing here is ever invented.
-    setFallback(harnessDefault(harness).model ?? "")
+    setProfile(null)
     void getPi()
       .harnessTuning(harness)
-      .then((tuning) => {
-        const fallbackModel = tuning.defaultModel || harnessDefault(harness).model || ""
-        rememberHarnessDefault(harness, {
-          model: tuning.defaultModel || undefined,
-          effort: tuning.defaultEffort,
-        })
-        setFallback(fallbackModel)
-        // One row per decomposed identity: the same model reached as a raw
-        // id and as a variant string must not appear twice.
-        const identity = (id: string) => {
-          const dec = decomposeModelId(harness, id)
-          return `${dec.base}|${dec.context ?? ""}|${dec.effort ?? ""}|${dec.fast ?? ""}`
-        }
-        const taken = new Set(fallbackModel ? [identity(fallbackModel)] : [])
-        setModels(
-          tuning.models.filter((model) => {
-            const key = identity(model)
-            if (taken.has(key)) return false
-            taken.add(key)
-            return true
-          })
-        )
+      .then((next) => {
+        setProfile(next)
+        rememberHarnessDefault(harness, { model: next.defaultModel })
       })
       .catch(() => {})
   }, [harness])
 
+  const effective = chosen ?? profile?.defaultModel ?? harnessDefault(harness).model
+  const selected = profile?.models.find((model) => model.id === effective)
+  const models = useMemo(() => rankModels(profile?.models ?? [], query), [profile?.models, query])
+
   const set = (model?: string) => {
-    if (!model) {
-      setComposerTuning(harness, { model: undefined })
-      return
-    }
-    // An id that encodes its own tuning hands that tuning to the gauge and
-    // the bolt beside this picker. Cursor recomposes at launch from the
-    // clean base; everyone else wants the original id back verbatim.
-    const dec = decomposeModelId(harness, model)
-    setComposerTuning(harness, {
-      model: harness === "cursor" ? dec.base : model,
-      ...(dec.effort !== undefined ? { effort: dec.effort } : {}),
-      ...(dec.fast !== undefined ? { fast: dec.fast } : {}),
-    })
+    setComposerTuning(harness, { model, effort: undefined, fast: undefined })
+    setOpen(false)
   }
 
   return (
-    <>
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={`Model: ${chosen ?? (fallback ? `${fallback} (default)` : "harness default")}`}
+          aria-label={`Model: ${selected?.label ?? effective ?? "Provider setting"}`}
           className={cn(
             "pressable no-drag flex h-7 min-w-0 max-w-[15rem] items-center gap-1.5 rounded-md px-2",
-            "text-[12.5px] font-medium",
+            "text-[12.5px] font-medium text-foreground/85",
             "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease]",
-            "hover:bg-raised aria-expanded:bg-raised",
-            chosen ? "text-foreground/85" : "text-faint"
+            "hover:bg-raised aria-expanded:bg-raised"
           )}
         >
           <HarnessIcon harness={harness} className="size-3.5" />
-          <span className="truncate font-mono text-[11.5px]">
-            {decomposeModelId(harness, chosen ?? (fallback || "default")).base}
-          </span>
+          <span className="truncate">{selected?.label ?? effective ?? "Provider setting"}</span>
           <ChevronDownIcon className="size-3 shrink-0 text-faint/70" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" sideOffset={8} className="w-[22rem] gap-0 p-0">
-        <div className="max-h-[19rem] overflow-y-auto overscroll-contain p-1">
-          <Eyebrow className="px-1.5 pt-1.5 pb-1">{harnessLabel(harness)}</Eyebrow>
-          <Row
-            mono
-            label={fallback ? decomposeModelId(harness, fallback).base : "Harness default"}
-            accessory={fallback ? decomposeModelId(harness, fallback) : undefined}
-            detail={`${harnessLabel(harness)}'s default — used unless you say otherwise`}
-            selected={!chosen}
-            onChoose={() => {
-              set(undefined)
-              setOpen(false)
-            }}
+      <PopoverContent align="start" side="top" sideOffset={8} className="w-[23rem] gap-0 p-0">
+        <div className="border-b border-hairline px-2 pt-2 pb-1.5">
+          <Eyebrow className="px-0.5 pb-1">{harnessLabel(harness)} models</Eyebrow>
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search models"
+            className="h-7 w-full rounded-md bg-raised px-2 text-[11.5px] placeholder:text-faint focus:outline-none"
           />
-          {models.map((model, index) => (
-            <Row
-              key={model}
-              mono
-              label={decomposeModelId(harness, model).base}
-              accessory={decomposeModelId(harness, model)}
-              detail={
-                harness === "claude" && /^(opus|sonnet|haiku)$/.test(model)
-                  ? "Claude alias — resolves to the current model of that tier"
-                  : index < 3
-                    ? "seen on this machine"
-                    : undefined
-              }
-              selected={chosen === model || chosen === decomposeModelId(harness, model).base}
-              onChoose={() => {
-                set(model)
-                setOpen(false)
-              }}
+        </div>
+        <div className="max-h-[20rem] overflow-y-auto overscroll-contain p-1">
+          {models.map((model) => (
+            <ModelRow
+              key={model.id}
+              model={model}
+              selected={effective === model.id}
+              inherited={!chosen && effective === model.id}
+              onChoose={() => set(model.id)}
             />
           ))}
-          <div className="px-1.5 pt-1 pb-0.5">
-            <input
-              value={typed}
-              onChange={(event) => setTyped(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && typed.trim()) {
-                  set(typed.trim())
-                  setTyped("")
-                  setOpen(false)
-                }
-              }}
-              placeholder="Any model id — Enter to use it"
-              className="h-7 w-full rounded-md bg-raised px-2 font-mono text-[11.5px] placeholder:font-sans placeholder:text-faint focus:outline-none"
-            />
-          </div>
+          {profile && models.length === 0 ? (
+            <p className="px-2 py-5 text-center text-[11.5px] text-faint">No models match.</p>
+          ) : null}
         </div>
         <div className="flex items-center justify-between border-t border-hairline px-2 py-1.5 text-[10.5px] text-faint">
-          <span>Passed to the CLI's own model flag</span>
+          <span>{profile?.models.length ?? 0} models reported by the provider</span>
+          {chosen ? (
+            <button type="button" onClick={() => set(undefined)} className="pressable rounded px-1 hover:text-foreground">
+              Use provider setting
+            </button>
+          ) : null}
         </div>
       </PopoverContent>
     </Popover>
-    {contextVariants.length > 1 ? (
-      <button
-        type="button"
-        aria-label="Context window"
-        title="Context window — the same model, a different window size"
-        onClick={() => {
-          const at = contextVariants.findIndex((entry) => entry.id === effective)
-          const next = contextVariants[(at + 1) % contextVariants.length]!
-          set(next.id)
-        }}
-        className={cn(
-          "pressable no-drag flex h-7 items-center gap-1 rounded-md px-1.5 text-[10.5px] font-medium",
-          "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease]",
-          "text-faint hover:bg-raised hover:text-foreground"
-        )}
-      >
-        <span className="rounded-[3px] border border-current/40 px-1 leading-[1.3]">
-          {decomposeModelId(harness, effective).context ?? "std"}
-        </span>
-      </button>
-    ) : null}
-    </>
   )
 }
 
-function Row({
-  label,
-  detail,
-  accessory,
-  mono,
+function ModelRow({
+  model,
   selected,
+  inherited,
   onChoose,
 }: {
-  label: string
-  detail?: string
-  accessory?: ReturnType<typeof decomposeModelId>
-  mono?: boolean
+  model: HarnessModel
   selected: boolean
+  inherited: boolean
   onChoose: () => void
 }) {
+  const optionSummary = model.options
+    .map((option) =>
+      option.kind === "boolean"
+        ? option.label
+        : `${option.values.length} ${option.label.toLowerCase()} levels`
+    )
+    .join(" · ")
   return (
     <button
       type="button"
       onClick={onChoose}
       className={cn(
-        "flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors duration-100",
+        "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors duration-100",
         selected ? "bg-raised" : "hover:bg-raised/60"
       )}
     >
       <span className="min-w-0 flex-1">
-        <span
-          className={cn(
-            "block truncate text-[12.5px]",
-            mono && "font-mono text-[11.5px]",
-            selected ? "font-medium text-foreground" : "text-foreground/90"
-          )}
-        >
-          {label}
+        <span className={cn("block truncate text-[12.5px]", selected ? "font-medium text-foreground" : "text-foreground/90")}>
+          {model.label}
+          {inherited ? <span className="ml-1.5 text-[10px] font-normal text-faint">provider setting</span> : null}
         </span>
-        {detail ? <span className="mt-0.5 block text-[10.5px] text-faint">{detail}</span> : null}
+        <span className="mt-0.5 block truncate text-[10.5px] text-faint">
+          {model.description ?? optionSummary ?? model.id}
+        </span>
       </span>
-      {accessory && (accessory.effort || accessory.context) ? (
-        <span className="shrink-0 text-[10px] text-faint capitalize">
-          {decorations(accessory).join(" · ")}
-        </span>
-      ) : null}
-      {accessory?.fast ? (
-        <ZapIcon className="size-3 shrink-0 fill-caution/80 text-caution/80" aria-label="Fast lane" />
+      {model.contextWindow ? (
+        <span className="shrink-0 text-[10px] text-faint">{Math.round(model.contextWindow / 1000)}K context</span>
       ) : null}
       {selected ? <CheckIcon className="size-3.5 shrink-0 text-brand" /> : null}
     </button>
   )
+}
+
+function rankModels(models: HarnessModel[], query: string): HarnessModel[] {
+  const term = query.trim()
+  if (!term) return models
+  return models
+    .flatMap((model) => {
+      const match = fuzzy(term, `${model.label} ${model.id} ${model.description ?? ""}`)
+      return match ? [{ model, score: match.score }] : []
+    })
+    .sort((left, right) => right.score - left.score)
+    .map((entry) => entry.model)
 }

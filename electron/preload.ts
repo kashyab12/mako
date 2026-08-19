@@ -11,12 +11,14 @@ import type {
   ListeningPort,
   GitStatus,
   HostEvent,
+  HarnessProfile,
   ModelInfo,
   PullRequest,
   SearchOptions,
   SearchResults,
   SessionState,
   SessionSummary,
+  AcpPromptAttachment,
   AcpSessionState,
   Thread,
   ThreadRef,
@@ -57,36 +59,34 @@ const api = {
     mode?: "native" | "transcript"
   ) =>
     invoke<
-      { kind: "emitted"; path: string } | { kind: "spawned"; run: ThreadRunState }
+      { kind: "emitted"; path: string } | { kind: "prepared"; prompt: string; cwd: string }
     >("pi:thread-continue-with", path, harness, instruction, mode),
   forkThread: (path: string, upto: number, harness: string) =>
-    invoke<{ path: string }>("pi:thread-fork", path, upto, harness),
+    invoke<{ prompt: string; cwd: string }>("pi:thread-fork", path, upto, harness),
   threadRun: (path: string) => invoke<ThreadRunState | null>("pi:thread-run", path),
   startHarness: (
     harness: string,
     prompt: string,
     options?: { model?: string; effort?: string; fast?: boolean }
   ) => invoke<{ run: ThreadRunState | null; cwd: string }>("pi:harness-start", harness, prompt, options),
-  harnessTuning: (harness: string) =>
-    invoke<{
-      models: string[]
-      efforts: string[]
-      fast: boolean
-      defaultModel: string
-      defaultEffort?: string
-    }>(
-      "pi:harness-tuning",
-      harness
-    ),
+  harnessTuning: (harness: string) => invoke<HarnessProfile>("pi:harness-tuning", harness),
   resumeThread: (path: string, prompt: string, tuning?: { model?: string; effort?: string; fast?: boolean }) =>
     invoke<ThreadRunState>("pi:thread-resume", path, prompt, tuning),
   abortThreadRun: (path: string) => invoke<void>("pi:thread-abort-run", path),
 
   /* Interactive foreign agents (ACP). */
   acpHarnesses: () => invoke<string[]>("pi:acp-harnesses"),
-  acpStart: (harness: string, cwd: string, options?: { resume?: string; title?: string }) =>
-    invoke<AcpSessionState>("pi:acp-start", harness, cwd, options),
-  acpPrompt: (id: string, text: string) => invoke<void>("pi:acp-prompt", id, text),
+  acpStart: (
+    harness: string,
+    cwd: string,
+    options?: {
+      resume?: string
+      title?: string
+      tuning?: { model?: string; effort?: string; fast?: boolean; options?: Record<string, string | boolean> }
+    }
+  ) => invoke<AcpSessionState>("pi:acp-start", harness, cwd, options),
+  acpPrompt: (id: string, text: string, attachments?: AcpPromptAttachment[]) =>
+    invoke<void>("pi:acp-prompt", id, text, attachments),
   acpPermission: (id: string, requestId: string, optionId: string | null) =>
     invoke<void>("pi:acp-permission", id, requestId, optionId),
   acpSetMode: (id: string, modeId: string) => invoke<void>("pi:acp-mode", id, modeId),
@@ -108,6 +108,7 @@ const api = {
   devinAccounts: () => invoke<Array<{ name: string; key: string }>>("pi:devin-accounts"),
   saveDevinAccounts: (accounts: Array<{ name: string; apiKey: string }>) =>
     invoke<void>("pi:devin-accounts-save", accounts),
+  harnessProfiles: () => invoke<HarnessProfile[]>("pi:harness-profiles"),
   harnessAvailability: () => invoke<Record<string, boolean>>("pi:harness-availability"),
   daemonStatus: () =>
     invoke<{ pid: number; startedAt: number; sessions: number } | null>("pi:daemon-status"),
@@ -136,10 +137,11 @@ const api = {
   abort: () => invoke<void>("pi:abort"),
   clearQueue: () => invoke<void>("pi:clear-queue"),
   navigateTree: (targetId: string) => invoke<SessionState>("pi:navigate-tree", targetId),
-  fork: (entryId: string) =>
+  fork: (entryId: string, position: "before" | "at" = "before") =>
     invoke<{ cancelled: true } | { cancelled: false; text?: string; tab: TabSnapshot }>(
       "pi:fork",
-      entryId
+      entryId,
+      position
     ),
   compact: (instructions?: string) => invoke<void>("pi:compact", instructions),
   setAutoCompaction: (enabled: boolean) => invoke<void>("pi:set-auto-compaction", enabled),

@@ -24,7 +24,7 @@ export interface MentionItem {
 }
 
 /**
- * One menu for all three composer sigils: `@` files, `$` skills, `/` Pi
+ * One menu for all three composer sigils: `@` context, `$` skills, `/`
  * commands. They share ranking, keyboard handling, and geometry because from
  * the user's side they are the same gesture with a different vocabulary.
  */

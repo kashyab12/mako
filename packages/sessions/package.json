@@ -11,7 +11,7 @@
   "files": ["dist"],
   "scripts": {
     "build": "tsc -b",
-    "test": "npm run -s build && node test/transcript.mjs && node test/resume-matrix.mjs",
+    "test": "npm run -s build && node test/transcript.mjs && node test/streaming-correctness.mjs && node test/resume-matrix.mjs",
     "test:matrix": "npm run -s build && node test/resume-matrix.mjs"
   }
 }

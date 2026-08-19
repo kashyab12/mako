@@ -154,7 +154,7 @@ function Block({ block }: { block: AcpBlock }) {
     case "user":
       return (
         <div className="my-3 rounded-lg bg-surface px-3 py-2">
-          <p className="pb-0.5 text-[10px] font-medium tracking-wide text-faint uppercase">You</p>
+          <p className="pb-0.5 text-[10.5px] font-medium text-faint">You</p>
           <p className="text-[12.5px] leading-relaxed whitespace-pre-wrap text-foreground/95">{block.text}</p>
         </div>
       )
@@ -169,7 +169,7 @@ function Block({ block }: { block: AcpBlock }) {
     case "plan":
       return (
         <div className="my-2 rounded-md border border-hairline/60 px-2.5 py-1.5">
-          <p className="pb-1 text-[10px] font-medium tracking-wide text-faint uppercase">Plan</p>
+          <p className="pb-1 text-[10.5px] font-medium text-faint">Plan</p>
           {block.entries.map((entry, index) => (
             <p key={index} className="flex items-center gap-1.5 py-px text-[11.5px] text-muted-foreground">
               {entry.status === "completed" ? (
@@ -224,10 +224,19 @@ function Tool({ block }: { block: AcpBlock & { type: "tool" } }) {
         )}
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">{block.title}</span>
       </button>
-      {open && block.output ? (
-        <pre className="max-h-56 overflow-y-auto border-t border-hairline/60 px-2 py-1.5 font-mono text-[10.5px] leading-relaxed break-words whitespace-pre-wrap text-faint">
-          {block.output}
-        </pre>
+      {open && (block.input || block.output) ? (
+        <div className="max-h-72 overflow-y-auto border-t border-hairline/60">
+          {block.input ? (
+            <pre className="px-2 py-1.5 font-mono text-[10.5px] leading-relaxed break-words whitespace-pre-wrap text-faint">
+              {block.input}
+            </pre>
+          ) : null}
+          {block.output ? (
+            <pre className="border-t border-hairline/60 px-2 py-1.5 font-mono text-[10.5px] leading-relaxed break-words whitespace-pre-wrap text-faint">
+              {block.output}
+            </pre>
+          ) : null}
+        </div>
       ) : null}
     </div>
   )

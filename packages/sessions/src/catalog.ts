@@ -57,6 +57,7 @@ interface FollowState {
   listeners: Set<(entries: ThreadEntry[], replaced: boolean) => void>
   follower: SessionFollower | null
   fromByte: number
+  baseline: ThreadEntry[] | null
 }
 
 interface RefreshState {
@@ -64,7 +65,7 @@ interface RefreshState {
   promise: Promise<void>
 }
 
-const WATCH_DEBOUNCE_MS = 200
+const WATCH_DEBOUNCE_MS = 24
 const CACHE_SAVE_DEBOUNCE_MS = 2000
 
 /** How often remote sources are re-listed while watching. */
@@ -91,6 +92,7 @@ export class SessionCatalog {
   private listeners = new Set<(event: CatalogEvent) => void>()
   private follows = new Map<string, FollowState>()
   private refreshes = new Map<string, RefreshState>()
+  private opened: { path: string; throughByte: number; entries: ThreadEntry[] } | null = null
 
   private archive: SessionArchive | null = null
 
@@ -197,7 +199,14 @@ export class SessionCatalog {
     if (remote) return remote.read(path)
     const provider = this.ownerOf(path)
     const native = provider ? await provider.read(path).catch(() => null) : null
-    if (native) return native
+    if (native) {
+      this.opened = {
+        path,
+        throughByte: native.ref.bytes ?? 0,
+        entries: structuredClone(native.entries),
+      }
+      return native
+    }
     // The native store cannot answer — deleted, pruned, or gone with a
     // machine. The archive is exactly for this moment.
     return this.archive ? this.archive.read(path) : null
@@ -260,6 +269,10 @@ export class SessionCatalog {
       listeners: new Set(),
       follower: provider ? this.makeFollower(provider, path, fromByte) : null,
       fromByte,
+      baseline:
+        this.opened?.path === path && this.opened.throughByte === fromByte
+          ? structuredClone(this.opened.entries)
+          : null,
     }
     state.listeners.add(onEntries)
     this.follows.set(path, state)
@@ -450,11 +463,34 @@ export class SessionCatalog {
       if (!provider.createFollower && file.bytes < follow.follower.offset) {
         const thread = await provider.read(path).catch(() => null)
         follow.follower = this.makeFollower(provider, path, file.bytes)
-        if (thread) this.deliver(follow, { entries: thread.entries, nextByte: file.bytes, replace: true })
+        if (thread) {
+          follow.baseline = structuredClone(thread.entries)
+          this.deliver(follow, { entries: thread.entries, nextByte: file.bytes, replace: true })
+        }
         return
       }
       const update = await follow.follower.next().catch(() => null)
-      if (update && (update.replace || update.entries.length > 0)) this.deliver(follow, update)
+      if (update?.reset && grew && cached.ref) {
+        const resetRef = await provider.peek(file).catch(() => null)
+        this.byPath.set(path, { bytes: file.bytes, mtimeMs: file.mtimeMs, ref: resetRef })
+        if (resetRef) this.emit({ type: "updated", ref: resetRef })
+      }
+      if (update && (update.replace || update.entries.length > 0)) {
+        if (update.reset) {
+          follow.baseline = []
+          this.deliver(follow, update)
+        } else if (update.replace && follow.baseline) {
+          this.deliver(follow, {
+            ...update,
+            entries: [...follow.baseline, ...update.entries],
+          })
+        } else if (update.replace) {
+          const thread = await provider.read(path).catch(() => null)
+          if (thread) this.deliver(follow, { ...update, entries: thread.entries })
+        } else {
+          this.deliver(follow, update)
+        }
+      }
       return
     }
 

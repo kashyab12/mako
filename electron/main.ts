@@ -31,13 +31,15 @@ import {
 import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunChecks, type CreatePullOptions } from "./github.js"
 import { HostPool } from "./pool.js"
 import { daemonStatus, devinAccountsMasked, startDevin, emitThreadAs, emitThreadAsClaude, emitThreadAsPi, followThread, threadsReady, installThreads, listThreads, openThread, remoteHarnesses, saveDevinAccounts, sendRemote, stopThreads, transcriptArtifactFor, unfollowThread } from "./threads.js"
-import { abortNative, bindDrivers, freshHarnesses, claudeModels, grokModels, harnessAvailability, HARNESS_TUNING, readHarnessDefaults, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
+import { abortNative, bindDrivers, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
+import { harnessProfile, harnessProfiles } from "./harnesses.js"
 import { bindLineageDirect, chainOf, expectLineage } from "./lineage.js"
 import { accountUsage, captureAccount, listAccounts, removeAccount, selectAccount } from "./accounts.js"
 import { daemonLoginEnabled, setDaemonLogin } from "./daemon-login.js"
 import { acpCancel, acpClose, acpHarnesses, acpPrompt, acpRespondPermission, acpSetMode, acpStart, acpState, bindAcp, stopAcp } from "./acp.js"
+import { bindCodexApp, codexAppCancel, codexAppClose, codexAppPermission, codexAppPrompt, codexAppStart, codexAppState, stopCodexApps } from "./codex-app.js"
 import { deletePlugin, listPlugins, pluginsDir, watchPlugins, writePlugin } from "./plugins.js"
-import type { BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
+import type { AcpPromptAttachment, BootPayload, HostEvent, SearchOptions, ThinkingLevel } from "./shared.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const isDev = !app.isPackaged && !process.env.MAKO_PROD
@@ -303,9 +305,9 @@ function bindIpc() {
   handle("pi:clear-queue", () => withHost((h) => h.clearQueue()))
   // Branching opens a tab rather than replacing this one. Exploring the same
   // question two ways only works if both answers stay on screen.
-  handle("pi:fork", async (_e, entryId: string) => {
+  handle("pi:fork", async (_e, entryId: string, position?: "before" | "at") => {
     const live = await ready()
-    return live.forkIntoTab(entryId)
+    return live.forkIntoTab(entryId, position)
   })
   handle("pi:navigate-tree", (_e, targetId: string) =>
     withHost(async (h) => {
@@ -429,7 +431,9 @@ function bindIpc() {
   handle("pi:thread-follow", (_e, path: string, fromByte: number) => followThread(path, fromByte))
   handle("pi:thread-unfollow", () => unfollowThread())
   handle("pi:thread-resumable", () => [...resumableHarnesses(), ...remoteHarnesses()])
-  handle("pi:thread-continue-targets", () => ["pi", ...freshHarnesses()])
+  handle("pi:thread-continue-targets", async () =>
+    (await harnessProfiles()).filter((profile) => profile.available).map((profile) => profile.id)
+  )
   /**
    * Continue a conversation on a *different* harness: render the handoff and
    * open it as the first prompt of a fresh session there. The new session
@@ -459,7 +463,7 @@ function bindIpc() {
           instruction?.trim() ? `Then: ${instruction.trim()}` : "Then continue where the latest turn left off.",
         ].join("\n")
         expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
-        return { kind: "spawned" as const, run: await startFresh(harness, thread.ref.cwd, prompt) }
+        return { kind: "prepared" as const, prompt, cwd: thread.ref.cwd ?? "" }
       }
       // Native replay, the default: every harness whose store we can write
       // gets the real thing — the thread emitted as a *native* session in
@@ -477,7 +481,7 @@ function bindIpc() {
       if (!thread || !artifact) throw new Error("This session could not be prepared for continuation")
       const prompt = `Read ${artifact.file} in full before continuing. It is ordered newest turn first; each turn remains chronological.`
       expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
-      return { kind: "spawned" as const, run: await startFresh(harness, thread.ref.cwd, prompt) }
+      return { kind: "prepared" as const, prompt, cwd: thread.ref.cwd ?? "" }
     }
   )
   /* Harness accounts: several logins per CLI, Orca-style isolated homes. */
@@ -499,24 +503,45 @@ function bindIpc() {
   handle("pi:devin-accounts-save", (_e, accounts: Array<{ name: string; apiKey: string }>) =>
     saveDevinAccounts(accounts)
   )
-  handle("pi:harness-availability", () => harnessAvailability())
+  handle("pi:harness-profiles", () => harnessProfiles())
+  handle("pi:harness-availability", async () =>
+    Object.fromEntries((await harnessProfiles()).map((profile) => [profile.id, profile.available]))
+  )
   handle("pi:daemon-status", () => daemonStatus())
   handle("pi:daemon-login", () => daemonLoginEnabled())
   handle("pi:daemon-login-set", (_e, enabled: boolean) => setDaemonLogin(enabled))
 
   /* Interactive foreign agents over ACP. */
-  handle("pi:acp-harnesses", () => acpHarnesses())
-  handle("pi:acp-start", (_e, harness: string, cwd: string, options?: { resume?: string; title?: string }) =>
-    acpStart(harness, cwd, options)
+  handle("pi:acp-harnesses", () => ["codex", ...acpHarnesses()])
+  handle(
+    "pi:acp-start",
+    (
+      _e,
+      harness: string,
+      cwd: string,
+      options?: {
+        resume?: string
+        title?: string
+        tuning?: { model?: string; effort?: string; fast?: boolean; options?: Record<string, string | boolean> }
+      }
+    ) => (harness === "codex" ? codexAppStart(cwd, options) : acpStart(harness, cwd, options))
   )
-  handle("pi:acp-state", (_e, id: string) => acpState(id))
-  handle("pi:acp-prompt", (_e, id: string, text: string) => acpPrompt(id, text))
+  handle("pi:acp-state", (_e, id: string) => codexAppState(id) ?? acpState(id))
+  handle("pi:acp-prompt", (_e, id: string, text: string, attachments?: AcpPromptAttachment[]) =>
+    id.startsWith("codex-app-") ? codexAppPrompt(id, text, attachments) : acpPrompt(id, text, attachments)
+  )
   handle("pi:acp-permission", (_e, id: string, requestId: string, optionId: string | null) =>
-    acpRespondPermission(id, requestId, optionId)
+    id.startsWith("codex-app-")
+      ? codexAppPermission(id, requestId, optionId)
+      : acpRespondPermission(id, requestId, optionId)
   )
   handle("pi:acp-mode", (_e, id: string, modeId: string) => acpSetMode(id, modeId))
-  handle("pi:acp-cancel", (_e, id: string) => acpCancel(id))
-  handle("pi:acp-close", (_e, id: string) => acpClose(id))
+  handle("pi:acp-cancel", (_e, id: string) =>
+    id.startsWith("codex-app-") ? codexAppCancel(id) : acpCancel(id)
+  )
+  handle("pi:acp-close", (_e, id: string) =>
+    id.startsWith("codex-app-") ? codexAppClose(id) : acpClose(id)
+  )
 
   /** A new conversation on another harness, from the main composer. */
   handle(
@@ -539,49 +564,7 @@ function bindIpc() {
     }
   )
 
-  /**
-   * What the composer can offer for a harness: models this machine has
-   * actually used (from the catalog, most recent first) ahead of a curated
-   * floor, plus the CLI's real tuning surface.
-   */
-  handle("pi:harness-tuning", async (_e, harness: string) => {
-    const tuning = HARNESS_TUNING[harness]
-    if (!tuning) return { models: [], efforts: [], fast: false, defaultModel: "" }
-    // The default is whatever the CLI itself would do: read from its own
-    // config files, refreshed as they change. The curated list is only a
-    // floor under what this machine has actually run.
-    const defaults = (await readHarnessDefaults())[harness] ?? {}
-    // Session-harvested models, junk excluded: placeholder ids like
-    // <synthetic>, separators, empties — session bookkeeping, not models.
-    const seen: string[] = []
-    for (const ref of listThreads({ harness })) {
-      const model = ref.model
-      if (
-        model &&
-        !model.includes("·") &&
-        !model.includes("<") &&
-        model.trim().length > 1 &&
-        !seen.includes(model)
-      ) {
-        seen.push(model)
-      }
-      if (seen.length >= 8) break
-    }
-    const curated =
-      harness === "grok"
-        ? await grokModels()
-        : harness === "claude"
-          ? await claudeModels()
-          : tuning.curatedModels
-    const models = [...seen, ...curated.filter((model) => !seen.includes(model))]
-    return {
-      models: models.slice(0, 12),
-      efforts: tuning.efforts,
-      fast: tuning.fast,
-      defaultModel: defaults.model ?? tuning.defaultModel,
-      defaultEffort: defaults.effort,
-    }
-  })
+  handle("pi:harness-tuning", (_e, harness: string) => harnessProfile(harness))
 
   handle("pi:thread-run", (_e, path: string) => threadRun(path))
   handle("pi:thread-resume", async (_e, path: string, prompt: string, tuning?: { model?: string; effort?: string; fast?: boolean }) => {
@@ -606,10 +589,18 @@ function bindIpc() {
    * fork can wear a different agent than the original.
    */
   handle("pi:thread-fork", async (_e, path: string, upto: number, harness: string) => {
-    const materialized = await emitThreadAs(path, harness, upto)
-    if (!materialized) throw new Error("This session could not be forked to that harness")
-    bindLineageDirect(materialized.sessionPath, chainOf(materialized.thread.ref))
-    return { path: materialized.sessionPath }
+    const [thread, artifact] = await Promise.all([
+      openThread(path),
+      transcriptArtifactFor(path, "Start a new branch after the final answer in this bundle.", upto),
+    ])
+    if (!thread || !artifact) throw new Error("This conversation could not be prepared for a fork")
+    expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
+    const prompt = [
+      `Read ${artifact.file} in full before doing anything else.`,
+      "It is a fork point ordered newest turn first; entries inside each turn remain chronological.",
+      "Start a new branch from the final answer in the bundle. Do not repeat work unless the next user message asks for it.",
+    ].join("\n")
+    return { prompt, cwd: thread.ref.cwd ?? "" }
   })
 
   handle("pi:thread-continue", async (_e, path: string) => {
@@ -692,6 +683,7 @@ app.whenReady().then(async () => {
   installThreads(emit)
   bindDrivers(emit)
   bindAcp(emit)
+  bindCodexApp(emit)
   bindDevServer(emit)
   bindAutomations(emit, async (cwd, prompt) => {
     const live = await ready()
@@ -712,6 +704,7 @@ app.on("before-quit", () => {
   stopThreads()
   stopDrivers()
   stopAcp()
+  stopCodexApps()
   // The dev server is in its own process group and will not die with us.
   void stopDevServer()
   void pool.dispose()

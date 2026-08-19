@@ -87,8 +87,7 @@ export async function readHead(path: string, bytes: number): Promise<string> {
 async function readLineBatch(
   path: string,
   fromByte: number,
-  onLine: (line: string) => void | boolean,
-  throughByte?: number
+  onLine: (line: string) => void | boolean
 ): Promise<LineRead> {
   const handle = await open(path, "r")
   try {
@@ -96,7 +95,7 @@ async function readLineBatch(
     const size = info.size
     const reset = size < fromByte
     let cursor = reset ? 0 : fromByte
-    const end = Math.min(size, throughByte ?? size)
+    const end = size
     let consumed = cursor
     let carry: Buffer | null = null
 
@@ -141,7 +140,6 @@ export function createJsonlFollower(
 ): SessionFollower {
   let parser = createTranslator()
   let cursor = fromByte
-  let initialized = false
   let identity: string | null = null
   try {
     const info = statSync(path)
@@ -163,22 +161,6 @@ export function createJsonlFollower(
       return cursor
     },
     async next(): Promise<SessionUpdate> {
-      if (!initialized) {
-        const seeded = await readLineBatch(path, 0, parser.push, fromByte)
-        initialized = true
-        if (seeded.size < fromByte || (identity !== null && seeded.identity !== identity)) {
-          parser = createTranslator()
-          const reread = await readLineBatch(path, 0, parser.push)
-          cursor = reread.nextByte
-          identity = reread.identity
-          const current = parser.snapshot()
-          remember(current)
-          return { entries: cloneEntries(current), nextByte: cursor, replace: true, reset: true }
-        }
-        identity = seeded.identity
-        remember(parser.snapshot())
-      }
-
       let read = await readLineBatch(path, cursor, parser.push)
       if (read.reset || (identity !== null && read.identity !== identity)) {
         parser = createTranslator()
@@ -187,7 +169,7 @@ export function createJsonlFollower(
         identity = read.identity
         const current = parser.snapshot()
         remember(current)
-        return { entries: cloneEntries(current), nextByte: cursor, replace: true }
+        return { entries: cloneEntries(current), nextByte: cursor, replace: true, reset: true }
       }
 
       cursor = Math.max(cursor, read.nextByte)

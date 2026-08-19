@@ -125,7 +125,7 @@ export function AppShell() {
             ) : (
               <>
                 <TabStrip />
-                <ForeignOrNative />
+                <ConversationSurface />
                 <Composer />
                 {/* Over the conversation column only. The rail stays reachable,
                     so you can walk the tree with a file already open. */}
@@ -205,11 +205,10 @@ export function AppShell() {
 
 
 /**
- * The chat column's middle: the native transcript, or a foreign
- * conversation in its place. The composer below is the same either way —
- * one box, routed to whoever owns the open conversation.
+ * The chat column's middle. The composer below is the same for every
+ * provider and routes to whoever owns the open conversation.
  */
-function ForeignOrNative() {
+function ConversationSurface() {
   const viewing = useThreads((state) => Boolean(state.viewing) || state.viewingBusy)
   const live = useAcp((state) => Boolean(state.session) || state.starting)
   if (live) return <AcpPanel />

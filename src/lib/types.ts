@@ -1,5 +1,6 @@
 export type {
   AcpPermissionRequest,
+  AcpPromptAttachment,
   AcpSessionState,
   AcpUpdate,
   EntryBlock,

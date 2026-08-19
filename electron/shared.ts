@@ -75,6 +75,7 @@ export interface AcpSessionState {
   status: "starting" | "ready" | "running" | "failed" | "closed"
   modes: Array<{ id: string; name: string }>
   currentMode: string | null
+  configOptions: HarnessModelOption[]
   lastStop?: string
   error?: string
 }
@@ -84,9 +85,17 @@ export type AcpUpdate =
   | { kind: "user"; text: string }
   | { kind: "text"; text: string }
   | { kind: "thinking"; text: string }
-  | { kind: "tool"; id: string; title: string; toolKind?: string; status: string }
-  | { kind: "tool-update"; id: string; title?: string; status?: string; output?: string }
+  | { kind: "tool"; id: string; title: string; toolKind?: string; status: string; input?: string }
+  | { kind: "tool-update"; id: string; title?: string; status?: string; input?: string; output?: string }
   | { kind: "plan"; entries: Array<{ content: string; status: string }> }
+
+export interface AcpPromptAttachment {
+  name: string
+  mimeType: string
+  size: number
+  data?: string
+  path?: string
+}
 
 export interface AcpPermissionRequest {
   id: string

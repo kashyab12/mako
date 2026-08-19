@@ -51,7 +51,7 @@ import type { HostEvent } from "./shared.js"
 const LIST_CAP = 600
 
 /** Catalog changes are bursty (an agent mid-turn saves constantly). */
-const PUSH_DEBOUNCE_MS = 300
+const PUSH_DEBOUNCE_MS = 80
 
 let catalog: SessionCatalog | null = null
 let daemon: DaemonClient | null = null
@@ -82,7 +82,7 @@ export function installThreads(send: (event: HostEvent) => void): void {
       devinSender = new DevinRemote(await devinAccounts())
       if (await connectViaDaemon()) return
       spawnDaemon()
-      await new Promise((resolve) => setTimeout(resolve, 2500))
+      await new Promise((resolve) => setTimeout(resolve, 600))
       if (await connectViaDaemon()) return
       await runLocalCatalog()
     } catch (error) {
@@ -347,14 +347,23 @@ export interface TranscriptArtifact {
 
 const transcriptArtifacts = new Map<string, { version: string; artifact: TranscriptArtifact }>()
 
-export async function transcriptArtifactFor(path: string, instruction?: string): Promise<TranscriptArtifact | null> {
+export async function transcriptArtifactFor(
+  path: string,
+  instruction?: string,
+  upto?: number
+): Promise<TranscriptArtifact | null> {
   const known = listThreads().find((ref) => ref.path === path)
+  const cacheKey = `${path}:${upto ?? "all"}`
   const version = `${known?.bytes ?? "?"}:${known?.updatedAt ?? "?"}:${instruction ?? ""}`
-  const cached = transcriptArtifacts.get(path)
+  const cached = transcriptArtifacts.get(cacheKey)
   if (cached?.version === version && existsSync(cached.artifact.file)) return cached.artifact
 
-  const thread = await openThread(path)
-  if (!thread) return null
+  const opened = await openThread(path)
+  if (!opened) return null
+  const thread =
+    upto !== undefined && upto < opened.entries.length
+      ? { ref: opened.ref, entries: opened.entries.slice(0, upto + 1) }
+      : opened
   const bundle = renderTranscriptBundle(thread, {
     from: HARNESS_NAMES[thread.ref.harness] ?? thread.ref.harness,
     ...(instruction ? { instruction } : {}),
@@ -380,7 +389,7 @@ export async function transcriptArtifactFor(path: string, instruction?: string):
     harness: thread.ref.harness,
     metadata: bundle.metadata,
   }
-  transcriptArtifacts.set(path, { version, artifact })
+  transcriptArtifacts.set(cacheKey, { version, artifact })
   return artifact
 }
 

@@ -7,6 +7,7 @@ import { decomposeModelId } from "@/lib/model-id"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
 import { CheckIcon, ChevronDownIcon } from "lucide-react"
+import type { HarnessProfile } from "@/lib/types"
 
 /**
  * Who answers. One question, one panel.
@@ -50,34 +51,21 @@ export function AgentPicker() {
 }
 
 function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void }) {
-  const [available, setAvailable] = useState<Record<string, boolean>>({})
-  const [defaults, setDefaults] = useState<Record<string, string>>({})
+  const [profiles, setProfiles] = useState<Record<string, HarnessProfile>>({})
   const tuning = useThreads((state) => state.composerTuning)
 
   useEffect(() => {
     if (!hasBridge()) return
     void getPi()
-      .harnessAvailability()
-      .then((next) => {
-        setAvailable(next)
-        // Each harness's own default model, so every row can wear one.
-        for (const harness of Object.keys(next)) {
-          if (!next[harness]) continue
-          void getPi()
-            .harnessTuning(harness)
-            .then((t) =>
-              setDefaults((prev) => (t.defaultModel ? { ...prev, [harness]: t.defaultModel } : prev))
-            )
-            .catch(() => {})
-        }
-      })
+      .harnessProfiles()
+      .then((items) => setProfiles(Object.fromEntries(items.map((profile) => [profile.id, profile]))))
       .catch(() => {})
   }, [])
 
-  const choices = ORDER.filter((harness) => available[harness])
+  const choices = ORDER.filter((harness) => profiles[harness]?.available)
 
   const modelFor = (harness: string): string | undefined =>
-    tuning[harness]?.model ?? defaults[harness] ?? harnessDefault(harness).model
+    tuning[harness]?.model ?? profiles[harness]?.defaultModel ?? harnessDefault(harness).model
 
   const pick = (harness: string) => {
     setComposerHarness(harness)

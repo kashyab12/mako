@@ -536,7 +536,7 @@ export const actions = {
    * from comes back so it can go straight into the composer — retyping it is
    * the one thing the feature exists to avoid.
    */
-  async fork(entryId: string) {
+  async fork(entryId: string, position: "before" | "at" = "before") {
     const current = store.get()
     const { activeId } = tabsStore.get()
     if (activeId) {
@@ -549,7 +549,7 @@ export const actions = {
         capabilities: current.capabilities,
       })
     }
-    const result = await guard(() => getPi().fork(entryId))
+    const result = await guard(() => getPi().fork(entryId, position))
     if (!result || result.cancelled) return
     addTab(result.tab)
     store.set({

@@ -1,24 +1,15 @@
 import type { Block, PiMessage, ThreadEntry } from "@/lib/types"
 
-/**
- * A foreign conversation, in this app's native message shape.
- *
- * The canonical thread format exists for interchange; the transcript
- * components exist for reading. This is the bridge: a Codex or Claude Code
- * session converted here renders through exactly the same prompt cards,
- * markdown prose, and tool rows as a native conversation — because a
- * conversation is a conversation, and only the mark in the corner should
- * say where it happened.
- */
-export function threadToMessages(entries: ThreadEntry[], idStart = 0): PiMessage[] {
+export function threadToMessages(entries: ThreadEntry[], indexStart = 0): PiMessage[] {
   const messages: PiMessage[] = []
-  let counter = idStart
-  const nextId = () => `foreign-${counter++}`
 
-  for (const entry of entries) {
+  for (let localIndex = 0; localIndex < entries.length; localIndex += 1) {
+    const entry = entries[localIndex]!
+    const entryIndex = indexStart + localIndex
+    const messageId = `foreign-entry-${entryIndex}`
     if (entry.kind === "user") {
       messages.push({
-        id: nextId(),
+        id: messageId,
         role: "user",
         blocks: [{ type: "text", text: entry.text }],
         ...(entry.at ? { timestamp: Date.parse(entry.at) || undefined } : {}),
@@ -27,18 +18,19 @@ export function threadToMessages(entries: ThreadEntry[], idStart = 0): PiMessage
     }
     if (entry.kind === "event") {
       messages.push({
-        id: nextId(),
+        id: messageId,
         role: "system",
         blocks: [{ type: "text", text: entry.detail ? `${entry.label} — ${entry.detail}` : entry.label }],
       })
       continue
     }
     const blocks: Block[] = []
-    for (const block of entry.blocks) {
+    for (let blockIndex = 0; blockIndex < entry.blocks.length; blockIndex += 1) {
+      const block = entry.blocks[blockIndex]!
       if (block.type === "text") blocks.push({ type: "text", text: block.text })
       if (block.type === "thinking") blocks.push({ type: "thinking", thinking: block.text })
       if (block.type === "tool") {
-        const callId = nextId()
+        const callId = `${messageId}-tool-${blockIndex}`
         blocks.push({ type: "toolCall", id: callId, name: block.name, arguments: block.input })
         if (block.output !== undefined) {
           blocks.push({
@@ -53,7 +45,7 @@ export function threadToMessages(entries: ThreadEntry[], idStart = 0): PiMessage
     }
     if (blocks.length === 0) continue
     messages.push({
-      id: nextId(),
+      id: messageId,
       role: "assistant",
       blocks,
       ...(entry.model ? { model: entry.model } : {}),
