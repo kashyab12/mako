@@ -309,17 +309,25 @@ export async function applyMcpSync(
   )
   if (!status || status.account !== target.account)
     throw new Error("The target account is no longer selected")
+  const key = previewKey(serverId, target)
   const existing = targetExisting(snapshot, definition, target)
-  if (existing && definitionEqual(existing, definition)) return
-  const cached = previews.get(previewKey(serverId, target))
+  if (existing && definitionEqual(existing, definition)) {
+    previews.delete(key)
+    return
+  }
+  const cached = previews.get(key)
   if (!cached) throw new Error("Preview this MCP sync before applying it")
   if (cached.path) {
-    await atomicJsonMcpMerge(
-      cached.path,
-      cached.hash,
-      definition,
-      target.provider === "claude" ? "claude" : "cursor"
-    )
+    try {
+      await atomicJsonMcpMerge(
+        cached.path,
+        cached.hash,
+        definition,
+        target.provider === "claude" ? "claude" : "cursor"
+      )
+    } finally {
+      previews.delete(key)
+    }
     return
   }
   const route = await mcpDiscoveryRoute(target.provider, snapshot.cwd)
@@ -330,15 +338,21 @@ export async function applyMcpSync(
     (target.provider !== "codex" &&
       target.provider !== "grok" &&
       target.provider !== "devin")
-  )
+  ) {
+    previews.delete(key)
     throw new Error(
       `${target.provider} does not expose a reliable MCP write command`
     )
-  await run(command, cliArgs(target.provider, definition, target.scope), {
-    cwd: snapshot.cwd,
-    env: route.env,
-    timeout: 15_000,
-    maxBuffer: 1024 * 1024,
-    windowsHide: true,
-  })
+  }
+  try {
+    await run(command, cliArgs(target.provider, definition, target.scope), {
+      cwd: snapshot.cwd,
+      env: route.env,
+      timeout: 15_000,
+      maxBuffer: 1024 * 1024,
+      windowsHide: true,
+    })
+  } finally {
+    previews.delete(key)
+  }
 }

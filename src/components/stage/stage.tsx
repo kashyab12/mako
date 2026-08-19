@@ -47,8 +47,9 @@ export function Stage() {
     if (seeded.current || !activeId) return
     seeded.current = true
     const last = prefsStore.get().lastCompanion
-    if (last) stage.open(last)
-  }, [activeId])
+    if (last && surfaces.some((surface) => surface.id === last)) stage.open(last)
+    else if (last) setPref("lastCompanion", null)
+  }, [activeId, surfaces])
 
   // The stage measures itself so the clamp and the beside→over degradation
   // are render-time facts, not stored state. Resizes are rare and the two

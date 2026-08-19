@@ -148,10 +148,14 @@ export async function applySkillSync(
   target: SkillSyncTarget
 ): Promise<void> {
   const skill = findSkill(snapshot, skillId)
-  const cached = previews.get(previewKey(skillId, target))
+  const key = previewKey(skillId, target)
+  const cached = previews.get(key)
   if (!cached) throw new Error("Preview this skill change before applying it")
   if (cached.action === "blocked") throw new Error("This skill change is blocked")
-  if (cached.action === "unchanged") return
+  if (cached.action === "unchanged") {
+    previews.delete(key)
+    return
+  }
   const root = await skillTargetRoot(snapshot.cwd, target)
   const targetDirectory = join(root, skill.name)
   await serialized(targetDirectory, async () => {
@@ -193,5 +197,5 @@ export async function applySkillSync(
       }
       throw error
     }
-  })
+  }).finally(() => previews.delete(key))
 }

@@ -126,6 +126,10 @@ try {
     await readFile(join(installed, "scripts", "check.sh"), "utf8"),
     "echo checked\n"
   )
+  await assert.rejects(
+    applySkillSync(snapshot, selected.id, target),
+    /Preview this skill change/
+  )
 
   const alternative = reviews.find((skill) => skill.id !== selected.id)
   assert.ok(alternative)
