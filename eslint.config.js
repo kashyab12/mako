@@ -37,6 +37,11 @@ export default defineConfig([
             "Raw Tailwind hue classes are banned; use the semantic tokens (positive, negative, caution, added, removed).",
         },
         {
+          selector: "Literal[value=/(?:bg|text|ring|border)-brand/]",
+          message:
+            "The brand tokens were deleted; use primary, foreground, ember, or the fill tokens.",
+        },
+        {
           selector: "Literal[value=/text-\\[[0-9.]+px\\]/]",
           message:
             "Literal pixel type sizes are banned; use the scale (text-label, text-ui, text-title) or prose/code styles.",

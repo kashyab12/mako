@@ -144,8 +144,8 @@
    * The shell sits well below the card — that gap, not decoration, is what
    * makes the cards read as floating.
    */
-  --shell: oklch(0.16 0.002 40);
-  --surface: oklch(0.218 0.002 45);
+  --shell: oklch(0.14 0.002 40);
+  --surface: oklch(0.222 0.002 45);
   --raised: oklch(0.268 0.002 45);
   --popover: oklch(0.238 0.002 45);
   --foreground: oklch(0.93 0.002 50);
