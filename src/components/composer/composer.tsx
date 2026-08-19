@@ -193,8 +193,12 @@ export function Composer() {
           await acp.send(full)
           ok = true
         } else if (viewingRef) {
+          // An archived conversation has no native session to resume — a
+          // reply re-materializes it: the emitters write a fresh native
+          // session (same harness or any other) from the archived history,
+          // and the message goes out as its next turn.
           ok =
-            harness === viewingRef.harness
+            harness === viewingRef.harness && !viewingRef.archived
               ? await threads.reply(viewingRef, full)
               : await threads.moveAndSend(viewingRef, harness, full)
         } else if (nativeHarness) {
@@ -284,6 +288,7 @@ export function Composer() {
   const liveHarness = useAcp((state) => state.session?.harness ?? null)
   const liveRunning = useAcp((state) => state.session?.status === "running")
   const routedHarness = useThreads((state) => state.viewing?.ref.harness ?? null)
+  const viewingArchived = useThreads((state) => Boolean(state.viewing?.ref.archived))
   const newHarness = useThreads((state) => state.composerHarness)
   const placeholder = liveHarness
     ? liveRunning
@@ -292,7 +297,9 @@ export function Composer() {
     : routedHarness
       ? newHarness !== routedHarness
         ? `Reply — moves this conversation to ${HARNESS_TITLES[newHarness] ?? newHarness}`
-        : `Reply — ${HARNESS_TITLES[routedHarness] ?? routedHarness} answers`
+        : viewingArchived
+          ? `Reply — revives this archived conversation in ${HARNESS_TITLES[routedHarness] ?? routedHarness}`
+          : `Reply — ${HARNESS_TITLES[routedHarness] ?? routedHarness} answers`
       : newHarness !== "pi" && newHarness !== "devin"
         ? `Ask ${HARNESS_TITLES[newHarness] ?? newHarness} for a change`
         : status.streaming

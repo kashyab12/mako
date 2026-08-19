@@ -11,6 +11,7 @@ import {
   ChevronRightIcon,
   FolderIcon,
   FolderOpenIcon,
+  ArchiveIcon,
   FolderPlusIcon,
   ListFilterIcon,
   PinIcon,
@@ -583,6 +584,7 @@ const ThreadRow = memo(function ThreadRow({
       }}
       title={[
         ref.title ?? "Untitled session",
+        ref.archived ? "Archived: the native store lost this; Mako kept it. Reply to bring it back to life." : undefined,
         [...(ref.lineage ?? []).map((origin) => harnessLabel(origin.harness)), harnessLabel(displayHarness(ref))].join(" → "),
         ref.model,
         ref.cwd,
@@ -642,6 +644,12 @@ const ThreadRow = memo(function ThreadRow({
       >
         <PinIcon className={cn("size-3", isPinned && "fill-current")} />
       </span>
+      {ref.archived ? (
+        <ArchiveIcon
+          className="size-3 shrink-0 text-faint/70"
+          aria-label="Archived — the native session is gone; Mako kept the conversation"
+        />
+      ) : null}
       {working ? (
         <span className="shrink-0 text-[10px] text-faint">working…</span>
       ) : ref.updatedAt ? (

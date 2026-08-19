@@ -154,6 +154,9 @@ async function runLocalCatalog(): Promise<void> {
   if (catalog) return
   catalog = defaultCatalog({
     cachePath: join(app.getPath("userData"), "threads-catalog.json"),
+    // Same archive the daemon uses — whichever process runs the catalog,
+    // the durable copy lands in one place.
+    archivePath: join(homedir(), ".mako", "archive"),
     devinAccounts: await devinAccounts(),
   })
   await catalog.scan()

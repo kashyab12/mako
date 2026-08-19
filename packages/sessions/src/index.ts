@@ -19,6 +19,7 @@ export {
   type TurnUsage,
 } from "./format.js"
 export { SessionCatalog, type CatalogEvent, type RemoteSource } from "./catalog.js"
+export { SessionArchive } from "./archive.js"
 export { connectDaemon, daemonSocketPath, pingDaemon, PROTOCOL_VERSION, serveCatalog, type DaemonClient, type DaemonStats } from "./daemon.js"
 export { renderTranscript, type TranscriptOptions } from "./transcript.js"
 export { emitClaudeSession, emitCodexSession, emitCursorSession, emitGrokSession, emitPiSession, type EmitResult } from "./emit.js"
@@ -42,7 +43,7 @@ import { DevinRemote, type DevinAccount } from "./providers/devin.js"
 
 /** The catalog with every built-in provider, ready to scan. */
 export function defaultCatalog(
-  options: { cachePath?: string; devinAccounts?: DevinAccount[] } = {}
+  options: { cachePath?: string; archivePath?: string; devinAccounts?: DevinAccount[] } = {}
 ): SessionCatalog {
   const catalog = new SessionCatalog(
     [

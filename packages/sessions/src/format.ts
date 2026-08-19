@@ -90,6 +90,12 @@ export interface ThreadRef {
    * Devin-local conversation announces itself without being a new harness.
    */
   modelProvider?: string
+  /**
+   * True when this ref is served from Mako's own archive because the native
+   * store no longer has it. Read-only history: still readable, still
+   * movable to any harness — no longer resumable by its original CLI.
+   */
+  archived?: boolean
 }
 
 /** A full conversation: the identity plus every entry, in order. */

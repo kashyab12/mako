@@ -21,6 +21,7 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
 import type { Thread, ThreadEntry, ThreadRef } from "./format.js"
 import type { NativeFile, SessionProvider } from "./providers/types.js"
+import { SessionArchive } from "./archive.js"
 
 /**
  * A store that lives behind an API rather than on this disk (Devin). Same
@@ -75,9 +76,15 @@ export class SessionCatalog {
   private follows = new Map<string, Set<(entries: ThreadEntry[], replaced: boolean) => void>>()
   private followOffsets = new Map<string, number>()
 
-  constructor(providers: SessionProvider[], options: { cachePath?: string } = {}) {
+  private archive: SessionArchive | null = null
+
+  constructor(
+    providers: SessionProvider[],
+    options: { cachePath?: string; archivePath?: string } = {}
+  ) {
     this.providers = providers
     this.cachePath = options.cachePath
+    if (options.archivePath) this.archive = new SessionArchive(options.archivePath)
   }
 
   /** Register a remote store. Included in every scan and poll from then on. */
@@ -105,6 +112,7 @@ export class SessionCatalog {
    */
   async scan(options: { emitChanges?: boolean } = {}): Promise<ThreadRef[]> {
     await this.loadCache()
+    await this.archive?.load()
     const seen = new Set<string>()
     await Promise.all(
       this.providers.map(async (provider) => {
@@ -142,6 +150,11 @@ export class SessionCatalog {
     }
     for (const entry of this.byPath.values()) admit(entry.ref)
     for (const ref of this.remoteRefs.values()) admit(ref)
+    // Sessions whose native store forgot them. The archive did not.
+    if (this.archive) {
+      const live = new Set(this.byPath.keys())
+      for (const ref of this.archive.orphans(live)) admit(ref)
+    }
     return refs.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
   }
 
@@ -150,7 +163,11 @@ export class SessionCatalog {
     const remote = this.remoteFor(path)
     if (remote) return remote.read(path)
     const provider = this.ownerOf(path)
-    return provider ? provider.read(path) : null
+    const native = provider ? await provider.read(path).catch(() => null) : null
+    if (native) return native
+    // The native store cannot answer — deleted, pruned, or gone with a
+    // machine. The archive is exactly for this moment.
+    return this.archive ? this.archive.read(path) : null
   }
 
   /* ------------------------------------------------------------ watching */
@@ -219,6 +236,7 @@ export class SessionCatalog {
   }
 
   stop(): void {
+    this.archive?.stop()
     for (const watcher of this.watchers) watcher.close()
     this.watchers = []
     if (this.remoteTimer) {
@@ -347,6 +365,12 @@ export class SessionCatalog {
   }
 
   private emit(event: CatalogEvent): void {
+    // Every added or grown session is also recorded in the archive — the
+    // copy that survives the native store. Lazy read, throttled inside.
+    if (this.archive && (event.type === "added" || event.type === "updated")) {
+      const ref = event.ref
+      if (!ref.archived) this.archive.note(ref, () => this.open(ref.path))
+    }
     for (const listener of this.listeners) listener(event)
   }
 

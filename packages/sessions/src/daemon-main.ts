@@ -34,6 +34,9 @@ async function main(): Promise<void> {
 
   const catalog = defaultCatalog({
     cachePath: join(dir, "syncd-catalog.json"),
+    // The daemon owns the durable copy: every session it ever sees is also
+    // written here, and survives its native store being pruned or deleted.
+    archivePath: join(dir, "archive"),
     devinAccounts: await devinAccounts(),
   })
 
