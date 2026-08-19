@@ -12,6 +12,7 @@ import { actions, store } from "@/state/session"
 import { getMako } from "@/lib/bridge"
 import { prefsStore, setPref, togglePref } from "@/state/prefs"
 import { stage } from "@/state/stage"
+import { surfaces } from "@/extend/surfaces"
 import { tabsStore } from "@/state/tabs"
 import { search } from "@/state/search"
 
@@ -65,23 +66,24 @@ const DESK_COMMANDS: DeskCommand[] = [
   },
   {
     id: "tab.new",
-    title: "New tab",
+    title: "Attach another session",
     section: "Session",
-    hint: "Another conversation, running beside this one",
+    hint: "A second conversation kept running beside this one",
     keys: "mod+t",
     run: () => void actions.openTab(),
   },
   {
     id: "tab.close",
-    title: "Close tab",
+    title: "Detach this session",
     section: "Session",
+    hint: "It stays in the rail; it just stops being held open",
     keys: "mod+w",
     when: () => tabsStore.get().tabs.length > 1,
     run: () => void actions.closeTab(tabsStore.get().activeId),
   },
   {
     id: "tab.next",
-    title: "Next tab",
+    title: "Next attached session",
     section: "Session",
     keys: "mod+shift+]",
     when: () => tabsStore.get().tabs.length > 1,
@@ -89,7 +91,7 @@ const DESK_COMMANDS: DeskCommand[] = [
   },
   {
     id: "tab.previous",
-    title: "Previous tab",
+    title: "Previous attached session",
     section: "Session",
     keys: "mod+shift+[",
     when: () => tabsStore.get().tabs.length > 1,
@@ -363,19 +365,22 @@ export function useDeskCommands() {
       }
       const mod = event.metaKey || event.ctrlKey
 
-      // ⌘1…⌘9 jumps straight to a tab — the one shortcut every tabbed app
-      // agrees on. Bound here rather than as nine palette commands nobody
-      // would ever search for. Both `key` and `code` are consulted: `code` is
-      // layout-independent, `key` is what synthetic events actually carry.
+      // ⌘1 shows the chat; ⌘2…⌘9 toggle the surfaces in strip order. Bound
+      // here rather than as nine palette commands nobody would search for.
+      // Both `key` and `code` are consulted: `code` is layout-independent,
+      // `key` is what synthetic events actually carry. Attached sessions
+      // cycle with ⌘⇧[ and ⌘⇧] instead.
       const digit = digitOf(event)
       if (mod && !event.shiftKey && !event.altKey && digit > 0) {
-        const tabs = tabsStore.get().tabs
-        const target = tabs[digit - 1]
-        if (tabs.length > 1 && target) {
-          event.preventDefault()
-          void actions.switchTab(target.id)
-          return
+        event.preventDefault()
+        if (digit === 1) {
+          stage.showChat()
+          stage.close()
+        } else {
+          const target = surfaces.list().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[digit - 2]
+          if (target) stage.toggle(target.id)
         }
+        return
       }
 
       // Unmodified keys belong to whatever the user is typing into.

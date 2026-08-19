@@ -1,6 +1,5 @@
 import { memo, useEffect, useRef, useState } from "react"
 import { Composer } from "@/components/composer/composer"
-import { TabStrip } from "@/components/shell/tab-strip"
 import { Transcript } from "@/components/transcript/transcript"
 import { ThreadViewer } from "@/components/viewer/thread-viewer"
 import { AcpPanel } from "@/components/viewer/acp-panel"
@@ -132,7 +131,6 @@ const ChatCard = memo(function ChatCard({ hidden }: { hidden: boolean }) {
         hidden && "hidden"
       )}
     >
-      <TabStrip />
       <ConversationSurface />
       <Composer />
       {/* Over the conversation column only. The rail stays reachable, so you

@@ -23,6 +23,8 @@ export interface TabInfo {
   id: string
   title: string
   cwd: string
+  /** The session file this tab holds, so the rail can find its row. */
+  sessionFile?: string
   /** The agent is doing something — streaming, compacting, retrying, or in a shell. */
   working: boolean
   /** Waiting on the model right now, as opposed to running a tool. */
@@ -140,6 +142,7 @@ function infoFrom(id: string, entry: TabCache, previous?: TabInfo): TabInfo {
     id,
     title: titleFor(entry.meta, entry.messages),
     cwd: entry.meta?.cwd ?? previous?.cwd ?? "",
+    sessionFile: entry.meta?.sessionFile ?? previous?.sessionFile,
     ...workingFrom(entry.meta),
     unread: previous?.unread ?? false,
   }
@@ -150,6 +153,7 @@ function sameTab(left: TabInfo, right: TabInfo): boolean {
     left.id === right.id &&
     left.title === right.title &&
     left.cwd === right.cwd &&
+    left.sessionFile === right.sessionFile &&
     left.working === right.working &&
     left.streaming === right.streaming &&
     left.unread === right.unread

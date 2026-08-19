@@ -1,11 +1,12 @@
-import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { harnessLabel } from "@/components/rail/harness-meta"
 import { formatRelative, workspaceName } from "@/lib/format"
 import { threads, useThreads } from "@/state/threads"
-import { actions, useSession } from "@/state/session"
+import { actions, shallowEqual, useSession } from "@/state/session"
 import { prefsStore, setPref, togglePinned, usePrefs } from "@/state/prefs"
 import { cn } from "@/lib/utils"
+import { useTabs, type TabInfo } from "@/state/tabs"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import {
   CheckIcon,
@@ -280,6 +281,58 @@ function RailSkeleton() {
     </div>
   )
 }
+
+/**
+ * The mark a session wears while it is attached — running in a background
+ * tab of this window. The old tab strip carried these; the rail does now.
+ * A leaf with its own narrow selector: a background tab's progress repaints
+ * one dot, never the list. Detach appears on hover; the row itself keeps
+ * meaning "bring this forward".
+ */
+const Attached = memo(function Attached({ path }: { path: string }) {
+  const tab = useTabs(
+    useCallback(
+      (state: { tabs: TabInfo[]; activeId: string }) => {
+        const found = state.tabs.find((entry) => entry.sessionFile === path)
+        if (!found) return null
+        return {
+          id: found.id,
+          working: found.working,
+          unread: found.unread,
+          active: found.id === state.activeId,
+          only: state.tabs.length < 2,
+        }
+      },
+      [path]
+    ),
+    shallowEqual
+  )
+  if (!tab) return null
+  return (
+    <>
+      {tab.working ? (
+        <span aria-label="Working" className="size-1.5 shrink-0 animate-live rounded-full bg-ember" />
+      ) : tab.unread && !tab.active ? (
+        <span aria-label="Finished while you were away" className="size-1.5 shrink-0 rounded-full bg-foreground/45" />
+      ) : null}
+      {tab.only ? null : (
+        <span
+          role="button"
+          tabIndex={-1}
+          aria-label="Detach"
+          title="Detach — stop holding this session open in the background"
+          onClick={(event) => {
+            event.stopPropagation()
+            void actions.closeTab(tab.id)
+          }}
+          className="shrink-0 rounded p-0.5 text-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-foreground"
+        >
+          <XIcon className="size-3" />
+        </span>
+      )}
+    </>
+  )
+})
 
 function ActiveAgents({ activity }: { activity: AgentActivity[] }) {
   if (activity.length === 0) return null
@@ -711,6 +764,7 @@ const ThreadRow = memo(function ThreadRow({
       >
         <PinIcon className={cn("size-3", isPinned && "fill-current")} />
       </span>
+      <Attached path={ref.path} />
       {ref.archived ? (
         <ArchiveIcon
           className="size-3 shrink-0 text-faint/70"
