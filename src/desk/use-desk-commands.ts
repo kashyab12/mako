@@ -357,6 +357,7 @@ export function useDeskCommands() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (event.isComposing) return
       if (
         event.target instanceof HTMLElement &&
         event.target.closest("[data-keybinding-capture]")

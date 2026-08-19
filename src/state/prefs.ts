@@ -67,6 +67,7 @@ export interface Prefs {
   /** Providers whose initial settings have already been copied into Mako. */
   providerTuningImported: string[]
   keybindings: PreferenceStringMap
+  terminalOptionAsMeta: "auto" | "on" | "off"
   /**
    * How a conversation moves to another harness. Transcript replay is the
    * loss-aware default; session import is the compatibility path for stores
@@ -106,6 +107,7 @@ const defaults: Prefs = {
   composerTuning: {},
   providerTuningImported: [],
   keybindings: {},
+  terminalOptionAsMeta: "auto",
   titleOverrides: {},
   conversionMode: "transcript",
 }
@@ -289,6 +291,11 @@ function parsePrefs(value: JsonValue): Prefs | null {
       defaults.providerTuningImported
     ),
     keybindings: readStringRecord(value.keybindings),
+    terminalOptionAsMeta: readChoice(
+      value.terminalOptionAsMeta,
+      ["auto", "on", "off"],
+      defaults.terminalOptionAsMeta
+    ),
     conversionMode: readChoice(
       value.conversionMode,
       ["native", "transcript"],

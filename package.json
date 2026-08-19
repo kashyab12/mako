@@ -16,7 +16,7 @@
     "typecheck": "tsc -b --force",
     "test:mcp": "tsx scripts/test-mcp.ts",
     "test:tuning": "tsx scripts/test-tuning-import.ts",
-    "test:terminal": "npm run build:electron && tsx scripts/test-terminal-protocol.ts && tsx scripts/test-terminal-daemon.ts",
+    "test:terminal": "npm run build:electron && tsx scripts/test-terminal-protocol.ts && tsx scripts/test-terminal-writer.ts && tsx scripts/test-terminal-macos.ts && tsx scripts/test-terminal-daemon.ts",
     "preview": "vite preview",
     "package": "npm run build && electron-builder --publish never",
     "release": "npm run build && electron-builder --publish always"
@@ -32,6 +32,7 @@
     "@tailwindcss/vite": "^4",
     "@tanstack/react-virtual": "^3.14.9",
     "@xterm/addon-fit": "0.11.0",
+    "@xterm/addon-web-links": "0.12.0",
     "@xterm/xterm": "6.0.0",
     "@zed-industries/claude-code-acp": "^0.16.2",
     "class-variance-authority": "^0.7.1",

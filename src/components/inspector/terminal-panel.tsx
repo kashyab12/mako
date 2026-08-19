@@ -1,13 +1,22 @@
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
+import { WebLinksAddon } from "@xterm/addon-web-links"
 import "@xterm/xterm/css/xterm.css"
 import { PlusIcon, RefreshCwIcon, TerminalSquareIcon, XIcon } from "lucide-react"
 import { Blank } from "@/components/ui/kit"
 import { cn } from "@/lib/utils"
+import { getMako } from "@/lib/bridge"
+import { detectMacOptionIsMeta } from "@/lib/mac-option-meta"
+import { createTerminalFileLinks } from "@/lib/terminal-links"
+import {
+  createTerminalWriter,
+  type TerminalWriter,
+} from "@/lib/terminal-writer"
 import { usePrefs } from "@/state/prefs"
 import { useSession } from "@/state/session"
 import { createHook } from "@/state/store"
+import { viewer } from "@/state/viewer"
 import {
   replayTerminalOutput,
   subscribeTerminalOutput,
@@ -157,36 +166,45 @@ function SessionTab({
 }
 
 function TerminalViewport({ session }: { session: TerminalSession }) {
+  const sessionId = session.id
+  const sessionCwd = session.cwd
   const hostRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
+  const writerRef = useRef<TerminalWriter | null>(null)
   const resizeFrame = useRef<number | undefined>(undefined)
-  const writtenSequence = useRef(0)
+  const receivedSequence = useRef(0)
+  const [rendererAttempt, setRendererAttempt] = useState(0)
   const snapshot = useTerminal((state) =>
     state.activeId === session.id ? state.snapshot : undefined
   )
   const theme = usePrefs((prefs) => prefs.theme)
+  const optionAsMeta = usePrefs((prefs) => prefs.terminalOptionAsMeta)
 
   const fit = useCallback(() => {
     const terminal = terminalRef.current
     const addon = fitRef.current
     if (!terminal || !addon || !hostRef.current?.isConnected) return
+    const buffer = terminal.buffer.active
+    const distanceFromBottom = Math.max(0, buffer.baseY - buffer.viewportY)
     addon.fit()
+    if (distanceFromBottom === 0) terminal.scrollToBottom()
+    else terminal.scrollToLine(Math.max(0, terminal.buffer.active.baseY - distanceFromBottom))
     terminalActions.resize(terminal.cols, terminal.rows)
   }, [])
 
   const writeOutput = useCallback(
     (output: TerminalOutput) => {
-      if (output.sessionId !== session.id) return
-      if (output.sequence <= writtenSequence.current) return
-      if (output.sequence !== writtenSequence.current + 1) {
+      if (output.sessionId !== sessionId) return
+      if (output.sequence <= receivedSequence.current) return
+      if (output.sequence !== receivedSequence.current + 1) {
         terminalActions.resync()
         return
       }
-      terminalRef.current?.write(output.data)
-      writtenSequence.current = output.sequence
+      receivedSequence.current = output.sequence
+      writerRef.current?.push(output)
     },
-    [session.id]
+    [sessionId]
   )
 
   useEffect(() => {
@@ -201,14 +219,51 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
       lineHeight: 1.2,
       scrollback: 5_000,
       allowTransparency: true,
+      macOptionIsMeta: false,
+      rightClickSelectsWord: true,
+      scrollOnUserInput: true,
       theme: terminalTheme(style),
     })
     const addon = new FitAddon()
     terminal.loadAddon(addon)
+    terminal.loadAddon(
+      new WebLinksAddon((_event, uri) => void openTerminalLink(sessionCwd, uri))
+    )
+    terminal.loadAddon(
+      new WebLinksAddon(
+        (_event, uri) => void openTerminalLink(sessionCwd, uri),
+        { urlRegex: /\bfile:\/\/\/[^\s"'<>]+/g }
+      )
+    )
+    terminal.registerLinkProvider(
+      createTerminalFileLinks(terminal, (link) => {
+        const prefix = `${sessionCwd.replace(/\/$/, "")}/`
+        const path = link.path.startsWith(prefix)
+          ? link.path.slice(prefix.length)
+          : link.path
+        if (path.startsWith("/")) void getMako().revealPath(path)
+        else void viewer.open(path, link.line)
+      })
+    )
     terminal.open(host)
     terminalRef.current = terminal
     fitRef.current = addon
+    const writer = createTerminalWriter({
+      write: (data, done) => terminal.write(data, done),
+      replace: (data, done) => {
+        terminal.reset()
+        terminal.write(data, done)
+      },
+      onRendered: (sequence) =>
+        terminalActions.acknowledge(sessionId, sequence),
+      onError: () => {
+        setRendererAttempt((attempt) => attempt + 1)
+        terminalActions.resync()
+      },
+    })
+    writerRef.current = writer
     const input = terminal.onData((data) => terminalActions.write(data))
+    const removeClipboard = installTerminalClipboard(host, terminal)
     const observer = new ResizeObserver(() => {
       if (resizeFrame.current !== undefined) cancelAnimationFrame(resizeFrame.current)
       resizeFrame.current = requestAnimationFrame(fit)
@@ -218,13 +273,16 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
     terminal.focus()
     return () => {
       observer.disconnect()
+      removeClipboard()
       if (resizeFrame.current !== undefined) cancelAnimationFrame(resizeFrame.current)
       input.dispose()
+      writer.dispose()
       terminal.dispose()
       terminalRef.current = null
       fitRef.current = null
+      writerRef.current = null
     }
-  }, [fit])
+  }, [fit, rendererAttempt, sessionCwd, sessionId])
 
   useEffect(() => {
     const host = hostRef.current
@@ -235,10 +293,53 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
 
   useEffect(() => {
     const terminal = terminalRef.current
-    if (!terminal || !snapshot) return
-    terminal.reset()
-    terminal.write(snapshot.data)
-    writtenSequence.current = snapshot.sequence
+    if (!terminal) return
+    if (optionAsMeta !== "auto") {
+      terminal.options.macOptionIsMeta = optionAsMeta === "on"
+      return
+    }
+    let cancelled = false
+    void detectMacOptionIsMeta().then((enabled) => {
+      if (!cancelled) terminal.options.macOptionIsMeta = enabled
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [optionAsMeta])
+
+  useEffect(() => {
+    const recover = (force = false) => {
+      if (!force && document.visibilityState === "hidden") return
+      requestAnimationFrame(() => {
+        fit()
+        const terminal = terminalRef.current
+        if (terminal) terminal.refresh(0, terminal.rows - 1)
+        terminalActions.resync()
+      })
+    }
+    const onVisibility = () => recover()
+    const onInteraction = () => {
+      if (document.visibilityState === "hidden") recover(true)
+    }
+    window.addEventListener("focus", onVisibility)
+    window.addEventListener("pageshow", onVisibility)
+    document.addEventListener("visibilitychange", onVisibility)
+    document.addEventListener("keydown", onInteraction, true)
+    document.addEventListener("pointerdown", onInteraction, true)
+    return () => {
+      window.removeEventListener("focus", onVisibility)
+      window.removeEventListener("pageshow", onVisibility)
+      document.removeEventListener("visibilitychange", onVisibility)
+      document.removeEventListener("keydown", onInteraction, true)
+      document.removeEventListener("pointerdown", onInteraction, true)
+    }
+  }, [fit])
+
+  useEffect(() => {
+    const writer = writerRef.current
+    if (!writer || !snapshot) return
+    receivedSequence.current = snapshot.sequence
+    writer.replace({ data: snapshot.data, sequence: snapshot.sequence })
     replayTerminalOutput(writeOutput)
   }, [snapshot, writeOutput])
 
@@ -268,6 +369,55 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
       ) : null}
     </div>
   )
+}
+
+function installTerminalClipboard(
+  host: HTMLElement,
+  terminal: Terminal
+): () => void {
+  const copy = (event: ClipboardEvent) => {
+    const selection = terminal.getSelection()
+    if (!selection || !event.clipboardData) return
+    event.preventDefault()
+    event.clipboardData.setData("text/plain", selection)
+  }
+  const paste = (event: ClipboardEvent) => {
+    const text =
+      event.clipboardData?.getData("text/plain") ??
+      event.clipboardData?.getData("text") ??
+      ""
+    if (!text) return
+    event.preventDefault()
+    event.stopPropagation()
+    terminal.paste(text)
+  }
+  host.addEventListener("copy", copy, true)
+  host.addEventListener("paste", paste, true)
+  return () => {
+    host.removeEventListener("copy", copy, true)
+    host.removeEventListener("paste", paste, true)
+  }
+}
+
+async function openTerminalLink(
+  cwd: string,
+  uri: string
+): Promise<void> {
+  if (!uri.startsWith("file://")) {
+    await getMako().openUrl(uri)
+    return
+  }
+  try {
+    const path = decodeURIComponent(new URL(uri).pathname)
+    const prefix = `${cwd.replace(/\/$/, "")}/`
+    if (path.startsWith(prefix)) {
+      await viewer.open(path.slice(prefix.length))
+    } else {
+      await getMako().revealPath(path)
+    }
+  } catch {
+    return
+  }
 }
 
 function terminalTheme(style: CSSStyleDeclaration) {

@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils"
 export function KeyboardSection() {
   const commands = useCommands()
   const keybindings = usePrefs((prefs) => prefs.keybindings)
+  const optionAsMeta = usePrefs((prefs) => prefs.terminalOptionAsMeta)
   const [query, setQuery] = useState("")
   const [capturing, setCapturing] = useState<string>()
   const [candidate, setCandidate] = useState("")
@@ -52,6 +53,35 @@ export function KeyboardSection() {
         Click a shortcut, then press the new keys. Mako shortcuts take priority
         inside the terminal; unassigned terminal keys still go straight to the shell.
       </p>
+      <div className="mb-3 flex items-center gap-3 rounded-lg bg-surface px-2.5 py-2 ring-1 ring-hairline">
+        <span className="min-w-0 flex-1">
+          <span className="block text-ui text-foreground/90">Option key in terminal</span>
+          <span className="block text-label text-faint">
+            Auto uses Meta on a US layout and preserves characters on international layouts.
+          </span>
+        </span>
+        <span className="flex rounded-md bg-raised p-0.5">
+          {([
+            ["auto", "Auto"],
+            ["on", "Meta"],
+            ["off", "Characters"],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setPref("terminalOptionAsMeta", value)}
+              className={cn(
+                "pressable rounded px-1.5 py-1 text-label",
+                optionAsMeta === value
+                  ? "bg-fill-selected text-foreground"
+                  : "text-faint hover:text-foreground"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </span>
+      </div>
       <div className="flex flex-col gap-0.5">
         {shown.map((command) => (
           <ShortcutRow

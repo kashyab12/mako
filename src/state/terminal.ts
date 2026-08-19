@@ -103,6 +103,14 @@ async function attach(sessionId: string) {
 }
 
 function applyEvent(event: TerminalEvent) {
+  if (event.type === "wake") {
+    const activeId = terminalStore.get().activeId
+    if (activeId && !resyncing) {
+      resyncing = true
+      void attach(activeId)
+    }
+    return
+  }
   if (event.type === "connection") {
     const previous = terminalStore.get().phase
     terminalStore.set({
@@ -213,6 +221,10 @@ export const terminalActions = {
       if (subscribers === 0) {
         unsubscribe?.()
         unsubscribe = undefined
+        const activeId = terminalStore.get().activeId
+        if (activeId && hasBridge()) {
+          void getMako().terminalDetach(activeId).catch(() => {})
+        }
       }
     }
   },
@@ -253,6 +265,17 @@ export const terminalActions = {
     if (!activeId || resyncing) return
     resyncing = true
     void attach(activeId)
+  },
+
+  acknowledge(sessionId: string, sequence: number) {
+    void getMako()
+      .terminalAcknowledge(sessionId, sequence)
+      .catch(() => {
+        if (!resyncing) {
+          resyncing = true
+          void attach(sessionId)
+        }
+      })
   },
 
   write(data: string) {
