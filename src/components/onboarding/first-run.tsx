@@ -21,7 +21,7 @@ import { CheckIcon } from "lucide-react"
  * checklist you cannot finish is worse than no checklist.
  */
 
-type StepId = "workspace" | "ask" | "files" | "review"
+type StepId = "provider" | "workspace" | "ask" | "files" | "review"
 
 interface Step {
   id: StepId
@@ -31,6 +31,11 @@ interface Step {
 }
 
 const STEPS = [
+  {
+    id: "provider",
+    title: "Connect an agent",
+    hint: "Mako uses your existing Claude Code, Codex, Cursor, Grok, or Devin login.",
+  },
   {
     id: "workspace",
     title: "Point it at your project",
@@ -78,6 +83,7 @@ export function FirstRun() {
    * thing feel like decoration.
    */
   const now = {
+    provider: false,
     workspace: Boolean(cwd) && !isHome(cwd, home),
     ask: messages > 0,
     // Opening a file by name counts — that is what the step teaches — and
@@ -150,6 +156,19 @@ export function FirstRun() {
                   <span className="truncate text-[11px] text-faint">{step.hint}</span>
                 ) : null}
               </span>
+              {isNext && step.id === "provider" ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    window.dispatchEvent(
+                      new CustomEvent("mako:settings", { detail: "agents" })
+                    )
+                  }
+                  className="pressable shrink-0 rounded px-1.5 py-0.5 text-[10.5px] text-faint hover:bg-raised hover:text-foreground"
+                >
+                  Set up
+                </button>
+              ) : null}
               {step.keys ? (
                 <span className="flex shrink-0 gap-0.5">
                   {formatChord(step.keys).map((key) => (

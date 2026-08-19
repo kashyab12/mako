@@ -28,6 +28,7 @@ import { PlugZapIcon } from "lucide-react"
 
 export function AppShell() {
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsSection, setSettingsSection] = useState("agents")
   const phase = useSession((state) => state.phase)
   const fault = useSession((state) => state.fault)
   const railOpen = usePrefs((prefs) => prefs.railOpen)
@@ -65,7 +66,15 @@ export function AppShell() {
   usePlugins()
 
   useEffect(() => {
-    const open = () => setSettingsOpen(true)
+    const open = (event: Event) => {
+      if (
+        event instanceof CustomEvent &&
+        Object.prototype.toString.call(event.detail) === "[object String]"
+      ) {
+        setSettingsSection(String(event.detail))
+      }
+      setSettingsOpen(true)
+    }
     const close = () => setSettingsOpen(false)
     window.addEventListener("mako:settings", open)
     window.addEventListener("mako:close-settings", close)
@@ -192,7 +201,7 @@ export function AppShell() {
             className="absolute inset-x-0 bottom-0 z-40 flex flex-col bg-background"
             style={{ top: "var(--titlebar-height)" }}
           >
-            <SettingsView />
+            <SettingsView initialSection={settingsSection} />
           </div>
         ) : null}
       </div>

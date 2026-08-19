@@ -13,21 +13,26 @@ import { HarnessIcon } from "@/components/ui/provider-icon"
 import { PluginsSection } from "@/components/settings/plugins-section"
 import { McpSection } from "@/components/settings/mcp-section"
 import { CheckIcon, RotateCcwIcon, XIcon } from "lucide-react"
+import { toast } from "sonner"
 
 const SECTIONS = [
+  { id: "agents", label: "Providers & accounts" },
+  { id: "commits", label: "Git & pull requests" },
+  { id: "mcp", label: "External tools" },
   { id: "appearance", label: "Appearance" },
-  { id: "transcript", label: "Transcript" },
-  { id: "commits", label: "Commit messages" },
-  { id: "usage", label: "Usage" },
-  { id: "agents", label: "Agents" },
-  { id: "mcp", label: "MCP servers" },
-  { id: "plugins", label: "Plugins" },
+  { id: "transcript", label: "Conversation" },
+  { id: "usage", label: "Usage & limits" },
   { id: "automations", label: "Automations" },
+  { id: "plugins", label: "Plugins" },
   { id: "updates", label: "Updates" },
-  { id: "diagnostics", label: "Diagnostics" },
+  { id: "diagnostics", label: "Troubleshoot" },
 ] as const
 
 type SectionId = (typeof SECTIONS)[number]["id"]
+
+function isSectionId(value: string): value is SectionId {
+  return SECTIONS.some((section) => section.id === value)
+}
 
 /**
  * Settings.
@@ -39,8 +44,10 @@ type SectionId = (typeof SECTIONS)[number]["id"]
  * T3 and ORCA route settings to full surfaces with a section list for exactly
  * this reason.
  */
-export function SettingsView() {
-  const [section, setSection] = useState<SectionId>("appearance")
+export function SettingsView({ initialSection = "agents" }: { initialSection?: string }) {
+  const [section, setSection] = useState<SectionId>(
+    isSectionId(initialSection) ? initialSection : "agents"
+  )
   const [defaultPrompt, setDefaultPrompt] = useState("")
   const open = true
 
@@ -345,17 +352,15 @@ function Agents() {
         />
       </Row>
       <p className="pb-3 text-[12px] leading-relaxed text-muted-foreground">
-        Every provider whose sessions appear in the rail, and whether its
-        native control transport is available. The first time Mako sees a
-        provider, it copies that provider&apos;s model, reasoning, Fast mode, and
-        context defaults as a starting point. From then on Mako owns those
-        choices—changes made in either place do not rewrite the other.
+        Mako uses the provider apps already installed on this machine. Their
+        model and reasoning settings are copied once as a sensible starting
+        point; after that, choices made in Mako stay in Mako.
       </p>
       <p className="mb-3 flex items-center gap-1.5 rounded-md bg-surface px-2.5 py-1.5 text-[11px] text-faint">
         <span
           className={cn(
             "size-1.5 rounded-full",
-            daemon ? "bg-emerald-400/90" : "bg-faint/50"
+            daemon ? "bg-added" : "bg-faint/50"
           )}
         />
         <span className="min-w-0 flex-1">
@@ -395,9 +400,9 @@ function Agents() {
                 …
               </span>
             ) : availability[entry.id] ? (
-              <span className="text-[11px] text-emerald-400/90">connected</span>
+              <span className="text-[11px] text-added">Ready</span>
             ) : (
-              <span className="text-[11px] text-faint">not found</span>
+              <span className="text-[11px] text-faint">Not installed</span>
             )}
           </div>
         ))}
@@ -439,8 +444,9 @@ function HarnessAccounts() {
   >({})
   const [capturing, setCapturing] = useState<"claude" | "codex" | null>(null)
   const [captureName, setCaptureName] = useState("")
+  const [busyAccount, setBusyAccount] = useState<string>()
 
-  const load = useCallback(() => {
+  const load = useCallback(function loadAccounts() {
     if (!hasBridge()) return
     void getMako()
       .accounts()
@@ -458,7 +464,13 @@ function HarnessAccounts() {
             .catch(() => {})
         }
       })
-      .catch(() => setAccounts([]))
+      .catch((error) => {
+        setAccounts([])
+        toast.error("Accounts could not be loaded", {
+          description: error instanceof Error ? error.message : String(error),
+          action: { label: "Retry", onClick: loadAccounts },
+        })
+      })
   }, [])
   useEffect(load, [load])
 
@@ -470,7 +482,44 @@ function HarnessAccounts() {
       setCaptureName("")
       load()
     } catch (error) {
-      window.alert?.(error instanceof Error ? error.message : String(error))
+      toast.error("Account was not captured", {
+        description: error instanceof Error ? error.message : String(error),
+        action: { label: "Try again", onClick: () => void capture() },
+      })
+    }
+  }
+
+  const select = async (harness: "claude" | "codex", name: string) => {
+    const key = `${harness}:${name}`
+    if (busyAccount) return
+    setBusyAccount(key)
+    try {
+      await getMako().selectAccount(harness, name === "default" ? null : name)
+      load()
+    } catch (error) {
+      toast.error("Account was not switched", {
+        description: error instanceof Error ? error.message : String(error),
+        action: { label: "Retry", onClick: () => void select(harness, name) },
+      })
+    } finally {
+      setBusyAccount(undefined)
+    }
+  }
+
+  const remove = async (harness: "claude" | "codex", name: string) => {
+    const key = `${harness}:${name}`
+    if (busyAccount) return
+    setBusyAccount(key)
+    try {
+      await getMako().removeAccount(harness, name)
+      load()
+    } catch (error) {
+      toast.error("Account was not removed", {
+        description: error instanceof Error ? error.message : String(error),
+        action: { label: "Retry", onClick: () => void remove(harness, name) },
+      })
+    } finally {
+      setBusyAccount(undefined)
     }
   }
 
@@ -485,139 +534,142 @@ function HarnessAccounts() {
               {harness === "claude" ? "Claude Code accounts" : "Codex accounts"}
             </Eyebrow>
             <p className="pb-2 text-[11.5px] leading-relaxed text-faint">
-              Sign into another account with the CLI, capture it here, switch
-              back — every run uses whichever account is selected. Skills and
-              sessions are shared across all of them; only the login differs.
+              Mako keeps each login isolated while sharing the same sessions,
+              skills, and tools. The active account is used for new sessions.
             </p>
             {rows.map((account) => {
               const stats = usage[`${harness}:${account.name}`]
               const identity = account.email ?? account.name
+              const key = `${harness}:${account.name}`
               return (
-                <button
+                <div
                   key={account.name}
-                  type="button"
-                  onClick={() =>
-                    void getMako()
-                      .selectAccount(
-                        harness,
-                        account.name === "default" ? null : account.name
-                      )
-                      .then(load)
-                  }
                   className={cn(
-                    "group/account flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left",
-                    "transition-colors duration-100",
+                    "group/account flex w-full items-center rounded-lg transition-colors duration-100",
                     account.active
                       ? "bg-raised ring-1 ring-hairline"
                       : "hover:bg-raised/60"
                   )}
                 >
-                  <span
-                    className={cn(
-                      "flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold uppercase",
-                      account.active
-                        ? "bg-brand-soft text-brand"
-                        : "bg-raised text-faint"
-                    )}
+                  <button
+                    type="button"
+                    disabled={Boolean(busyAccount)}
+                    onClick={() => void select(harness, account.name)}
+                    className="flex min-w-0 flex-1 items-center gap-3 px-2.5 py-2 text-left disabled:opacity-60"
                   >
-                    {identity.slice(0, 1)}
-                  </span>
-                  <span className="min-w-0 flex-none basis-56">
                     <span
                       className={cn(
-                        "block truncate text-[12.5px]",
+                        "flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
                         account.active
-                          ? "font-medium text-foreground"
-                          : "text-foreground/85"
+                          ? "bg-brand-soft text-brand"
+                          : "bg-raised text-faint"
                       )}
                     >
-                      {identity}
+                      {identity.slice(0, 1).toUpperCase()}
                     </span>
-                    <span className="block text-[10px] text-faint">
-                      {account.source === "subrouter"
-                        ? "via subrouter"
-                        : account.name === "default"
-                          ? "the CLI's own login"
-                          : `captured as ${account.name}`}
+                    <span className="min-w-0 flex-none basis-56">
+                      <span
+                        className={cn(
+                          "block truncate text-[12.5px]",
+                          account.active
+                            ? "font-medium text-foreground"
+                            : "text-foreground/85"
+                        )}
+                      >
+                        {identity}
+                      </span>
+                      <span className="block text-[10px] text-faint">
+                        {account.active
+                          ? "Used for new sessions in Mako"
+                          : account.source === "subrouter"
+                            ? "Available from Subrouter"
+                            : account.name === "default"
+                              ? "The CLI's current login"
+                              : `Captured as ${account.name}`}
+                      </span>
                     </span>
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    {stats?.status === "ok" ? (
-                      <span className="flex items-center gap-2">
-                        <UsageBar label="5h" window={stats.session} />
-                        <UsageBar label="wk" window={stats.weekly} />
-                        {stats.plan ? (
-                          <span className="text-[10px] text-faint">
-                            {stats.plan}
-                          </span>
-                        ) : null}
+                    <span className="min-w-0 flex-1">
+                      {stats?.status === "ok" ? (
+                        <span className="flex items-center gap-2">
+                          <UsageBar label="5h" window={stats.session} />
+                          <UsageBar label="week" window={stats.weekly} />
+                          {stats.plan ? (
+                            <span className="text-[10px] text-faint">
+                              {stats.plan}
+                            </span>
+                          ) : null}
+                        </span>
+                      ) : stats ? (
+                        <span className="text-[10.5px] text-faint">
+                          {stats.status === "stale-token"
+                            ? (stats.detail ?? "Sign in again to refresh usage")
+                            : stats.status === "missing-credentials"
+                              ? "Sign in with the CLI to use this account"
+                              : (stats.detail ?? "Usage is temporarily unavailable")}
+                        </span>
+                      ) : (
+                        <span className="shimmer text-[10.5px] text-faint">
+                          Loading usage…
+                        </span>
+                      )}
+                    </span>
+                    {account.active ? (
+                      <span className="flex shrink-0 items-center gap-1 text-[10.5px] text-brand">
+                        <CheckIcon className="size-3.5" />
+                        Active
                       </span>
-                    ) : stats ? (
-                      <span className="text-[10.5px] text-faint">
-                        {stats.status === "stale-token"
-                          ? (stats.detail ?? "token stale")
-                          : stats.status === "missing-credentials"
-                            ? "no login captured"
-                            : (stats.detail ?? "usage unavailable")}
+                    ) : busyAccount === key ? (
+                      <span className="shimmer shrink-0 text-[10.5px] text-faint">
+                        Switching…
                       </span>
-                    ) : (
-                      <span className="shimmer text-[10.5px] text-faint">
-                        …
-                      </span>
-                    )}
-                  </span>
-                  {account.active ? (
-                    <CheckIcon className="size-3.5 shrink-0 text-brand" />
-                  ) : null}
-                  {account.name !== "default" &&
-                  account.source !== "subrouter" ? (
-                    <span
-                      role="button"
-                      tabIndex={-1}
+                    ) : null}
+                  </button>
+                  {account.name !== "default" && account.source !== "subrouter" ? (
+                    <button
+                      type="button"
                       aria-label={`Remove ${account.name}`}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        void getMako()
-                          .removeAccount(harness, account.name)
-                          .then(load)
-                      }}
-                      className="pressable rounded p-1 text-faint opacity-0 transition-opacity duration-100 group-hover/account:opacity-100 hover:text-foreground"
+                      disabled={Boolean(busyAccount)}
+                      onClick={() => void remove(harness, account.name)}
+                      className="pressable mr-1.5 rounded p-1 text-faint opacity-0 transition-opacity duration-100 group-hover/account:opacity-100 focus-visible:opacity-100 hover:text-foreground"
                     >
                       <XIcon className="size-3.5" />
-                    </span>
+                    </button>
                   ) : null}
-                </button>
+                </div>
               )
             })}
             {capturing === harness ? (
-              <div className="flex items-end gap-2 pt-2">
-                <input
-                  value={captureName}
-                  onChange={(event) => setCaptureName(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") void capture()
-                  }}
-                  placeholder="account name, e.g. work"
-                  className="h-7 w-44 rounded-md bg-surface px-2 text-[12px] text-foreground placeholder:text-faint focus:ring-1 focus:ring-hairline focus:outline-none"
-                />
-                <Action
-                  disabled={!captureName.trim()}
-                  onClick={() => void capture()}
-                >
-                  Capture current login
-                </Action>
-                <Action onClick={() => setCapturing(null)}>Cancel</Action>
+              <div className="mt-2 rounded-lg bg-surface p-2.5 ring-1 ring-hairline">
+                <p className="pb-2 text-[11.5px] text-muted-foreground">
+                  First run <code className="font-mono text-foreground">{harness === "claude" ? "claude /login" : "codex login"}</code> in a terminal. Then name that login in Mako.
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    autoFocus
+                    value={captureName}
+                    onChange={(event) => setCaptureName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") void capture()
+                    }}
+                    placeholder="Name, such as Work"
+                    className="h-7 w-44 rounded-md bg-raised px-2 text-[12px] text-foreground placeholder:text-faint focus:ring-1 focus:ring-hairline focus:outline-none"
+                  />
+                  <Action
+                    disabled={!captureName.trim()}
+                    onClick={() => void capture()}
+                  >
+                    Save current login
+                  </Action>
+                  <Action tone="ghost" onClick={() => setCapturing(null)}>Cancel</Action>
+                </div>
               </div>
             ) : (
               <button
                 type="button"
                 onClick={() => setCapturing(harness)}
-                className="pressable pt-2 text-[11.5px] text-faint underline-offset-2 hover:text-foreground hover:underline"
+                className="pressable mt-2 rounded px-1 py-0.5 text-[11.5px] text-faint hover:bg-raised hover:text-foreground"
               >
-                + Add another {harness === "claude" ? "Claude Code" : "Codex"}{" "}
-                account — sign into it with the CLI first (
-                {harness === "claude" ? "claude /login" : "codex login"}), then
-                capture it here under a name
+                Add another account
               </button>
             )}
           </div>
@@ -648,10 +700,10 @@ function UsageBar({
           className={cn(
             "block h-full rounded-full",
             used >= 90
-              ? "bg-red-400/80"
+              ? "bg-removed"
               : used >= 70
-                ? "bg-amber-300/80"
-                : "bg-emerald-400/70"
+                ? "bg-caution"
+                : "bg-added"
           )}
           style={{ width: `${used}%` }}
         />

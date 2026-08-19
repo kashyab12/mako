@@ -1,6 +1,7 @@
 import { prefsStore, setPref } from "@/state/prefs"
 import { store } from "@/state/session"
 import { viewerStore } from "@/state/viewer"
+import { getMako, hasBridge } from "@/lib/bridge"
 
 /**
  * Latches getting-started steps the moment they become true — wherever the
@@ -31,4 +32,12 @@ export function watchOnboarding(): void {
   viewerStore.subscribe(check)
   prefsStore.subscribe(check)
   check()
+  if (hasBridge()) {
+    void getMako()
+      .harnessAvailability()
+      .then((availability) => {
+        if (Object.values(availability).some(Boolean)) latch("provider")
+      })
+      .catch(() => {})
+  }
 }
