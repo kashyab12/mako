@@ -1,9 +1,9 @@
-import { memo, useState } from "react"
+import { memo, useState, type ComponentType } from "react"
 import { useToolView, type ToolCall } from "@/extend/slots"
 import { primaryArgument, toolLabel } from "@/lib/tools"
 import { cn } from "@/lib/utils"
 import { usePrefs } from "@/state/prefs"
-import { ChevronRightIcon, CircleAlertIcon , CheckIcon, CopyIcon } from "lucide-react"
+import { ChevronRightIcon, CircleAlertIcon, CheckIcon, CopyIcon, Loader2Icon } from "lucide-react"
 import { ToolGlyph } from "@/components/transcript/tool-views"
 
 /**
@@ -29,23 +29,12 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
     >
       <button
         type="button"
+        data-open={open || undefined}
+        data-pending={call.pending || undefined}
         onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center gap-2 px-2 py-1.5 text-left transition-colors duration-100 hover:bg-fill-hover"
+        className="group/tool flex w-full items-center gap-2 px-2 py-1.5 text-left transition-colors duration-100 hover:bg-fill-hover"
       >
-        <ChevronRightIcon
-          className={cn(
-            "size-3 shrink-0 text-faint transition-transform duration-150",
-            open && "rotate-90"
-          )}
-        />
-        <ToolGlyph
-          name={call.name}
-          override={view?.icon}
-          className={cn(
-            "size-3.5 shrink-0",
-            call.isError ? "text-negative" : call.pending ? "text-foreground/80" : "text-faint"
-          )}
-        />
+        <LeadSlot call={call} open={open} icon={view?.icon} />
         <span className="shrink-0 text-ui font-medium text-foreground/90">
           {toolLabel(call.name)}
         </span>
@@ -65,6 +54,61 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
     </div>
   )
 })
+
+/**
+ * One leading slot, three states: a spinner while the tool runs, its glyph
+ * at rest, and the chevron whenever the pointer is near or the row is open.
+ * The three are stacked and crossfaded with CSS alone — no state, no
+ * re-render per token, and the row never shifts because the slot is one
+ * fixed square.
+ */
+function LeadSlot({
+  call,
+  open,
+  icon,
+}: {
+  call: ToolCall
+  open: boolean
+  icon?: ComponentType<{ className?: string }>
+}) {
+  const layer = "absolute inset-0 m-auto transition-[opacity,transform] duration-150"
+  return (
+    <span className="relative size-3.5 shrink-0">
+      <Loader2Icon
+        className={cn(
+          layer,
+          "size-3.5 animate-spin text-foreground/80",
+          call.pending ? "opacity-100" : "opacity-0"
+        )}
+      />
+      <ToolGlyph
+        name={call.name}
+        override={icon}
+        className={cn(
+          layer,
+          "size-3.5",
+          call.isError ? "text-negative" : "text-faint",
+          call.pending
+            ? "opacity-0"
+            : open
+              ? "opacity-0"
+              : "opacity-100 group-hover/tool:opacity-0"
+        )}
+      />
+      <ChevronRightIcon
+        className={cn(
+          layer,
+          "size-3.5 text-faint",
+          open
+            ? "rotate-90 opacity-100"
+            : call.pending
+              ? "opacity-0"
+              : "opacity-0 group-hover/tool:opacity-100"
+        )}
+      />
+    </span>
+  )
+}
 
 function Status({ call }: { call: ToolCall }) {
   if (call.pending) {

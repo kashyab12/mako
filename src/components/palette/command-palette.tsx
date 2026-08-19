@@ -13,6 +13,7 @@ import { modelKey, noteModelUse, usePrefs } from "@/state/prefs"
 import { useWorkspaceFiles } from "@/state/files"
 import { viewer } from "@/state/viewer"
 import { cn } from "@/lib/utils"
+import { SearchIcon } from "lucide-react"
 
 interface Entry {
   id: string
@@ -216,13 +217,16 @@ export function CommandPalette() {
         onKeyDown={onKeyDown}
         className="overlay-panel w-full max-w-dialog overflow-hidden rounded-xl"
       >
-        <input
-          autoFocus
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={mode === "files" ? "Open a file by name" : "Search commands, models, sessions…"}
-          className="h-11 w-full border-b border-hairline bg-transparent px-3.5 text-ui placeholder:text-faint focus:outline-none"
-        />
+        <div className="flex h-11 items-center gap-2.5 border-b border-hairline px-3.5">
+          <SearchIcon className="size-3.5 shrink-0 text-faint" aria-hidden />
+          <input
+            autoFocus
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={mode === "files" ? "Open a file by name" : "Search commands, models, sessions…"}
+            className="h-full min-w-0 flex-1 bg-transparent text-ui placeholder:text-faint focus:outline-none"
+          />
+        </div>
 
         <div ref={listRef} className="max-h-[22rem] overflow-y-auto overscroll-contain p-1.5">
           {results.length === 0 ? (

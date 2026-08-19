@@ -94,8 +94,11 @@ function Prompt({ message }: { message: ChatMessage }) {
   }
 
   return (
-    <div className="group/prompt relative">
-      <div className="rounded-xl bg-raised px-3.5 py-2.5">
+    <div className="group/prompt relative flex flex-col items-end">
+      {/* The user's words are a bubble, not a slab: right-aligned and capped
+          at a reading measure, unmistakably theirs without a ring. The
+          assistant's reply below stays full-width and chrome-free. */}
+      <div className="max-w-[min(82%,64ch)] rounded-xl rounded-br-md bg-raised px-3.5 py-2.5">
         <div className="text-ui leading-[1.6] whitespace-pre-wrap text-foreground">
           {segments.map((segment, index) =>
             segment.kind === "text" ? (
@@ -118,7 +121,7 @@ function Prompt({ message }: { message: ChatMessage }) {
         ) : null}
       </div>
 
-      <div className="mt-1 flex h-4 items-center gap-2 px-0.5 text-label text-faint opacity-0 transition-opacity duration-150 group-hover/prompt:opacity-100 focus-within:opacity-100">
+      <div className="mt-1 flex h-4 items-center justify-end gap-2 px-0.5 text-label text-faint opacity-0 transition-opacity duration-150 group-hover/prompt:opacity-100 focus-within:opacity-100">
         {message.timestamp ? <span className="tabular">{formatTime(message.timestamp)}</span> : null}
         <button
           type="button"

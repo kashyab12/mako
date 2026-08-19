@@ -2,19 +2,15 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Exchange } from "@/components/transcript/exchange"
 import { NAVIGATOR_WIDTH, TurnNavigator } from "@/components/transcript/turn-navigator"
 import { Slot } from "@/extend/slot"
-import { FirstRun } from "@/components/onboarding/first-run"
+import { Launcher } from "@/components/transcript/launcher"
 import { toExchanges } from "@/lib/exchanges"
 import { foldTools } from "@/lib/tools"
 import { useSession } from "@/state/session"
 import { cn } from "@/lib/utils"
 import {
   ArrowDownIcon,
-  ArrowUpIcon,
   ChevronUpIcon,
-  CircleCheckIcon,
   FolderIcon,
-  GitCompareIcon,
-  MapIcon,
 } from "lucide-react"
 import { MakoMark } from "@/components/ui/mako-mark"
 
@@ -284,53 +280,9 @@ function EmptyTranscript() {
 
         <Slot name="transcript.empty" meta={undefined} />
 
-        <div className="mt-6 flex flex-col">
-          {SUGGESTIONS.map((suggestion, index) => (
-            <Suggestion key={suggestion.text} suggestion={suggestion} index={index} />
-          ))}
-        </div>
-
-        <FirstRun />
+        <Launcher />
       </div>
     </div>
   )
 }
 
-const SUGGESTIONS = [
-  { text: "Explain how this project is structured", icon: MapIcon },
-  { text: "Review my uncommitted changes", icon: GitCompareIcon },
-  { text: "Find and fix the failing test", icon: CircleCheckIcon },
-]
-
-function Suggestion({
-  suggestion,
-  index,
-}: {
-  suggestion: (typeof SUGGESTIONS)[number]
-  index: number
-}) {
-  const Icon = suggestion.icon
-
-  return (
-    <button
-      type="button"
-      // A short stagger on first paint; the list reads as arriving rather than
-      // as having always been there. 45ms apart stays under the threshold
-      // where waiting becomes perceptible.
-      style={{ animationDelay: `${60 + index * 45}ms` }}
-      onClick={() =>
-        window.dispatchEvent(new CustomEvent("mako:compose", { detail: suggestion.text }))
-      }
-      className={cn(
-        "pressable group flex w-full animate-enter items-center gap-2.5 rounded-md border-t border-hairline",
-        "px-2.5 py-2.5 text-left text-ui text-muted-foreground",
-        "[transition:transform_var(--duration-press)_var(--ease-out),color_120ms_ease,background-color_120ms_ease]",
-        "first:border-t-0 hover:bg-fill-hover hover:text-foreground"
-      )}
-    >
-      <Icon className="size-3.5 shrink-0 text-faint transition-colors duration-120 group-hover:text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate">{suggestion.text}</span>
-      <ArrowUpIcon className="size-3 shrink-0 rotate-45 text-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100" />
-    </button>
-  )
-}
