@@ -31,7 +31,6 @@ export function McpSection() {
 
   return (
     <div>
-      <Eyebrow className="pt-6 pb-2">MCP servers</Eyebrow>
       <p className="pb-3 text-ui leading-relaxed text-muted-foreground">
         Servers found in each agent&apos;s native configuration, deduplicated by
         connection. Environment and header values stay in the host and never

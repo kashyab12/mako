@@ -3,7 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { CommandPalette } from "@/components/palette/command-palette"
 import { Guide } from "@/components/onboarding/guide"
 import { ConversionOverlay } from "@/components/viewer/conversion-overlay"
-import { SettingsView } from "@/components/settings/settings-view"
+import { SettingsDialog } from "@/components/settings/settings-dialog"
 import { usePlugins } from "@/extend/use-plugins"
 import { SessionRail } from "@/components/rail/session-rail"
 import { TitleBar } from "@/components/shell/title-bar"
@@ -119,24 +119,19 @@ export function AppShell() {
             </div>
           )}
         </div>
-
-        {/* Settings covers the whole window rather than only the chat column:
-            it is a place you go, not a panel you consult, and leaving it
-            should feel like returning rather than like closing a drawer.
-
-            Below the title bar, though, not over it. The window controls are
-            drawn by the OS on top of whatever we paint, so covering that strip
-            put the traffic lights on top of the first section in the list. */}
-        {settingsOpen ? (
-          <div
-            className="absolute inset-x-0 bottom-0 z-40 flex flex-col bg-shell"
-            style={{ top: "var(--titlebar-height)" }}
-          >
-            <SettingsView initialSection={settingsSection} />
-          </div>
-        ) : null}
       </div>
       <CommandPalette />
+      {/* Settings floats as a large centered dialog under the palette's z-50:
+          the desk stays visible behind the scrim, and Radix owns Escape, the
+          scrim, and the focus trap. */}
+      <SettingsDialog
+        open={settingsOpen}
+        section={settingsSection}
+        onOpenChange={(open) => {
+          if (!open) setSettingsOpen(false)
+        }}
+        onSectionChange={setSettingsSection}
+      />
       <Guide />
       <ConversionOverlay />
     </TooltipProvider>

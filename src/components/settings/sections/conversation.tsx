@@ -1,0 +1,17 @@
+import { ConversationSection } from "@/components/settings/conversation-section"
+import type { SettingsSection } from "./manifest"
+
+export const section = {
+  id: "transcript",
+  title: "Conversation",
+  group: "Desk",
+  keywords: [
+    "transcript",
+    "reasoning",
+    "thinking",
+    "diff",
+    "changes",
+    "turns",
+  ],
+  Component: ConversationSection,
+} as const satisfies SettingsSection

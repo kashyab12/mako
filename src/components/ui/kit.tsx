@@ -135,6 +135,130 @@ export function Eyebrow({ className, ...props }: ComponentProps<"div">) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Controls                                                            */
+/* ------------------------------------------------------------------ */
+
+export function Toggle({
+  on,
+  onChange,
+  disabled,
+}: {
+  on: boolean
+  onChange: () => void
+  disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      disabled={disabled}
+      onClick={onChange}
+      className={cn(
+        "pressable flex h-4 w-7 shrink-0 items-center rounded-full p-[2px]",
+        "[transition:background-color_150ms_ease]",
+        "disabled:pointer-events-none disabled:opacity-40",
+        on ? "bg-foreground/80" : "bg-foreground/15"
+      )}
+    >
+      <span
+        className={cn(
+          "block size-3 rounded-full bg-background",
+          "[transition:transform_180ms_var(--ease-out)]",
+          on ? "translate-x-3" : "translate-x-0"
+        )}
+      />
+    </button>
+  )
+}
+
+export function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T
+  options: Array<{ value: T; label: string }>
+  onChange: (next: T) => void
+}) {
+  return (
+    <div className="flex h-6 shrink-0 items-center rounded-md bg-raised p-[2px]">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          className={cn(
+            "rounded-[4px] px-2 text-label font-medium",
+            "[transition:background-color_120ms_ease,color_120ms_ease]",
+            value === option.value
+              ? "bg-surface text-foreground"
+              : "text-faint hover:text-muted-foreground"
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** One setting: a name and an explanation on the left, its control on the right. */
+export function SettingRow({
+  title,
+  description,
+  htmlFor,
+  children,
+}: {
+  title: string
+  description?: string
+  htmlFor?: string
+  children?: ReactNode
+}) {
+  return (
+    <div className="flex items-center justify-between gap-8 py-4">
+      <div className="min-w-0">
+        {htmlFor ? (
+          <label htmlFor={htmlFor} className="block text-ui font-medium">
+            {title}
+          </label>
+        ) : (
+          <div className="text-ui font-medium">{title}</div>
+        )}
+        {description ? (
+          <p className="text-ui leading-snug text-muted-foreground [margin-block:-2px]">
+            {description}
+          </p>
+        ) : null}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+/** A quietly recessed container that groups rows into one card. */
+export function ListCard({ className, children }: ComponentProps<"div">) {
+  return (
+    <div
+      className={cn(
+        "rounded-lg bg-shell/40 px-4 [box-shadow:inset_0_0_0_0.5px_var(--hairline)] divide-y divide-hairline",
+        className
+      )}
+    >
+      {children}
+    </div>
+  )
+}
+
+export function ListCardRow({ className, children }: ComponentProps<"div">) {
+  return (
+    <div className={cn("py-3 first:pt-3.5 last:pb-3.5", className)}>
+      {children}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
 /* Structure                                                           */
 /* ------------------------------------------------------------------ */
 

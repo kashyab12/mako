@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Action, Eyebrow } from "@/components/ui/kit"
+import { Action } from "@/components/ui/kit"
 import { getMako, hasBridge } from "@/lib/bridge"
 import { plugins } from "@/extend/plugin-host"
 import { useRegistry } from "@/extend/registry"
@@ -85,7 +85,6 @@ export function PluginsSection() {
 
   return (
     <div>
-      <Eyebrow className="pt-6 pb-2">Plugins</Eyebrow>
       <p className="pb-3 text-ui leading-relaxed text-muted-foreground">
         Single files that hot-load into the running window — save one and its
         commands, slots, and panels appear without a reload. Ask the agent to

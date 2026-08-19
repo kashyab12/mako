@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Action, Eyebrow, Keys } from "@/components/ui/kit"
+import { Action, Keys } from "@/components/ui/kit"
 import {
   chordFromEvent,
   formatChord,
@@ -35,7 +35,6 @@ export function KeyboardSection() {
 
   return (
     <section className="mb-5 last:mb-0">
-      <Eyebrow className="px-0 pb-2">Keyboard shortcuts</Eyebrow>
       <div className="flex items-center gap-2 pb-3">
         <input
           value={query}
