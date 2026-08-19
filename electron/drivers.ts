@@ -274,6 +274,7 @@ interface Run {
 }
 
 const runs = new Map<string, Run>()
+const MAX_REMEMBERED_RUNS = 600
 let emit: (event: HostEvent) => void = () => {}
 
 export function bindDrivers(send: (event: HostEvent) => void): void {
@@ -417,7 +418,18 @@ export function stopDrivers(): void {
 
 function finish(run: Run, next: Partial<ThreadRunState>): void {
   run.state = { ...run.state, ...next }
+  runs.delete(run.state.path)
   runs.set(run.state.path, run)
+  while (runs.size > MAX_REMEMBERED_RUNS) {
+    let removed = false
+    for (const [path, entry] of runs) {
+      if (entry.state.status === "running") continue
+      runs.delete(path)
+      removed = true
+      break
+    }
+    if (!removed) break
+  }
   push(run.state)
 }
 

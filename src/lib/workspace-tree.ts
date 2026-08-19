@@ -72,9 +72,14 @@ function byName(a: { name: string }, b: { name: string }) {
   return a.name.localeCompare(b.name, undefined, { numeric: true })
 }
 
-export function buildWorkspaceTree(files: WorkspaceFile[], open: Set<string>): WorkspaceRow[] {
+function workspaceRoot(files: WorkspaceFile[]): Node {
   const root: Node = { name: "", children: new Map(), files: [] }
   for (const file of files) insert(root, file)
+  return root
+}
+
+export function buildWorkspaceTree(files: WorkspaceFile[], open: Set<string>): WorkspaceRow[] {
+  const root = workspaceRoot(files)
 
   const rows: WorkspaceRow[] = []
 
@@ -123,19 +128,37 @@ function nameOf(file: WorkspaceFile) {
  * guessed from the string.
  */
 export function pathToOpenKeys(files: WorkspaceFile[], path: string): string[] {
+  const directories = path.split("/").slice(0, -1)
   const keys: string[] = []
-  let open = new Set<string>()
-  // Walk down one level at a time, opening whichever folded row contains the
-  // path, until the file itself appears.
-  for (let guard = 0; guard < 64; guard += 1) {
-    const rows = buildWorkspaceTree(files, open)
-    if (rows.some((row) => row.kind === "file" && row.path === path)) return keys
-    const next = rows.find(
-      (row): row is WorkspaceDir => row.kind === "dir" && !row.open && path.startsWith(`${row.key}/`)
-    )
-    if (!next) return keys
-    keys.push(next.key)
-    open = new Set([...open, next.key])
+  let node = workspaceRoot(files)
+  let prefix = ""
+  let index = 0
+  while (index < directories.length) {
+    const first = directories[index]
+    if (!first) break
+    const child = node.children.get(first)
+    if (!child) break
+    let cursor: Node = child
+    let label = first
+    index += 1
+    while (
+      index < directories.length &&
+      cursor.files.length === 0 &&
+      cursor.children.size === 1
+    ) {
+      const segment = directories[index]
+      const only: Node | undefined = segment
+        ? cursor.children.get(segment)
+        : undefined
+      if (!only) break
+      label = `${label}/${segment}`
+      cursor = only
+      index += 1
+    }
+    const key = prefix ? `${prefix}/${label}` : label
+    keys.push(key)
+    prefix = key
+    node = cursor
   }
   return keys
 }

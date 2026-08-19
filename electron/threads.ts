@@ -244,6 +244,7 @@ export function stopThreads(): void {
   daemon?.close()
   daemon = null
   mirror.clear()
+  transcriptArtifacts.clear()
 }
 
 export function listThreads(
@@ -355,6 +356,20 @@ const transcriptArtifacts = new Map<
   string,
   { version: string; artifact: TranscriptArtifact }
 >()
+const MAX_TRANSCRIPT_ARTIFACTS = 32
+
+function rememberTranscriptArtifact(
+  key: string,
+  value: { version: string; artifact: TranscriptArtifact }
+) {
+  transcriptArtifacts.delete(key)
+  transcriptArtifacts.set(key, value)
+  while (transcriptArtifacts.size > MAX_TRANSCRIPT_ARTIFACTS) {
+    const oldest = transcriptArtifacts.keys().next().value
+    if (!oldest) break
+    transcriptArtifacts.delete(oldest)
+  }
+}
 
 export async function transcriptArtifactFor(
   path: string,
@@ -404,7 +419,7 @@ export async function transcriptArtifactFor(
     harness: thread.ref.harness,
     metadata: bundle.metadata,
   }
-  transcriptArtifacts.set(cacheKey, { version, artifact })
+  rememberTranscriptArtifact(cacheKey, { version, artifact })
   return artifact
 }
 

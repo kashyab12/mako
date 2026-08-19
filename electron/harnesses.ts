@@ -54,8 +54,12 @@ const cache = new Map<string, { at: number; profile: HarnessProfile }>()
 export async function harnessProfile(harness: string): Promise<HarnessProfile> {
   const env = await accountEnv(harness, process.env)
   const key = `${harness}:${env.CLAUDE_CONFIG_DIR ?? ""}:${env.CODEX_HOME ?? ""}`
+  const now = Date.now()
+  for (const [cachedKey, cached] of cache) {
+    if (now - cached.at >= 30_000) cache.delete(cachedKey)
+  }
   const held = cache.get(key)
-  if (held && Date.now() - held.at < 30_000) return held.profile
+  if (held) return held.profile
   let profile: HarnessProfile
   try {
     profile =
