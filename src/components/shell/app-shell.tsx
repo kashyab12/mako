@@ -6,7 +6,6 @@ import { ConversionOverlay } from "@/components/viewer/conversion-overlay"
 import { SettingsView } from "@/components/settings/settings-view"
 import { usePlugins } from "@/extend/use-plugins"
 import { SessionRail } from "@/components/rail/session-rail"
-import { StatusBar } from "@/components/shell/status-bar"
 import { TitleBar } from "@/components/shell/title-bar"
 import { Divider } from "@/components/shell/divider"
 import { Stage } from "@/components/stage/stage"
@@ -120,7 +119,6 @@ export function AppShell() {
             </div>
           )}
         </div>
-        <StatusBar />
 
         {/* Settings covers the whole window rather than only the chat column:
             it is a place you go, not a panel you consult, and leaving it

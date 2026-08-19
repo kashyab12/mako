@@ -7,6 +7,7 @@ import { togglePref, usePrefs } from "@/state/prefs"
 import { stage, useStage } from "@/state/stage"
 import { useTabs } from "@/state/tabs"
 import { MakoMark } from "@/components/ui/mako-mark"
+import { TitleBarStatus } from "@/components/shell/title-bar-status"
 import { workspaceName } from "@/lib/format"
 import { search } from "@/state/search"
 import { cn } from "@/lib/utils"
@@ -80,6 +81,7 @@ export function TitleBar() {
       </div>
 
       <div className="ml-auto flex items-center gap-1 pl-2">
+        <TitleBarStatus />
         <Slot name="titlebar.trailing" />
         {streaming ? (
           <IconAction

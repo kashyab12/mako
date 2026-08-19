@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -17,11 +18,12 @@ import {
   type Attachment,
 } from "@/lib/attachments"
 import { ReferenceOverlay } from "@/components/composer/reference-overlay"
-import { Chip, IconAction, Keys } from "@/components/ui/kit"
+import { Chip, IconAction, Keys, Meter } from "@/components/ui/kit"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slot } from "@/extend/slot"
 import { formatChord } from "@/extend/commands"
 import { mentionAt, replaceMention, type ActiveMention } from "@/lib/mentions"
-import { textOf } from "@/lib/format"
+import { formatContextWindow, formatCost, formatTokens, textOf } from "@/lib/format"
 import {
   appendThreadReferences,
   prefetchThreadReferences,
@@ -650,6 +652,7 @@ export function Composer() {
             />
             {status.streaming ? "queue" : "commands"}
           </span>
+          <ContextReading />
         </div>
       </div>
     </div>
@@ -702,6 +705,67 @@ function BranchChip() {
     </span>
   )
 }
+
+/**
+ * How full the window is and what the session has cost, beside the field
+ * whose next send those numbers price. Transplanted from the old status bar;
+ * a leaf with one shallow-compared selector so streaming token counts wake
+ * this span and nothing else. Both readings keep their nouns — a bare
+ * percentage is decoration that looks like information.
+ */
+const ContextReading = memo(function ContextReading() {
+  const usage = useSession(
+    useCallback(
+      (state) => ({
+        percent: state.meta?.context?.percent ?? null,
+        tokens: state.meta?.context?.tokens ?? null,
+        window: state.meta?.context?.contextWindow ?? 0,
+        cost: state.meta?.cost ?? 0,
+        total: state.meta?.tokens.total ?? 0,
+      }),
+      []
+    ),
+    shallowEqual
+  )
+  if (usage.window === 0 && usage.cost === 0) return null
+  const percent = usage.percent ?? 0
+  const tone = percent > 90 ? "text-negative" : percent > 72 ? "text-caution" : "text-faint"
+  return (
+    <span className="flex shrink-0 items-center gap-2 pl-2 text-label text-faint">
+      {usage.window > 0 ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="flex items-center gap-1.5">
+              <span className={cn("tabular", tone)}>
+                {usage.tokens == null
+                  ? "context —"
+                  : `context ${formatTokens(usage.tokens)}/${formatContextWindow(usage.window)}`}
+              </span>
+              <Meter
+                value={percent / 100}
+                tone={percent > 90 ? "negative" : percent > 72 ? "caution" : "neutral"}
+                className="w-10"
+              />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            {usage.tokens == null
+              ? "Context usage is unknown until the next response"
+              : `${Math.round(percent)}% of the model's ${formatContextWindow(usage.window)} context window is in use`}
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="tabular">{formatCost(usage.cost)} spent</span>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          {formatTokens(usage.total)} tokens billed in this session
+        </TooltipContent>
+      </Tooltip>
+    </span>
+  )
+})
 
 function Banner({ text }: BannerProps) {
   return (
