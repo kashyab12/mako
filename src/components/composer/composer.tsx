@@ -569,9 +569,10 @@ function ComposerRouting() {
           <button
             type="button"
             onClick={() => acp.cancel()}
+            title="Stops this turn only — the session stays live"
             className="pressable ml-1 rounded px-1 text-[10.5px] text-faint hover:text-foreground"
           >
-            stop
+            stop turn
           </button>
         ) : null}
         {queued ? <span className="text-[10px] text-faint">1 queued</span> : null}

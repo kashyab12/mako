@@ -268,7 +268,10 @@ export const threads = {
   async reply(ref: ThreadRef, prompt: string): Promise<boolean> {
     if (!hasBridge()) return false
     try {
-      const run = await getPi().resumeThread(ref.path, prompt)
+      // The composer's tuning rides on the reply: pick a different model or
+      // effort while a conversation is open and the next turn uses it.
+      const tuning = threadsStore.get().composerTuning[ref.harness]
+      const run = await getPi().resumeThread(ref.path, prompt, tuning)
       // Through the same reducer the host's events use, so the rail's
       // working dot lights immediately rather than on the first event.
       applyThreadRun(run)

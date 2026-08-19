@@ -34,8 +34,11 @@ interface ResumeCommand {
 }
 
 /** How each harness resumes a session headlessly with one new message. */
-const RESUME: Record<string, (nativeId: string, prompt: string) => ResumeCommand> = {
-  codex: (id, prompt) => ({
+const RESUME: Record<
+  string,
+  (nativeId: string, prompt: string, tuning?: FreshOptions) => ResumeCommand
+> = {
+  codex: (id, prompt, tuning) => ({
     command: "codex",
     args: [
       "exec",
@@ -45,21 +48,49 @@ const RESUME: Record<string, (nativeId: string, prompt: string) => ResumeCommand
       "--sandbox",
       "workspace-write",
       "--skip-git-repo-check",
+      ...(tuning?.model ? ["-m", tuning.model] : []),
+      ...(tuning?.effort ? ["-c", `model_reasoning_effort="${tuning.effort}"`] : []),
     ],
   }),
   // No --fork-session: the default reuses the session id, so the turn lands
   // in the same file the viewer is tailing.
-  claude: (id, prompt) => ({
+  claude: (id, prompt, tuning) => ({
     command: "claude",
-    args: ["-p", prompt, "--resume", id, "--dangerously-skip-permissions"],
+    args: [
+      "-p",
+      prompt,
+      "--resume",
+      id,
+      "--dangerously-skip-permissions",
+      ...(tuning?.model ? ["--model", tuning.model] : []),
+      ...(tuning?.effort ? ["--effort", tuning.effort] : []),
+    ],
   }),
-  cursor: (id, prompt) => ({
+  cursor: (id, prompt, tuning) => ({
     command: "cursor-agent",
-    args: ["-p", prompt, "--resume", id, "--force"],
+    args: [
+      "-p",
+      prompt,
+      "--resume",
+      id,
+      "--force",
+      // Only when a model was chosen: effort/fast are bracket parameters on
+      // the model flag, and passing "auto[...]" would silently change the
+      // session's model just to express an effort.
+      ...(tuning?.model ? ["--model", cursorModel(tuning) ?? tuning.model] : []),
+    ],
   }),
-  grok: (id, prompt) => ({
+  grok: (id, prompt, tuning) => ({
     command: "agent",
-    args: ["-p", prompt, "--resume", id, "--always-approve"],
+    args: [
+      "-p",
+      prompt,
+      "--resume",
+      id,
+      "--always-approve",
+      ...(tuning?.model ? ["--model", tuning.model] : []),
+      ...(tuning?.effort ? ["--reasoning-effort", tuning.effort] : []),
+    ],
   }),
 }
 
@@ -298,13 +329,17 @@ export function threadRun(path: string): ThreadRunState | null {
  * processes is corruption, not concurrency. The returned state is also
  * pushed as events as it changes.
  */
-export async function resumeNative(ref: ThreadRef, prompt: string): Promise<ThreadRunState> {
+export async function resumeNative(
+  ref: ThreadRef,
+  prompt: string,
+  tuning?: FreshOptions
+): Promise<ThreadRunState> {
   const existing = runs.get(ref.path)
   if (existing && existing.state.status === "running") return existing.state
 
   const make = RESUME[ref.harness]
   if (!make) throw new Error(`Sessions from ${ref.harness} cannot be resumed here`)
-  return launch(ref.path, ref.harness, ref.cwd, make(ref.nativeId, prompt))
+  return launch(ref.path, ref.harness, ref.cwd, make(ref.nativeId, prompt, tuning))
 }
 
 /**

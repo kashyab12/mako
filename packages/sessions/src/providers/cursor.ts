@@ -62,6 +62,15 @@ async function openDatabase(path: string): Promise<SqliteDatabase | null> {
   }
 }
 
+/** Epoch millis or an ISO string — Cursor's meta has carried both. */
+function isoOf(value: string | number | undefined): string | undefined {
+  if (value === undefined) return undefined
+  if (typeof value === "number") return new Date(value).toISOString()
+  const asNumber = Number(value)
+  if (Number.isFinite(asNumber) && asNumber > 1e12) return new Date(asNumber).toISOString()
+  return value
+}
+
 /** The two protobuf reads the root blob needs: hash list and workspace URI. */
 function parseRoot(data: Uint8Array): { hashes: string[]; cwd?: string } {
   const hashes: string[] = []
@@ -186,19 +195,35 @@ export class CursorProvider implements SessionProvider {
         nativeId: meta.agentId ?? dirname(file.path).split("/").pop() ?? "",
         path: file.path,
         title: named,
-        startedAt: meta.createdAt,
+        startedAt: isoOf(meta.createdAt),
+        // The store file's mtime lies: Cursor batch-touches old stores
+        // (migrations, vacuums), which once made month-old sessions read as
+        // "just now". meta.json's updatedAtMs is Cursor's own record of the
+        // last turn; mtime is only the fallback when the sidecar is absent.
         updatedAt: new Date(file.mtimeMs).toISOString(),
         bytes: file.bytes,
       }
-      // meta.json is the cheap source of cwd; the root blob is the fallback.
+      // meta.json is the cheap source of cwd and honest activity times.
       const sidecar = await readFile(join(dirname(file.path), "meta.json"), "utf8").catch(() => null)
       if (sidecar) {
         try {
-          const parsed = JSON.parse(sidecar) as { cwd?: string; updatedAtMs?: number }
+          const parsed = JSON.parse(sidecar) as {
+            cwd?: string
+            createdAtMs?: number
+            updatedAtMs?: number
+          }
           if (parsed.cwd) ref.cwd = parsed.cwd
+          if (parsed.updatedAtMs) ref.updatedAt = new Date(parsed.updatedAtMs).toISOString()
+          if (parsed.createdAtMs) ref.startedAt = new Date(parsed.createdAtMs).toISOString()
         } catch {
           // Fall through to the root blob.
         }
+      } else {
+        // Old-format stores have no sidecar. The last-inserted blobs carry
+        // the real timestamps of the final turns; scan a few for the newest
+        // plausible epoch instead of trusting a touched file.
+        const activity = this.readLastActivity(database)
+        if (activity) ref.updatedAt = activity
       }
       if (!ref.cwd || !ref.title) {
         const root = this.readRoot(database, meta.latestRootBlobId)
@@ -304,7 +329,7 @@ export class CursorProvider implements SessionProvider {
 
   private readMeta(
     database: SqliteDatabase
-  ): { agentId?: string; name?: string; createdAt?: string; latestRootBlobId?: string } | null {
+  ): { agentId?: string; name?: string; createdAt?: string | number; latestRootBlobId?: string } | null {
     try {
       const row = database.prepare("SELECT value FROM meta WHERE key = '0'").get() as
         | { value?: string | Uint8Array }
@@ -319,6 +344,52 @@ export class CursorProvider implements SessionProvider {
       return JSON.parse(text) as ReturnType<CursorProvider["readMeta"]>
     } catch {
       return null
+    }
+  }
+
+  /**
+   * The newest epoch-millis found in the last few blobs — insertion order is
+   * conversation order, so this is when the session truly last moved. A
+   * varint scan yields false positives; bounds and max() filter them.
+   */
+  private readLastActivity(database: SqliteDatabase): string | undefined {
+    try {
+      const rows = database
+        .prepare("SELECT data FROM blobs WHERE length(data) < 262144 ORDER BY rowid DESC LIMIT 30")
+        .all() as Array<{ data?: Uint8Array }>
+      const floor = Date.UTC(2015, 0, 1)
+      const ceiling = Date.now() + 10 * 60_000
+      let best = 0
+      for (const row of rows) {
+        const buffer = row.data
+        if (!buffer) continue
+        if (buffer[0] === 0x7b) {
+          // A JSON blob (messages are JSON): epoch millis appear as plain
+          // 13-digit numbers in the text.
+          const text = Buffer.from(buffer).toString("utf8")
+          for (const match of text.matchAll(/\b1[5-9]\d{11}\b/g)) {
+            const value = Number(match[0])
+            if (value > floor && value < ceiling && value > best) best = value
+          }
+          continue
+        }
+        for (let i = 0; i < buffer.length; i++) {
+          let value = 0
+          let shift = 0
+          let j = i
+          while (j < buffer.length && shift <= 49) {
+            const byte = buffer[j]!
+            value += (byte & 0x7f) * 2 ** shift
+            if ((byte & 0x80) === 0) break
+            shift += 7
+            j++
+          }
+          if (value > floor && value < ceiling && value > best) best = value
+        }
+      }
+      return best > 0 ? new Date(best).toISOString() : undefined
+    } catch {
+      return undefined
     }
   }
 

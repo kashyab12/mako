@@ -509,7 +509,7 @@ function bindIpc() {
   })
 
   handle("pi:thread-run", (_e, path: string) => threadRun(path))
-  handle("pi:thread-resume", async (_e, path: string, prompt: string) => {
+  handle("pi:thread-resume", async (_e, path: string, prompt: string, tuning?: { model?: string; effort?: string; fast?: boolean }) => {
     // A remote session (Devin) takes the message through its API and keeps
     // working in the cloud; the follow poll streams what it does next.
     if (await sendRemote(path, prompt)) {
@@ -517,7 +517,7 @@ function bindIpc() {
     }
     const thread = await openThread(path)
     if (!thread) throw new Error("This session could not be read")
-    return await resumeNative(thread.ref, prompt)
+    return await resumeNative(thread.ref, prompt, tuning)
   })
   handle("pi:thread-abort-run", (_e, path: string) => abortNative(path))
   /**

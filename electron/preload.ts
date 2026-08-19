@@ -69,7 +69,8 @@ const api = {
       "pi:harness-tuning",
       harness
     ),
-  resumeThread: (path: string, prompt: string) => invoke<ThreadRunState>("pi:thread-resume", path, prompt),
+  resumeThread: (path: string, prompt: string, tuning?: { model?: string; effort?: string; fast?: boolean }) =>
+    invoke<ThreadRunState>("pi:thread-resume", path, prompt, tuning),
   abortThreadRun: (path: string) => invoke<void>("pi:thread-abort-run", path),
 
   /* Interactive foreign agents (ACP). */

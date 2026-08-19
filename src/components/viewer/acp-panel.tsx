@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { harnessLabel } from "@/components/rail/agent-threads"
-import { acp, useAcp, type AcpBlock } from "@/state/acp"
+import { acp, acpStore, useAcp, type AcpBlock } from "@/state/acp"
 import { cn } from "@/lib/utils"
 import {
   CheckIcon,
@@ -34,7 +34,12 @@ export function AcpPanel() {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault()
-        acp.close()
+        // The same muscle memory as the native transcript: Escape during a
+        // turn stops the turn. Only an idle Escape closes the session —
+        // ending a live agent because the user tried to interrupt it was
+        // this panel's worst surprise.
+        if (acpStore.get().session?.status === "running") acp.cancel()
+        else acp.close()
       }
     }
     window.addEventListener("keydown", onKey)
@@ -68,7 +73,8 @@ export function AcpPanel() {
         <ModePicker />
         <button
           type="button"
-          aria-label="Close"
+          aria-label="End live session"
+          title="Ends the live session — the conversation stays in Threads"
           onClick={() => acp.close()}
           className="pressable shrink-0 rounded p-1 text-faint hover:text-foreground"
         >
