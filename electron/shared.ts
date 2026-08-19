@@ -743,6 +743,12 @@ export interface McpRegistrySnapshot {
   providers: McpRegistryProviderStatus[]
 }
 
+export interface MakoComputerPermissions {
+  supported: boolean
+  accessibility: boolean
+  screenRecording: "not-determined" | "denied" | "restricted" | "granted" | "unknown"
+}
+
 export interface McpSyncTarget {
   provider: McpProvider
   account: string

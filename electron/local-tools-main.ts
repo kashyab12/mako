@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process"
 import { access } from "node:fs/promises"
+import { homedir } from "node:os"
 import { delimiter, isAbsolute, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
@@ -47,10 +48,12 @@ type ProcessResult = { stdout: string; stderr: string; code: number | null }
 async function executable(command: string): Promise<string | null> {
   const candidates = isAbsolute(command)
     ? [command]
-    : (process.env.PATH ?? "")
-        .split(delimiter)
-        .filter(Boolean)
-        .map((directory) => join(directory, command))
+    : [
+        ...(process.env.PATH ?? "").split(delimiter).filter(Boolean),
+        join(homedir(), ".local", "bin"),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+      ].map((directory) => join(directory, command))
   for (const candidate of candidates) {
     try {
       await access(candidate)

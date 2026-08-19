@@ -44,6 +44,7 @@ export type {
   HarnessSelectValue,
   ModelCost,
   ModelInfo,
+  MakoComputerPermissions,
   McpProvider,
   McpRegistryProviderStatus,
   McpRegistrySnapshot,

@@ -1,6 +1,13 @@
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
+import {
+  chmod,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js"
@@ -15,6 +22,10 @@ import {
   previewMcpSync,
 } from "../electron/mcp.js"
 import { LOCAL_TOOL_INPUTS } from "../electron/local-tools-main.js"
+import {
+  ensureCuaEmbedded,
+  stopCuaEmbedded,
+} from "../electron/cua-embedded.js"
 import { atomicJsonMcpMerge, mergeJsonMcpConfig } from "../electron/mcp-sync.js"
 import type { McpDiscoveredDefinition } from "../electron/mcp-registry.js"
 import type { JsonValue } from "../electron/codex-app-protocol.js"
@@ -354,18 +365,26 @@ async function testManagedDefinitions(): Promise<void> {
   const browser = definitions.find(
     (entry) => entry.definition.name === "browser-use"
   )
-  assert.deepEqual(browser?.definition.args, [
-    "--from",
-    "browser-use[cli]",
-    "browser-use",
-    "--cli-mcp",
-  ])
+  assert.ok(browser)
+  assert.deepEqual(
+    browser?.definition.args,
+    browser.definition.command?.endsWith("browser-use")
+      ? ["--cli-mcp"]
+      : [
+          "--from",
+          "browser-use[cli]==0.13.7",
+          "browser-use",
+          "--cli-mcp",
+        ]
+  )
   assert.equal(
     definitions.some((entry) => entry.definition.name === "mako-local-tools"),
     true
   )
   assert.equal(
-    definitions.some((entry) => entry.definition.name === "cua-driver"),
+    definitions.some(
+      (entry) => entry.definition.name === "mako-cua-fallback"
+    ),
     true
   )
   const localTools = definitions.find(
@@ -379,8 +398,18 @@ async function testManagedDefinitions(): Promise<void> {
     providers: [],
   }
   assert.deepEqual(
-    acpMcpServers(managedSnapshot, "claude", ["stdio", "http"]),
-    []
+    acpMcpServers(managedSnapshot, "claude", ["stdio", "http"])
+      .map((server) => server.name)
+      .sort(),
+    definitions
+      .filter(
+        (entry) =>
+          !entry.definition.blockReason &&
+          (entry.definition.name === "browser-use" ||
+            entry.definition.name === "mako-local-tools")
+      )
+      .map((entry) => entry.definition.name)
+      .sort()
   )
   const cursor = z
     .object({
@@ -397,7 +426,7 @@ async function testManagedDefinitions(): Promise<void> {
 
 async function testMakoRuntimeProjection(): Promise<void> {
   const managed = (
-    name: "browser-use" | "mako-local-tools" | "cua-driver",
+    name: "browser-use" | "mako-local-tools" | "mako-cua-fallback",
     command: string,
     args: string[]
   ): McpDiscoveredDefinition => ({
@@ -424,7 +453,12 @@ async function testMakoRuntimeProjection(): Promise<void> {
     servers: mergeMcpDefinitions([
       managed("browser-use", "uvx", ["browser-use", "--cli-mcp"]),
       managed("mako-local-tools", process.execPath, ["local-tools.js"]),
-      managed("cua-driver", "cua-driver", ["mcp"]),
+      managed("mako-cua-fallback", "cua-driver", [
+        "mcp",
+        "--embedded",
+        "--socket",
+        "/tmp/mako-cua.sock",
+      ]),
     ]).map((server) => ({
       ...server,
       managed: true,
@@ -433,7 +467,7 @@ async function testMakoRuntimeProjection(): Promise<void> {
   }
   assert.deepEqual(
     acpMcpServers(snapshot, "claude", ["stdio"]).map((server) => server.name),
-    ["browser-use", "mako-local-tools"]
+    ["browser-use", "mako-cua-fallback", "mako-local-tools"]
   )
   const codex = codexMcpConfig(snapshot)
   const servers = z
@@ -441,6 +475,7 @@ async function testMakoRuntimeProjection(): Promise<void> {
     .parse(codex).mcp_servers
   assert.deepEqual(Object.keys(servers).sort(), [
     "browser-use",
+    "mako-cua-fallback",
     "mako-local-tools",
   ])
   const browserServer = snapshot.servers.find(
@@ -464,6 +499,12 @@ async function testMakoRuntimeProjection(): Promise<void> {
     servers: mergeMcpDefinitions([
       managed("browser-use", "uvx", ["browser-use", "--cli-mcp"]),
       managed("mako-local-tools", process.execPath, ["local-tools.js"]),
+      managed("mako-cua-fallback", "cua-driver", [
+        "mcp",
+        "--embedded",
+        "--socket",
+        "/tmp/mako-cua.sock",
+      ]),
       discovered("claude", "node_repl", { command: process.execPath }),
     ]).map((server) => ({
       ...server,
@@ -472,6 +513,26 @@ async function testMakoRuntimeProjection(): Promise<void> {
     })),
   }
   assert.deepEqual(acpMcpServers(nativeSnapshot, "claude", ["stdio"]), [])
+}
+
+async function testEmbeddedCuaHost(): Promise<void> {
+  const directory = await mkdtemp(join(tmpdir(), "mako-cua-embedded-"))
+  const command = join(directory, "cua-driver")
+  const state = join(directory, "state")
+  const source = `#!${process.execPath}\nconst net = require("node:net")\nif (process.env.CUA_DRIVER_EMBEDDED !== "1") process.exit(2)\nif (process.env.CUA_DRIVER_HOST_BUNDLE_ID !== "dev.mako.test") process.exit(3)\nconst index = process.argv.indexOf("--socket")\nconst socket = process.argv[index + 1]\nconst server = net.createServer(connection => connection.end())\nserver.listen(socket)\nprocess.on("SIGTERM", () => server.close(() => process.exit(0)))\n`
+  try {
+    await writeFile(command, source)
+    await chmod(command, 0o755)
+    const socket = await ensureCuaEmbedded(state, "dev.mako.test", {
+      PATH: directory,
+    })
+    assert.ok(socket)
+    assert.equal(process.env.MAKO_CUA_SOCKET, socket)
+  } finally {
+    stopCuaEmbedded()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    await rm(directory, { recursive: true, force: true })
+  }
 }
 
 function testLocalSchemas(): void {
@@ -524,5 +585,6 @@ await testGuardedAtomicMerge()
 testAcpProjection()
 await testManagedDefinitions()
 await testMakoRuntimeProjection()
+await testEmbeddedCuaHost()
 testLocalSchemas()
 console.log("MCP tests passed")

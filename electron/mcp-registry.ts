@@ -295,10 +295,12 @@ async function findExecutable(
 ): Promise<string | null> {
   const candidates = isAbsolute(command)
     ? [command]
-    : (env.PATH ?? "")
-        .split(delimiter)
-        .filter(Boolean)
-        .map((directory) => join(directory, command))
+    : [
+        ...(env.PATH ?? "").split(delimiter).filter(Boolean),
+        join(homedir(), ".local", "bin"),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+      ].map((directory) => join(directory, command))
   for (const candidate of candidates) {
     try {
       await access(candidate, constants.X_OK)
@@ -448,11 +450,14 @@ export async function managedMcpDefinitions(
   env: NodeJS.ProcessEnv = process.env
 ): Promise<McpDiscoveredDefinition[]> {
   const harnessPath = await findExecutable("macos-harness", env)
+  const browserPath = await findExecutable("browser-use", env)
   const uvxPath = await findExecutable("uvx", env)
   const cuaPath = await findExecutable("cua-driver", env)
   const harness = harnessPath !== null
+  const browser = browserPath !== null
   const uvx = uvxPath !== null
-  const cua = cuaPath !== null
+  const cuaSocket = env.MAKO_CUA_SOCKET
+  const cua = cuaPath !== null && Boolean(cuaSocket)
   const doctor = await harnessDoctor(harness, env)
   const definitions: Array<
     McpInternalDefinition & { availability: boolean; detail: string }
@@ -460,9 +465,17 @@ export async function managedMcpDefinitions(
     {
       name: "mako-local-tools",
       transport: "stdio",
-      command: execPath,
-      args: [localServerPath(appPath)],
-      envNames: ["ELECTRON_RUN_AS_NODE"],
+      command: process.platform === "win32" ? execPath : "/usr/bin/env",
+      args:
+        process.platform === "win32"
+          ? [localServerPath(appPath)]
+          : [
+              "ELECTRON_RUN_AS_NODE=1",
+              execPath,
+              localServerPath(appPath),
+            ],
+      envNames:
+        process.platform === "win32" ? ["ELECTRON_RUN_AS_NODE"] : [],
       headerNames: [],
       portable: true,
       availability: process.platform === "darwin" && harness,
@@ -472,24 +485,41 @@ export async function managedMcpDefinitions(
     {
       name: "browser-use",
       transport: "stdio",
-      command: uvxPath ?? "uvx",
-      args: ["--from", "browser-use[cli]", "browser-use", "--cli-mcp"],
+      command: browserPath ?? uvxPath ?? "uvx",
+      args: browser
+        ? ["--cli-mcp"]
+        : [
+            "--from",
+            "browser-use[cli]==0.13.7",
+            "browser-use",
+            "--cli-mcp",
+          ],
       envNames: [],
       headerNames: [],
       portable: true,
-      availability: uvx,
-      detail: uvx ? "uvx is available" : "uvx is not installed",
+      availability: browser || uvx,
+      detail: browser
+        ? "Browser Use 0.13.7 is installed"
+        : uvx
+          ? "Browser Use 0.13.7 is available through uvx"
+          : "Browser Use and uvx are not installed",
     },
     {
-      name: "cua-driver",
+      name: "mako-cua-fallback",
       transport: "stdio",
       command: cuaPath ?? "cua-driver",
-      args: ["mcp"],
+      args: cuaSocket
+        ? ["mcp", "--embedded", "--socket", cuaSocket]
+        : ["mcp", "--embedded"],
       envNames: [],
       headerNames: [],
       portable: true,
       availability: cua,
-      detail: cua ? "cua-driver is available" : "cua-driver is not installed",
+      detail: cua
+        ? "CUA Driver 0.19.3 fallback runs under Mako permissions"
+        : cuaPath
+          ? "Mako has not started its embedded CUA fallback"
+          : "CUA Driver is not installed",
     },
   ]
   return definitions.map(({ availability, detail, ...definition }) => {
@@ -609,7 +639,11 @@ export function projectPortableDefinitions(
     .map(safeDefinition)
 }
 
-const MAKO_RUNTIME_SERVERS = new Set(["browser-use", "mako-local-tools"])
+const MAKO_RUNTIME_SERVERS = new Set([
+  "browser-use",
+  "mako-local-tools",
+  "mako-cua-fallback",
+])
 
 export function projectRuntimeDefinitions(
   snapshot: McpRegistrySnapshot,
@@ -640,7 +674,8 @@ export function projectRuntimeDefinitions(
         MAKO_RUNTIME_SERVERS.has(server.name) &&
         !server.blockReason &&
         (server.name !== "browser-use" || !nativeBrowser) &&
-        (server.name !== "mako-local-tools" || !nativeComputer)
+        (server.name !== "mako-local-tools" || !nativeComputer) &&
+        (server.name !== "mako-cua-fallback" || !nativeComputer)
       return (
         server.portable &&
         !server.conflict &&

@@ -13,6 +13,7 @@ import type {
   HostEvent,
   HarnessProfile,
   ModelInfo,
+  MakoComputerPermissions,
   McpRegistrySnapshot,
   McpSyncPreview,
   McpSyncTarget,
@@ -202,6 +203,13 @@ const api = {
   daemonLogin: () => invokeTrustedHost<boolean>("mako:daemon-login"),
   setDaemonLogin: (enabled: boolean) =>
     invokeTrustedHost<void>("mako:daemon-login-set", enabled),
+
+  computerPermissions: () =>
+    invokeTrustedHost<MakoComputerPermissions>("mako:computer-permissions"),
+  requestComputerPermissions: () =>
+    invokeTrustedHost<MakoComputerPermissions>(
+      "mako:computer-permissions-request"
+    ),
 
   /* MCP discovery is read-only; sync is always an explicit settings action. */
   discoverMcp: () =>

@@ -1,5 +1,6 @@
 import { getMako, hasBridge } from "@/lib/bridge"
 import type {
+  MakoComputerPermissions,
   McpRegistrySnapshot,
   McpSyncPreview,
   McpSyncTarget,
@@ -10,6 +11,7 @@ interface McpState {
   status: "idle" | "loading" | "ready" | "syncing" | "error"
   snapshot: McpRegistrySnapshot | null
   previews: Record<string, McpSyncPreview[]>
+  permissions?: MakoComputerPermissions
   error?: string
 }
 
@@ -25,12 +27,35 @@ export const mcp = {
     if (!hasBridge()) return
     mcpStore.set({ status: "loading", error: undefined })
     try {
-      const snapshot = await getMako().discoverMcp()
-      mcpStore.set({ status: "ready", snapshot, previews: {} })
+      const [snapshot, permissions] = await Promise.all([
+        getMako().discoverMcp(),
+        getMako().computerPermissions(),
+      ])
+      mcpStore.set({
+        status: "ready",
+        snapshot,
+        permissions,
+        previews: {},
+      })
     } catch {
       mcpStore.set({
         status: "error",
         error: "MCP configuration could not be loaded",
+      })
+    }
+  },
+
+  async requestComputerPermissions() {
+    if (!hasBridge()) return
+    try {
+      const permissions = await getMako().requestComputerPermissions()
+      mcpStore.set({ permissions })
+    } catch (error) {
+      mcpStore.set({
+        error:
+          error instanceof Error
+            ? `Computer-use permission request failed: ${error.message}`
+            : "Computer-use permission request failed",
       })
     }
   },

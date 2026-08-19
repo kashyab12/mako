@@ -2,12 +2,14 @@ import {
   app,
   BrowserWindow,
   clipboard,
+  desktopCapturer,
   dialog,
   ipcMain,
   nativeImage,
   nativeTheme,
   powerMonitor,
   shell,
+  systemPreferences,
   type BrowserWindowConstructorOptions,
 } from "electron"
 import { watch } from "node:fs"
@@ -101,6 +103,7 @@ import {
 } from "./accounts.js"
 import { daemonLoginEnabled, setDaemonLogin } from "./daemon-login.js"
 import { TerminalDaemonClient } from "./terminal-client.js"
+import { ensureCuaEmbedded, stopCuaEmbedded } from "./cua-embedded.js"
 import {
   acpCancel,
   acpClose,
@@ -136,6 +139,7 @@ import type {
   AcpPromptAttachment,
   BootPayload,
   HostEvent,
+  MakoComputerPermissions,
   McpSyncTarget,
   SearchOptions,
   TerminalCreateOptions,
@@ -177,6 +181,40 @@ let starting: Promise<unknown> | null = null
 function terminal() {
   if (!terminalClient) throw new Error("Terminal service is not ready")
   return terminalClient
+}
+
+function ensureMakoComputerFallback() {
+  return ensureCuaEmbedded(
+    join(app.getPath("userData"), "computer-use", "cua"),
+    "dev.mako.app"
+  )
+}
+
+function computerPermissions(): MakoComputerPermissions {
+  if (process.platform !== "darwin") {
+    return {
+      supported: false,
+      accessibility: false,
+      screenRecording: "unknown",
+    }
+  }
+  return {
+    supported: true,
+    accessibility: systemPreferences.isTrustedAccessibilityClient(false),
+    screenRecording: systemPreferences.getMediaAccessStatus("screen"),
+  }
+}
+
+async function requestComputerPermissions(): Promise<MakoComputerPermissions> {
+  if (process.platform !== "darwin") return computerPermissions()
+  systemPreferences.isTrustedAccessibilityClient(true)
+  if (systemPreferences.getMediaAccessStatus("screen") !== "granted") {
+    await desktopCapturer.getSources({
+      types: ["screen"],
+      thumbnailSize: { width: 1, height: 1 },
+    })
+  }
+  return computerPermissions()
 }
 
 function emitTerminalWake() {
@@ -728,8 +766,16 @@ function bindIpc() {
     setDaemonLogin(enabled)
   )
 
+  handle("mako:computer-permissions", () => computerPermissions())
+  handle("mako:computer-permissions-request", () =>
+    requestComputerPermissions()
+  )
+
   handle("mako:mcp-discover", () =>
-    withHost((host) => discoverMcpRegistry(host.workspace, app.getAppPath()))
+    withHost(async (host) => {
+      await ensureMakoComputerFallback().catch(() => null)
+      return discoverMcpRegistry(host.workspace, app.getAppPath())
+    })
   )
   handle(
     "mako:mcp-sync-preview",
@@ -772,6 +818,7 @@ function bindIpc() {
         }
       }
     ) => {
+      await ensureMakoComputerFallback().catch(() => null)
       const profile = await harnessProfile(harness)
       const resolved = {
         ...options,
@@ -1029,6 +1076,7 @@ app.on("before-quit", () => {
   powerMonitor.removeListener("resume", emitTerminalWake)
   powerMonitor.removeListener("unlock-screen", emitTerminalWake)
   terminalClient?.dispose()
+  stopCuaEmbedded()
   stopWatching()
   stopThreads()
   stopDrivers()

@@ -38,6 +38,31 @@ export function McpSection() {
         Environment and header values stay in the host.
       </p>
 
+      {state.permissions?.supported ? (
+        <div className="mb-3 flex items-center gap-3 rounded-lg bg-surface px-2.5 py-2 ring-1 ring-hairline">
+          <span className="min-w-0 flex-1">
+            <span className="block text-ui text-foreground/90">
+              Computer use runs as Mako
+            </span>
+            <span className="block text-label text-faint">
+              {state.permissions.accessibility &&
+              state.permissions.screenRecording === "granted"
+                ? "Accessibility and Screen Recording are granted once to Mako."
+                : "Grant Accessibility and Screen Recording once; macOS Harness and the embedded CUA fallback share Mako’s app identity."}
+            </span>
+          </span>
+          {!state.permissions.accessibility ||
+          state.permissions.screenRecording !== "granted" ? (
+            <Action
+              tone="outline"
+              onClick={() => void mcp.requestComputerPermissions()}
+            >
+              Grant to Mako
+            </Action>
+          ) : null}
+        </div>
+      ) : null}
+
       {state.status === "loading" && !snapshot ? (
         <p className="shimmer text-ui text-faint">
           Reading provider configurations…

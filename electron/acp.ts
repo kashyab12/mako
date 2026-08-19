@@ -211,9 +211,12 @@ export async function acpStart(
   const env = await accountEnv(harness, process.env)
   delete env.CLAUDECODE
   delete env.CLAUDE_CODE_ENTRYPOINT
-  if (harness === "claude" && !env.CLAUDE_CODE_EXECUTABLE) {
-    const installed = join(homedir(), ".local", "bin", "claude")
-    if (existsSync(installed)) env.CLAUDE_CODE_EXECUTABLE = installed
+  if (harness === "claude") {
+    env.ELECTRON_RUN_AS_NODE = "1"
+    if (!env.CLAUDE_CODE_EXECUTABLE) {
+      const installed = join(homedir(), ".local", "bin", "claude")
+      if (existsSync(installed)) env.CLAUDE_CODE_EXECUTABLE = installed
+    }
   }
   if (harness === "grok") env.GROK_DISABLE_AUTOUPDATER = "1"
 

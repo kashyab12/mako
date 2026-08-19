@@ -792,6 +792,16 @@ export function installMockBridge() {
     }),
     defaultCommitPrompt: async () =>
       "You are an expert at writing Git commits.",
+    computerPermissions: async () => ({
+      supported: true,
+      accessibility: true,
+      screenRecording: "granted" as const,
+    }),
+    requestComputerPermissions: async () => ({
+      supported: true,
+      accessibility: true,
+      screenRecording: "granted" as const,
+    }),
     discoverMcp: async () => MCP,
     previewMcpSync: async (serverId, target) => ({
       serverId,
