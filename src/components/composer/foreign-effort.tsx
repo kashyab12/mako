@@ -53,6 +53,7 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
     ? (selected[fast.id] ?? chosen.fast ?? fast.current)
     : undefined
   const fastOn = fastValue === true || fastValue === "true"
+  const detailedOptions = options.filter((option) => option !== fast)
 
   const setOption = (option: HarnessModelOption, value: string | boolean) => {
     const next = { ...selected, [option.id]: value }
@@ -64,43 +65,44 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
 
   return (
     <>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            aria-label="Model options"
-            className={cn(
-              "pressable no-drag flex h-7 items-center gap-1.5 rounded-md px-2 text-[12.5px] font-medium",
-              "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease]",
-              "text-faint hover:bg-raised hover:text-foreground aria-expanded:bg-raised"
-            )}
-          >
-            {fastOn ? (
-              <ZapIcon className="size-3 fill-caution text-caution" />
-            ) : effort?.kind === "select" ? (
-              <Gauge filled={rankOf(effortValue, effort.values.map((value) => value.value))} />
-            ) : (
-              <SlidersHorizontalIcon className="size-3" />
-            )}
-            <span className="capitalize">{fastOn ? "fast" : effortValue || "options"}</span>
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="start" side="top" sideOffset={8} className="max-h-[24rem] w-[19rem] overflow-y-auto p-1">
-          {options.map((option) => (
-            <OptionSection
-              key={option.id}
-              option={option}
-              value={selected[option.id] ?? option.current}
-              onChange={(value) => setOption(option, value)}
-            />
-          ))}
-        </PopoverContent>
-      </Popover>
+      {detailedOptions.length > 0 ? (
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label="Model options"
+              className={cn(
+                "pressable no-drag flex h-7 items-center gap-1.5 rounded-md px-2 text-[12.5px] font-medium",
+                "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease]",
+                "text-faint hover:bg-raised hover:text-foreground aria-expanded:bg-raised"
+              )}
+            >
+              {effort?.kind === "select" ? (
+                <Gauge filled={rankOf(effortValue, effort.values.map((value) => value.value))} />
+              ) : (
+                <SlidersHorizontalIcon className="size-3" />
+              )}
+              <span className="capitalize">{effortValue || "options"}</span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" side="top" sideOffset={8} className="max-h-[24rem] w-[19rem] overflow-y-auto p-1">
+            {detailedOptions.map((option) => (
+              <OptionSection
+                key={option.id}
+                option={option}
+                value={selected[option.id] ?? option.current}
+                onChange={(value) => setOption(option, value)}
+              />
+            ))}
+          </PopoverContent>
+        </Popover>
+      ) : null}
       {fast ? (
         <button
           type="button"
-          aria-label={fastOn ? "Fast mode on" : "Fast mode off"}
-          title={fastOn ? "Fast mode on" : "Fast mode off"}
+          aria-label={`Fast mode ${fastOn ? "on" : "off"}`}
+          aria-pressed={fastOn}
+          title={`Fast mode ${fastOn ? "on" : "off"}`}
           onClick={() =>
             setOption(
               fast,
@@ -108,11 +110,14 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
             )
           }
           className={cn(
-            "pressable no-drag flex h-7 items-center rounded-md px-1.5 hover:bg-raised",
-            fastOn ? "text-caution" : "text-faint hover:text-foreground"
+            "pressable no-drag flex h-7 items-center gap-1.5 rounded-md px-2 text-[12.5px] font-medium hover:bg-raised",
+            fastOn
+              ? "bg-caution/10 text-caution"
+              : "text-faint hover:text-foreground"
           )}
         >
-          <ZapIcon className={cn("size-3.5", fastOn && "fill-caution")} />
+          <ZapIcon className={cn("size-3", fastOn && "fill-caution")} />
+          Fast
         </button>
       ) : null}
     </>
