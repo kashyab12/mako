@@ -45,6 +45,18 @@ let timer: ReturnType<typeof setTimeout> | undefined
  */
 const DEBOUNCE_MS = 180
 
+function parseSearchFailure(query: string, cause: unknown): SearchResults {
+  return {
+    query,
+    files: [],
+    threads: [],
+    total: 0,
+    truncated: false,
+    elapsed: 0,
+    error: cause instanceof Error ? cause.message : String(cause),
+  }
+}
+
 function run(query: string, options: SearchOptions) {
   const mine = ++generation
   const term = query.trim()
@@ -59,20 +71,9 @@ function run(query: string, options: SearchOptions) {
       if (mine !== generation) return
       searchStore.set({ results, running: false })
     })
-    .catch((error: unknown) => {
+    .catch((cause: unknown) => {
       if (mine !== generation) return
-      searchStore.set({
-        running: false,
-        results: {
-          query: term,
-          files: [],
-          threads: [],
-          total: 0,
-          truncated: false,
-          elapsed: 0,
-          error: error instanceof Error ? error.message : String(error),
-        },
-      })
+      searchStore.set({ running: false, results: parseSearchFailure(term, cause) })
     })
 }
 

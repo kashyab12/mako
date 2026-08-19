@@ -42,6 +42,71 @@ interface ReviewState {
 
 const KEY = "pi.review.v1"
 
+interface JsonObject {
+  [key: string]: JsonValue
+}
+
+type JsonValue = null | boolean | number | string | JsonObject | JsonValue[]
+type StoredValue = JsonValue | undefined
+
+function isJsonObject(value: StoredValue): value is JsonObject {
+  return Object(value) === value && !Array.isArray(value)
+}
+
+function isJsonArray(value: StoredValue): value is JsonValue[] {
+  return Array.isArray(value)
+}
+
+function isJsonString(value: StoredValue): value is string {
+  return Object.prototype.toString.call(value) === "[object String]"
+}
+
+function isJsonNumber(value: StoredValue): value is number {
+  return (
+    Object.prototype.toString.call(value) === "[object Number]" &&
+    Number.isFinite(Number(value))
+  )
+}
+
+function isReviewSide(
+  value: StoredValue
+): value is ReviewComment["side"] {
+  return value === "additions" || value === "deletions"
+}
+
+function parseComment(value: JsonValue): ReviewComment | null {
+  if (
+    !isJsonObject(value) ||
+    !isJsonString(value.id) ||
+    !isJsonString(value.path) ||
+    !isJsonNumber(value.line) ||
+    !Number.isInteger(value.line) ||
+    !isReviewSide(value.side) ||
+    !isJsonString(value.body) ||
+    (value.code !== undefined && !isJsonString(value.code))
+  ) {
+    return null
+  }
+  return {
+    id: value.id,
+    path: value.path,
+    line: value.line,
+    side: value.side,
+    code: value.code,
+    body: value.body,
+  }
+}
+
+function parseComments(value: JsonValue): ReviewComment[] {
+  if (!isJsonArray(value)) return []
+  const comments: ReviewComment[] = []
+  for (const entry of value) {
+    const comment = parseComment(entry)
+    if (comment) comments.push(comment)
+  }
+  return comments
+}
+
 /**
  * Persisted, because losing a page of review notes to an accidental reload is
  * the kind of small disaster that stops people trusting a feature. Keyed by
@@ -50,7 +115,9 @@ const KEY = "pi.review.v1"
 function load(): ReviewComment[] {
   try {
     const raw = localStorage.getItem(KEY)
-    return raw ? (JSON.parse(raw) as ReviewComment[]) : []
+    if (!raw) return []
+    const parsed: JsonValue = JSON.parse(raw)
+    return parseComments(parsed)
   } catch {
     return []
   }

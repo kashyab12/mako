@@ -41,13 +41,14 @@ export const viewer = {
     const mine = ++generation
     // Reopening the same file keeps the old text on screen while the fresh
     // read races in — no white flash, no skeleton for a file already read.
-    const sameFile = viewerStore.get().path === path
+    const current = viewerStore.get()
+    const sameFile = current.path === path
     viewerStore.set({
       path,
       line,
       loading: !sameFile,
       error: undefined,
-      ...(sameFile ? {} : { file: undefined }),
+      file: sameFile ? current.file : undefined,
       diff: undefined,
     })
     try {
