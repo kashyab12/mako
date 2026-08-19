@@ -299,7 +299,7 @@ function Conversation() {
               <div className="animate-enter flex items-center gap-2 px-0.5 text-ui">
                 <HarnessIcon
                   harness={thread.ref.harness}
-                  className="size-3.5 animate-pulse"
+                  className="size-3.5 animate-live"
                 />
                 <span className="shimmer">
                   {harnessLabel(thread.ref.harness)} is working…

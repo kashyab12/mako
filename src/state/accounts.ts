@@ -75,7 +75,9 @@ export const accounts = {
         }
       })
       .catch((error) => {
-        accountsStore.set({ accounts: [], loadedAt: undefined })
+        // Keep whatever list is already on screen — a transient refresh
+        // failure must not blank two surfaces. Re-arm the staleness guard.
+        accountsStore.set({ loadedAt: undefined })
         toast.error("Accounts could not be loaded", {
           description: error instanceof Error ? error.message : String(error),
           action: { label: "Retry", onClick: () => accounts.load(true) },

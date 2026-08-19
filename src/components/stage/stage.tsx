@@ -11,6 +11,8 @@ import { stage, useStage } from "@/state/stage"
 import { useTabs } from "@/state/tabs"
 import { useThreads } from "@/state/threads"
 import { useAcp } from "@/state/acp"
+import { useViewer } from "@/state/viewer"
+import { useSearch } from "@/state/search"
 import { prefsStore, setPref, usePrefs } from "@/state/prefs"
 import {
   clampCompanionWidth,
@@ -76,15 +78,24 @@ export function Stage() {
     : 0
   // A split that cannot afford both minimums renders as "over" without
   // rewriting the stored preference; widening the window restores it.
-  const covered = Boolean(
+  const wantsCover = Boolean(
     surface && (tabStage.presentation === "over" || !fitsBeside(available, min))
   )
+  // The file viewer and search ride on the chat card; while either is up,
+  // the chat must win even when the width degraded the split — otherwise
+  // "open a file" renders into a hidden card and nothing appears. The
+  // companion steps aside (hidden, not closed) until the overlay leaves.
+  const viewerUp = useViewer((state) => Boolean(state.path))
+  const searchUp = useSearch((state) => state.open)
+  const overlayUp = viewerUp || searchUp
+  const covered = wantsCover && !overlayUp
+  const companionHidden = wantsCover && overlayUp
 
   return (
     <div ref={row} className="relative flex min-h-0 min-w-0 flex-1">
       <ChatCard hidden={covered} />
 
-      {surface && !covered ? (
+      {surface && !covered && !companionHidden ? (
         <Divider
           side="right"
           width={width}
@@ -105,10 +116,11 @@ export function Stage() {
       {surface ? (
         <div
           ref={companionRef}
-          style={covered ? undefined : { width }}
+          style={covered || companionHidden ? undefined : { width }}
           className={cn(
             "card relative m-2 ml-0 flex min-h-0 flex-col overflow-hidden",
-            covered && "ml-2 min-w-0 flex-1"
+            covered && "ml-2 min-w-0 flex-1",
+            companionHidden && "hidden"
           )}
         >
           <CompanionBody render={surface.render} />

@@ -22,6 +22,7 @@ export interface Store<T> {
 interface SelectorCache<T, S> {
   value: S
   source: T
+  selector: (state: T) => S
 }
 
 export interface StoreHook<T> {
@@ -81,15 +82,19 @@ export function createHook<T extends object>(store: Store<T>): StoreHook<T> {
     const getSnapshot = useCallback(() => {
       const source = store.get()
       const previous = cache.current
-      if (previous && previous.source === source) return previous.value
+      // The cache is keyed on the *selector* as well as the state. An inline
+      // selector that closes over a changing value (the active tab id, say)
+      // arrives with a new identity each render; serving it the previous
+      // selector's slice showed one tab's companion on another tab.
+      if (previous && previous.source === source && previous.selector === selector)
+        return previous.value
       const value = selector(source)
       if (previous && isEqual(previous.value, value)) {
-        cache.current = { value: previous.value, source }
+        cache.current = { value: previous.value, source, selector }
         return previous.value
       }
-      cache.current = { value, source }
+      cache.current = { value, source, selector }
       return value
-      // The selector is expected to be stable (module scope or useCallback).
     }, [selector, isEqual])
 
     return useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot)

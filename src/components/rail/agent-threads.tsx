@@ -360,7 +360,7 @@ function ActiveAgents({ activity }: { activity: AgentActivity[] }) {
         <span key={entry.harness} className="flex shrink-0 items-center gap-1.5">
           <HarnessIcon harness={entry.harness} className="size-3" />
           <span>{harnessLabel(entry.harness)}</span>
-          <span className="size-1.5 animate-pulse rounded-full bg-current" />
+          <span className="size-1.5 animate-live rounded-full bg-current" />
           {entry.count > 1 ? <span>{entry.count} running</span> : <span>running</span>}
         </span>
       ))}
@@ -721,7 +721,7 @@ const ThreadRow = memo(function ThreadRow({
         ))}
         <HarnessIcon
           harness={ref.harness}
-          className={cn("size-3", working && "animate-pulse")}
+          className={cn("size-3", working && "animate-live")}
         />
       </span>
       {editing !== null ? (

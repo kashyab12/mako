@@ -49,7 +49,7 @@ export const github = {
     await github.ensureStatus()
     const status = githubStore.get().status
     if (!status?.authenticated || !status.repo) {
-      githubStore.set({ pull: null, loading: false, branch })
+      githubStore.set({ pull: null, loading: false, branch, userAvatar: undefined })
       return
     }
     const mine = ++generation
