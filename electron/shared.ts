@@ -780,6 +780,7 @@ export interface TerminalSnapshot {
 
 export type TerminalEvent =
   | { type: "connection"; state: "connecting" | "ready" | "disconnected"; error?: string }
+  | { type: "wake" }
   | { type: "snapshot"; snapshot: TerminalSnapshot }
   | { type: "output"; sessionId: string; sequence: number; data: string }
   | { type: "status"; session: TerminalSession }

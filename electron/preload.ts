@@ -381,8 +381,16 @@ const api = {
     invokeTrustedHost<TerminalSession>("mako:terminal-create", options),
   terminalAttach: (sessionId: string) =>
     invokeTrustedHost<TerminalSnapshot>("mako:terminal-attach", sessionId),
+  terminalDetach: (sessionId: string) =>
+    invokeTrustedHost<void>("mako:terminal-detach", sessionId),
   terminalWrite: (sessionId: string, data: string) =>
     invokeTrustedHost<void>("mako:terminal-write", sessionId, data),
+  terminalAcknowledge: (sessionId: string, sequence: number) =>
+    invokeTrustedHost<void>(
+      "mako:terminal-acknowledge",
+      sessionId,
+      sequence
+    ),
   terminalResize: (sessionId: string, cols: number, rows: number) =>
     invokeTrustedHost<void>("mako:terminal-resize", sessionId, cols, rows),
   terminalKill: (sessionId: string) =>

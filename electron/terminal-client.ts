@@ -78,6 +78,25 @@ export class TerminalDaemonClient {
     return result.snapshot
   }
 
+  async detach(sessionId: string) {
+    if (this.#attachedSessionId === sessionId) this.#attachedSessionId = undefined
+    await this.#expectOk({ id: this.#id(), type: "detach", sessionId })
+  }
+
+  async detachActive() {
+    const sessionId = this.#attachedSessionId
+    if (sessionId) await this.detach(sessionId)
+  }
+
+  async acknowledge(sessionId: string, sequence: number) {
+    await this.#expectOk({
+      id: this.#id(),
+      type: "ack",
+      sessionId,
+      sequence,
+    })
+  }
+
   async write(sessionId: string, data: string) {
     for (const chunk of splitTerminalInput(data)) {
       await this.#expectOk({

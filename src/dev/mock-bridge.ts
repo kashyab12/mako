@@ -1346,6 +1346,7 @@ export function installMockBridge() {
         sequence: session.sequence,
       }
     },
+    terminalDetach: async () => {},
     terminalWrite: async (sessionId: string, data: string) => {
       const current = terminalSessions.find((session) => session.id === sessionId)
       if (!current) throw new Error("Terminal session was not found")
@@ -1357,6 +1358,7 @@ export function installMockBridge() {
       )
       emitTerminal({ type: "output", sessionId, sequence, data })
     },
+    terminalAcknowledge: async () => {},
     terminalResize: async () => {},
     terminalKill: async (sessionId: string) => {
       terminalSessions = terminalSessions.filter((session) => session.id !== sessionId)

@@ -6,6 +6,7 @@ import {
   ipcMain,
   nativeImage,
   nativeTheme,
+  powerMonitor,
   shell,
   type BrowserWindowConstructorOptions,
 } from "electron"
@@ -54,8 +55,8 @@ import {
   pullForBranch,
   repoAvatar,
   rerunChecks,
-  type CreatePullOptions,
   userAvatar,
+  type CreatePullOptions,
 } from "./github.js"
 import { HostPool } from "./pool.js"
 import {
@@ -176,6 +177,12 @@ let starting: Promise<unknown> | null = null
 function terminal() {
   if (!terminalClient) throw new Error("Terminal service is not ready")
   return terminalClient
+}
+
+function emitTerminalWake() {
+  if (!window?.isDestroyed()) {
+    window?.webContents.send("mako:terminal-event", { type: "wake" })
+  }
 }
 
 let fileWatcher: import("node:fs").FSWatcher | null = null
@@ -318,6 +325,10 @@ async function createWindow() {
   // re-evaluates it — no IPC for it to learn, no command for the user to run.
   const watcher = watchPlugins(() => emit({ type: "plugins-changed" }))
   window.once("closed", () => watcher?.close())
+  window.once("closed", () => {
+    void terminalClient?.detachActive().catch(() => {})
+    window = null
+  })
   window.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
     return { action: "deny" }
@@ -582,6 +593,7 @@ function bindIpc() {
   handle("mako:repo-avatar", (_e, repo: string) =>
     withHost((h) => repoAvatar(h.workspace, repo))
   )
+  handle("mako:user-avatar", () => withHost((h) => userAvatar(h.workspace)))
 
   handle("mako:usage", () => usageSummary(join(getAgentDir(), "sessions")))
 
@@ -589,7 +601,6 @@ function bindIpc() {
   handle("mako:threads", (_e, filter?: { cwd?: string; harness?: string }) => ({
     ready: threadsReady(),
     threads: listThreads(filter),
-  handle("mako:user-avatar", () => withHost((h) => userAvatar(h.workspace)))
   }))
   handle("mako:thread-open", (_e, path: string) => openThread(path))
   handle(
@@ -928,8 +939,16 @@ function bindIpc() {
   handle("mako:terminal-attach", (_e, sessionId: string) =>
     terminal().attach(sessionId)
   )
+  handle("mako:terminal-detach", (_e, sessionId: string) =>
+    terminal().detach(sessionId)
+  )
   handle("mako:terminal-write", (_e, sessionId: string, data: string) =>
     terminal().write(sessionId, data)
+  )
+  handle(
+    "mako:terminal-acknowledge",
+    (_e, sessionId: string, sequence: number) =>
+      terminal().acknowledge(sessionId, sequence)
   )
   handle(
     "mako:terminal-resize",
@@ -982,6 +1001,8 @@ app.whenReady().then(async () => {
       if (!window?.isDestroyed()) window?.webContents.send("mako:terminal-event", event)
     }
   )
+  powerMonitor.on("resume", emitTerminalWake)
+  powerMonitor.on("unlock-screen", emitTerminalWake)
   bindIpc()
   await createWindow()
   installUpdates(emit)
@@ -1005,6 +1026,8 @@ app.on("window-all-closed", () => {
 })
 
 app.on("before-quit", () => {
+  powerMonitor.removeListener("resume", emitTerminalWake)
+  powerMonitor.removeListener("unlock-screen", emitTerminalWake)
   terminalClient?.dispose()
   stopWatching()
   stopThreads()

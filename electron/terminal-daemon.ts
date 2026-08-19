@@ -4,11 +4,18 @@ import { basename, join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { spawn as spawnPty, type IDisposable, type IPty } from "@lydell/node-pty"
 import { z } from "zod"
+import {
+  prepareMacosTerminalLogin,
+  wrapMacosTerminalLogin,
+} from "./macos-terminal-login.js"
+import { killTerminalProcessGroups } from "./terminal-process-groups.js"
 import type { TerminalSession } from "./shared.js"
 import {
   BoundedTerminalHistory,
   JsonLineDecoder,
   TERMINAL_DAEMON_VERSION,
+  TERMINAL_FLOW_HIGH_BYTES,
+  TERMINAL_FLOW_LOW_BYTES,
   TERMINAL_MAX_SESSIONS,
   TERMINAL_PROTOCOL_VERSION,
   encodeTerminalFrame,
@@ -24,6 +31,8 @@ interface LiveSession {
   summary: TerminalSession
   history: BoundedTerminalHistory
   pty: IPty | null
+  flowPaused: boolean
+  pendingOutput: Array<{ sequence: number; data: string }>
   dataListener?: IDisposable
   exitListener?: IDisposable
 }
@@ -33,6 +42,8 @@ interface ClientConnection {
   decoder: JsonLineDecoder
   blocked: boolean
   missedOutput: boolean
+  pendingBytes: number
+  pendingOutput: Map<number, number>
   attachedSessionId?: string
 }
 
@@ -132,8 +143,71 @@ function broadcast(event: TerminalDaemonEvent, sessionId?: string) {
       if (sessionId) client.missedOutput = true
       continue
     }
-    if (!client.socket.write(frame)) client.blocked = true
+    const writable = client.socket.write(frame)
+    if (event.type === "output") {
+      const bytes = Buffer.byteLength(event.data)
+      client.pendingOutput.set(event.sequence, bytes)
+      client.pendingBytes += bytes
+      reconcileProducerFlow(event.sessionId)
+    }
+    if (!writable) client.blocked = true
   }
+}
+
+function reconcileProducerFlow(sessionId: string) {
+  const session = sessions.get(sessionId)
+  if (!session?.pty) return
+  const consumers = [...clients].filter(
+    (client) => client.attachedSessionId === sessionId
+  )
+  const shouldPause = consumers.some(
+    (client) => client.pendingBytes >= TERMINAL_FLOW_HIGH_BYTES
+  )
+  const shouldResume = consumers.every(
+    (client) => client.pendingBytes <= TERMINAL_FLOW_LOW_BYTES
+  )
+  if (!session.flowPaused && shouldPause) {
+    try {
+      session.pty.pause()
+      session.flowPaused = true
+    } catch {
+      return
+    }
+  } else if (session.flowPaused && shouldResume) {
+    try {
+      session.pty.resume()
+      session.flowPaused = false
+      drainSessionOutput(session)
+    } catch {
+      return
+    }
+  }
+}
+
+function resetConnectionFlow(
+  connection: ClientConnection,
+  sessionId?: string
+) {
+  const previous = connection.attachedSessionId
+  connection.pendingOutput.clear()
+  connection.pendingBytes = 0
+  connection.attachedSessionId = sessionId
+  if (previous) reconcileProducerFlow(previous)
+  if (sessionId && sessionId !== previous) reconcileProducerFlow(sessionId)
+}
+
+function acknowledgeOutput(
+  connection: ClientConnection,
+  sessionId: string,
+  sequence: number
+) {
+  if (connection.attachedSessionId !== sessionId) return
+  for (const [sentSequence, bytes] of connection.pendingOutput) {
+    if (sentSequence > sequence) continue
+    connection.pendingOutput.delete(sentSequence)
+    connection.pendingBytes = Math.max(0, connection.pendingBytes - bytes)
+  }
+  reconcileProducerFlow(sessionId)
 }
 
 function publishStatus(session: LiveSession) {
@@ -161,11 +235,12 @@ function shellCommand() {
   return { file: process.env.SHELL ?? "/bin/sh", args: ["-l"] }
 }
 
-function createSession(request: Extract<TerminalRequest, { type: "create" }>) {
+async function createSession(
+  request: Extract<TerminalRequest, { type: "create" }>
+) {
   if (sessions.size >= TERMINAL_MAX_SESSIONS) {
     throw new Error(`Terminal session limit reached (${TERMINAL_MAX_SESSIONS})`)
   }
-  const shell = shellCommand()
   const now = Date.now()
   const id = randomUUID()
   const env: NodeJS.ProcessEnv = {
@@ -174,6 +249,8 @@ function createSession(request: Extract<TerminalRequest, { type: "create" }>) {
     COLORTERM: "truecolor",
   }
   delete env.ELECTRON_RUN_AS_NODE
+  await prepareMacosTerminalLogin()
+  const shell = wrapMacosTerminalLogin(shellCommand(), env)
   const pty = spawnPty(shell.file, shell.args, {
     name: "xterm-256color",
     cwd: request.cwd,
@@ -195,6 +272,8 @@ function createSession(request: Extract<TerminalRequest, { type: "create" }>) {
     },
     history: new BoundedTerminalHistory(),
     pty,
+    flowPaused: false,
+    pendingOutput: [],
   }
   session.dataListener = pty.onData((data) => receiveOutput(session, data))
   session.exitListener = pty.onExit(({ exitCode }) => finishSession(session, exitCode))
@@ -204,28 +283,73 @@ function createSession(request: Extract<TerminalRequest, { type: "create" }>) {
   return session
 }
 
-function receiveOutput(session: LiveSession, data: string) {
-  for (const chunk of splitTerminalOutput(data)) {
-    session.history.append(chunk)
-    session.summary.sequence += 1
-    session.summary.updatedAt = Date.now()
+function drainSessionOutput(session: LiveSession) {
+  const hasConsumer = [...clients].some(
+    (client) => client.attachedSessionId === session.summary.id
+  )
+  if (!hasConsumer) {
+    session.pendingOutput = []
+    return
+  }
+  while (!session.flowPaused) {
+    const transportBlocked = [...clients].some(
+      (client) =>
+        client.attachedSessionId === session.summary.id && client.blocked
+    )
+    if (transportBlocked) return
+    const output = session.pendingOutput.shift()
+    if (!output) return
     broadcast(
       {
         protocol: TERMINAL_PROTOCOL_VERSION,
         type: "output",
         sessionId: session.summary.id,
-        sequence: session.summary.sequence,
-        data: chunk,
+        sequence: output.sequence,
+        data: output.data,
       },
       session.summary.id
     )
   }
+}
+
+function receiveOutput(session: LiveSession, data: string) {
+  for (const chunk of splitTerminalOutput(data)) {
+    session.history.append(chunk)
+    session.summary.sequence += 1
+    session.summary.updatedAt = Date.now()
+    session.pendingOutput.push({
+      sequence: session.summary.sequence,
+      data: chunk,
+    })
+  }
+  drainSessionOutput(session)
   markDirty()
+}
+
+function terminateSession(session: LiveSession) {
+  session.dataListener?.dispose()
+  session.exitListener?.dispose()
+  const pty = session.pty
+  session.dataListener = undefined
+  session.exitListener = undefined
+  session.pty = null
+  session.flowPaused = false
+  if (!pty) return
+  try {
+    killTerminalProcessGroups(pty.pid, () => pty.kill())
+  } catch {
+    try {
+      pty.kill()
+    } catch {
+      return
+    }
+  }
 }
 
 function finishSession(session: LiveSession, exitCode: number) {
   if (sessions.get(session.summary.id) !== session) return
   session.pty = null
+  session.flowPaused = false
   session.dataListener?.dispose()
   session.exitListener?.dispose()
   session.dataListener = undefined
@@ -266,13 +390,14 @@ async function handleRequest(connection: ClientConnection, request: TerminalRequ
       return
     }
     if (request.type === "create") {
-      const session = createSession(request)
+      const session = await createSession(request)
       send(connection, response(request.id, { kind: "session", session: sessionCopy(session.summary) }))
       return
     }
     if (request.type === "attach") {
       const session = getSession(request.sessionId)
-      connection.attachedSessionId = request.sessionId
+      session.pendingOutput = []
+      resetConnectionFlow(connection, request.sessionId)
       send(
         connection,
         response(request.id, {
@@ -284,6 +409,22 @@ async function handleRequest(connection: ClientConnection, request: TerminalRequ
           },
         })
       )
+      return
+    }
+    if (request.type === "detach") {
+      if (connection.attachedSessionId === request.sessionId) {
+        resetConnectionFlow(connection)
+      }
+      send(connection, response(request.id, { kind: "ok" }))
+      return
+    }
+    if (request.type === "ack") {
+      acknowledgeOutput(
+        connection,
+        request.sessionId,
+        request.sequence
+      )
+      send(connection, response(request.id, { kind: "ok" }))
       return
     }
     if (request.type === "write") {
@@ -308,9 +449,7 @@ async function handleRequest(connection: ClientConnection, request: TerminalRequ
     }
     if (request.type === "kill") {
       const session = getSession(request.sessionId)
-      session.dataListener?.dispose()
-      session.exitListener?.dispose()
-      session.pty?.kill()
+      terminateSession(session)
       sessions.delete(request.sessionId)
       markDirty()
       broadcast({
@@ -344,20 +483,25 @@ function accept(socket: Socket) {
     decoder: new JsonLineDecoder(),
     blocked: false,
     missedOutput: false,
+    pendingBytes: 0,
+    pendingOutput: new Map(),
   }
   clients.add(connection)
   socket.on("drain", () => {
     connection.blocked = false
-    if (!connection.missedOutput || !connection.attachedSessionId) return
-    connection.missedOutput = false
-    const session = sessions.get(connection.attachedSessionId)
-    if (session) {
+    const sessionId = connection.attachedSessionId
+    if (!sessionId) return
+    const session = sessions.get(sessionId)
+    if (!session) return
+    if (connection.missedOutput) {
+      connection.missedOutput = false
       send(connection, {
         protocol: TERMINAL_PROTOCOL_VERSION,
         type: "status",
         session: sessionCopy(session.summary),
       })
     }
+    drainSessionOutput(session)
   })
   socket.on("data", (chunk) => {
     try {
@@ -371,7 +515,11 @@ function accept(socket: Socket) {
       socket.destroy()
     }
   })
-  const drop = () => clients.delete(connection)
+  const drop = () => {
+    const attached = connection.attachedSessionId
+    clients.delete(connection)
+    if (attached) reconcileProducerFlow(attached)
+  }
   socket.on("close", drop)
   socket.on("error", drop)
 }
@@ -421,6 +569,8 @@ async function restore() {
         },
         history,
         pty: null,
+        flowPaused: false,
+        pendingOutput: [],
       })
     }
   } catch {
@@ -475,6 +625,7 @@ async function shutdown(code: number) {
   if (stopping) return
   stopping = true
   await persist(true).catch(() => undefined)
+  for (const session of sessions.values()) terminateSession(session)
   for (const client of clients) client.socket.destroy()
   server?.close()
   if (process.platform !== "win32") await unlink(endpoint).catch(() => undefined)

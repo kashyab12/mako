@@ -6,6 +6,7 @@ import {
   TERMINAL_MAX_COLS,
   TERMINAL_MAX_INPUT_BYTES,
   TERMINAL_MAX_ROWS,
+  TERMINAL_PROTOCOL_VERSION,
   clampTerminalSize,
   parseTerminalRequest,
   splitTerminalInput,
@@ -19,13 +20,32 @@ assert.equal(clampTerminalSize(80, 24).rows, 24)
 assert.equal(TERMINAL_MAX_ROWS, 200)
 
 const accepted = parseTerminalRequest({
-  protocol: 1,
+  protocol: TERMINAL_PROTOCOL_VERSION,
   id: 1,
   type: "write",
   sessionId: "session-1",
   data: "x".repeat(TERMINAL_MAX_INPUT_BYTES),
 })
 assert.equal(accepted?.type, "write")
+assert.deepEqual(
+  parseTerminalRequest({
+    protocol: TERMINAL_PROTOCOL_VERSION,
+    id: 3,
+    type: "ack",
+    sessionId: "session-1",
+    sequence: 12,
+  }),
+  { id: 3, type: "ack", sessionId: "session-1", sequence: 12 }
+)
+assert.deepEqual(
+  parseTerminalRequest({
+    protocol: TERMINAL_PROTOCOL_VERSION,
+    id: 4,
+    type: "detach",
+    sessionId: "session-1",
+  }),
+  { id: 4, type: "detach", sessionId: "session-1" }
+)
 assert.deepEqual(
   parseTerminalRequest({
     protocol: 99,
@@ -42,7 +62,7 @@ assert.deepEqual(
 )
 assert.equal(
   parseTerminalRequest({
-    protocol: 1,
+    protocol: TERMINAL_PROTOCOL_VERSION,
     id: 2,
     type: "write",
     sessionId: "session-1",

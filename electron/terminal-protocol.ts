@@ -1,7 +1,7 @@
 import { z } from "zod"
 import type { TerminalSession, TerminalSnapshot } from "./shared.js"
 
-export const TERMINAL_PROTOCOL_VERSION = 1
+export const TERMINAL_PROTOCOL_VERSION = 2
 export const TERMINAL_DAEMON_VERSION = String(TERMINAL_PROTOCOL_VERSION)
 export const TERMINAL_HISTORY_BYTES = 2 * 1024 * 1024
 export const TERMINAL_MAX_SESSIONS = 24
@@ -12,6 +12,8 @@ export const TERMINAL_MIN_COLS = 2
 export const TERMINAL_MIN_ROWS = 1
 export const TERMINAL_MAX_FRAME_BYTES = 16 * 1024 * 1024
 export const TERMINAL_OUTPUT_CHUNK_BYTES = 32 * 1024
+export const TERMINAL_FLOW_HIGH_BYTES = 256 * 1024
+export const TERMINAL_FLOW_LOW_BYTES = 32 * 1024
 
 export type TerminalRequest =
   | { protocol: number; id: number; type: "hello"; clientVersion: string }
@@ -25,6 +27,8 @@ export type TerminalRequest =
       rows: number
     }
   | { id: number; type: "attach"; sessionId: string }
+  | { id: number; type: "detach"; sessionId: string }
+  | { id: number; type: "ack"; sessionId: string; sequence: number }
   | { id: number; type: "write"; sessionId: string; data: string }
   | {
       id: number
@@ -117,6 +121,19 @@ const requestFrameSchema = z.discriminatedUnion("type", [
     id: integer,
     type: z.literal("attach"),
     sessionId: sessionIdSchema,
+  }),
+  z.object({
+    protocol: z.literal(TERMINAL_PROTOCOL_VERSION),
+    id: integer,
+    type: z.literal("detach"),
+    sessionId: sessionIdSchema,
+  }),
+  z.object({
+    protocol: z.literal(TERMINAL_PROTOCOL_VERSION),
+    id: integer,
+    type: z.literal("ack"),
+    sessionId: sessionIdSchema,
+    sequence: integer.nonnegative(),
   }),
   z.object({
     protocol: z.literal(TERMINAL_PROTOCOL_VERSION),
@@ -327,6 +344,14 @@ export function parseTerminalRequest(value: TerminalWireValue): TerminalRequest 
       type: request.type,
       sessionId: request.sessionId,
       data: request.data,
+    }
+  }
+  if (request.type === "ack") {
+    return {
+      id: request.id,
+      type: request.type,
+      sessionId: request.sessionId,
+      sequence: request.sequence,
     }
   }
   return { id: request.id, type: request.type, sessionId: request.sessionId }
