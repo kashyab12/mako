@@ -4,10 +4,10 @@ import { NAVIGATOR_WIDTH, TurnNavigator } from "@/components/transcript/turn-nav
 import { harnessLabel } from "@/components/rail/agent-threads"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { threads, useThreads } from "@/state/threads"
-import { toExchanges } from "@/lib/exchanges"
+import type { Exchange as ExchangeData } from "@/lib/exchanges"
 import { threadToMessages } from "@/lib/foreign-thread"
 import { formatRelative } from "@/lib/format"
-import { Loader2Icon, XIcon } from "lucide-react"
+import { Loader2Icon } from "lucide-react"
 
 /**
  * A conversation from another harness, opened as a conversation.
@@ -68,14 +68,7 @@ export function ThreadViewer() {
             {ref.updatedAt ? ` · ${formatRelative(ref.updatedAt)}` : ""}
           </p>
         </div>
-        <button
-          type="button"
-          aria-label="Close"
-          onClick={() => threads.closeViewer()}
-          className="pressable shrink-0 rounded p-1 text-faint hover:text-foreground"
-        >
-          <XIcon className="size-3.5" />
-        </button>
+
       </div>
 
       <Conversation />
@@ -93,15 +86,67 @@ export function ThreadViewer() {
  */
 function Conversation() {
   const thread = useThreads((state) => state.viewing)
+  const run = useThreads((state) => state.run)
   const scroller = useRef<HTMLDivElement | null>(null)
   const pane = useRef<HTMLDivElement | null>(null)
   const stick = useRef(true)
   const [activeTurn, setActiveTurn] = useState<string | null>(null)
 
-  const exchanges = useMemo(
-    () => (thread ? toExchanges(threadToMessages(thread.entries)) : []),
-    [thread]
-  )
+  /*
+   * Incremental conversion — the difference between streaming and replay.
+   *
+   * Entries only ever append (a rewriting store arrives as a fresh thread
+   * object and resets the cache), so each batch converts ONLY the new tail
+   * and replaces at most the last exchange. Every earlier exchange keeps
+   * its object identity, the memoized rows skip their re-render, and a
+   * token batch costs the last turn's paint instead of the whole
+   * conversation's markdown being re-parsed — which is what made long
+   * sessions feel like replay instead of streaming.
+   */
+  const built = useRef<{ path: string | null; count: number; exchanges: ExchangeData[] }>({
+    path: null,
+    count: 0,
+    exchanges: [],
+  })
+  const exchanges = useMemo(() => {
+    if (!thread) {
+      built.current = { path: null, count: 0, exchanges: [] }
+      return []
+    }
+    const { entries } = thread
+    if (built.current.path !== thread.ref.path || entries.length < built.current.count) {
+      built.current = { path: thread.ref.path, count: 0, exchanges: [] }
+    }
+    const cache = built.current
+    if (entries.length === cache.count) return cache.exchanges
+    const fresh = threadToMessages(entries.slice(cache.count), cache.count)
+    let next = cache.exchanges
+    for (const message of fresh) {
+      if (message.role === "user") {
+        next = [
+          ...next,
+          { id: message.id, prompt: message, response: [], system: [], timestamp: message.timestamp },
+        ]
+        continue
+      }
+      const last = next.at(-1)
+      if (!last) {
+        next = [
+          message.role === "system"
+            ? { id: `lead-${message.id}`, response: [], system: [message], timestamp: message.timestamp }
+            : { id: `lead-${message.id}`, response: [message], system: [], timestamp: message.timestamp },
+        ]
+        continue
+      }
+      const grown =
+        message.role === "system"
+          ? { ...last, system: [...last.system, message] }
+          : { ...last, response: [...last.response, message] }
+      next = [...next.slice(0, -1), grown]
+    }
+    built.current = { path: thread.ref.path, count: entries.length, exchanges: next }
+    return next
+  }, [thread])
 
   // Which turn is in view — the navigator's cursor. Same observer the
   // native transcript uses: costs nothing while entries stream in.
@@ -176,6 +221,17 @@ function Conversation() {
             {exchanges.map((exchange) => (
               <Exchange key={exchange.id} exchange={exchange} />
             ))}
+            {run?.status === "running" && thread ? (
+              <div className="animate-enter flex items-center gap-2 px-0.5 text-[12px]">
+                <HarnessIcon
+                  harness={thread.ref.harness}
+                  className="size-3.5 animate-pulse"
+                />
+                <span className="shimmer">
+                  {harnessLabel(thread.ref.harness)} is working…
+                </span>
+              </div>
+            ) : null}
           </div>
         )}
       </div>

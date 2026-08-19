@@ -6,6 +6,7 @@ import { Slot } from "@/extend/slot"
 import { tokenize } from "@/lib/mentions"
 import { pairTools } from "@/lib/tools"
 import { formatTime, textOf } from "@/lib/format"
+import { parseAttachmentAppendix } from "@/lib/attachments"
 import { responseText, type Exchange as ExchangeData } from "@/lib/exchanges"
 import { actions, useSession } from "@/state/session"
 import { usePrefs } from "@/state/prefs"
@@ -63,7 +64,9 @@ export const Exchange = memo(function Exchange({
 /* ------------------------------------------------------------------ */
 
 function Prompt({ message }: { message: PiMessage }) {
-  const text = textOf(message.blocks)
+  const raw = textOf(message.blocks)
+  // A sent attachment appendix reads back as chips, not as a wall of paths.
+  const { body: text, files } = useMemo(() => parseAttachmentAppendix(raw), [raw])
   // References the user typed read back as the chips they were written as.
   const segments = useMemo(() => tokenize(text), [text])
   // Edit and Fork exist only where the session tree knows this message —
@@ -96,6 +99,13 @@ function Prompt({ message }: { message: PiMessage }) {
             )
           )}
         </div>
+        {files.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {files.map((file) => (
+              <FileChip key={file.path} path={file.path} interactive />
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <div className="mt-1 flex h-4 items-center gap-2 px-0.5 text-[10.5px] text-faint opacity-0 transition-opacity duration-150 group-hover/prompt:opacity-100 focus-within:opacity-100">

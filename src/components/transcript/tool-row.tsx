@@ -3,7 +3,7 @@ import { useToolView, type ToolCall } from "@/extend/slots"
 import { primaryArgument } from "@/lib/tools"
 import { cn } from "@/lib/utils"
 import { usePrefs } from "@/state/prefs"
-import { ChevronRightIcon, CircleAlertIcon } from "lucide-react"
+import { ChevronRightIcon, CircleAlertIcon , CheckIcon, CopyIcon } from "lucide-react"
 import { ToolGlyph } from "@/components/transcript/tool-views"
 
 /**
@@ -92,9 +92,11 @@ function DefaultBody({ call, dense }: { call: ToolCall; dense: boolean }) {
   return (
     <div className="space-y-2 px-2.5 py-2">
       {args ? (
-        <pre className="overflow-x-auto rounded bg-raised px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground">
-          {JSON.stringify(call.arguments, null, 2)}
-        </pre>
+        <CopyableBlock label="input" text={JSON.stringify(call.arguments, null, 2)}>
+          <pre className="rounded bg-raised px-2 py-1.5 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap text-muted-foreground">
+            {JSON.stringify(call.arguments, null, 2)}
+          </pre>
+        </CopyableBlock>
       ) : null}
       {call.result ? (
         <Output text={call.result} dense={dense} isError={call.isError} />
@@ -120,10 +122,10 @@ export function Output({
   const clipped = !full && text.length > CLAMP
 
   return (
-    <div>
+    <CopyableBlock label="output" text={text}>
       <pre
         className={cn(
-          "overflow-x-auto font-mono text-[11.5px] leading-[1.55] whitespace-pre-wrap",
+          "font-mono text-[11.5px] leading-[1.55] break-words whitespace-pre-wrap",
           dense ? "max-h-40 overflow-y-auto" : "max-h-[26rem] overflow-y-auto",
           isError ? "text-negative/90" : "text-muted-foreground"
         )}
@@ -139,6 +141,45 @@ export function Output({
           Show all {text.length.toLocaleString()} characters
         </button>
       ) : null}
+    </CopyableBlock>
+  )
+}
+
+/**
+ * A block whose contents can leave. The copy affordance appears on hover in
+ * the block's own corner — input and output each copy independently, whole
+ * and unclipped, because "copy the answer" and "copy the command that
+ * produced it" are different needs.
+ */
+function CopyableBlock({
+  label,
+  text,
+  children,
+}: {
+  label: string
+  text: string
+  children: React.ReactNode
+}) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <div className="group/copyblock relative">
+      {children}
+      <button
+        type="button"
+        aria-label={`Copy ${label}`}
+        onClick={() => {
+          void navigator.clipboard.writeText(text)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1200)
+        }}
+        className={cn(
+          "absolute top-1 right-1 rounded-md bg-raised/90 p-1 ring-1 ring-hairline backdrop-blur-sm",
+          "text-faint transition-opacity duration-100 hover:text-foreground",
+          copied ? "opacity-100" : "opacity-0 group-hover/copyblock:opacity-100"
+        )}
+      >
+        {copied ? <CheckIcon className="size-3" /> : <CopyIcon className="size-3" />}
+      </button>
     </div>
   )
 }

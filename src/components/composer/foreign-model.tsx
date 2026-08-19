@@ -103,7 +103,13 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
               mono
               label={decomposeModelId(harness, model).base}
               accessory={decomposeModelId(harness, model)}
-              detail={index < 3 ? "seen on this machine" : undefined}
+              detail={
+                harness === "claude" && /^(opus|sonnet|haiku)$/.test(model)
+                  ? "Claude alias — resolves to the current model of that tier"
+                  : index < 3
+                    ? "seen on this machine"
+                    : undefined
+              }
               selected={chosen === model || chosen === decomposeModelId(harness, model).base}
               onChoose={() => {
                 set(model)

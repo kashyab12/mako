@@ -10,9 +10,9 @@ import type { Block, PiMessage, ThreadEntry } from "@/lib/types"
  * conversation is a conversation, and only the mark in the corner should
  * say where it happened.
  */
-export function threadToMessages(entries: ThreadEntry[]): PiMessage[] {
+export function threadToMessages(entries: ThreadEntry[], idStart = 0): PiMessage[] {
   const messages: PiMessage[] = []
-  let counter = 0
+  let counter = idStart
   const nextId = () => `foreign-${counter++}`
 
   for (const entry of entries) {

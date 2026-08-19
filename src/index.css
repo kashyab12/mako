@@ -362,15 +362,19 @@
  * above, a warm bounce from below — which is what keeps a large dark field
  * from reading as flat black.
  */
-[data-glass="on"] .app-wash::before {
+.app-wash::before {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 0;
+  /* Static gradients only: atmosphere at zero runtime cost. Cool light
+     from above, a warm ember low-left, the faintest violet drift right —
+     depth without a single animation frame. */
   background:
     radial-gradient(90% 55% at 50% -12%, oklch(0.72 0.05 250 / 9%), transparent 62%),
-    radial-gradient(70% 45% at 12% 108%, oklch(0.7 0.05 60 / 5.5%), transparent 68%);
+    radial-gradient(70% 45% at 12% 108%, oklch(0.7 0.05 60 / 5.5%), transparent 68%),
+    radial-gradient(50% 40% at 95% 40%, oklch(0.6 0.06 300 / 3.5%), transparent 70%);
 }
 
 .light [data-glass="on"] .app-wash::before,

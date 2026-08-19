@@ -294,6 +294,29 @@ ${item.text}
   return `${body}${body ? "\n\n" : ""}---\n${appendix.join("\n\n")}`
 }
 
+/**
+ * The reverse read: a prompt that went out with an attachment appendix
+ * comes back from the session file as one text block. Splitting the
+ * appendix off lets the transcript show the words as words and the files
+ * as chips — the attachment stays visible forever, not just at send time.
+ */
+export function parseAttachmentAppendix(text: string): {
+  body: string
+  files: Array<{ name: string; path: string }>
+} {
+  const at = text.lastIndexOf("\n---\n[Attachment ")
+  if (at === -1) return { body: text, files: [] }
+  const appendix = text.slice(at + 5)
+  const files: Array<{ name: string; path: string }> = []
+  for (const match of appendix.matchAll(
+    /\[Attachment \d+\] (.+?) — .*?Saved at (.+?); read it from there/g
+  )) {
+    files.push({ name: match[1]!, path: match[2]! })
+  }
+  if (files.length === 0) return { body: text, files: [] }
+  return { body: text.slice(0, at).trimEnd(), files }
+}
+
 export function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`

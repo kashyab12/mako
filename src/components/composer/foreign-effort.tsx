@@ -63,10 +63,11 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
   const encoded = defaults.model ? decomposeModelId(harness, defaults.model) : undefined
   const fallbackEffort = tuning?.defaultEffort ?? defaults.effort ?? encoded?.effort
   const fallbackFast = encoded?.fast ?? false
-  const label =
-    (chosen.fast ?? fallbackFast) ? "fast" : (chosen.effort ?? fallbackEffort ?? "effort")
+  const fastOn = chosen.fast ?? fallbackFast
+  const label = fastOn ? "fast" : (chosen.effort ?? fallbackEffort ?? "effort")
 
   return (
+    <>
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
@@ -116,35 +117,9 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
           </button>
         ) : null}
 
-        <button
-          type="button"
-          onClick={() => {
-            set({ effort: undefined, fast: undefined })
-            setOpen(false)
-          }}
-          className={cn(
-            "flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-100 hover:bg-raised",
-            !chosen.effort && !chosen.fast && "bg-raised"
-          )}
-        >
-          <Gauge filled={rankOf(fallbackEffort, tuning.efforts)} className="mt-[3px]" />
-          <span className="min-w-0 flex-1">
-            <span className="block text-[12.5px] font-medium">
-              Default{fallbackEffort ? <span className="ml-1.5 font-normal text-faint capitalize">{fallbackEffort}</span> : null}
-            </span>
-            <span className="block text-[11px] leading-snug text-faint">
-              {fallbackEffort
-                ? "From the harness's own config."
-                : "Whatever the harness would pick itself."}
-            </span>
-          </span>
-          {!chosen.effort && !chosen.fast ? (
-            <CheckIcon className="mt-1 size-3.5 shrink-0 text-brand" />
-          ) : null}
-        </button>
-
         {tuning.efforts.map((effort) => {
-          const active = chosen.effort === effort
+          const isConfigDefault = effort === fallbackEffort
+          const active = chosen.effort === effort || (!chosen.effort && !chosen.fast && isConfigDefault)
           return (
             <button
               key={effort}
@@ -160,7 +135,12 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
             >
               <Gauge filled={rankOf(effort, tuning.efforts)} className="mt-[3px]" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[12.5px] font-medium capitalize">{effort}</span>
+                <span className="block text-[12.5px] font-medium capitalize">
+                  {effort}
+                  {isConfigDefault ? (
+                    <span className="ml-1.5 text-[10px] font-normal text-faint">config default</span>
+                  ) : null}
+                </span>
                 <span className="block text-[11px] leading-snug text-faint">
                   {DESCRIPTIONS[effort] ?? "This harness's own level."}
                 </span>
@@ -171,6 +151,28 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
         })}
       </PopoverContent>
     </Popover>
+    {tuning.fast ? (
+      <button
+        type="button"
+        aria-label={fastOn ? "Fast mode on" : "Fast mode off"}
+        title={fastOn ? "Fast mode — quicker, lighter reasoning. Click for thorough." : "Fast mode off. Click for quicker answers."}
+        onClick={() => set({ fast: fastOn ? false : true, ...(fastOn ? {} : { effort: undefined }) })}
+        className={cn(
+          "pressable no-drag flex h-7 items-center rounded-md px-1.5",
+          "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease]",
+          "hover:bg-raised",
+          fastOn ? "text-caution" : "text-faint hover:text-foreground"
+        )}
+      >
+        <ZapIcon
+          className={cn(
+            "size-3.5",
+            fastOn && "animate-[fast-alive_1.6s_ease-in-out_infinite] fill-caution"
+          )}
+        />
+      </button>
+    ) : null}
+    </>
   )
 }
 

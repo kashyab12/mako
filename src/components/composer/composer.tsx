@@ -23,6 +23,7 @@ import {
   ArrowUpIcon,
   AtSignIcon,
   CornerDownLeftIcon,
+  GitBranchIcon,
   PaperclipIcon,
   SquareIcon,
   XIcon,
@@ -175,8 +176,14 @@ export function Composer() {
       const liveSession = acpStore.get().session
       const viewingRef = threadsStore.get().viewing?.ref
       const harness = threadsStore.get().composerHarness
-      const nativeHarness = harness === "pi" || harness === "devin"
-      if ((liveSession || viewingRef || !nativeHarness) && !mode) {
+      // Harnesses the app's own engine answers for, in-process — Devin's
+      // models run right here (and legacy Pi sessions still route the same
+      // way). Every other harness is its own CLI: Claude Code and Cursor
+      // live over ACP, Codex and Grok headless with the transcript tailed
+      // in. "Native" was the wrong word — every path is native to its
+      // harness; this one just doesn't leave the building.
+      const engineAnswers = harness === "pi" || harness === "devin"
+      if ((liveSession || viewingRef || !engineAnswers) && !mode) {
         // Wait out staging — a screenshot mid-copy must not race the send
         // and leave a dead [Attachment N] marker with no file behind it —
         // then put even inline-shaped images on disk, since a CLI reads
@@ -214,7 +221,7 @@ export function Composer() {
             harness === viewingRef.harness && !viewingRef.archived
               ? await threads.reply(viewingRef, full)
               : await threads.moveAndSend(viewingRef, harness, full)
-        } else if (nativeHarness) {
+        } else if (engineAnswers) {
           // Unreachable by construction, but the router stays total.
           ok = false
         } else if (harness === "claude" || harness === "cursor") {
@@ -485,6 +492,7 @@ export function Composer() {
          */}
         <div className="mt-1.5 flex min-h-7 items-center gap-1 px-1">
           <ComposerRouting />
+          <BranchChip />
           <span
             className={cn(
               "ml-auto flex items-center gap-1 text-[10.5px] text-faint",
@@ -526,19 +534,33 @@ function SendButton({
       aria-label={steering ? "Steer the current turn" : "Send"}
       title={steering ? "Steer the current turn" : "Send"}
       className={cn(
-        "pressable relative flex size-7 shrink-0 items-center justify-center rounded-full",
-        "[transition:transform_var(--duration-press)_var(--ease-out),background-color_160ms_ease,opacity_160ms_ease,box-shadow_160ms_ease]",
+        "pressable relative flex size-6 shrink-0 items-center justify-center rounded-full",
+        "[transition:transform_var(--duration-press)_var(--ease-out),background-color_160ms_ease,opacity_160ms_ease]",
         ready
-          ? "action-primary text-background"
-          : "bg-foreground/10 text-faint shadow-none"
+          ? "bg-foreground text-background hover:opacity-90"
+          : "bg-foreground/10 text-faint"
       )}
     >
       {steering ? (
-        <CornerDownLeftIcon className="size-3.5" />
+        <CornerDownLeftIcon className="size-3" />
       ) : (
-        <ArrowUpIcon className="size-4" strokeWidth={2.4} />
+        <ArrowUpIcon className="size-3.5" strokeWidth={2.2} />
       )}
     </button>
+  )
+}
+
+/** The branch under the field, the way Cursor keeps its own. Quiet fact,
+ * not a control — knowing where an agent is about to write is half of
+ * trusting it. */
+function BranchChip() {
+  const branch = useSession((state) => state.git?.branch)
+  if (!branch) return null
+  return (
+    <span className="flex h-7 max-w-[11rem] items-center gap-1 px-1.5 text-[11px] text-faint">
+      <GitBranchIcon className="size-3 shrink-0" />
+      <span className="truncate">{branch}</span>
+    </span>
   )
 }
 

@@ -14,6 +14,7 @@ import {
   ArchiveIcon,
   FolderPlusIcon,
   ListFilterIcon,
+  Loader2Icon,
   PinIcon,
   SearchIcon,
   XIcon,
@@ -655,7 +656,7 @@ const ThreadRow = memo(function ThreadRow({
         />
       ) : null}
       {working ? (
-        <span className="shrink-0 text-[10px] text-faint">working…</span>
+        <Loader2Icon className="size-3 shrink-0 animate-spin text-brand/80" aria-label="Working" />
       ) : ref.updatedAt ? (
         <span className="tabular shrink-0 text-[10px] text-faint">
           {formatRelative(ref.updatedAt)}
