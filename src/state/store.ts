@@ -9,31 +9,42 @@ import { useCallback, useRef, useSyncExternalStore } from "react"
  * transcript, the rail, or the inspector.
  */
 
+export type StorePatch<T> = Partial<T>
+export type StoreUpdater<T> = (state: T) => StorePatch<T>
+
 export interface Store<T> {
   get: () => T
-  set: (patch: Partial<T> | ((state: T) => Partial<T>)) => void
+  set(patch: StorePatch<T>): void
+  set(update: StoreUpdater<T>): void
   subscribe: (listener: () => void) => () => void
+}
+
+interface SelectorCache<T, S> {
+  value: S
+  source: T
+}
+
+export interface StoreHook<T> {
+  <S>(selector: (state: T) => S, isEqual?: (a: S, b: S) => boolean): S
 }
 
 export function createStore<T extends object>(initial: T): Store<T> {
   let state = initial
   const listeners = new Set<() => void>()
 
+  function set(patch: StorePatch<T>): void
+  function set(update: StoreUpdater<T>): void
+  function set(update: StorePatch<T> | StoreUpdater<T>) {
+    const patch = update instanceof Function ? update(state) : update
+    const next = { ...state, ...patch }
+    if (shallowEqual(state, next)) return
+    state = next
+    for (const listener of listeners) listener()
+  }
+
   return {
     get: () => state,
-    set: (patch) => {
-      const next = typeof patch === "function" ? patch(state) : patch
-      let changed = false
-      for (const key of Object.keys(next) as (keyof T)[]) {
-        if (!Object.is(state[key], next[key])) {
-          changed = true
-          break
-        }
-      }
-      if (!changed) return
-      state = { ...state, ...next }
-      for (const listener of listeners) listener()
-    },
+    set,
     subscribe: (listener) => {
       listeners.add(listener)
       return () => listeners.delete(listener)
@@ -41,20 +52,31 @@ export function createStore<T extends object>(initial: T): Store<T> {
   }
 }
 
-export function shallowEqual(a: unknown, b: unknown): boolean {
+export function shallowEqual<Value>(a: Value, b: Value): boolean {
   if (Object.is(a, b)) return true
-  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false
-  const left = a as Record<string, unknown>
-  const right = b as Record<string, unknown>
-  const keys = Object.keys(left)
-  if (keys.length !== Object.keys(right).length) return false
-  return keys.every((key) => Object.is(left[key], right[key]))
+  if (
+    Object(a) !== a ||
+    Object(b) !== b ||
+    a instanceof Function ||
+    b instanceof Function
+  )
+    return false
+  const left = Object.entries(Object(a))
+  const right = Object.entries(Object(b))
+  if (left.length !== right.length) return false
+  return left.every(([key, value]) => {
+    const match = right.find(([candidate]) => candidate === key)
+    return match !== undefined && Object.is(value, match[1])
+  })
 }
 
 /** Bind a store slice to React. `isEqual` defaults to reference identity. */
-export function createHook<T extends object>(store: Store<T>) {
-  return function useSlice<S>(selector: (state: T) => S, isEqual: (a: S, b: S) => boolean = Object.is): S {
-    const cache = useRef<{ value: S; source: T } | null>(null)
+export function createHook<T extends object>(store: Store<T>): StoreHook<T> {
+  return function useSlice<S>(
+    selector: (state: T) => S,
+    isEqual: (a: S, b: S) => boolean = Object.is
+  ): S {
+    const cache = useRef<SelectorCache<T, S> | null>(null)
 
     const getSnapshot = useCallback(() => {
       const source = store.get()
