@@ -1,7 +1,7 @@
 import { memo, useCallback, useMemo, useState } from "react"
-import { Chip, Eyebrow } from "@/components/ui/kit"
+import { Chip, Eyebrow, ListCard } from "@/components/ui/kit"
 import { touchedFiles, type FileAction, type TouchedFile } from "@/lib/context-files"
-import { fileDir, fileName, formatContextWindow, formatRate, formatTokens } from "@/lib/format"
+import { fileDir, fileName, formatContextWindow, formatCost, formatRate, formatTokens } from "@/lib/format"
 import { getMako } from "@/lib/bridge"
 import { actions, shallowEqual, useSession } from "@/state/session"
 import { cn } from "@/lib/utils"
@@ -17,17 +17,23 @@ import {
 /**
  * What the agent is working with right now.
  *
- * The question this panel answers is "why did it do that?" — which files it
- * has in hand, which skills it can reach for, which tools are live, and how
- * much of the context window is already spent.
+ * The question this surface answers is "why did it do that?" — which files
+ * it has in hand, which skills it can reach for, which tools are live, and
+ * how much of the context window is already spent. Laid out the way
+ * OpenCode lays out its context tab: a reading column, a labelled stat
+ * grid, one stacked bar for where the tokens went, and the lists grouped
+ * into cards — because this renders on a full card now, not in a 400px
+ * column.
  */
 export function ContextPanel() {
   return (
-    <div className="h-full overflow-y-auto overscroll-contain pb-4">
-      <Budget />
-      <Files />
-      <Skills />
-      <Tools />
+    <div className="h-full overflow-y-auto overscroll-contain [container-type:inline-size]">
+      <div className="mx-auto flex w-full max-w-content flex-col gap-7 px-6 py-6">
+        <Budget />
+        <Files />
+        <Skills />
+        <Tools />
+      </div>
     </div>
   )
 }
@@ -54,47 +60,82 @@ function Budget() {
 
   if (!model) return null
   const percent = usage.percent ?? 0
-  const tone = percent > 90 ? "bg-negative" : percent > 72 ? "bg-caution" : "bg-foreground/45"
+
+  const stats: Array<{ label: string; value: string }> = [
+    { label: "model", value: model.name },
+    { label: "price per Mtok", value: `${formatRate(model.cost.input)} in · ${formatRate(model.cost.output)} out` },
+    { label: "context window", value: formatContextWindow(usage.window) },
+    {
+      label: "in context now",
+      value: usage.tokens == null ? "unknown until the next response" : formatTokens(usage.tokens),
+    },
+    { label: "window used", value: usage.percent == null ? "—" : `${Math.round(percent)}%` },
+    { label: "spent", value: formatCost(usage.cost) },
+  ]
+  if (usage.stats && usage.stats.total > 0) {
+    stats.push(
+      { label: "input tokens", value: formatTokens(usage.stats.input) },
+      { label: "output tokens", value: formatTokens(usage.stats.output) },
+      { label: "cache read", value: formatTokens(usage.stats.cacheRead) },
+      { label: "cache written", value: formatTokens(usage.stats.cacheWrite) }
+    )
+  }
 
   return (
-    <section className="border-b border-hairline px-2.5 py-2.5">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="min-w-0 truncate text-ui font-medium">{model.name}</span>
-        <span className="tabular shrink-0 text-label text-faint">
-          {formatRate(model.cost.input)}/{formatRate(model.cost.output)} per Mtok
-        </span>
+    <section className="flex flex-col gap-5">
+      <div className="grid grid-cols-1 gap-x-8 gap-y-4 @[20rem]:grid-cols-2">
+        {stats.map((stat) => (
+          <div key={stat.label} className="min-w-0">
+            <div className="text-label text-faint">{stat.label}</div>
+            <div className="tabular truncate text-ui font-medium text-foreground/90">{stat.value}</div>
+          </div>
+        ))}
       </div>
-
-      <div className="mt-2 h-1 overflow-hidden rounded-full bg-raised">
-        <div
-          className={cn("h-full rounded-full transition-[width] duration-500", tone)}
-          style={{ width: `${Math.min(100, percent)}%` }}
-        />
-      </div>
-      <div className="mt-1 flex items-baseline justify-between text-label text-faint">
-        <span className="tabular">
-          {usage.tokens == null ? "—" : formatTokens(usage.tokens)} /{" "}
-          {formatContextWindow(usage.window)} context
-        </span>
-        <span className="tabular">{usage.percent == null ? "" : `${Math.round(percent)}%`}</span>
-      </div>
-
-      {usage.stats && usage.stats.total > 0 ? (
-        <div className="mt-2 grid grid-cols-3 gap-2 border-t border-hairline pt-2">
-          <Stat label="in" value={formatTokens(usage.stats.input)} />
-          <Stat label="out" value={formatTokens(usage.stats.output)} />
-          <Stat label="cached" value={formatTokens(usage.stats.cacheRead)} />
-        </div>
-      ) : null}
+      {usage.stats && usage.stats.total > 0 ? <TokenMix stats={usage.stats} /> : null}
     </section>
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+/**
+ * Where the billed tokens went, as one stacked bar. A monochrome luminance
+ * ramp rather than hues: the legend carries the names, the widths carry the
+ * story, and this stays inside the "hue only where it means something" rule.
+ */
+const MIX = [
+  { key: "input", label: "input", tone: "bg-foreground/75" },
+  { key: "output", label: "output", tone: "bg-foreground/50" },
+  { key: "cacheRead", label: "cache read", tone: "bg-foreground/30" },
+  { key: "cacheWrite", label: "cache written", tone: "bg-foreground/15" },
+] as const
+
+function TokenMix({
+  stats,
+}: {
+  stats: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number }
+}) {
+  const total = stats.input + stats.output + stats.cacheRead + stats.cacheWrite
+  if (total <= 0) return null
   return (
-    <div className="min-w-0">
-      <div className="tabular truncate text-ui text-muted-foreground">{value}</div>
-      <div className="text-label text-faint">{label}</div>
+    <div className="flex flex-col gap-2">
+      <div className="text-label text-faint">token mix this session</div>
+      <div className="flex h-2 w-full overflow-hidden rounded-full bg-raised">
+        {MIX.map((segment) => (
+          <span
+            key={segment.key}
+            className={cn("h-full", segment.tone)}
+            style={{ width: `${(stats[segment.key] / total) * 100}%` }}
+          />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {MIX.map((segment) => (
+          <span key={segment.key} className="flex items-center gap-1 text-label text-faint">
+            <span className={cn("size-2 rounded-[3px]", segment.tone)} />
+            {segment.label}
+            <span className="tabular text-faint/70">{Math.round((stats[segment.key] / total) * 100)}%</span>
+          </span>
+        ))}
+      </div>
     </div>
   )
 }
@@ -132,9 +173,11 @@ function Files() {
 
   return (
     <Section title="Files in play" count={files.length}>
-      {files.map((file) => (
-        <FileRow key={file.path} file={file} stat={stats.get(file.path)} />
-      ))}
+      <ListCard className="px-1.5 py-1">
+        {files.map((file) => (
+          <FileRow key={file.path} file={file} stat={stats.get(file.path)} />
+        ))}
+      </ListCard>
     </Section>
   )
 }
@@ -152,7 +195,7 @@ const FileRow = memo(function FileRow({
       type="button"
       title={`${file.path} · ${file.action}${file.count > 1 ? ` ${file.count}×` : ""}`}
       onClick={() => void getMako().revealPath(file.path)}
-      className="contain-turn flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors duration-100 hover:bg-fill-hover [contain-intrinsic-size:auto_26px]"
+      className="contain-turn flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors duration-100 hover:bg-fill-hover [contain-intrinsic-size:auto_30px]"
     >
       <Icon className={cn("size-3 shrink-0", FILE_TONE[file.action])} />
       <span className="min-w-0 flex-1 truncate text-ui text-foreground/85">
@@ -192,14 +235,16 @@ function Skills() {
 
   return (
     <Section title="Skills" count={skills.length}>
-      {skills.map((skill) => (
-        <SkillRow
-          key={skill.name}
-          skill={skill}
-          open={open === skill.name}
-          onToggle={() => setOpen(open === skill.name ? undefined : skill.name)}
-        />
-      ))}
+      <ListCard className="px-1.5 py-1">
+        {skills.map((skill) => (
+          <SkillRow
+            key={skill.name}
+            skill={skill}
+            open={open === skill.name}
+            onToggle={() => setOpen(open === skill.name ? undefined : skill.name)}
+          />
+        ))}
+      </ListCard>
     </Section>
   )
 }
@@ -214,11 +259,11 @@ const SkillRow = memo(function SkillRow({
   onToggle: () => void
 }) {
   return (
-    <div className="group contain-turn [contain-intrinsic-size:auto_24px]">
+    <div className="group contain-turn [contain-intrinsic-size:auto_30px]">
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors duration-100 hover:bg-fill-hover"
+        className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left transition-colors duration-100 hover:bg-fill-hover"
       >
         <BookOpenIcon className="size-3 shrink-0 text-faint" />
         <span className="shrink-0 text-ui text-foreground/90">
@@ -226,7 +271,7 @@ const SkillRow = memo(function SkillRow({
           {skill.name}
         </span>
         {/* The description trails the name on the same line and is cut by the
-            panel edge, so it hints at what this is without ever costing a
+            card edge, so it hints at what this is without ever costing a
             second row. Opening one is a deliberate act. */}
         <span
           className={cn(
@@ -274,11 +319,11 @@ function Tools() {
     )
 
   return (
-    <section className="px-2.5 pt-3">
+    <section>
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center gap-1 py-1 text-left"
+        className="flex w-full items-center gap-1 pb-1 text-left"
       >
         <ChevronRightIcon
           className={cn("size-3 text-faint transition-transform duration-150", open && "rotate-90")}
@@ -290,7 +335,7 @@ function Tools() {
       </button>
 
       {open ? (
-        <div className="pt-1">
+        <ListCard className="px-1.5 py-1">
           {tools.map((tool) => (
             <button
               key={tool.name}
@@ -299,7 +344,7 @@ function Tools() {
               aria-checked={tool.active}
               onClick={() => toggle(tool.name, !tool.active)}
               title={tool.description}
-              className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors duration-100 hover:bg-fill-hover"
+              className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors duration-100 hover:bg-fill-hover"
             >
               <span
                 className={cn(
@@ -324,7 +369,7 @@ function Tools() {
               </span>
             </button>
           ))}
-        </div>
+        </ListCard>
       ) : null}
     </section>
   )
@@ -342,8 +387,8 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <section className="px-2.5 pt-3">
-      <div className="flex items-center gap-2 pb-1">
+    <section>
+      <div className="flex items-center gap-2 pb-1.5">
         <Eyebrow className="px-0">{title}</Eyebrow>
         <span className="tabular text-label text-faint">{count}</span>
       </div>
