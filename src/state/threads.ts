@@ -48,6 +48,8 @@ interface ThreadsState {
   composerHarness: string
   /** Per-harness tuning chosen in the composer. */
   composerTuning: Record<string, { model?: string; effort?: string; fast?: boolean }>
+  /** Prompts waiting for a thread's current run to end, per path. */
+  queuedReplies: Record<string, { ref: ThreadRef; prompts: string[] }>
 }
 
 export const threadsStore = createStore<ThreadsState>({
@@ -66,6 +68,7 @@ export const threadsStore = createStore<ThreadsState>({
   // menu. The last-used agent comes back across launches.
   composerHarness: prefsStore.get().composerHarness ?? "claude",
   composerTuning: prefsStore.get().composerTuning,
+  queuedReplies: {},
 })
 export const useThreads = createHook(threadsStore)
 
@@ -165,6 +168,22 @@ export function applyThreadRun(run: ThreadRunState) {
   threadsStore.set({ running: next })
   if (viewing && viewing.ref.path === run.path) threadsStore.set({ run })
   if (run.status === "failed" && run.error) toast.error(run.error)
+  // A finished run releases its queue: the next waiting prompt goes out
+  // through the same reply path, one at a time, in the order they were
+  // typed. Interrupt works the same way — abort stops the run, and the
+  // queued message rides the release.
+  if (run.status !== "running") {
+    const queue = threadsStore.get().queuedReplies[run.path]
+    const prompt = queue?.prompts[0]
+    if (queue && prompt !== undefined) {
+      const rest = queue.prompts.slice(1)
+      const all = { ...threadsStore.get().queuedReplies }
+      if (rest.length > 0) all[run.path] = { ...queue, prompts: rest }
+      else delete all[run.path]
+      threadsStore.set({ queuedReplies: all })
+      setTimeout(() => void threads.reply(queue.ref, prompt), 50)
+    }
+  }
 }
 
 /** Entries appended — by whatever app is writing — to the viewed thread. */
@@ -328,6 +347,23 @@ export const threads = {
    */
   async reply(ref: ThreadRef, prompt: string): Promise<boolean> {
     if (!hasBridge()) return false
+    // A busy thread queues instead of dropping: the message paints now (the
+    // echo below) and goes out the moment the current run ends.
+    if (threadsStore.get().running[ref.path]) {
+      const all = { ...threadsStore.get().queuedReplies }
+      const queue = all[ref.path] ?? { ref, prompts: [] }
+      all[ref.path] = { ref, prompts: [...queue.prompts, prompt] }
+      threadsStore.set({ queuedReplies: all })
+      const { viewing } = threadsStore.get()
+      if (viewing && viewing.ref.path === ref.path) {
+        const echo = { kind: "user", at: new Date().toISOString(), text: prompt } as ThreadEntry & {
+          echo: boolean
+        }
+        echo.echo = true
+        threadsStore.set({ viewing: { ...viewing, entries: [...viewing.entries, echo] } })
+      }
+      return true
+    }
     // Paint the message NOW. The CLI takes a second to launch and the tail
     // another moment to land; a reply that vanishes into that gap reads as
     // a send that failed. The echo carries a flag so the real turn from the
@@ -428,6 +464,19 @@ export const threads = {
   async abortReply(ref: ThreadRef) {
     if (!hasBridge()) return
     await getPi().abortThreadRun(ref.path).catch(() => {})
+  },
+
+  /**
+   * Interrupt and send: stop the current turn, and the message goes out on
+   * the release. One gesture — the queue machinery does the sequencing.
+   */
+  async interruptAndSend(ref: ThreadRef, prompt: string): Promise<boolean> {
+    if (!hasBridge()) return false
+    const ok = await this.reply(ref, prompt)
+    if (ok && threadsStore.get().running[ref.path]) {
+      await getPi().abortThreadRun(ref.path).catch(() => {})
+    }
+    return ok
   },
 
   /**

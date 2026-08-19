@@ -43,6 +43,8 @@ export type AccountHarness = "claude" | "codex"
 export interface HarnessAccount {
   harness: AccountHarness
   name: string
+  /** The login's actual identity — the email a human recognizes. */
+  email?: string
   /** The isolated config home this account materializes as. */
   dir: string
   active: boolean
@@ -104,24 +106,65 @@ async function readSelection(): Promise<SelectionState> {
 
 /* ------------------------------------------------------------ listing */
 
+/**
+ * Who a login actually is. "default" is a mechanism, not an identity — the
+ * email in the account dir's own config is what a human recognizes.
+ * Claude keeps it in .claude.json's oauthAccount; Codex inside the id_token
+ * JWT in auth.json. Absent or unreadable simply yields nothing.
+ */
+async function accountEmail(harness: "claude" | "codex", dir: string): Promise<string | undefined> {
+  try {
+    if (harness === "claude") {
+      const state = JSON.parse(await readFile(join(dir, ".claude.json"), "utf8")) as {
+        oauthAccount?: { emailAddress?: string }
+      }
+      return state.oauthAccount?.emailAddress
+    }
+    const auth = JSON.parse(await readFile(join(dir, "auth.json"), "utf8")) as {
+      tokens?: { id_token?: string }
+    }
+    const token = auth.tokens?.id_token
+    if (!token) return undefined
+    const payload = token.split(".")[1]
+    if (!payload) return undefined
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
+      email?: string
+    }
+    return claims.email
+  } catch {
+    return undefined
+  }
+}
+
+/** Where a claude account dir keeps its state file vs codex's flat home. */
+function identityDir(harness: "claude" | "codex", dir: string): string {
+  // The default claude "dir" is ~/.claude but .claude.json sits beside it in
+  // the home; captured accounts keep the same shape inside their own root.
+  return harness === "claude" ? join(dir, "..") : dir
+}
+
 export async function listAccounts(): Promise<HarnessAccount[]> {
   const selection = await readSelection()
   const accounts: HarnessAccount[] = []
   for (const harness of ["claude", "codex"] as const) {
     // The real home is always an account: the one the CLI manages itself.
+    const defaultDir = join(homedir(), SHARED[harness].home)
     accounts.push({
       harness,
       name: "default",
-      dir: join(homedir(), SHARED[harness].home),
+      email: await accountEmail(harness, identityDir(harness, defaultDir)),
+      dir: defaultDir,
       active: !selection[harness],
     })
     try {
       for (const name of await readdir(join(accountsRoot(), harness))) {
         if (name.startsWith(".")) continue
+        const dir = join(accountsRoot(), harness, name)
         accounts.push({
           harness,
           name,
-          dir: join(accountsRoot(), harness, name),
+          email: await accountEmail(harness, identityDir(harness, dir)),
+          dir,
           active: selection[harness] === name,
         })
       }

@@ -264,31 +264,15 @@ function Agents() {
   const [availability, setAvailability] = useState<Record<string, boolean> | null>(null)
   const [daemon, setDaemon] = useState<{ pid: number; startedAt: number; sessions: number } | null>(null)
   const [loginStart, setLoginStart] = useState<boolean | null>(null)
-  const [accounts, setAccounts] = useState<Array<{ name: string; key: string }>>([])
-  const [name, setName] = useState("")
-  const [apiKey, setApiKey] = useState("")
-  const [saving, setSaving] = useState(false)
 
   const load = useCallback(() => {
     if (!hasBridge()) return
     void getPi().harnessAvailability().then(setAvailability).catch(() => setAvailability({}))
-    void getPi().devinAccounts().then(setAccounts).catch(() => setAccounts([]))
     void getPi().daemonStatus().then(setDaemon).catch(() => setDaemon(null))
     void getPi().daemonLogin().then(setLoginStart).catch(() => setLoginStart(null))
   }, [])
   useEffect(load, [load])
 
-  const save = async (next: Array<{ name: string; apiKey: string }>) => {
-    setSaving(true)
-    try {
-      await getPi().saveDevinAccounts(next)
-      load()
-      setName("")
-      setApiKey("")
-    } finally {
-      setSaving(false)
-    }
-  }
 
   const HARNESSES = [
     { id: "pi", name: "Pi", how: "built in" },
@@ -363,69 +347,6 @@ function Agents() {
       </div>
 
       <HarnessAccounts />
-
-      <Eyebrow className="pt-6 pb-2">Devin accounts</Eyebrow>
-      <p className="pb-3 text-[11.5px] leading-relaxed text-faint">
-        Devin's sessions live in its cloud, so each account needs a service
-        key — from app.devin.ai settings, starting with <code>apk_</code>. The
-        CLI's own login covers a different surface and cannot list sessions.
-      </p>
-      {accounts.map((account) => (
-        <div key={account.name} className="flex items-center gap-2.5 border-b border-hairline py-2">
-          <HarnessIcon harness="devin" className="size-4" />
-          <span className="min-w-0 flex-1 text-[12.5px]">{account.name}</span>
-          <span className="font-mono text-[11px] text-faint">{account.key}</span>
-          <button
-            type="button"
-            onClick={() =>
-              void save(
-                accounts.filter((entry) => entry.name !== account.name).map((entry) => ({
-                  name: entry.name,
-                  // Removal keeps the others: the host re-reads the real keys
-                  // from disk and drops only this name.
-                  apiKey: "__keep__",
-                }))
-              )
-            }
-            className="pressable rounded p-1 text-faint hover:text-foreground"
-            aria-label={`Remove ${account.name}`}
-          >
-            <XIcon className="size-3.5" />
-          </button>
-        </div>
-      ))}
-      <div className="flex items-end gap-2 pt-3">
-        <label className="flex min-w-0 flex-col gap-1 text-[11px] text-faint">
-          Name
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="work"
-            className="h-7 w-28 rounded-md bg-surface px-2 text-[12px] text-foreground placeholder:text-faint focus:ring-1 focus:ring-hairline focus:outline-none"
-          />
-        </label>
-        <label className="flex min-w-0 flex-1 flex-col gap-1 text-[11px] text-faint">
-          Service key
-          <input
-            value={apiKey}
-            onChange={(event) => setApiKey(event.target.value)}
-            placeholder="apk_…"
-            type="password"
-            className="h-7 w-full rounded-md bg-surface px-2 font-mono text-[12px] text-foreground placeholder:text-faint focus:ring-1 focus:ring-hairline focus:outline-none"
-          />
-        </label>
-        <Action
-          disabled={saving || !name.trim() || !apiKey.trim()}
-          onClick={() =>
-            void save([
-              ...accounts.map((entry) => ({ name: entry.name, apiKey: "__keep__" })),
-              { name: name.trim(), apiKey: apiKey.trim() },
-            ])
-          }
-        >
-          Add account
-        </Action>
-      </div>
     </Section>
   )
 }
@@ -439,7 +360,7 @@ function Agents() {
  */
 function HarnessAccounts() {
   const [accounts, setAccounts] = useState<
-    Array<{ harness: "claude" | "codex"; name: string; active: boolean }>
+    Array<{ harness: "claude" | "codex"; name: string; email?: string; active: boolean }>
   >([])
   const [usage, setUsage] = useState<Record<string, { status: string; plan?: string; detail?: string; session?: { usedPercent: number; resetsAt: number | null } | null; weekly?: { usedPercent: number; resetsAt: number | null } | null }>>({})
   const [capturing, setCapturing] = useState<"claude" | "codex" | null>(null)
@@ -504,7 +425,12 @@ function HarnessAccounts() {
                     }
                     className="size-3 accent-current"
                   />
-                  <span className="w-24 min-w-0 truncate text-[12.5px]">{account.name}</span>
+                  <span className="min-w-0 flex-none basis-52 truncate text-[12.5px]">
+                    {account.email ?? account.name}
+                    {account.email && account.name !== "default" ? (
+                      <span className="ml-1.5 text-[10px] text-faint">{account.name}</span>
+                    ) : null}
+                  </span>
                   <span className="min-w-0 flex-1">
                     {stats?.status === "ok" ? (
                       <span className="flex items-center gap-2">
@@ -559,7 +485,9 @@ function HarnessAccounts() {
                 onClick={() => setCapturing(harness)}
                 className="pressable pt-2 text-[11.5px] text-faint underline-offset-2 hover:text-foreground hover:underline"
               >
-                Capture the current {harness === "claude" ? "Claude Code" : "Codex"} login as an account…
+                + Add another {harness === "claude" ? "Claude Code" : "Codex"} account — sign
+                into it with the CLI first ({harness === "claude" ? "claude /login" : "codex login"}),
+                then capture it here under a name
               </button>
             )}
           </div>

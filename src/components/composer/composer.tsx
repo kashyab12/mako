@@ -13,7 +13,8 @@ import { Chip, IconAction, Keys } from "@/components/ui/kit"
 import { Slot } from "@/extend/slot"
 import { formatChord } from "@/extend/commands"
 import { mentionAt, replaceMention, type ActiveMention } from "@/lib/mentions"
-import { actions, shallowEqual, useSession } from "@/state/session"
+import { textOf } from "@/lib/format"
+import { actions, shallowEqual, store as sessionStore, useSession } from "@/state/session"
 import { threads, threadsStore, useThreads } from "@/state/threads"
 import { acp, acpStore, useAcp } from "@/state/acp"
 import { getPi } from "@/lib/bridge"
@@ -28,6 +29,8 @@ import {
   SquareIcon,
   XIcon,
 } from "lucide-react"
+
+const isMac = typeof navigator !== "undefined" && navigator.platform.startsWith("Mac")
 
 /** Drafts survive session switches within a run; nobody should lose a paragraph. */
 const drafts = new Map<string, string>()
@@ -58,6 +61,29 @@ export function Composer() {
   const scroller = useRef<HTMLDivElement>(null)
   const filePicker = useRef<HTMLInputElement>(null)
   const attachments = useAttachments()
+
+  /**
+   * Up-arrow prompt recall, the way every terminal taught your hands: with
+   * the caret at the very start, ↑ steps back through what you asked in
+   * this conversation — the open thread's turns, or the native session's —
+   * and ↓ walks forward until your unfinished draft comes back. Typing
+   * anything ends the walk.
+   */
+  const promptHistory = useRef<{ list: string[]; at: number; stash: string } | null>(null)
+  const collectPromptHistory = useCallback((): string[] => {
+    const viewing = threadsStore.get().viewing
+    if (viewing) {
+      return viewing.entries
+        .filter((entry): entry is Extract<typeof entry, { kind: "user" }> => entry.kind === "user")
+        .map((entry) => entry.text.trim())
+        .filter(Boolean)
+    }
+    return sessionStore
+      .get()
+      .messages.filter((message) => message.role === "user")
+      .map((message) => textOf(message.blocks).trim())
+      .filter(Boolean)
+  }, [])
 
   /** Insert the markers the attachments produced at the caret. */
   const attach = useCallback(
@@ -183,7 +209,8 @@ export function Composer() {
       // in. "Native" was the wrong word — every path is native to its
       // harness; this one just doesn't leave the building.
       const engineAnswers = harness === "pi" || harness === "devin"
-      if ((liveSession || viewingRef || !engineAnswers) && !mode) {
+      const foreignSurface = liveSession || viewingRef || !engineAnswers
+      if (foreignSurface && (!mode || viewingRef || liveSession)) {
         // Wait out staging — a screenshot mid-copy must not race the send
         // and leave a dead [Attachment N] marker with no file behind it —
         // then put even inline-shaped images on disk, since a CLI reads
@@ -210,6 +237,9 @@ export function Composer() {
         setMention(null)
         let ok: boolean
         if (liveSession) {
+          // Mod+Enter while the agent runs: stop the turn, then send — the
+          // live protocol's own interrupt. Plain Enter queues agent-side.
+          if (mode && liveSession.status === "running") acp.cancel()
           await acp.send(full)
           ok = true
         } else if (viewingRef) {
@@ -219,7 +249,9 @@ export function Composer() {
           // and the message goes out as its next turn.
           ok =
             harness === viewingRef.harness && !viewingRef.archived
-              ? await threads.reply(viewingRef, full)
+              ? mode
+                ? await threads.interruptAndSend(viewingRef, full)
+                : await threads.reply(viewingRef, full)
               : await threads.moveAndSend(viewingRef, harness, full)
         } else if (engineAnswers) {
           // Unreachable by construction, but the router stays total.
@@ -294,7 +326,36 @@ export function Composer() {
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // The mention menu owns navigation keys while it is open.
     if (mention && ["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"].includes(event.key)) return
+    const node = textarea.current
+    if (event.key === "ArrowUp" && node && node.selectionStart === 0 && node.selectionEnd === 0) {
+      if (!promptHistory.current) {
+        const list = collectPromptHistory()
+        if (list.length > 0) promptHistory.current = { list, at: list.length, stash: draft }
+      }
+      const history = promptHistory.current
+      if (history && history.at > 0) {
+        event.preventDefault()
+        history.at -= 1
+        const recalled = history.list[history.at]!
+        update(recalled)
+        requestAnimationFrame(() => node.setSelectionRange(0, 0))
+        return
+      }
+    }
+    if (event.key === "ArrowDown" && promptHistory.current) {
+      const history = promptHistory.current
+      event.preventDefault()
+      history.at += 1
+      if (history.at >= history.list.length) {
+        update(history.stash)
+        promptHistory.current = null
+      } else {
+        update(history.list[history.at]!)
+      }
+      return
+    }
     if (event.key === "Enter" && !event.shiftKey) {
+      promptHistory.current = null
       event.preventDefault()
       void submit(event.metaKey || event.ctrlKey ? "followUp" : undefined)
     }
@@ -308,6 +369,7 @@ export function Composer() {
   const liveHarness = useAcp((state) => state.session?.harness ?? null)
   const liveRunning = useAcp((state) => state.session?.status === "running")
   const routedHarness = useThreads((state) => state.viewing?.ref.harness ?? null)
+  const viewingRunning = useThreads((state) => state.run?.status === "running")
   const viewingArchived = useThreads((state) => Boolean(state.viewing?.ref.archived))
   const newHarness = useThreads((state) => state.composerHarness)
   const placeholder = liveHarness
@@ -319,7 +381,9 @@ export function Composer() {
         ? `Reply — moves this conversation to ${HARNESS_TITLES[newHarness] ?? newHarness}`
         : viewingArchived
           ? `Reply — revives this archived conversation in ${HARNESS_TITLES[routedHarness] ?? routedHarness}`
-          : `Reply — ${HARNESS_TITLES[routedHarness] ?? routedHarness} answers`
+          : viewingRunning
+            ? `${HARNESS_TITLES[routedHarness] ?? routedHarness} is working — Enter queues, ${isMac ? "⌘" : "Ctrl+"}Enter interrupts`
+            : `Reply — ${HARNESS_TITLES[routedHarness] ?? routedHarness} answers`
       : newHarness !== "pi" && newHarness !== "devin"
         ? `Ask ${HARNESS_TITLES[newHarness] ?? newHarness} for a change`
         : status.streaming
@@ -407,6 +471,7 @@ export function Composer() {
               value={draft}
               rows={1}
               onChange={(event) => {
+                promptHistory.current = null
                 update(event.target.value)
                 syncMention()
               }}
@@ -597,6 +662,9 @@ const HARNESS_TITLES: Record<string, string> = {
 function ComposerRouting() {
   const viewing = useThreads((state) => state.viewing?.ref)
   const run = useThreads((state) => state.run)
+  const viewingQueued = useThreads((state) =>
+    state.viewing ? (state.queuedReplies[state.viewing.ref.path]?.prompts.length ?? 0) : 0
+  )
   const harness = useThreads((state) => state.composerHarness)
   const live = useAcp((state) => state.session)
   const queued = useAcp((state) => state.queued)
@@ -648,6 +716,11 @@ function ComposerRouting() {
           <span className="size-1.5 animate-pulse rounded-full bg-emerald-400/90" />
           working — stop
         </button>
+      ) : null}
+      {viewingQueued > 0 ? (
+        <span className="flex h-7 items-center rounded-md bg-raised px-2 text-[10.5px] text-faint">
+          {viewingQueued} queued
+        </span>
       ) : null}
       {moving ? (
         <span className="animate-enter flex h-7 items-center gap-1 rounded-md bg-brand-soft px-2 text-[10.5px] font-medium text-brand">
