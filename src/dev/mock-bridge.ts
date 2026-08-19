@@ -502,7 +502,7 @@ export function installMockBridge() {
     startHarness: async (harness: string) => ({ run: { path: `fresh:${harness}:1`, harness, status: "running" as const }, cwd: "/Users/you/mako" }),
     harnessTuning: async (harness: string) =>
       harness === "cursor"
-        ? { models: ["claude-fable-5", "gpt-5.6-sol", "composer-2"], efforts: ["low", "medium", "high"], fast: true, defaultModel: "claude-fable-5", defaultEffort: "high" }
+        ? { models: ["claude-fable-5", "sonnet-4.5[effort=high,fast=true]", "gpt-5.6-sol"], efforts: ["low", "medium", "high"], fast: true, defaultModel: "claude-fable-5", defaultEffort: "high" }
         : { models: harness === "claude" ? ["claude-fable-5[1m]", "opus", "sonnet"] : ["gpt-5.6-sol", "gpt-5.3-codex"], efforts: ["low", "medium", "high", "xhigh"], fast: false, defaultModel: harness === "claude" ? "claude-fable-5[1m]" : "gpt-5.6-sol", defaultEffort: "high" },
     resumeThread: async (path: string) => ({ path, harness: "codex", status: "running" as const }),
     abortThreadRun: async () => {},

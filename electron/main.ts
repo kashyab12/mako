@@ -31,7 +31,7 @@ import {
 import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunChecks, type CreatePullOptions } from "./github.js"
 import { HostPool } from "./pool.js"
 import { daemonStatus, devinAccountsMasked, startDevin, emitThreadAs, emitThreadAsClaude, emitThreadAsPi, followThread, threadsReady, handoffFor, installThreads, listThreads, openThread, remoteHarnesses, saveDevinAccounts, sendRemote, stopThreads, unfollowThread } from "./threads.js"
-import { abortNative, bindDrivers, freshHarnesses, grokModels, harnessAvailability, HARNESS_TUNING, readHarnessDefaults, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
+import { abortNative, bindDrivers, freshHarnesses, claudeModels, grokModels, harnessAvailability, HARNESS_TUNING, readHarnessDefaults, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
 import { bindLineageDirect, chainOf, expectLineage } from "./lineage.js"
 import { accountUsage, captureAccount, listAccounts, removeAccount, selectAccount } from "./accounts.js"
 import { daemonLoginEnabled, setDaemonLogin } from "./daemon-login.js"
@@ -522,7 +522,12 @@ function bindIpc() {
       if (model && !model.includes("·") && !seen.includes(model)) seen.push(model)
       if (seen.length >= 8) break
     }
-    const curated = harness === "grok" ? await grokModels() : tuning.curatedModels
+    const curated =
+      harness === "grok"
+        ? await grokModels()
+        : harness === "claude"
+          ? await claudeModels()
+          : tuning.curatedModels
     const models = [...seen, ...curated.filter((model) => !seen.includes(model))]
     return {
       models: models.slice(0, 12),

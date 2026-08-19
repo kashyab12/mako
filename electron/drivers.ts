@@ -225,6 +225,29 @@ export async function readHarnessDefaults(): Promise<Record<string, HarnessDefau
   return value
 }
 
+/**
+ * Claude Code's model list, from its own caches: the additional-model
+ * options Claude itself last fetched (full ids like claude-fable-5[1m])
+ * over the evergreen aliases. The CLI's truth, not ours.
+ */
+export async function claudeModels(): Promise<string[]> {
+  const aliases = ["opus", "sonnet", "haiku"]
+  try {
+    const { readFile } = await import("node:fs/promises")
+    const { homedir } = await import("node:os")
+    const { join } = await import("node:path")
+    const state = JSON.parse(await readFile(join(homedir(), ".claude.json"), "utf8")) as {
+      additionalModelOptionsCache?: Array<{ value?: string }>
+    }
+    const cached = (state.additionalModelOptionsCache ?? [])
+      .map((option) => option.value)
+      .filter((value): value is string => Boolean(value))
+    return [...cached, ...aliases.filter((alias) => !cached.includes(alias))]
+  } catch {
+    return aliases
+  }
+}
+
 /** Grok's model list, from its own cache — the CLI's truth, not ours. */
 export async function grokModels(): Promise<string[]> {
   try {

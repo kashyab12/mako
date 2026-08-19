@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { harnessDefault, rememberHarnessDefault, setComposerTuning, useThreads } from "@/state/threads"
+import { decomposeModelId } from "@/lib/model-id"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
 import { CheckIcon, ZapIcon } from "lucide-react"
@@ -58,8 +59,12 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
   const set = (patch: Partial<{ effort?: string; fast?: boolean }>) =>
     setComposerTuning(harness, patch)
 
-  const fallbackEffort = tuning?.defaultEffort ?? harnessDefault(harness).effort
-  const label = chosen.fast ? "fast" : (chosen.effort ?? fallbackEffort ?? "effort")
+  const defaults = harnessDefault(harness)
+  const encoded = defaults.model ? decomposeModelId(harness, defaults.model) : undefined
+  const fallbackEffort = tuning?.defaultEffort ?? defaults.effort ?? encoded?.effort
+  const fallbackFast = encoded?.fast ?? false
+  const label =
+    (chosen.fast ?? fallbackFast) ? "fast" : (chosen.effort ?? fallbackEffort ?? "effort")
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -74,7 +79,7 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
             chosen.effort || chosen.fast ? "text-foreground/85" : "text-faint"
           )}
         >
-          {chosen.fast ? (
+          {(chosen.fast ?? fallbackFast) ? (
             <ZapIcon className="size-3 animate-[fast-alive_1.6s_ease-in-out_infinite] fill-caution text-caution" />
           ) : (
             <Gauge filled={rankOf(chosen.effort ?? fallbackEffort, tuning.efforts)} />

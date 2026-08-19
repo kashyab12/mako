@@ -3,6 +3,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { harnessLabel } from "@/components/rail/agent-threads"
 import { harnessDefault, setComposerHarness, useThreads } from "@/state/threads"
+import { decomposeModelId } from "@/lib/model-id"
 import { actions, store as sessionStore, useSession } from "@/state/session"
 import { toast } from "sonner"
 import { getPi, hasBridge } from "@/lib/bridge"
@@ -149,7 +150,7 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
                 {harnessLabel(harness)}
               </span>
               <span className="mt-px block truncate font-mono text-[10.5px] text-faint">
-                {model ?? ""}
+                {model ? decomposeModelId(harness, model).base : ""}
               </span>
             </span>
             {active ? <CheckIcon className="size-3.5 shrink-0 text-brand" /> : null}

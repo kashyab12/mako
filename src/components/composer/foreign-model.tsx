@@ -4,9 +4,10 @@ import { Eyebrow } from "@/components/ui/kit"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { harnessLabel } from "@/components/rail/agent-threads"
 import { harnessDefault, rememberHarnessDefault, setComposerTuning, useThreads } from "@/state/threads"
+import { decomposeModelId, decorations } from "@/lib/model-id"
 import { getPi, hasBridge } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
-import { CheckIcon, ChevronDownIcon } from "lucide-react"
+import { CheckIcon, ChevronDownIcon, ZapIcon } from "lucide-react"
 
 /**
  * The model picker, for harnesses that are not Pi.
@@ -45,7 +46,21 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
       .catch(() => {})
   }, [harness])
 
-  const set = (model?: string) => setComposerTuning(harness, { model })
+  const set = (model?: string) => {
+    if (!model) {
+      setComposerTuning(harness, { model: undefined })
+      return
+    }
+    // An id that encodes its own tuning hands that tuning to the gauge and
+    // the bolt beside this picker. Cursor recomposes at launch from the
+    // clean base; everyone else wants the original id back verbatim.
+    const dec = decomposeModelId(harness, model)
+    setComposerTuning(harness, {
+      model: harness === "cursor" ? dec.base : model,
+      ...(dec.effort !== undefined ? { effort: dec.effort } : {}),
+      ...(dec.fast !== undefined ? { fast: dec.fast } : {}),
+    })
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -62,7 +77,9 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
           )}
         >
           <HarnessIcon harness={harness} className="size-3.5" />
-          <span className="truncate font-mono text-[11.5px]">{chosen ?? (fallback || "default")}</span>
+          <span className="truncate font-mono text-[11.5px]">
+            {decomposeModelId(harness, chosen ?? (fallback || "default")).base}
+          </span>
           <ChevronDownIcon className="size-3 shrink-0 text-faint/70" />
         </button>
       </PopoverTrigger>
@@ -71,7 +88,8 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
           <Eyebrow className="px-1.5 pt-1.5 pb-1">{harnessLabel(harness)}</Eyebrow>
           <Row
             mono
-            label={fallback || "Harness default"}
+            label={fallback ? decomposeModelId(harness, fallback).base : "Harness default"}
+            accessory={fallback ? decomposeModelId(harness, fallback) : undefined}
             detail={`${harnessLabel(harness)}'s default — used unless you say otherwise`}
             selected={!chosen}
             onChoose={() => {
@@ -83,9 +101,10 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
             <Row
               key={model}
               mono
-              label={model}
+              label={decomposeModelId(harness, model).base}
+              accessory={decomposeModelId(harness, model)}
               detail={index < 3 ? "seen on this machine" : undefined}
-              selected={chosen === model}
+              selected={chosen === model || chosen === decomposeModelId(harness, model).base}
               onChoose={() => {
                 set(model)
                 setOpen(false)
@@ -119,12 +138,14 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
 function Row({
   label,
   detail,
+  accessory,
   mono,
   selected,
   onChoose,
 }: {
   label: string
   detail?: string
+  accessory?: ReturnType<typeof decomposeModelId>
   mono?: boolean
   selected: boolean
   onChoose: () => void
@@ -150,6 +171,14 @@ function Row({
         </span>
         {detail ? <span className="mt-0.5 block text-[10.5px] text-faint">{detail}</span> : null}
       </span>
+      {accessory && (accessory.effort || accessory.context) ? (
+        <span className="shrink-0 text-[10px] text-faint capitalize">
+          {decorations(accessory).join(" · ")}
+        </span>
+      ) : null}
+      {accessory?.fast ? (
+        <ZapIcon className="size-3 shrink-0 fill-caution/80 text-caution/80" aria-label="Fast lane" />
+      ) : null}
       {selected ? <CheckIcon className="size-3.5 shrink-0 text-brand" /> : null}
     </button>
   )
