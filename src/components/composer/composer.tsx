@@ -99,9 +99,22 @@ const isMac = navigator.platform.startsWith("Mac")
 
 /** Drafts survive session switches within a run; nobody should lose a paragraph. */
 const drafts = new Map<string, StoredDraft>()
+const MAX_DRAFTS = 64
+
+function rememberDraft(key: string, text: string) {
+  drafts.delete(key)
+  if (text) drafts.set(key, { text })
+  while (drafts.size > MAX_DRAFTS) {
+    const oldest = drafts.keys().next().value
+    if (!oldest) break
+    drafts.delete(oldest)
+  }
+}
 
 export function Composer() {
   const sessionId = useSession((state) => state.meta?.sessionId)
+  const viewingPath = useThreads((state) => state.viewing?.ref.path)
+  const draftKey = sessionId ?? viewingPath ?? "new"
   const status = useSession(
     useCallback(
       (state) => ({
@@ -118,14 +131,14 @@ export function Composer() {
   )
   const meta = useSession((state) => state.meta)
 
-  const [draft, setDraft] = useState("")
+  const [draft, setDraft] = useState(() => drafts.get(draftKey)?.text ?? "")
   const [focused, setFocused] = useState(false)
   const [mention, setMention] = useState<ComposerMention | null>(null)
   const [dragging, setDragging] = useState(false)
   const textarea = useRef<HTMLTextAreaElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const filePicker = useRef<HTMLInputElement>(null)
-  const attachments = useAttachments()
+  const attachments = useAttachments(draftKey)
 
   /**
    * Up-arrow prompt recall, the way every terminal taught your hands: with
@@ -171,19 +184,19 @@ export function Composer() {
   )
 
   // Swap in the draft belonging to whichever session just became active.
-  const [lastSession, setLastSession] = useState(sessionId)
-  if (lastSession !== sessionId) {
-    setLastSession(sessionId)
-    setDraft(sessionId ? (drafts.get(sessionId)?.text ?? "") : "")
+  const [lastDraftKey, setLastDraftKey] = useState(draftKey)
+  if (lastDraftKey !== draftKey) {
+    setLastDraftKey(draftKey)
+    setDraft(drafts.get(draftKey)?.text ?? "")
     setMention(null)
   }
 
   const update = useCallback(
     (value: string) => {
       setDraft(value)
-      if (sessionId) drafts.set(sessionId, { text: value })
+      rememberDraft(draftKey, value)
     },
-    [sessionId]
+    [draftKey]
   )
 
   /** Re-read the token under the caret after any edit or caret move. */
@@ -268,6 +281,7 @@ export function Composer() {
 
   const submit = useCallback(
     async (mode?: "steer" | "followUp") => {
+      const submittedDraftKey = draftKey
       const text = draft.trim()
       if (!text && attachments.items.length === 0) return
 
@@ -341,12 +355,18 @@ export function Composer() {
       }
       if (ok) attachments.discard(restorableDraft.attachments)
       else {
-        update(restorableDraft.text)
+        rememberDraft(submittedDraftKey, restorableDraft.text)
+        const currentDraftKey =
+          sessionStore.get().meta?.sessionId ??
+          threadsStore.get().viewing?.ref.path ??
+          "new"
+        if (currentDraftKey === submittedDraftKey)
+          setDraft(restorableDraft.text)
         attachments.reattach(restorableDraft.attachments)
       }
       return
     },
-    [attachments, draft, meta?.cwd, update]
+    [attachments, draft, draftKey, meta?.cwd, update]
   )
 
   const pick = useCallback(

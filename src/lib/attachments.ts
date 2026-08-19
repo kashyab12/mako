@@ -69,6 +69,7 @@ interface PendingAttachment {
 
 const MAX_INLINE_TEXT = 200_000
 const MAX_BYTES = 256 * 1024 * 1024
+const EMPTY_ATTACHMENTS: Attachment[] = []
 
 const TEXT_EXTENSIONS = new Set([
   "txt", "md", "mdx", "rst", "csv", "tsv", "json", "jsonl", "yaml", "yml", "toml", "ini", "env",
@@ -85,21 +86,50 @@ export function classify(file: File): AttachmentKind {
   return "binary"
 }
 
-export function useAttachments() {
-  const [items, setItems] = useState<Attachment[]>([])
-  const nextIndex = useRef(1)
+export function useAttachments(key = "default") {
+  const [buckets, setBuckets] = useState<Record<string, Attachment[]>>({})
+  const items = buckets[key] ?? EMPTY_ATTACHMENTS
+  const nextIndex = useRef(new Map<string, number>())
+  const live = useRef(new Map<string, Attachment[]>())
+  const updateItems = useCallback(
+    (update: (current: Attachment[]) => Attachment[]) =>
+      setBuckets((current) => {
+        const next = update(current[key] ?? [])
+        live.current.set(key, next)
+        return { ...current, [key]: next }
+      }),
+    [key]
+  )
+  const replaceItems = useCallback(
+    (next: Attachment[]) => {
+      live.current.set(key, next)
+      setBuckets((current) => ({ ...current, [key]: next }))
+    },
+    [key]
+  )
+  const dropItems = useCallback(() => {
+    live.current.delete(key)
+    setBuckets((current) => {
+      if (!(key in current)) return current
+      const next = { ...current }
+      delete next[key]
+      return next
+    })
+  }, [key])
 
   // Object URLs leak if the composer unmounts mid-draft. The mirror is written
   // in an effect so the unmount cleanup can read it without touching a ref
   // during render.
-  const live = useRef<Attachment[]>([])
   useEffect(() => {
-    live.current = items
-  }, [items])
+    live.current.set(key, items)
+  }, [items, key])
   useEffect(() => {
+    const bucketsAtUnmount = live.current
     return () => {
-      for (const item of live.current) {
-        if (item.preview) URL.revokeObjectURL(item.preview)
+      for (const bucket of bucketsAtUnmount.values()) {
+        for (const item of bucket) {
+          if (item.preview) URL.revokeObjectURL(item.preview)
+        }
       }
     }
   }, [])
@@ -114,10 +144,12 @@ export function useAttachments() {
         continue
       }
       const kind = classify(file)
+      const index = nextIndex.current.get(key) ?? 1
+      nextIndex.current.set(key, index + 1)
       accepted.push({
         attachment: {
-          id: `${file.name}-${file.size}-${file.lastModified}-${nextIndex.current}`,
-          index: nextIndex.current++,
+          id: `${file.name}-${file.size}-${file.lastModified}-${index}`,
+          index,
           name: file.name,
           mimeType: file.type || "application/octet-stream",
           size: file.size,
@@ -130,7 +162,10 @@ export function useAttachments() {
     }
     if (accepted.length === 0) return ""
 
-    setItems((current) => [...current, ...accepted.map((entry) => entry.attachment)])
+    updateItems((current) => [
+      ...current,
+      ...accepted.map((entry) => entry.attachment),
+    ])
 
     // Reading and staging happen after the chips are on screen, so a large
     // file never delays the acknowledgement that it was accepted.
@@ -139,20 +174,22 @@ export function useAttachments() {
         const { attachment, file } = entry
         try {
           const resolved = await resolve(attachment, file)
-          setItems((current) =>
+          updateItems((current) =>
             current.map((item) => (item.id === attachment.id ? resolved : item))
           )
         } catch (error) {
           toast.error(
             `Could not attach ${attachment.name}: ${error instanceof Error ? error.message : error}`
           )
-          setItems((current) => current.filter((item) => item.id !== attachment.id))
+          updateItems((current) =>
+            current.filter((item) => item.id !== attachment.id)
+          )
         }
       })
     )
 
     return accepted.map((entry) => `[Attachment ${entry.attachment.index}]`).join(" ")
-  }, [])
+  }, [key, updateItems])
 
   /**
    * Resolves when no attachment is still reading or staging — the moment a
@@ -162,27 +199,33 @@ export function useAttachments() {
    */
   const settled = useCallback(async (): Promise<Attachment[]> => {
     const deadline = Date.now() + 20_000
-    while (live.current.some((item) => item.pending) && Date.now() < deadline) {
+    while (
+      (live.current.get(key) ?? []).some((item) => item.pending) &&
+      Date.now() < deadline
+    ) {
       await new Promise((resolve) => setTimeout(resolve, 40))
     }
-    return live.current
-  }, [])
+    return live.current.get(key) ?? []
+  }, [key])
 
-  const remove = useCallback((id: string) => {
-    setItems((current) => {
-      const found = current.find((item) => item.id === id)
-      if (found?.preview) URL.revokeObjectURL(found.preview)
-      return current.filter((item) => item.id !== id)
-    })
-  }, [])
+  const remove = useCallback(
+    (id: string) => {
+      updateItems((current) => {
+        const found = current.find((item) => item.id === id)
+        if (found?.preview) URL.revokeObjectURL(found.preview)
+        return current.filter((item) => item.id !== id)
+      })
+    },
+    [updateItems]
+  )
 
   const clear = useCallback(() => {
-    setItems((current) => {
+    updateItems((current) => {
       for (const item of current) if (item.preview) URL.revokeObjectURL(item.preview)
       return []
     })
-    nextIndex.current = 1
-  }, [])
+    nextIndex.current.set(key, 1)
+  }, [key, updateItems])
 
   /**
    * Take the attachments off the composer *without* destroying them.
@@ -194,19 +237,29 @@ export function useAttachments() {
    * which way it went.
    */
   const detach = useCallback((): Attachment[] => {
-    const taken = live.current
-    setItems([])
+    const taken = live.current.get(key) ?? []
+    live.current.set(key, [])
+    replaceItems([])
     return taken
-  }, [])
+  }, [key, replaceItems])
 
-  const reattach = useCallback((taken: Attachment[]) => {
-    setItems(taken)
-  }, [])
+  const reattach = useCallback(
+    (taken: Attachment[]) => {
+      live.current.set(key, taken)
+      replaceItems(taken)
+    },
+    [key, replaceItems]
+  )
 
-  const discard = useCallback((taken: Attachment[]) => {
-    for (const item of taken) if (item.preview) URL.revokeObjectURL(item.preview)
-    nextIndex.current = 1
-  }, [])
+  const discard = useCallback(
+    (taken: Attachment[]) => {
+      for (const item of taken)
+        if (item.preview) URL.revokeObjectURL(item.preview)
+      nextIndex.current.delete(key)
+      dropItems()
+    },
+    [dropItems, key]
+  )
 
   return { items, add, remove, clear, detach, reattach, discard, settled }
 }
