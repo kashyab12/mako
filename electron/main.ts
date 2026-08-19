@@ -49,6 +49,8 @@ import {
   createPull,
   githubStatus,
   listPulls,
+  listRemoteBranches,
+  mergePull,
   pullForBranch,
   repoAvatar,
   rerunChecks,
@@ -564,8 +566,16 @@ function bindIpc() {
   handle("mako:pull-requests", (_e, limit?: number) =>
     withHost((h) => listPulls(h.workspace, limit))
   )
+  handle("mako:pull-branches", () =>
+    withHost((h) => listRemoteBranches(h.workspace))
+  )
   handle("mako:create-pull", (_e, options: CreatePullOptions) =>
     withHost((h) => createPull(h.workspace, options))
+  )
+  handle(
+    "mako:merge-pull",
+    (_e, strategy: "merge" | "squash" | "rebase") =>
+      withHost((h) => mergePull(h.workspace, strategy))
   )
   handle("mako:rerun-checks", () => withHost((h) => rerunChecks(h.workspace)))
   handle("mako:repo-avatar", (_e, repo: string) =>

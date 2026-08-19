@@ -74,6 +74,12 @@ export const github = {
     return pull
   },
 
+  async merge(strategy: "merge" | "squash" | "rebase") {
+    const pull = await getMako().mergePull(strategy)
+    githubStore.set({ pull })
+    return pull
+  },
+
   async rerun() {
     await getMako().rerunChecks()
     await github.refresh(githubStore.get().branch)

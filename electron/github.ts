@@ -380,6 +380,20 @@ export async function listPulls(
   return raw ? raw.map(toPull) : []
 }
 
+export async function listRemoteBranches(cwd: string): Promise<string[]> {
+  const { stdout } = await run(
+    "git",
+    ["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"],
+    { cwd, timeout: TIMEOUT, maxBuffer: MAX_BUFFER }
+  )
+  return stdout
+    .split("\n")
+    .map((branch) => branch.trim().replace(/^origin\//, ""))
+    .filter((branch) => branch && branch !== "HEAD")
+    .filter((branch, index, branches) => branches.indexOf(branch) === index)
+    .sort((left, right) => left.localeCompare(right))
+}
+
 function parseProcessFailure(cause: unknown): ProcessFailure {
   return { message: cause instanceof Error ? cause.message : String(cause) }
 }
@@ -460,6 +474,14 @@ export async function createPull(
   if (options.base) args.push("--base", options.base)
   if (options.draft) args.push("--draft")
   await gh(cwd, args)
+  return pullForBranch(cwd)
+}
+
+export async function mergePull(
+  cwd: string,
+  strategy: "merge" | "squash" | "rebase"
+): Promise<PullRequest | null> {
+  await gh(cwd, ["pr", "merge", `--${strategy}`])
   return pullForBranch(cwd)
 }
 

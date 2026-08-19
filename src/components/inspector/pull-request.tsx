@@ -1,14 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Action, IconAction } from "@/components/ui/kit"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { getMako } from "@/lib/bridge"
 import { github, useGitHub } from "@/state/github"
 import { actions, useSession } from "@/state/session"
-import { prefsStore } from "@/state/prefs"
 import { cn } from "@/lib/utils"
 import type { CheckSummary, GitHubStatus, PullRequest as Pull } from "@/lib/types"
 import {
   CheckIcon,
+  ChevronDownIcon,
   ExternalLinkIcon,
+  GitMergeIcon,
   GitPullRequestIcon,
   RefreshCwIcon,
   SparklesIcon,
@@ -16,6 +22,18 @@ import {
   XIcon,
 } from "lucide-react"
 import { toast } from "sonner"
+
+const PULL_REQUEST_PROMPT = `Write a pull request title and body from this diff.
+
+The first line is a concise imperative title with no prefix and no period. Then a blank line, then:
+
+## Summary
+- Two or three bullets explaining what changed and why
+
+## Test plan
+- A short checklist of concrete verification steps
+
+Be specific. Do not invent tests or behavior not shown by the diff.`
 
 /**
  * The pull request for this branch.
@@ -188,14 +206,29 @@ function ComposePull({
   const [draft, setDraft] = useState(false)
   const [busy, setBusy] = useState(false)
   const [drafting, setDrafting] = useState(false)
+  const [branches, setBranches] = useState<string[]>(base ? [base] : [])
+  const [selectedBase, setSelectedBase] = useState(base)
+
+  useEffect(() => {
+    void getMako()
+      .pullBranches()
+      .then((next) => {
+        const ordered = base
+          ? [base, ...next.filter((branchName) => branchName !== base)]
+          : next
+        setBranches(ordered)
+        setSelectedBase((current) => current ?? ordered[0])
+      })
+      .catch(() => {})
+  }, [base])
 
   const compose = useCallback(async function composePull() {
     if (drafting) return
     setDrafting(true)
     try {
-      // The commit drafter already reads the diff and writes a subject and a
-      // body; a pull request wants the same two things from the same source.
-      const text = await getMako().generateCommitMessage(prefsStore.get().commitPrompt)
+      // The utility model reads the same bounded diff as the commit drafter,
+      // but uses a PR-specific structure with a summary and test plan.
+      const text = await getMako().generateCommitMessage(PULL_REQUEST_PROMPT)
       const [first, ...rest] = text.split("\n")
       setTitle((current) => current || (first ?? "").trim())
       setBody((current) => current || rest.join("\n").trim())
@@ -213,7 +246,12 @@ function ComposePull({
     if (!title.trim() || busy) return
     setBusy(true)
     try {
-      const pull = await github.create({ title: title.trim(), body: body.trim(), base, draft })
+      const pull = await github.create({
+        title: title.trim(),
+        body: body.trim(),
+        base: selectedBase,
+        draft,
+      })
       toast.success(pull ? `Opened #${pull.number}` : "Pull request opened")
       onDone()
     } catch (error) {
@@ -224,15 +262,27 @@ function ComposePull({
     } finally {
       setBusy(false)
     }
-  }, [base, body, busy, draft, onDone, title])
+  }, [body, busy, draft, onDone, selectedBase, title])
 
   return (
     <div className="shrink-0 border-t border-hairline px-2.5 py-2">
       <div className="mb-1.5 flex items-center gap-2">
         <GitPullRequestIcon className="size-3.5 shrink-0 text-faint" />
-        <span className="min-w-0 flex-1 truncate text-[11.5px] text-faint">
-          {branch} → {base ?? "the default branch"}
+        <span className="min-w-0 truncate text-[11.5px] text-faint">
+          {branch} →
         </span>
+        <select
+          aria-label="Pull request base branch"
+          value={selectedBase ?? ""}
+          onChange={(event) => setSelectedBase(event.target.value)}
+          className="h-6 min-w-0 flex-1 rounded bg-raised px-1.5 text-[11px] text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-border"
+        >
+          {branches.map((branchName) => (
+            <option key={branchName} value={branchName}>
+              {branchName}
+            </option>
+          ))}
+        </select>
         <IconAction label="Draft it from the diff" size="xs" onClick={() => void compose()}>
           <SparklesIcon className={drafting ? "animate-spin" : undefined} />
         </IconAction>
@@ -279,6 +329,46 @@ function ComposePull({
 /** An open pull request, in one line plus whatever CI has to say. */
 function PullSummary({ pull, loading }: { pull: Pull; loading: boolean }) {
   const checks = useMemo(() => summarize(pull.checks), [pull.checks])
+  const [merging, setMerging] = useState(false)
+  const mergeBlocked =
+    pull.state !== "open" ||
+    pull.mergeable === "conflicting" ||
+    checks.failed > 0 ||
+    checks.running > 0 ||
+    pull.reviewDecision === "changes"
+  const mergeReason =
+    pull.state !== "open"
+      ? `This pull request is already ${pull.state}`
+      : pull.mergeable === "conflicting"
+        ? "Resolve merge conflicts first"
+        : checks.failed > 0
+          ? "Fix failing checks first"
+          : checks.running > 0
+            ? "Wait for checks to finish"
+            : pull.reviewDecision === "changes"
+              ? "Address requested changes first"
+              : undefined
+
+  const merge = useCallback(async function mergePullRequest(
+    strategy: "merge" | "squash" | "rebase"
+  ) {
+    if (merging) return
+    setMerging(true)
+    try {
+      const next = await github.merge(strategy)
+      toast.success(next?.state === "merged" ? `Merged #${next.number}` : "Pull request merged")
+    } catch (error) {
+      toast.error("Pull request was not merged", {
+        description: error instanceof Error ? error.message : String(error),
+        action: {
+          label: "Retry",
+          onClick: () => void mergePullRequest(strategy),
+        },
+      })
+    } finally {
+      setMerging(false)
+    }
+  }, [merging])
 
   return (
     <div className="shrink-0 border-t border-hairline px-2.5 py-2">
@@ -312,6 +402,12 @@ function PullSummary({ pull, loading }: { pull: Pull; loading: boolean }) {
         >
           <RefreshCwIcon className={loading ? "animate-spin" : undefined} />
         </IconAction>
+        <MergeMenu
+          disabled={mergeBlocked}
+          reason={mergeReason}
+          merging={merging}
+          onMerge={(strategy) => void merge(strategy)}
+        />
         <IconAction label="Open on GitHub" size="xs" onClick={() => void getMako().openUrl(pull.url)}>
           <ExternalLinkIcon />
         </IconAction>
@@ -367,6 +463,53 @@ function PullSummary({ pull, loading }: { pull: Pull; loading: boolean }) {
         ) : null}
       </div>
     </div>
+  )
+}
+
+function MergeMenu({
+  disabled,
+  reason,
+  merging,
+  onMerge,
+}: {
+  disabled: boolean
+  reason?: string
+  merging: boolean
+  onMerge: (strategy: "merge" | "squash" | "rebase") => void
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled || merging}
+          title={reason ?? "Merge pull request"}
+          className="pressable flex h-6 items-center gap-0.5 rounded px-1.5 text-[10.5px] text-faint hover:bg-raised hover:text-foreground disabled:opacity-40"
+        >
+          <GitMergeIcon className="size-3" />
+          {merging ? "Merging…" : "Merge"}
+          <ChevronDownIcon className="size-2.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" side="bottom" sideOffset={6} className="w-48 p-1">
+        <p className="px-2 py-1 text-[10.5px] text-faint">Merge strategy</p>
+        {([
+          ["squash", "Squash and merge"],
+          ["merge", "Create merge commit"],
+          ["rebase", "Rebase and merge"],
+        ] as const).map(([strategy, label]) => (
+          <button
+            key={strategy}
+            type="button"
+            onClick={() => onMerge(strategy)}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11.5px] text-foreground/90 hover:bg-raised"
+          >
+            <GitMergeIcon className="size-3.5 text-faint" />
+            {label}
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
   )
 }
 

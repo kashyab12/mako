@@ -341,12 +341,15 @@ const api = {
   pullRequest: () => invokeTrustedHost<PullRequest | null>("mako:pull-request"),
   pullRequests: (limit?: number) =>
     invokeTrustedHost<PullRequest[]>("mako:pull-requests", limit),
+  pullBranches: () => invokeTrustedHost<string[]>("mako:pull-branches"),
   createPull: (options: {
     title: string
     body: string
     base?: string
     draft?: boolean
   }) => invokeTrustedHost<PullRequest | null>("mako:create-pull", options),
+  mergePull: (strategy: "merge" | "squash" | "rebase") =>
+    invokeTrustedHost<PullRequest | null>("mako:merge-pull", strategy),
   rerunChecks: () => invokeTrustedHost<void>("mako:rerun-checks"),
   repoAvatar: (repo: string) =>
     invokeTrustedHost<string | undefined>("mako:repo-avatar", repo),
