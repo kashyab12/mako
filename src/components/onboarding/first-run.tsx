@@ -21,14 +21,16 @@ import { CheckIcon } from "lucide-react"
  * checklist you cannot finish is worse than no checklist.
  */
 
+type StepId = "workspace" | "ask" | "files" | "review"
+
 interface Step {
-  id: string
+  id: StepId
   title: string
   hint: string
   keys?: string
 }
 
-const STEPS: Step[] = [
+const STEPS = [
   {
     id: "workspace",
     title: "Point it at your project",
@@ -53,7 +55,7 @@ const STEPS: Step[] = [
     hint: "Every edit lands in the diff, where you can comment on a line.",
     keys: "mod+shift+d",
   },
-]
+] satisfies readonly Step[]
 
 export function FirstRun() {
   const done = usePrefs((prefs) => prefs.onboarded)
@@ -75,23 +77,21 @@ export function FirstRun() {
    * that step, and telling them otherwise is the fastest way to make the whole
    * thing feel like decoration.
    */
-  const now: Record<string, boolean> = {
+  const now = {
     workspace: Boolean(cwd) && !isHome(cwd, home),
     ask: messages > 0,
     // Opening a file by name counts — that is what the step teaches — and
     // so does browsing the tree.
     files: viewedFile || railMode === "files" || openDirs > 0,
     review: diffOpen,
-  }
+  } satisfies Record<StepId, boolean>
 
   // Latching lives in state/onboarding.ts, watching the stores directly —
   // this component only exists on an empty transcript, and a step done
   // elsewhere must still count. Here: latched or currently true both show
   // as done.
-  const complete: Record<string, boolean> = Object.fromEntries(
-    STEPS.map((step) => [step.id, latched.includes(step.id) || now[step.id]])
-  )
-  const remaining = STEPS.filter((step) => !complete[step.id])
+  const isComplete = (step: Step) => latched.includes(step.id) || now[step.id]
+  const remaining = STEPS.filter((step) => !isComplete(step))
 
   // Finished lists do not linger. Recording it means a later empty transcript
   // is just an empty transcript.
@@ -123,27 +123,25 @@ export function FirstRun() {
       <div className="flex flex-col">
         {STEPS.map((step) => {
           const isNext = remaining[0]?.id === step.id
+          const completed = isComplete(step)
           return (
             <div
               key={step.id}
-              className={cn(
-                "flex items-center gap-2.5 py-[5px]",
-                complete[step.id] && "opacity-45"
-              )}
+              className={cn("flex items-center gap-2.5 py-[5px]", completed && "opacity-45")}
             >
               <span
                 className={cn(
                   "flex size-3.5 shrink-0 items-center justify-center rounded-full",
-                  complete[step.id] ? "bg-foreground text-background" : "ring-1 ring-hairline"
+                  completed ? "bg-foreground text-background" : "ring-1 ring-hairline"
                 )}
               >
-                {complete[step.id] ? <CheckIcon className="size-2.5" /> : null}
+                {completed ? <CheckIcon className="size-2.5" /> : null}
               </span>
               <span className="flex min-w-0 flex-1 items-baseline gap-2">
                 <span
                   className={cn(
                     "shrink-0 text-[12.5px]",
-                    complete[step.id] ? "text-faint line-through" : "text-foreground/90"
+                    completed ? "text-faint line-through" : "text-foreground/90"
                   )}
                 >
                   {step.title}

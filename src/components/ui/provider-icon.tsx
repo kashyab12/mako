@@ -76,7 +76,7 @@ const GitHub: Mark = (props) => (
 )
 
 /** Marks by model-provider id, with the tint each brand is recognised by. */
-const MARKS: Record<string, { mark: Mark; tint: string }> = {
+const MARKS = {
   anthropic: { mark: Anthropic, tint: "#D97757" },
   openai: { mark: OpenAI, tint: "currentColor" },
   azure: { mark: OpenAI, tint: "currentColor" },
@@ -102,7 +102,7 @@ const MARKS: Record<string, { mark: Mark; tint: string }> = {
  * Claude Code wears Anthropic's because that is how people recognise them;
  * Cursor, Devin, and Grok wear their own.
  */
-const HARNESS_MARKS: Record<string, { mark: Mark; tint: string }> = {
+const HARNESS_MARKS = {
   codex: { mark: OpenAI, tint: "currentColor" },
   claude: { mark: Anthropic, tint: "#D97757" },
   cursor: { mark: Cursor, tint: "currentColor" },
@@ -120,7 +120,8 @@ export function HarnessIcon({
   className?: string
   tinted?: boolean
 }) {
-  const found = HARNESS_MARKS[harness.toLowerCase()]
+  const key = harness.toLowerCase()
+  const found = Object.entries(HARNESS_MARKS).find(([id]) => id === key)?.[1]
   if (!found) {
     return (
       <span
@@ -160,7 +161,9 @@ export function ProviderIcon({
   tinted?: boolean
 }) {
   const key = provider.toLowerCase()
-  const found = MARKS[key] ?? MARKS[key.split(/[-/]/)[0]] ?? null
+  const fallbackKey = key.split(/[-/]/)[0]
+  const found = Object.entries(MARKS).find(([id]) => id === key)?.[1]
+    ?? Object.entries(MARKS).find(([id]) => id === fallbackKey)?.[1]
 
   if (!found) {
     return (
