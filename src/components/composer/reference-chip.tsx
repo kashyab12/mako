@@ -4,7 +4,6 @@ import { getPi } from "@/lib/bridge"
 import { useThreads } from "@/state/threads"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { cn } from "@/lib/utils"
-import type { ComponentType } from "react"
 import {
   BookOpenIcon,
   BracesIcon,
@@ -15,7 +14,7 @@ import {
   PaletteIcon,
 } from "lucide-react"
 
-const KIND_ICON: Record<ReturnType<typeof fileKind>, ComponentType<{ className?: string }>> = {
+const KIND_ICON = {
   code: FileCodeIcon,
   style: PaletteIcon,
   config: BracesIcon,

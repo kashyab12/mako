@@ -16,7 +16,7 @@ import { CheckIcon } from "lucide-react"
  * able to read the current setting without reading a word.
  */
 
-const DESCRIPTIONS: Record<ThinkingLevel, string> = {
+const DESCRIPTIONS = {
   off: "No reasoning tokens. Fastest, cheapest.",
   minimal: "A brief look before answering.",
   low: "Light reasoning for routine work.",
@@ -24,9 +24,9 @@ const DESCRIPTIONS: Record<ThinkingLevel, string> = {
   high: "Deliberate. For tricky bugs and design work.",
   xhigh: "Extended reasoning. Slow and expensive.",
   max: "Everything the model has. Reserve for hard problems.",
-}
+} satisfies Record<ThinkingLevel, string>
 
-const RANK: Record<ThinkingLevel, number> = {
+const RANK = {
   off: 0,
   minimal: 1,
   low: 2,
@@ -34,7 +34,7 @@ const RANK: Record<ThinkingLevel, number> = {
   high: 4,
   xhigh: 4,
   max: 4,
-}
+} satisfies Record<ThinkingLevel, number>
 
 export function EffortPicker({ disabled }: { disabled?: boolean }) {
   const [open, setOpen] = useState(false)

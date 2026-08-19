@@ -43,27 +43,32 @@ export function MentionMenu({
   const commands = useSession((state) => state.capabilities.commands)
   const threads = useThreads((state) => state.threads)
   const files = useWorkspaceFiles(kind === "@")
-
-  const items = useMemo<MentionItem[]>(() => {
-    if (kind === "@") {
-      const threadItems = threads.map((thread) => ({
+  const referenceItems = useMemo(
+    () => [
+      ...threads.map((thread) => ({
         value: threadToken(thread.harness, thread.nativeId),
         title: thread.title ?? "Untitled conversation",
-        hint: [thread.harness, thread.cwd ? workspaceName(thread.cwd) : null].filter(Boolean).join(" · "),
+        hint: [thread.harness, thread.cwd ? workspaceName(thread.cwd) : null]
+          .filter(Boolean)
+          .join(" · "),
         type: "thread" as const,
         harness: thread.harness,
         key: `${thread.title ?? ""} ${thread.cwd ?? ""} ${thread.harness} ${thread.model ?? ""}`,
-      }))
-      const fileItems = files.map((file) => ({
+      })),
+      ...files.map((file) => ({
         value: `@${file.path}`,
         title: fileName(file.path),
         hint: fileDir(file.path),
         badge: file.changed ? "changed" : undefined,
         type: "file" as const,
         key: file.path,
-      }))
-      return rank([...threadItems, ...fileItems], query)
-    }
+      })),
+    ],
+    [files, threads]
+  )
+
+  const items = useMemo<MentionItem[]>(() => {
+    if (kind === "@") return rank(referenceItems, query)
     if (kind === "$") {
       return rank(
         skills.map((skill) => ({
@@ -86,7 +91,7 @@ export function MentionMenu({
       })),
       query
     )
-  }, [commands, files, kind, query, skills, threads])
+  }, [commands, kind, query, referenceItems, skills])
 
   const [cursor, setCursor] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
@@ -105,7 +110,9 @@ export function MentionMenu({
         event.preventDefault()
         event.stopPropagation()
         setCursor((value) => {
-          const next = (value + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length
+          const next =
+            (value + (event.key === "ArrowDown" ? 1 : -1) + items.length) %
+            items.length
           listRef.current
             ?.querySelector(`[data-index="${next}"]`)
             ?.scrollIntoView({ block: "nearest" })
@@ -132,13 +139,21 @@ export function MentionMenu({
 
   if (items.length === 0) return null
 
-  const label = kind === "@" ? "Conversations and files" : kind === "$" ? "Skills" : "Commands"
+  const label =
+    kind === "@"
+      ? "Conversations and files"
+      : kind === "$"
+        ? "Skills"
+        : "Commands"
   const Icon = kind === "$" ? BookOpenIcon : FileIcon
 
   return (
-    <div className="absolute bottom-full left-0 z-20 mb-1.5 w-full animate-enter overflow-hidden rounded-lg bg-popover p-1 ring-1 ring-border">
+    <div className="animate-enter absolute bottom-full left-0 z-20 mb-1.5 w-full overflow-hidden rounded-lg bg-popover p-1 ring-1 ring-border">
       <Eyebrow className="px-1.5 pt-1 pb-1">{label}</Eyebrow>
-      <div ref={listRef} className="max-h-[15rem] overflow-y-auto overscroll-contain">
+      <div
+        ref={listRef}
+        className="max-h-[15rem] overflow-y-auto overscroll-contain"
+      >
         {items.map((item, index) => (
           <button
             key={item.value}
@@ -152,20 +167,27 @@ export function MentionMenu({
             )}
           >
             {item.type === "command" ? null : item.type === "thread" ? (
-              <HarnessIcon harness={item.harness ?? ""} className="size-3 shrink-0" />
+              <HarnessIcon
+                harness={item.harness ?? ""}
+                className="size-3 shrink-0"
+              />
             ) : (
               <Icon
                 className={cn(
                   "size-3 shrink-0 text-faint",
-                  item.type === "file" && fileKind(item.value.slice(1)) === "code" && "text-muted-foreground"
+                  item.type === "file" &&
+                    fileKind(item.value.slice(1)) === "code" &&
+                    "text-muted-foreground"
                 )}
               />
             )}
-            <span className="min-w-0 shrink-0 max-w-[55%] truncate font-mono text-[11.5px] text-foreground/90">
+            <span className="max-w-[55%] min-w-0 shrink-0 truncate font-mono text-[11.5px] text-foreground/90">
               {item.title}
             </span>
             {item.hint ? (
-              <span className="min-w-0 flex-1 truncate text-[10.5px] text-faint">{item.hint}</span>
+              <span className="min-w-0 flex-1 truncate text-[10.5px] text-faint">
+                {item.hint}
+              </span>
             ) : (
               <span className="flex-1" />
             )}
@@ -186,7 +208,10 @@ export function MentionMenu({
   )
 }
 
-function rank<T extends MentionItem & { key: string }>(items: T[], query: string): MentionItem[] {
+function rank<T extends MentionItem & { key: string }>(
+  items: T[],
+  query: string
+): MentionItem[] {
   const term = query.trim()
   if (!term) return items.slice(0, LIMIT)
   const top: Array<{ item: T; score: number }> = []

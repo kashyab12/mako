@@ -3,9 +3,14 @@ import { AgentPicker } from "@/components/composer/agent-picker"
 import { ForeignEffortPicker } from "@/components/composer/foreign-effort"
 import { ForeignModelPicker } from "@/components/composer/foreign-model"
 import { HarnessIcon } from "@/components/ui/provider-icon"
-import { MentionMenu, type MentionKind } from "@/components/composer/mention-menu"
+import { MentionMenu } from "@/components/composer/mention-menu"
 import { AttachmentStrip } from "@/components/composer/attachments"
-import { buildForeignPrompt, buildPrompt, useAttachments } from "@/lib/attachments"
+import {
+  buildForeignPrompt,
+  buildPrompt,
+  useAttachments,
+  type Attachment,
+} from "@/lib/attachments"
 import { ReferenceOverlay } from "@/components/composer/reference-overlay"
 import { Chip, IconAction, Keys } from "@/components/ui/kit"
 import { Slot } from "@/extend/slot"
@@ -18,7 +23,7 @@ import { threads, threadsStore, useThreads } from "@/state/threads"
 import { acp, acpStore, useAcp } from "@/state/acp"
 import { getPi } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
-import type { AcpPromptAttachment } from "@/lib/types"
+import type { AcpPromptAttachment, Harness } from "@/lib/types"
 import { toast } from "sonner"
 import {
   ArrowUpIcon,
@@ -30,10 +35,57 @@ import {
   XIcon,
 } from "lucide-react"
 
-const isMac = typeof navigator !== "undefined" && navigator.platform.startsWith("Mac")
+interface StoredDraft {
+  text: string
+}
+
+interface CommandMention {
+  sigil: "/"
+  query: string
+  start: number
+  end: number
+}
+
+type ComposerMention = ActiveMention | CommandMention
+
+type ComposerTextEvent = CustomEvent<string>
+
+interface RestorableDraft {
+  text: string
+  attachments: Attachment[]
+}
+
+interface SendButtonProps {
+  ready: boolean
+  steering: boolean
+  onSend: () => void
+}
+
+interface BannerProps {
+  text: string
+}
+
+declare global {
+  interface WindowEventMap {
+    "pi:compose": ComposerTextEvent
+    "pi:insert": ComposerTextEvent
+  }
+}
+
+function toAcpPromptAttachment(item: Attachment): AcpPromptAttachment {
+  return {
+    name: item.name,
+    mimeType: item.mimeType,
+    size: item.size,
+    data: item.kind === "image" ? item.data : undefined,
+    path: item.stagedPath,
+  }
+}
+
+const isMac = navigator.platform.startsWith("Mac")
 
 /** Drafts survive session switches within a run; nobody should lose a paragraph. */
-const drafts = new Map<string, string>()
+const drafts = new Map<string, StoredDraft>()
 
 
 export function Composer() {
@@ -55,7 +107,7 @@ export function Composer() {
 
   const [draft, setDraft] = useState("")
   const [focused, setFocused] = useState(false)
-  const [mention, setMention] = useState<ActiveMention | null>(null)
+  const [mention, setMention] = useState<ComposerMention | null>(null)
   const [dragging, setDragging] = useState(false)
   const textarea = useRef<HTMLTextAreaElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
@@ -99,14 +151,14 @@ export function Composer() {
   const [lastSession, setLastSession] = useState(sessionId)
   if (lastSession !== sessionId) {
     setLastSession(sessionId)
-    setDraft(sessionId ? (drafts.get(sessionId) ?? "") : "")
+    setDraft(sessionId ? (drafts.get(sessionId)?.text ?? "") : "")
     setMention(null)
   }
 
   const update = useCallback(
     (value: string) => {
       setDraft(value)
-      if (sessionId) drafts.set(sessionId, value)
+      if (sessionId) drafts.set(sessionId, { text: value })
     },
     [sessionId]
   )
@@ -121,7 +173,7 @@ export function Composer() {
     // slash commands work everywhere else.
     const slash = /^\/([\w-]*)$/.exec(node.value)
     if (slash) {
-      setMention({ sigil: "/" as never, query: slash[1], start: 0, end: node.value.length })
+      setMention({ sigil: "/", query: slash[1] ?? "", start: 0, end: node.value.length })
       return
     }
     setMention(found)
@@ -156,8 +208,8 @@ export function Composer() {
 
   useEffect(() => {
     const focus = () => textarea.current?.focus()
-    const setText = (event: Event) => {
-      const detail = (event as CustomEvent<string>).detail
+    const setText = (event: ComposerTextEvent) => {
+      const { detail } = event
       update(detail)
       requestAnimationFrame(() => {
         const node = textarea.current
@@ -165,8 +217,8 @@ export function Composer() {
         node?.setSelectionRange(detail.length, detail.length)
       })
     }
-    const insert = (event: Event) => {
-      const detail = (event as CustomEvent<string>).detail
+    const insert = (event: ComposerTextEvent) => {
+      const { detail } = event
       const node = textarea.current
       const at = node?.selectionStart ?? draft.length
       const next = `${draft.slice(0, at)}${detail}${draft.slice(at)}`
@@ -221,15 +273,11 @@ export function Composer() {
         const attachmentPrompt = buildForeignPrompt(text, staged)
         const full = await appendThreadReferences(attachmentPrompt, threadsStore.get().threads)
         if (!full.trim()) return
-        const acpAttachments: AcpPromptAttachment[] = staged.map((item) => ({
-          name: item.name,
-          mimeType: item.mimeType,
-          size: item.size,
-          ...(item.kind === "image" && item.data ? { data: item.data } : {}),
-          ...(item.stagedPath ? { path: item.stagedPath } : {}),
-        }))
-        const previousDraft = draft
-        const detached = attachments.detach()
+        const acpAttachments = staged.map(toAcpPromptAttachment)
+        const restorableDraft: RestorableDraft = {
+          text: draft,
+          attachments: attachments.detach(),
+        }
         update("")
         setMention(null)
         let ok: boolean
@@ -255,10 +303,10 @@ export function Composer() {
         } else {
           ok = await threads.startNew(harness, full)
         }
-        if (ok) attachments.discard(detached)
+        if (ok) attachments.discard(restorableDraft.attachments)
         else {
-          update(previousDraft)
-          attachments.reattach(detached)
+          update(restorableDraft.text)
+          attachments.reattach(restorableDraft.attachments)
         }
         return
       }
@@ -280,21 +328,23 @@ export function Composer() {
       // and put back verbatim if the host refuses. A prompt is rejected
       // outright when no model is selected, and losing a paragraph to that is
       // not an acceptable way to find out.
-      const previousDraft = draft
-      const detached = attachments.detach()
+      const restorableDraft: RestorableDraft = {
+        text: draft,
+        attachments: attachments.detach(),
+      }
       update("")
       setMention(null)
 
       const sent = await actions.send(built.text, mode, built.images)
       if (sent) {
-        attachments.discard(detached)
+        attachments.discard(restorableDraft.attachments)
         return
       }
-      update(previousDraft)
-      attachments.reattach(detached)
+      update(restorableDraft.text)
+      attachments.reattach(restorableDraft.attachments)
       requestAnimationFrame(() => textarea.current?.focus())
     },
-    [attachments, draft, meta?.model, update]
+    [attachments, draft, meta?.cwd, meta?.model, update]
   )
 
   const pick = useCallback(
@@ -306,6 +356,7 @@ export function Composer() {
         void actions.runCommand(value.slice(1))
         return
       }
+      if (mention.sigil === "/") return
       const next = replaceMention(draft, mention, value)
       update(next.text)
       if (value.startsWith("@thread:")) {
@@ -372,18 +423,18 @@ export function Composer() {
   const newHarness = useThreads((state) => state.composerHarness)
   const placeholder = liveHarness
     ? liveRunning
-      ? `${HARNESS_TITLES[liveHarness] ?? liveHarness} is working — Enter queues your message`
-      : `Reply — ${HARNESS_TITLES[liveHarness] ?? liveHarness} answers live`
+      ? `${harnessTitle(liveHarness)} is working — Enter queues your message`
+      : `Reply — ${harnessTitle(liveHarness)} answers live`
     : routedHarness
       ? newHarness !== routedHarness
-        ? `Reply — moves this conversation to ${HARNESS_TITLES[newHarness] ?? newHarness}`
+        ? `Reply — moves this conversation to ${harnessTitle(newHarness)}`
         : viewingArchived
-          ? `Reply — revives this archived conversation in ${HARNESS_TITLES[routedHarness] ?? routedHarness}`
+          ? `Reply — revives this archived conversation in ${harnessTitle(routedHarness)}`
           : viewingRunning
-            ? `${HARNESS_TITLES[routedHarness] ?? routedHarness} is working — Enter queues, ${isMac ? "⌘" : "Ctrl+"}Enter interrupts`
-            : `Reply — ${HARNESS_TITLES[routedHarness] ?? routedHarness} answers`
+            ? `${harnessTitle(routedHarness)} is working — Enter queues, ${isMac ? "⌘" : "Ctrl+"}Enter interrupts`
+            : `Reply — ${harnessTitle(routedHarness)} answers`
       : newHarness !== "pi"
-        ? `Ask ${HARNESS_TITLES[newHarness] ?? newHarness} for a change`
+        ? `Ask ${harnessTitle(newHarness)} for a change`
         : status.streaming
           ? "Steer the current turn…"
           : "Ask for a change"
@@ -439,7 +490,7 @@ export function Composer() {
         >
           {mention ? (
             <MentionMenu
-              kind={mention.sigil as MentionKind}
+              kind={mention.sigil}
               query={mention.query}
               onPick={pick}
               onDismiss={() => {
@@ -578,15 +629,7 @@ export function Composer() {
  * this size reads as a disabled placeholder. Inert until there is something to
  * send, so the composer never invites a no-op.
  */
-function SendButton({
-  ready,
-  steering,
-  onSend,
-}: {
-  ready: boolean
-  steering: boolean
-  onSend: () => void
-}) {
+function SendButton({ ready, steering, onSend }: SendButtonProps) {
   return (
     <button
       type="button"
@@ -625,7 +668,7 @@ function BranchChip() {
   )
 }
 
-function Banner({ text }: { text: string }) {
+function Banner({ text }: BannerProps) {
   return (
     <div className="mb-1.5 flex items-center gap-2 rounded-md bg-raised px-2 py-1 text-[11.5px] text-muted-foreground">
       <span className="size-1 animate-live rounded-full bg-current" />
@@ -638,12 +681,21 @@ function Banner({ text }: { text: string }) {
 
 
 
-const HARNESS_TITLES: Record<string, string> = {
-  claude: "Claude Code",
-  codex: "Codex",
-  cursor: "Cursor",
-  grok: "Grok",
-  devin: "Devin",
+function harnessTitle(harness: Harness): string {
+  switch (harness) {
+    case "claude":
+      return "Claude Code"
+    case "codex":
+      return "Codex"
+    case "cursor":
+      return "Cursor"
+    case "grok":
+      return "Grok"
+    case "devin":
+      return "Devin"
+    default:
+      return harness
+  }
 }
 
 /**
@@ -668,7 +720,7 @@ function ComposerRouting() {
     return (
       <span className="flex h-7 items-center gap-1.5 rounded-md bg-raised px-2 text-[11.5px] text-foreground/85">
         <HarnessIcon harness={live.harness} className="size-3.5" />
-        {HARNESS_TITLES[live.harness] ?? live.harness}
+        {harnessTitle(live.harness)}
         <span className="text-[10px] text-emerald-400/80">live</span>
         {live.status === "running" ? (
           <button
