@@ -11,7 +11,10 @@ export type {
   ThreadRef,
   TurnUsage,
 } from "@mako/sessions"
-import type { ThreadEntry as CatalogThreadEntry, ThreadRef as CatalogThreadRef } from "@mako/sessions"
+import type {
+  ThreadEntry as CatalogThreadEntry,
+  ThreadRef as CatalogThreadRef,
+} from "@mako/sessions"
 
 /** One headless run of a thread's own CLI, keyed by the thread's path. */
 export interface ThreadRunState {
@@ -35,6 +38,7 @@ export type HarnessModelOption =
       label: string
       current?: string
       values: HarnessSelectValue[]
+      presentation?: "select" | "toggle"
     }
   | {
       kind: "boolean"
@@ -43,13 +47,28 @@ export type HarnessModelOption =
       current: boolean
     }
 
-export interface HarnessModel {
+export interface HarnessModelVariant {
   id: string
   label: string
+  values: Record<string, string | boolean>
+  contextWindow?: number
+  maxOutputTokens?: number
   description?: string
+}
+
+export interface HarnessModel {
+  /** Stable exact identity shown and persisted by Mako. */
+  id: string
+  /** Value the provider transport accepts when it differs from identity. */
+  launchId?: string
+  label: string
+  description?: string
+  aliases?: string[]
   contextWindow?: number
   maxOutputTokens?: number
   options: HarnessModelOption[]
+  /** Flattened provider variants for transports that encode options in the model id. */
+  variants?: HarnessModelVariant[]
 }
 
 export interface HarnessProfile {
@@ -59,6 +78,7 @@ export interface HarnessProfile {
   transport: "acp" | "app-server" | "remote"
   models: HarnessModel[]
   defaultModel?: string
+  configuredModel?: string
   capabilities: string[]
   error?: string
 }
@@ -85,8 +105,22 @@ export type AcpUpdate =
   | { kind: "user"; text: string }
   | { kind: "text"; text: string }
   | { kind: "thinking"; text: string }
-  | { kind: "tool"; id: string; title: string; toolKind?: string; status: string; input?: string }
-  | { kind: "tool-update"; id: string; title?: string; status?: string; input?: string; output?: string }
+  | {
+      kind: "tool"
+      id: string
+      title: string
+      toolKind?: string
+      status: string
+      input?: string
+    }
+  | {
+      kind: "tool-update"
+      id: string
+      title?: string
+      status?: string
+      input?: string
+      output?: string
+    }
   | { kind: "plan"; entries: Array<{ content: string; status: string }> }
 
 export interface AcpPromptAttachment {
@@ -113,7 +147,8 @@ export interface AcpPermissionRequest {
  * payloads (`messages`, `tree`, `git`) are emitted only when they change.
  */
 
-export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
+export type ThinkingLevel =
+  "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
 
 export const THINKING_LEVELS: ThinkingLevel[] = [
   "off",
@@ -127,7 +162,8 @@ export const THINKING_LEVELS: ThinkingLevel[] = [
 
 export type ChatRole = "user" | "assistant" | "tool" | "system"
 
-export type BlockType = "text" | "thinking" | "toolCall" | "toolResult" | "image"
+export type BlockType =
+  "text" | "thinking" | "toolCall" | "toolResult" | "image"
 
 export interface Block {
   type: BlockType
@@ -272,7 +308,8 @@ export interface Capabilities {
   skills: SkillSummary[]
 }
 
-export type GitFileStatus = "added" | "modified" | "deleted" | "renamed" | "untracked"
+export type GitFileStatus =
+  "added" | "modified" | "deleted" | "renamed" | "untracked"
 
 /** Cheap per-file entry. Contents are fetched on demand via `git:diff`. */
 export interface GitFile {
@@ -350,8 +387,16 @@ export type HostEventBody =
    * machine — from any app — was created or grew. Window-wide.
    */
   | { type: "threads"; threads: CatalogThreadRef[] }
+  | { type: "thread-ref"; ref: CatalogThreadRef }
+  | { type: "thread-removed"; path: string }
   /** New entries appended to the thread the viewer is following. */
-  | { type: "thread-entries"; path: string; entries: CatalogThreadEntry[]; replace?: boolean }
+  | {
+      type: "thread-entries"
+      path: string
+      entries: CatalogThreadEntry[]
+      replace?: boolean
+      replaceFrom?: number
+    }
   /** A native resume (the thread's own CLI) started, finished, or failed. */
   | { type: "thread-run"; run: ThreadRunState }
   /** An interactive (ACP) session changed state. */
@@ -395,7 +440,14 @@ export interface WorkspaceFile {
  * install is always a decision, never a surprise mid-turn.
  */
 export interface UpdateState {
-  status: "idle" | "checking" | "current" | "downloading" | "ready" | "error" | "unsupported"
+  status:
+    | "idle"
+    | "checking"
+    | "current"
+    | "downloading"
+    | "ready"
+    | "error"
+    | "unsupported"
   /** The version currently running. */
   version: string
   /** The version waiting, once there is one. */
