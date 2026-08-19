@@ -144,7 +144,7 @@ function absorb(id: string, event: HostEvent) {
     case "notice":
       // Errors from a hidden tab still surface — a failure you never see is
       // worse than an interruption — but they say which conversation raised it.
-      if (event.level === "error") toast.error(event.message)
+      if (event.level === "error") report(event.message)
       return
     default:
       return
@@ -258,7 +258,7 @@ function applyToActive(event: HostEvent) {
       })
       break
     case "notice":
-      if (event.level === "error") toast.error(event.message)
+      if (event.level === "error") report(event.message)
       else if (event.level === "success") toast.success(event.message)
       else toast(event.message)
       break
@@ -270,7 +270,15 @@ function applyToActive(event: HostEvent) {
 /* ------------------------------------------------------------------ */
 
 function report(message: string) {
-  toast.error(message)
+  toast.error(message, {
+    action: {
+      label: "Troubleshoot",
+      onClick: () =>
+        window.dispatchEvent(
+          new CustomEvent("mako:settings", { detail: "diagnostics" })
+        ),
+    },
+  })
 }
 
 /** Reject after `ms`, so no await can strand the interface in a skeleton. */

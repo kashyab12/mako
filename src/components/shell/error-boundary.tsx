@@ -48,6 +48,12 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
     this.setState((state) => ({ error: undefined, info: undefined, attempt: state.attempt + 1 }))
   }
 
+  private revealReport = async () => {
+    if (!hasBridge()) return
+    const dir = await getMako().crashesDir()
+    await getMako().revealPath(dir)
+  }
+
   render() {
     const { error, info } = this.state
     if (!error) return <div key={this.state.attempt}>{this.props.children}</div>
@@ -75,6 +81,11 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
           <Action tone="outline" size="md" onClick={() => location.reload()}>
             Reload the window
           </Action>
+          {hasBridge() ? (
+            <Action tone="ghost" size="md" onClick={() => void this.revealReport()}>
+              Show local report
+            </Action>
+          ) : null}
           <Action
             tone="ghost"
             size="md"

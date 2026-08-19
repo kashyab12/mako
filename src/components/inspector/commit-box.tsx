@@ -33,7 +33,7 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
     node.style.height = `${Math.min(node.scrollHeight, 160)}px`
   }, [message])
 
-  const draft = useCallback(async () => {
+  const draft = useCallback(async function draftCommitMessage() {
     if (drafting) return
     setDrafting(true)
     try {
@@ -41,13 +41,16 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
       setMessage(next)
       requestAnimationFrame(() => field.current?.focus())
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error))
+      toast.error("Commit message was not generated", {
+        description: error instanceof Error ? error.message : String(error),
+        action: { label: "Retry", onClick: () => void draftCommitMessage() },
+      })
     } finally {
       setDrafting(false)
     }
   }, [drafting])
 
-  const commit = useCallback(async () => {
+  const commit = useCallback(async function commitChanges() {
     if (!message.trim() || busy) return
     setBusy(true)
     try {
@@ -55,7 +58,10 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
       setMessage("")
       await actions.refreshGit()
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error))
+      toast.error("Changes were not committed", {
+        description: error instanceof Error ? error.message : String(error),
+        action: { label: "Retry", onClick: () => void commitChanges() },
+      })
     } finally {
       setBusy(false)
     }
@@ -161,6 +167,9 @@ async function guardedPush() {
     await getMako().gitPush()
     await actions.refreshGit()
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : String(error))
+    toast.error("Branch was not pushed", {
+      description: error instanceof Error ? error.message : String(error),
+      action: { label: "Retry", onClick: () => void guardedPush() },
+    })
   }
 }

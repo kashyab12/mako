@@ -5,7 +5,7 @@ import { github, useGitHub } from "@/state/github"
 import { actions, useSession } from "@/state/session"
 import { prefsStore } from "@/state/prefs"
 import { cn } from "@/lib/utils"
-import type { CheckSummary, PullRequest as Pull } from "@/lib/types"
+import type { CheckSummary, GitHubStatus, PullRequest as Pull } from "@/lib/types"
 import {
   CheckIcon,
   ExternalLinkIcon,
@@ -35,11 +35,12 @@ export function PullRequestCard() {
   const branch = useSession((state) => state.git?.branch)
   const ahead = useSession((state) => state.git?.ahead ?? 0)
   const upstream = useSession((state) => state.git?.upstream)
+  const behind = useSession((state) => state.git?.behind ?? 0)
   const root = useSession((state) => state.git?.root)
   const [composing, setComposing] = useState(false)
   const [pushing, setPushing] = useState(false)
 
-  const push = useCallback(async () => {
+  const push = useCallback(async function pushBranch() {
     if (pushing) return
     setPushing(true)
     try {
@@ -47,7 +48,10 @@ export function PullRequestCard() {
       await actions.refreshGit()
       toast.success("Pushed")
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error))
+      toast.error("Branch was not pushed", {
+        description: error instanceof Error ? error.message : String(error),
+        action: { label: "Retry", onClick: () => void pushBranch() },
+      })
     } finally {
       setPushing(false)
     }
@@ -60,27 +64,26 @@ export function PullRequestCard() {
 
   if (!root || !status) return null
 
-  // Nothing to install, log into, or say — stay out of the way entirely.
-  if (!status.installed || !status.authenticated || !status.repo) {
+  const onDefault = Boolean(status.defaultBranch && branch === status.defaultBranch)
+  const unpublished = Boolean(branch) && !upstream
+  const hasWork = onDefault ? ahead > 0 : ahead > 0 || unpublished
+
+  if ((!status.installed || !status.authenticated || !status.repo) && !hasWork) {
     return null
+  }
+  if (!status.installed || !status.authenticated || !status.repo) {
+    return <GitHubSetup status={status} />
   }
 
   if (composing) {
     return <ComposePull base={status.defaultBranch} branch={branch} onDone={() => setComposing(false)} />
   }
 
-  // On the default branch there is nothing to open a pull request *into* —
-  // offering one would be proposing to merge a branch with itself. Push is the
-  // action that actually applies there, so that is the one offered.
-  const onDefault = Boolean(status.defaultBranch && branch === status.defaultBranch)
-
   if (pull) return <PullSummary pull={pull} loading={loading} />
-
-  // `ahead` is only reported against an upstream, so a branch that has never
-  // been pushed reports zero — which is exactly the branch most likely to want
-  // a pull request. An unpublished branch counts as having something to say.
-  const unpublished = Boolean(branch) && !upstream
-  if (onDefault ? ahead === 0 : ahead === 0 && !unpublished) return null
+  if (!hasWork) return null
+  if (behind > 0) {
+    return <BehindBranch behind={behind} upstream={upstream} />
+  }
 
   const commits = unpublished && ahead === 0 ? "unpushed" : `${ahead} ${ahead === 1 ? "commit" : "commits"}`
 
@@ -113,6 +116,56 @@ export function PullRequestCard() {
   )
 }
 
+function GitHubSetup({ status }: { status: GitHubStatus }) {
+  const copyLogin = () => {
+    void navigator.clipboard.writeText("gh auth login")
+    toast.success("Copied gh auth login")
+  }
+  const title = !status.installed
+    ? "Install the GitHub CLI to open a pull request"
+    : !status.authenticated
+      ? "Sign in to GitHub before opening a pull request"
+      : "Add a GitHub remote before opening a pull request"
+  const detail = !status.installed
+    ? "Mako uses the gh CLI so it can reuse your existing GitHub account."
+    : !status.authenticated
+      ? "Run gh auth login once; Mako will use that login without asking again."
+      : "Push this repository to GitHub, then refresh the Changes panel."
+
+  return (
+    <div className="shrink-0 border-t border-hairline px-2.5 py-2">
+      <div className="flex items-start gap-2 rounded-md bg-surface px-2 py-2 ring-1 ring-hairline">
+        <GitPullRequestIcon className="mt-0.5 size-3.5 shrink-0 text-faint" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[11.5px] text-foreground/90">{title}</span>
+          <span className="mt-0.5 block text-[10.5px] leading-relaxed text-faint">{detail}</span>
+        </span>
+        {status.installed && !status.authenticated ? (
+          <Action tone="ghost" size="xs" onClick={copyLogin}>Copy login command</Action>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function BehindBranch({ behind, upstream }: { behind: number; upstream?: string }) {
+  const copyUpdate = () => {
+    void navigator.clipboard.writeText("git pull --rebase")
+    toast.success("Copied git pull --rebase")
+  }
+  return (
+    <div className="shrink-0 border-t border-hairline px-2.5 py-2">
+      <div className="flex items-center gap-2 rounded-md bg-caution/10 px-2 py-1.5 ring-1 ring-caution/20">
+        <GitPullRequestIcon className="size-3.5 shrink-0 text-caution" />
+        <span className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">
+          This branch is {behind} {behind === 1 ? "commit" : "commits"} behind {upstream ?? "its upstream"}. Update it before opening a pull request; Mako will never force-push it.
+        </span>
+        <Action tone="ghost" size="xs" onClick={copyUpdate}>Copy update command</Action>
+      </div>
+    </div>
+  )
+}
+
 /**
  * Drafting the pull request.
  *
@@ -136,7 +189,7 @@ function ComposePull({
   const [busy, setBusy] = useState(false)
   const [drafting, setDrafting] = useState(false)
 
-  const compose = useCallback(async () => {
+  const compose = useCallback(async function composePull() {
     if (drafting) return
     setDrafting(true)
     try {
@@ -147,13 +200,16 @@ function ComposePull({
       setTitle((current) => current || (first ?? "").trim())
       setBody((current) => current || rest.join("\n").trim())
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error))
+      toast.error("Pull request draft was not generated", {
+        description: error instanceof Error ? error.message : String(error),
+        action: { label: "Retry", onClick: () => void composePull() },
+      })
     } finally {
       setDrafting(false)
     }
   }, [drafting])
 
-  const create = useCallback(async () => {
+  const create = useCallback(async function createPullRequest() {
     if (!title.trim() || busy) return
     setBusy(true)
     try {
@@ -161,7 +217,10 @@ function ComposePull({
       toast.success(pull ? `Opened #${pull.number}` : "Pull request opened")
       onDone()
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error))
+      toast.error("Pull request was not created", {
+        description: error instanceof Error ? error.message : String(error),
+        action: { label: "Retry", onClick: () => void createPullRequest() },
+      })
     } finally {
       setBusy(false)
     }
