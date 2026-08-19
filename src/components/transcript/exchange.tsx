@@ -9,7 +9,7 @@ import { formatTime, textOf } from "@/lib/format"
 import { parseAttachmentAppendix } from "@/lib/attachments"
 import { stripThreadReferenceAppendix } from "@/lib/thread-references"
 import { responseText, type Exchange as ExchangeData } from "@/lib/exchanges"
-import { actions, useSession } from "@/state/session"
+import { actions, shallowEqual, useSession } from "@/state/session"
 import { threads, useThreads } from "@/state/threads"
 import { HARNESS_LABEL } from "@/components/rail/harness-meta"
 import { HarnessIcon } from "@/components/ui/provider-icon"
@@ -82,7 +82,7 @@ function Prompt({ message }: { message: ChatMessage }) {
   const node = useSession((state) => {
     const found = state.tree.find((entry) => entry.id === message.id)
     return found ? { id: found.id, parentId: found.parentId } : null
-  })
+  }, shallowEqual)
 
   const editHere = async () => {
     // Rewind the conversation to just before this prompt, then hand the

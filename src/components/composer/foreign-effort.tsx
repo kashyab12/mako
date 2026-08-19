@@ -17,10 +17,13 @@ interface TuningPatch {
   fast?: boolean
 }
 
+/** Identity-stable fallback so an untuned harness never re-renders the row. */
+const NO_TUNING = {}
+
 export function ForeignEffortPicker({ harness }: { harness: string }) {
   const [open, setOpen] = useState(false)
   const [profile, setProfile] = useState<HarnessProfile | null>(null)
-  const chosen = useThreads((state) => state.composerTuning[harness] ?? {})
+  const chosen = useThreads((state) => state.composerTuning[harness] ?? NO_TUNING)
 
   useEffect(() => {
     if (!hasBridge()) return

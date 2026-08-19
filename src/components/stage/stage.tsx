@@ -20,6 +20,10 @@ import {
   fitsBeside,
 } from "@/components/stage/stage-width"
 import { cn } from "@/lib/utils"
+import type { TabStage } from "@/state/stage"
+
+/** Identity-stable fallback so the selector never allocates per render. */
+const NO_COMPANION: TabStage = { companion: null, presentation: "beside" }
 
 /**
  * The stage: the chat card, and at most one companion card beside it.
@@ -32,9 +36,7 @@ import { cn } from "@/lib/utils"
  */
 export function Stage() {
   const activeId = useTabs((state) => state.activeId)
-  const tabStage = useStage(
-    (state) => state.byTab[activeId] ?? { companion: null, presentation: "beside" as const }
-  )
+  const tabStage = useStage((state) => state.byTab[activeId] ?? NO_COMPANION)
   const surfaces = useSurfaces()
   const surfaceWidths = usePrefs((prefs) => prefs.surfaceWidths)
 
