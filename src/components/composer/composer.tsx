@@ -615,7 +615,7 @@ function ComposerRouting() {
         </button>
       ) : null}
       {moving ? (
-        <span className="flex h-7 items-center gap-1 rounded-md bg-brand-soft px-2 text-[10.5px] font-medium text-brand">
+        <span className="animate-enter flex h-7 items-center gap-1 rounded-md bg-brand-soft px-2 text-[10.5px] font-medium text-brand">
           moves here on send
         </span>
       ) : null}

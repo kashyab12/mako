@@ -48,7 +48,7 @@ export function ThreadViewer() {
   const { ref } = thread
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-background">
+    <div className="animate-enter flex min-h-0 flex-1 flex-col bg-background">
       <div className="flex h-11 shrink-0 items-center gap-2.5 border-b border-hairline px-3.5">
         <span className="flex shrink-0 items-center -space-x-1">
           {(ref.lineage ?? []).map((origin, index) => (
