@@ -1,4 +1,14 @@
-import { memo, useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react"
+import {
+  Children,
+  isValidElement,
+  memo,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactElement,
+  type ReactNode,
+} from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { CheckIcon, CopyIcon } from "lucide-react"
@@ -132,17 +142,28 @@ function CodeBlock({ children }: { children?: ReactNode }) {
 }
 
 function extractText(node: ReactNode): string {
-  if (typeof node === "string") return node
-  if (Array.isArray(node)) return node.map(extractText).join("")
-  if (node && typeof node === "object" && "props" in node) {
-    return extractText((node as { props: { children?: ReactNode } }).props.children)
-  }
-  return ""
+  return Children.toArray(node).map(extractChildText).join("")
+}
+
+function extractChildText(node: ReactNode): string {
+  if (isElementWithChildren(node)) return extractText(node.props.children)
+  return String(node)
+}
+
+function isElementWithChildren(
+  node: ReactNode
+): node is ReactElement<{ children?: ReactNode }> {
+  return isValidElement<{ children?: ReactNode }>(node)
 }
 
 function extractLanguage(node: ReactNode): string | null {
-  if (!node || typeof node !== "object" || !("props" in node)) return null
-  const className = (node as { props: { className?: string } }).props.className
-  const match = /language-([\w+-]+)/.exec(className ?? "")
+  if (!isCodeElement(node)) return null
+  const match = /language-([\w+-]+)/.exec(node.props.className ?? "")
   return match?.[1] ?? null
+}
+
+function isCodeElement(
+  node: ReactNode
+): node is ReactElement<ComponentProps<"code">, "code"> {
+  return isValidElement<ComponentProps<"code">>(node) && node.type === "code"
 }

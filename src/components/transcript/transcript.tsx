@@ -44,12 +44,16 @@ const MORE_TURNS = 50
  * under them and offers an explicit way back.
  */
 export function Transcript() {
+  // Only the session identity — subscribing to the whole meta object would
+  // re-render the list on every token-count update. The key gives each session
+  // its own reading state, so switching resets the window without an effect.
+  const sessionId = useSession((state) => state.meta?.sessionId)
+  return <SessionTranscript key={sessionId ?? "none"} sessionId={sessionId} />
+}
+
+function SessionTranscript({ sessionId }: { sessionId: string | undefined }) {
   const messages = useSession((state) => state.messages)
   const stream = useSession((state) => state.stream)
-  // Only the session identity — subscribing to the whole meta object would
-  // re-render the list on every token-count update.
-  const sessionId = useSession((state) => state.meta?.sessionId)
-
   const pane = useRef<HTMLDivElement>(null)
   const viewport = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
@@ -116,18 +120,6 @@ export function Transcript() {
       if (node) node.scrollTop = node.scrollHeight
     }
   }, [exchanges])
-
-  // A different session is a different reading position: start at the end, and
-  // back at a small window — carrying an expanded one across would make every
-  // switch after a deep scroll slow again. An *empty* session starts at the
-  // top: its screen is an opening, and landing mid-list reads as broken.
-  useEffect(() => {
-    pinned.current = true
-    setLimit(INITIAL_TURNS)
-    if (exchanges.length > 0) scrollToEnd()
-    else requestAnimationFrame(() => viewport.current?.scrollTo({ top: 0 }))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, scrollToEnd])
 
   /*
    * Reveal earlier turns without the view jumping.
