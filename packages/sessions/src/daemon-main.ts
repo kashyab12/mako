@@ -18,14 +18,57 @@ import { defaultCatalog } from "./index.js"
 import { daemonSocketPath, serveCatalog } from "./daemon.js"
 import type { DevinAccount } from "./providers/devin.js"
 
+type JsonScalar = boolean | number | string | null
+type JsonValue = JsonScalar | JsonRecord | JsonValue[]
+
+interface JsonRecord {
+  [key: string]: JsonValue | undefined
+}
+
 async function devinAccounts(): Promise<DevinAccount[]> {
   try {
     const raw = await readFile(join(homedir(), ".mako", "devin.json"), "utf8")
-    const parsed = JSON.parse(raw) as { accounts?: DevinAccount[] }
-    return Array.isArray(parsed.accounts) ? parsed.accounts : []
+    return parseDevinAccounts(raw)
   } catch {
     return []
   }
+}
+
+function parseDevinAccounts(raw: string): DevinAccount[] {
+  const root = parseJsonRecord(raw)
+  if (!root) return []
+  const value = root["accounts"]
+  if (!Array.isArray(value)) return []
+  const accounts: DevinAccount[] = []
+  for (const candidate of value) {
+    if (!isJsonRecord(candidate)) continue
+    const name = readString(candidate, "name")
+    const apiKey = readString(candidate, "apiKey")
+    if (!name || !apiKey) continue
+    const account: DevinAccount = { name, apiKey }
+    const apiUrl = readString(candidate, "apiUrl")
+    if (apiUrl !== undefined) account.apiUrl = apiUrl
+    accounts.push(account)
+  }
+  return accounts
+}
+
+function parseJsonRecord(raw: string): JsonRecord | null {
+  try {
+    const value: JsonValue = JSON.parse(raw)
+    return isJsonRecord(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
+function isJsonRecord(value: JsonValue | undefined): value is JsonRecord {
+  return Object.prototype.toString.call(value) === "[object Object]"
+}
+
+function readString(record: JsonRecord, key: string): string | undefined {
+  const value = record[key]
+  return Object.prototype.toString.call(value) === "[object String]" ? String(value) : undefined
 }
 
 async function main(): Promise<void> {
