@@ -63,7 +63,7 @@ export function StatusBar() {
   const tone = percent > 90 ? "text-negative" : percent > 72 ? "text-caution" : "text-faint"
 
   return (
-    <footer className="flex h-[22px] shrink-0 items-center gap-3 border-t border-hairline bg-shell px-2.5 text-[11px] text-faint">
+    <footer className="flex h-[22px] shrink-0 items-center gap-3 border-t border-hairline bg-shell px-2.5 text-label text-faint">
       <button
         type="button"
         onClick={() => void actions.pickWorkspace()}

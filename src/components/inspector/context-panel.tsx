@@ -59,8 +59,8 @@ function Budget() {
   return (
     <section className="border-b border-hairline px-2.5 py-2.5">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="min-w-0 truncate text-[12.5px] font-medium">{model.name}</span>
-        <span className="tabular shrink-0 text-[10.5px] text-faint">
+        <span className="min-w-0 truncate text-ui font-medium">{model.name}</span>
+        <span className="tabular shrink-0 text-label text-faint">
           {formatRate(model.cost.input)}/{formatRate(model.cost.output)} per Mtok
         </span>
       </div>
@@ -71,7 +71,7 @@ function Budget() {
           style={{ width: `${Math.min(100, percent)}%` }}
         />
       </div>
-      <div className="mt-1 flex items-baseline justify-between text-[10.5px] text-faint">
+      <div className="mt-1 flex items-baseline justify-between text-label text-faint">
         <span className="tabular">
           {usage.tokens == null ? "—" : formatTokens(usage.tokens)} /{" "}
           {formatContextWindow(usage.window)} context
@@ -93,8 +93,8 @@ function Budget() {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <div className="tabular truncate text-[12px] text-muted-foreground">{value}</div>
-      <div className="text-[9.5px] text-faint">{label}</div>
+      <div className="tabular truncate text-ui text-muted-foreground">{value}</div>
+      <div className="text-label text-faint">{label}</div>
     </div>
   )
 }
@@ -155,15 +155,15 @@ const FileRow = memo(function FileRow({
       className="contain-turn flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors duration-100 hover:bg-fill-hover [contain-intrinsic-size:auto_26px]"
     >
       <Icon className={cn("size-3 shrink-0", FILE_TONE[file.action])} />
-      <span className="min-w-0 flex-1 truncate text-[11.5px] text-foreground/85">
+      <span className="min-w-0 flex-1 truncate text-ui text-foreground/85">
         {fileName(file.path)}
-        <span className="ml-1.5 text-[10px] text-faint">{fileDir(file.path)}</span>
+        <span className="ml-1.5 text-label text-faint">{fileDir(file.path)}</span>
       </span>
       {file.count > 1 ? (
-        <span className="tabular shrink-0 text-[9.5px] text-faint">{file.count}×</span>
+        <span className="tabular shrink-0 text-label text-faint">{file.count}×</span>
       ) : null}
       {stat ? (
-        <span className="tabular shrink-0 text-[10px]">
+        <span className="tabular shrink-0 text-label">
           <span className="text-added">+{stat.insertions}</span>{" "}
           <span className="text-removed">−{stat.deletions}</span>
         </span>
@@ -221,7 +221,7 @@ const SkillRow = memo(function SkillRow({
         className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors duration-100 hover:bg-fill-hover"
       >
         <BookOpenIcon className="size-3 shrink-0 text-faint" />
-        <span className="shrink-0 text-[11.5px] text-foreground/90">
+        <span className="shrink-0 text-ui text-foreground/90">
           <span className="text-faint">$</span>
           {skill.name}
         </span>
@@ -230,7 +230,7 @@ const SkillRow = memo(function SkillRow({
             second row. Opening one is a deliberate act. */}
         <span
           className={cn(
-            "min-w-0 flex-1 truncate text-[10.5px] text-faint",
+            "min-w-0 flex-1 truncate text-label text-faint",
             open && "opacity-0"
           )}
         >
@@ -243,13 +243,13 @@ const SkillRow = memo(function SkillRow({
             event.stopPropagation()
             window.dispatchEvent(new CustomEvent("mako:insert", { detail: `$${skill.name} ` }))
           }}
-          className="pressable shrink-0 rounded px-1 text-[10px] text-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-foreground"
+          className="pressable shrink-0 rounded px-1 text-label text-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-foreground"
         >
           use
         </span>
       </button>
       {open ? (
-        <p className="animate-thread px-1.5 pt-0.5 pb-1.5 pl-[26px] text-[11px] leading-relaxed text-muted-foreground">
+        <p className="animate-thread px-1.5 pt-0.5 pb-1.5 pl-[26px] text-label leading-relaxed text-muted-foreground">
           {skill.description}
         </p>
       ) : null}
@@ -316,7 +316,7 @@ function Tools() {
               </span>
               <span
                 className={cn(
-                  "min-w-0 flex-1 truncate text-[12px]",
+                  "min-w-0 flex-1 truncate text-ui",
                   tool.active ? "text-foreground/85" : "text-faint"
                 )}
               >
@@ -345,7 +345,7 @@ function Section({
     <section className="px-2.5 pt-3">
       <div className="flex items-center gap-2 pb-1">
         <Eyebrow className="px-0">{title}</Eyebrow>
-        <span className="tabular text-[10px] text-faint">{count}</span>
+        <span className="tabular text-label text-faint">{count}</span>
       </div>
       {children}
     </section>

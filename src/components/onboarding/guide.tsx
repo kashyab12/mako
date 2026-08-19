@@ -108,8 +108,8 @@ export function Guide() {
     >
       <div className="overlay-panel flex max-h-[80vh] w-full max-w-content flex-col overflow-hidden rounded-xl">
         <div className="flex h-11 shrink-0 items-center gap-2 border-b border-hairline px-3.5">
-          <span className="text-[13px] font-medium">What is where</span>
-          <span className="text-[11.5px] text-faint">and every key that does something</span>
+          <span className="text-ui font-medium">What is where</span>
+          <span className="text-ui text-faint">and every key that does something</span>
           <button
             type="button"
             aria-label="Close"
@@ -124,8 +124,8 @@ export function Guide() {
           <div className="flex flex-col gap-1.5">
             {REGIONS.map((region) => (
               <div key={region.name} className="flex items-start gap-3 rounded-lg bg-surface px-3 py-2">
-                <span className="w-24 shrink-0 text-[12px] font-medium">{region.name}</span>
-                <span className="min-w-0 flex-1 text-[11.5px] leading-relaxed text-muted-foreground">
+                <span className="w-24 shrink-0 text-ui font-medium">{region.name}</span>
+                <span className="min-w-0 flex-1 text-ui leading-relaxed text-muted-foreground">
                   {region.what}
                 </span>
                 <Chord keys={regionKeys(region, commands, keybindings)} />
@@ -136,17 +136,17 @@ export function Guide() {
           <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3">
             {sections.map(([section, entries]) => (
               <div key={section}>
-                <p className="pb-1 text-[11px] text-faint">{section}</p>
+                <p className="pb-1 text-label text-faint">{section}</p>
                 {entries.map((entry) => (
                   <div key={entry.title} className="flex items-baseline gap-2 py-[3px]">
-                    <span className="min-w-0 flex-1 truncate text-[11.5px] text-foreground/85">
+                    <span className="min-w-0 flex-1 truncate text-ui text-foreground/85">
                       {entry.title}
                     </span>
                     <span className="flex shrink-0 gap-0.5">
                       {entry.keys.map((key, index) => (
                         <kbd
                           key={`${key}-${index}`}
-                          className="rounded border border-hairline bg-raised px-1 text-[10px] text-faint"
+                          className="rounded border border-hairline bg-raised px-1 text-label text-faint"
                         >
                           {key}
                         </kbd>
@@ -179,7 +179,7 @@ function Chord({ keys }: { keys?: string }) {
       {formatChord(keys).map((key, index) => (
         <kbd
           key={`${key}-${index}`}
-          className={cn("rounded border border-hairline bg-raised px-1 text-[10px] text-faint")}
+          className={cn("rounded border border-hairline bg-raised px-1 text-label text-faint")}
         >
           {key}
         </kbd>

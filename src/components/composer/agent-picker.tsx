@@ -37,7 +37,7 @@ export function AgentPicker() {
           aria-label={`Agent: ${harnessLabel(selected)}`}
           className={cn(
             "pressable no-drag flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2",
-            "text-[12.5px] font-medium text-foreground/85",
+            "text-ui font-medium text-foreground/85",
             "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease]",
             "hover:bg-fill-hover aria-expanded:bg-fill-selected"
           )}
@@ -113,13 +113,13 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
             <span className="min-w-0 flex-1">
               <span
                 className={cn(
-                  "block text-[12.5px]",
+                  "block text-ui",
                   active ? "font-medium text-foreground" : "text-foreground/90"
                 )}
               >
                 {harnessLabel(harness)}
               </span>
-              <span className="mt-px block truncate font-mono text-[10.5px] text-faint">
+              <span className="mt-px block truncate font-mono text-label text-faint">
                 {model ?? ""}
               </span>
             </span>

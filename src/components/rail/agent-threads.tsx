@@ -194,7 +194,7 @@ export function AgentThreads() {
         {!loaded && matched.length === 0 ? (
           <RailSkeleton />
         ) : matched.length === 0 ? (
-          <p className="px-3 pt-8 text-center text-[11.5px] leading-relaxed text-faint">
+          <p className="px-3 pt-8 text-center text-ui leading-relaxed text-faint">
             {searchActive || filter.length > 0
               ? "Nothing matches."
               : "No conversations yet — from any agent."}
@@ -209,7 +209,7 @@ export function AgentThreads() {
           <>
             {held.length > 0 ? (
               <section className="pt-1 pb-2">
-                <p className="flex h-7 items-center gap-1.5 px-1.5 text-[10.5px] font-medium text-faint">
+                <p className="flex h-7 items-center gap-1.5 px-1.5 text-label font-medium text-faint">
                   <PinIcon className="size-3 fill-current opacity-60" />
                   Pinned
                 </p>
@@ -281,7 +281,7 @@ function RailSkeleton() {
 function ActiveAgents({ activity }: { activity: AgentActivity[] }) {
   if (activity.length === 0) return null
   return (
-    <div className="flex h-7 items-center gap-2 overflow-x-auto px-3 text-[10.5px] text-faint">
+    <div className="flex h-7 items-center gap-2 overflow-x-auto px-3 text-label text-faint">
       {activity.map((entry) => (
         <span key={entry.harness} className="flex shrink-0 items-center gap-1.5">
           <HarnessIcon harness={entry.harness} className="size-3" />
@@ -332,7 +332,7 @@ function RailHeader({
             }
           }}
           placeholder="Search every thread"
-          className="h-7 min-w-0 flex-1 bg-transparent px-1.5 text-[12px] text-foreground placeholder:text-faint focus:outline-none"
+          className="h-7 min-w-0 flex-1 bg-transparent px-1.5 text-ui text-foreground placeholder:text-faint focus:outline-none"
         />
         <button
           type="button"
@@ -348,7 +348,7 @@ function RailHeader({
 
   return (
     <div className="flex h-9 shrink-0 items-center px-2 pt-1.5">
-      <span className="px-1.5 text-[10.5px] font-medium text-faint">Workspaces</span>
+      <span className="px-1.5 text-label font-medium text-faint">Workspaces</span>
       <span className="flex-1" />
       <button
         type="button"
@@ -384,10 +384,10 @@ function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter
   const scope = usePrefs((prefs) => prefs.railScope)
   const on = filter.length > 0 || scope === "workspace" || (sortBy !== "recent" && sortBy !== "size")
 
-  const section = "px-2 pt-2 pb-1 text-[10.5px] font-medium text-faint/80"
+  const section = "px-2 pt-2 pb-1 text-label font-medium text-faint/80"
   const row = (active: boolean) =>
     cn(
-      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors duration-100",
+      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-ui transition-colors duration-100",
       active ? "bg-fill-selected text-foreground" : "text-foreground/85 hover:bg-fill-hover"
     )
 
@@ -429,7 +429,7 @@ function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter
                 <HarnessIcon harness={harness} className="size-3.5" tinted={active} />
                 <span className="flex-1">{harnessLabel(harness)}</span>
                 {active ? <CheckIcon className="size-3 text-foreground" /> : null}
-                <span className="tabular text-[10.5px] text-faint">{count}</span>
+                <span className="tabular text-label text-faint">{count}</span>
               </button>
             )
           })}
@@ -480,7 +480,7 @@ function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter
               setPref("railScope", "all")
               setOpen(false)
             }}
-            className="mt-1 flex w-full items-center justify-center rounded-md border-t border-hairline px-2 py-1.5 text-[11px] text-faint hover:text-foreground"
+            className="mt-1 flex w-full items-center justify-center rounded-md border-t border-hairline px-2 py-1.5 text-label text-faint hover:text-foreground"
           >
             Reset
           </button>
@@ -534,13 +534,13 @@ function FolderSection({
         )}
         <span
           className={cn(
-            "min-w-0 flex-1 truncate text-[12px]",
+            "min-w-0 flex-1 truncate text-ui",
             folder.current ? "font-medium text-foreground" : "text-foreground/80"
           )}
         >
           {folder.name}
         </span>
-        <span className="tabular pr-0.5 text-[10px] text-faint/60 opacity-0 transition-opacity duration-100 group-hover/folder:opacity-100">
+        <span className="tabular pr-0.5 text-label text-faint/60 opacity-0 transition-opacity duration-100 group-hover/folder:opacity-100">
           {folder.refs.length}
         </span>
         <ChevronRightIcon
@@ -564,16 +564,16 @@ function FolderSection({
             <button
               type="button"
               onClick={() => onPages(pages + 1)}
-              className="flex h-6 w-full items-center rounded-md pl-8 text-left text-[11px] text-faint transition-colors duration-100 hover:bg-fill-hover hover:text-muted-foreground"
+              className="flex h-6 w-full items-center rounded-md pl-8 text-left text-label text-faint transition-colors duration-100 hover:bg-fill-hover hover:text-muted-foreground"
             >
               More
-              <span className="tabular ml-1 text-[10px] text-faint/60">{hidden}</span>
+              <span className="tabular ml-1 text-label text-faint/60">{hidden}</span>
             </button>
           ) : pages > 0 ? (
             <button
               type="button"
               onClick={() => onPages(0)}
-              className="flex h-6 w-full items-center rounded-md pl-8 text-left text-[11px] text-faint transition-colors duration-100 hover:bg-fill-hover hover:text-muted-foreground"
+              className="flex h-6 w-full items-center rounded-md pl-8 text-left text-label text-faint transition-colors duration-100 hover:bg-fill-hover hover:text-muted-foreground"
             >
               Less
             </button>
@@ -669,7 +669,7 @@ const ThreadRow = memo(function ThreadRow({
             if (event.key === "Escape") setEditing(null)
           }}
           onBlur={() => setEditing(null)}
-          className="min-w-0 flex-1 rounded bg-raised px-1 text-[12.5px] text-foreground ring-1 ring-hairline focus:outline-none"
+          className="min-w-0 flex-1 rounded bg-raised px-1 text-ui text-foreground ring-1 ring-hairline focus:outline-none"
         />
       ) : (
         <span
@@ -679,7 +679,7 @@ const ThreadRow = memo(function ThreadRow({
           }}
           title="Double-click to rename"
           className={cn(
-            "min-w-0 flex-1 truncate text-[12.5px]",
+            "min-w-0 flex-1 truncate text-ui",
             lit ? "font-medium text-foreground" : "text-foreground/85"
           )}
         >
@@ -687,7 +687,7 @@ const ThreadRow = memo(function ThreadRow({
         </span>
       )}
       {showFolder && ref.cwd ? (
-        <span className="max-w-[6rem] shrink-0 truncate text-[10px] text-faint/70">
+        <span className="max-w-[6rem] shrink-0 truncate text-label text-faint/70">
           {workspaceName(ref.cwd)}
         </span>
       ) : null}
@@ -717,7 +717,7 @@ const ThreadRow = memo(function ThreadRow({
       {working ? (
         <Loader2Icon className="size-3 shrink-0 animate-spin text-ember/80" aria-label="Working" />
       ) : ref.updatedAt ? (
-        <span className="tabular shrink-0 text-[10px] text-faint">
+        <span className="tabular shrink-0 text-label text-faint">
           {formatRelative(ref.updatedAt)}
         </span>
       ) : null}

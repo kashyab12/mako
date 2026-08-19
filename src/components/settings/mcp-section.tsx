@@ -32,14 +32,14 @@ export function McpSection() {
   return (
     <div>
       <Eyebrow className="pt-6 pb-2">MCP servers</Eyebrow>
-      <p className="pb-3 text-[12px] leading-relaxed text-muted-foreground">
+      <p className="pb-3 text-ui leading-relaxed text-muted-foreground">
         Servers found in each agent&apos;s native configuration, deduplicated by
         connection. Environment and header values stay in the host and never
         reach this view. Discovery is read-only.
       </p>
 
       {state.status === "loading" && !snapshot ? (
-        <p className="shimmer text-[12px] text-faint">
+        <p className="shimmer text-ui text-faint">
           Reading provider configurations…
         </p>
       ) : null}
@@ -48,7 +48,7 @@ export function McpSection() {
         <>
           <div className="flex items-center justify-between pt-2 pb-1">
             <Eyebrow className="px-0">Sync to</Eyebrow>
-            <span className="flex rounded-md bg-raised p-0.5 text-[10.5px]">
+            <span className="flex rounded-md bg-raised p-0.5 text-label">
               {(["user", "workspace"] as const).map((value) => (
                 <button
                   key={value}
@@ -83,7 +83,7 @@ export function McpSection() {
                 <label
                   key={`${provider.id}:${provider.account}`}
                   className={cn(
-                    "flex items-center gap-2 rounded-md bg-surface px-2.5 py-2 text-[11.5px] ring-1 ring-hairline",
+                    "flex items-center gap-2 rounded-md bg-surface px-2.5 py-2 text-ui ring-1 ring-hairline",
                     provider.available ? "cursor-pointer" : "opacity-50"
                   )}
                   title={provider.detail ?? provider.source}
@@ -98,7 +98,7 @@ export function McpSection() {
                   <span className="min-w-0 flex-1 truncate">
                     {provider.label}
                   </span>
-                  <span className="text-[10px] text-faint">
+                  <span className="text-label text-faint">
                     {provider.available ? provider.account : "not found"}
                   </span>
                 </label>
@@ -135,26 +135,26 @@ export function McpSection() {
                 >
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-1.5">
-                      <span className="font-mono text-[11.5px]">
+                      <span className="font-mono text-ui">
                         {server.name}
                       </span>
-                      <span className="rounded bg-raised px-1 py-0.5 text-[9.5px] text-faint">
+                      <span className="rounded bg-raised px-1 py-0.5 text-label text-faint">
                         {server.transport}
                       </span>
                       {server.managed ? (
-                        <span className="text-[10px] text-faint">optional</span>
+                        <span className="text-label text-faint">optional</span>
                       ) : null}
                       {server.conflict ? (
-                        <span className="flex items-center gap-1 text-[10px] text-caution">
+                        <span className="flex items-center gap-1 text-label text-caution">
                           <AlertTriangleIcon className="size-3" /> conflicting
                           definitions
                         </span>
                       ) : null}
                     </span>
-                    <span className="mt-0.5 block truncate font-mono text-[10px] text-faint">
+                    <span className="mt-0.5 block truncate font-mono text-label text-faint">
                       {definitionPreview(server)}
                     </span>
-                    <span className="mt-1 flex flex-wrap gap-x-2 text-[10px] text-faint">
+                    <span className="mt-1 flex flex-wrap gap-x-2 text-label text-faint">
                       {server.origins.map((origin) => (
                         <span
                           key={`${origin.provider}:${origin.account}:${origin.provenance}`}
@@ -176,7 +176,7 @@ export function McpSection() {
                       {server.detail ? <span>{server.detail}</span> : null}
                     </span>
                     {previewsCurrent && previews.length ? (
-                      <span className="mt-1.5 block text-[10.5px] text-muted-foreground">
+                      <span className="mt-1.5 block text-label text-muted-foreground">
                         {previews.map((preview) => preview.summary).join(" · ")}
                       </span>
                     ) : null}
@@ -217,7 +217,7 @@ export function McpSection() {
               <RefreshCwIcon className="size-3" />
               Refresh
             </Action>
-            <span className="text-[10.5px] text-faint">
+            <span className="text-label text-faint">
               Preview is required before a write. Sync adds or replaces; it
               never removes.
             </span>
@@ -226,7 +226,7 @@ export function McpSection() {
       ) : null}
 
       {state.error ? (
-        <p className="pt-2 text-[11px] text-removed">{state.error}</p>
+        <p className="pt-2 text-label text-removed">{state.error}</p>
       ) : null}
     </div>
   )

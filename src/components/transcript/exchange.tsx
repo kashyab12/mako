@@ -96,7 +96,7 @@ function Prompt({ message }: { message: ChatMessage }) {
   return (
     <div className="group/prompt relative">
       <div className="rounded-xl bg-raised px-3.5 py-2.5">
-        <div className="text-[13.5px] leading-[1.6] whitespace-pre-wrap text-foreground">
+        <div className="text-ui leading-[1.6] whitespace-pre-wrap text-foreground">
           {segments.map((segment, index) =>
             segment.kind === "text" ? (
               <span key={index}>{segment.text}</span>
@@ -118,7 +118,7 @@ function Prompt({ message }: { message: ChatMessage }) {
         ) : null}
       </div>
 
-      <div className="mt-1 flex h-4 items-center gap-2 px-0.5 text-[10.5px] text-faint opacity-0 transition-opacity duration-150 group-hover/prompt:opacity-100 focus-within:opacity-100">
+      <div className="mt-1 flex h-4 items-center gap-2 px-0.5 text-label text-faint opacity-0 transition-opacity duration-150 group-hover/prompt:opacity-100 focus-within:opacity-100">
         {message.timestamp ? <span className="tabular">{formatTime(message.timestamp)}</span> : null}
         <button
           type="button"
@@ -196,13 +196,13 @@ function Response({ message }: { message: ChatMessage }) {
       {text ? <Prose text={text} streaming={message.streaming} /> : null}
 
       {message.error ? (
-        <div className="flex items-start gap-2 rounded-md border border-negative/30 bg-negative/[0.06] px-2.5 py-2 text-[12.5px] text-negative">
+        <div className="flex items-start gap-2 rounded-md border border-negative/30 bg-negative/[0.06] px-2.5 py-2 text-ui text-negative">
           <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
           <span className="whitespace-pre-wrap">{message.error}</span>
         </div>
       ) : null}
 
-      {blank && message.streaming ? <p className="shimmer text-[12.5px]">Thinking…</p> : null}
+      {blank && message.streaming ? <p className="shimmer text-ui">Thinking…</p> : null}
     </div>
   )
 }
@@ -214,7 +214,7 @@ function Thinking({ text, live }: { text: string; live: boolean }) {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-[11.5px] text-faint transition-colors duration-100 hover:text-muted-foreground"
+        className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-ui text-faint transition-colors duration-100 hover:text-muted-foreground"
       >
         <ChevronRightIcon
           className={cn("size-3 transition-transform duration-150", open && "rotate-90")}
@@ -223,7 +223,7 @@ function Thinking({ text, live }: { text: string; live: boolean }) {
         <span className={cn(live && "shimmer")}>{live ? "Reasoning…" : "Reasoning"}</span>
       </button>
       {open ? (
-        <p className="border-t border-hairline px-2.5 py-2 text-[12px] leading-[1.65] whitespace-pre-wrap text-muted-foreground">
+        <p className="border-t border-hairline px-2.5 py-2 text-ui leading-[1.65] whitespace-pre-wrap text-muted-foreground">
           {text}
         </p>
       ) : null}
@@ -237,7 +237,7 @@ function SystemNote({ message }: { message: ChatMessage }) {
   return (
     <div className="my-3 flex items-center gap-2.5">
       <span className="h-px flex-1 bg-hairline" />
-      <span className="shrink-0 text-[11px] text-faint">{text.slice(0, 140)}</span>
+      <span className="shrink-0 text-label text-faint">{text.slice(0, 140)}</span>
       <span className="h-px flex-1 bg-hairline" />
     </div>
   )
@@ -254,7 +254,7 @@ function Footer({ exchange }: { exchange: ExchangeData }) {
   if (!text && !last?.timestamp) return null
 
   return (
-    <div className="mt-1.5 flex h-4 items-center gap-2.5 text-[10.5px] text-faint opacity-0 transition-opacity duration-150 group-hover/transcript:opacity-100 focus-within:opacity-100">
+    <div className="mt-1.5 flex h-4 items-center gap-2.5 text-label text-faint opacity-0 transition-opacity duration-150 group-hover/transcript:opacity-100 focus-within:opacity-100">
       {last?.timestamp ? <span className="tabular">{formatTime(last.timestamp)}</span> : null}
       {last?.model ? <span className="truncate">{last.model}</span> : null}
       {text ? (
@@ -324,7 +324,7 @@ function ForkButton({ exchange }: { exchange: ExchangeData }) {
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" sideOffset={6} className="w-56 p-1">
-        <p className="px-2 pt-1.5 pb-1 text-[10.5px] font-medium text-faint/80">
+        <p className="px-2 pt-1.5 pb-1 text-label font-medium text-faint/80">
           Fork from here into
         </p>
         {options.map((target) => (
@@ -335,12 +335,12 @@ function ForkButton({ exchange }: { exchange: ExchangeData }) {
               setOpen(false)
               void threads.forkAt(viewing, entryIndex, target)
             }}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-foreground/90 transition-colors duration-100 hover:bg-fill-hover"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-ui text-foreground/90 transition-colors duration-100 hover:bg-fill-hover"
           >
             <HarnessIcon harness={target} className="size-3.5" />
             <span className="flex-1">{HARNESS_LABEL[target] ?? target}</span>
             {target === viewing.harness ? (
-              <span className="text-[10px] text-faint">same agent</span>
+              <span className="text-label text-faint">same agent</span>
             ) : null}
           </button>
         ))}

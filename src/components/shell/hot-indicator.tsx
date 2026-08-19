@@ -70,7 +70,7 @@ function Pill({
     <span
       className={cn(
         "animate-enter flex min-w-0 items-center gap-1.5 rounded-full px-2 py-px",
-        "text-[10.5px] whitespace-nowrap",
+        "text-label whitespace-nowrap",
         tone === "caution" ? "bg-caution/12 text-caution" : "bg-fill-selected text-muted-foreground"
       )}
     >

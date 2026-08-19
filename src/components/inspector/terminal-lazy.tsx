@@ -8,7 +8,7 @@ const Panel = lazy(() =>
 
 export function TerminalPanel() {
   return (
-    <Suspense fallback={<p className="shimmer p-3 text-[11.5px]">Loading terminal…</p>}>
+    <Suspense fallback={<p className="shimmer p-3 text-ui">Loading terminal…</p>}>
       <Panel />
     </Suspense>
   )

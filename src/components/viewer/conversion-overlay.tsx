@@ -45,12 +45,12 @@ export function ConversionOverlay() {
           </span>
         </div>
         <div className="text-center">
-          <p className="text-[13px] font-medium text-foreground">
+          <p className="text-ui font-medium text-foreground">
             {converting.done
               ? `Now a native ${harnessLabel(converting.to)} session`
               : `Becoming a native ${harnessLabel(converting.to)} session`}
           </p>
-          <p className="pt-0.5 text-[11px] text-faint">
+          <p className="pt-0.5 text-label text-faint">
             {converting.title ? `“${truncate(converting.title, 56)}” — ` : ""}
             {converting.done
               ? "same conversation, full history, ready to continue"

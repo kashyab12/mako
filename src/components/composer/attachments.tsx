@@ -51,9 +51,9 @@ function Card({ item, onRemove }: { item: Attachment; onRemove: (id: string) => 
       )}
 
       <span className="flex min-w-0 flex-col pr-3">
-        <span className="tabular text-[10px] text-faint">Attachment {item.index}</span>
-        <span className="max-w-[10rem] truncate text-[11.5px] text-foreground/85">{item.name}</span>
-        <span className="text-[10px] text-faint">
+        <span className="tabular text-label text-faint">Attachment {item.index}</span>
+        <span className="max-w-[10rem] truncate text-ui text-foreground/85">{item.name}</span>
+        <span className="text-label text-faint">
           {item.pending ? "reading…" : formatBytes(item.size)}
         </span>
       </span>

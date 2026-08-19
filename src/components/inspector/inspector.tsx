@@ -70,7 +70,7 @@ export function Inspector() {
               type="button"
               onClick={() => selectTab(panel.id)}
               className={cn(
-                "pressable relative flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium",
+                "pressable relative flex h-7 items-center gap-1.5 rounded-md px-2 text-ui font-medium",
                 "[transition:transform_var(--duration-press)_var(--ease-out),color_120ms_ease,background-color_120ms_ease]",
                 on ? "bg-fill-selected text-foreground" : "text-faint hover:text-muted-foreground"
               )}
@@ -78,7 +78,7 @@ export function Inspector() {
               {Icon ? <Icon className="size-3.5" /> : null}
               {panel.label}
               {panel.id === "changes" && changeCount > 0 ? (
-                <span className="tabular ml-0.5 rounded bg-caution/15 px-1 text-[10px] text-caution">
+                <span className="tabular ml-0.5 rounded bg-caution/15 px-1 text-label text-caution">
                   {changeCount}
                 </span>
               ) : null}

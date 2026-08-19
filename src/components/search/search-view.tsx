@@ -75,7 +75,7 @@ export function SearchView() {
           value={query}
           onChange={(event) => search.setQuery(event.target.value)}
           placeholder="Search this project and its conversations"
-          className="h-8 min-w-0 flex-1 bg-transparent text-[13px] placeholder:text-faint focus:outline-none"
+          className="h-8 min-w-0 flex-1 bg-transparent text-ui placeholder:text-faint focus:outline-none"
         />
         <Toggle
           label="Match case"
@@ -114,7 +114,7 @@ export function SearchView() {
 
       <div className="min-h-0 flex-1">
         {results?.error ? (
-          <p className="p-4 text-[12px] text-removed">{results.error}</p>
+          <p className="p-4 text-ui text-removed">{results.error}</p>
         ) : results && results.total > 0 ? (
           <Results results={results} />
         ) : query.trim().length < 2 ? (
@@ -147,7 +147,7 @@ function Summary({
 }) {
   if (query.trim().length < 2) return null
   return (
-    <div className="flex h-6 shrink-0 items-center gap-2 border-b border-hairline px-3 text-[10.5px] text-faint">
+    <div className="flex h-6 shrink-0 items-center gap-2 border-b border-hairline px-3 text-label text-faint">
       {running ? (
         <span className="shimmer">Searching…</span>
       ) : results ? (
@@ -283,9 +283,9 @@ const FileHeader = memo(function FileHeader({ file }: { file: FileMatches }) {
   const dir = file.path.slice(0, Math.max(0, file.path.length - name.length - 1))
   return (
     <div className="flex h-full items-center gap-1.5 px-1.5">
-      <span className="shrink-0 truncate text-[11.5px] font-medium text-foreground/90">{name}</span>
-      <span className="min-w-0 flex-1 truncate text-[10.5px] text-faint">{dir}</span>
-      <span className="tabular shrink-0 text-[10px] text-faint">
+      <span className="shrink-0 truncate text-ui font-medium text-foreground/90">{name}</span>
+      <span className="min-w-0 flex-1 truncate text-label text-faint">{dir}</span>
+      <span className="tabular shrink-0 text-label text-faint">
         {file.lines.length + file.more}
         {file.more > 0 ? "+" : ""}
       </span>
@@ -297,11 +297,11 @@ const ThreadHeader = memo(function ThreadHeader({ thread }: { thread: ThreadMatc
   return (
     <div className="flex h-full items-center gap-1.5 px-1.5">
       <MessagesSquareIcon className="size-3 shrink-0 text-faint" />
-      <span className="truncate text-[11.5px] font-medium text-foreground/90">{thread.title}</span>
-      <span className="min-w-0 flex-1 truncate text-[10.5px] text-faint">
+      <span className="truncate text-ui font-medium text-foreground/90">{thread.title}</span>
+      <span className="min-w-0 flex-1 truncate text-label text-faint">
         {workspaceName(thread.cwd)}
       </span>
-      <span className="tabular shrink-0 text-[10px] text-faint">
+      <span className="tabular shrink-0 text-label text-faint">
         {formatRelative(thread.modified)}
       </span>
     </div>
@@ -328,8 +328,8 @@ const LineRow = memo(function LineRow({
         "transition-colors duration-100 hover:bg-fill-hover"
       )}
     >
-      <span className="tabular w-10 shrink-0 text-right text-[10px] text-faint/70">{gutter}</span>
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/75">
+      <span className="tabular w-10 shrink-0 text-right text-label text-faint/70">{gutter}</span>
+      <span className="min-w-0 flex-1 truncate font-mono text-label text-foreground/75">
         <Highlight text={text} query={query} />
       </span>
     </button>

@@ -100,7 +100,7 @@ export function FileTree() {
               }
             }}
             placeholder="Find a file"
-            className="h-7 w-full rounded-md bg-raised pr-7 pl-7 text-[12.5px] placeholder:text-faint focus:outline-none focus-visible:ring-1 focus-visible:ring-border"
+            className="h-7 w-full rounded-md bg-raised pr-7 pl-7 text-ui placeholder:text-faint focus:outline-none focus-visible:ring-1 focus-visible:ring-border"
           />
           {query ? (
             <button
@@ -164,7 +164,7 @@ export function FileTree() {
       )}
 
       {query && rows.length >= MAX_MATCHES ? (
-        <p className="shrink-0 px-3 pb-2 text-[10.5px] text-faint">
+        <p className="shrink-0 px-3 pb-2 text-label text-faint">
           First {MAX_MATCHES} matches. Keep typing to narrow it.
         </p>
       ) : null}
@@ -205,8 +205,8 @@ const DirRow = memo(function DirRow({
       ) : (
         <FolderIcon className="size-3.5 shrink-0 text-faint" />
       )}
-      <span className="min-w-0 flex-1 truncate text-[12px] text-foreground/85">{row.label}</span>
-      <span className="tabular shrink-0 text-[10px] text-faint opacity-0 transition-opacity duration-100 group-hover:opacity-100">
+      <span className="min-w-0 flex-1 truncate text-ui text-foreground/85">{row.label}</span>
+      <span className="tabular shrink-0 text-label text-faint opacity-0 transition-opacity duration-100 group-hover:opacity-100">
         {row.files}
       </span>
     </button>
@@ -250,7 +250,7 @@ const FileRow = memo(function FileRow({
       <FileIcon className={cn("size-3.5 shrink-0", row.changed ? "text-caution" : "text-faint/70")} />
       <span
         className={cn(
-          "min-w-0 flex-1 truncate text-[12px]",
+          "min-w-0 flex-1 truncate text-ui",
           active ? "font-medium text-foreground" : "text-foreground/80"
         )}
       >

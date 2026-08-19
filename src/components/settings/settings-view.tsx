@@ -83,7 +83,7 @@ export function SettingsView({ initialSection = "agents" }: { initialSection?: s
             type="button"
             onClick={() => setSection(entry.id)}
             className={cn(
-              "rounded-md px-2 py-1.5 text-left text-[12.5px] transition-colors duration-100",
+              "rounded-md px-2 py-1.5 text-left text-ui transition-colors duration-100",
               section === entry.id
                 ? "bg-fill-selected font-medium text-foreground"
                 : "text-muted-foreground hover:bg-fill-hover hover:text-foreground"
@@ -97,7 +97,7 @@ export function SettingsView({ initialSection = "agents" }: { initialSection?: s
           onClick={() =>
             window.dispatchEvent(new CustomEvent("mako:close-settings"))
           }
-          className="pressable mt-auto flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[12px] text-faint hover:bg-fill-hover hover:text-foreground"
+          className="pressable mt-auto flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-ui text-faint hover:bg-fill-hover hover:text-foreground"
         >
           <XIcon className="size-3.5" />
           Close settings
@@ -149,13 +149,13 @@ function Usage() {
   if (loading)
     return (
       <Section title="Usage">
-        <p className="shimmer text-[12px]">Reading sessions…</p>
+        <p className="shimmer text-ui">Reading sessions…</p>
       </Section>
     )
   if (!data || data.total.messages === 0) {
     return (
       <Section title="Usage">
-        <p className="rounded-lg bg-surface px-3 py-4 text-center text-[12px] text-faint ring-1 ring-hairline">
+        <p className="rounded-lg bg-surface px-3 py-4 text-center text-ui text-faint ring-1 ring-hairline">
           Nothing priced yet. Spend appears here as soon as a model bills for a
           turn.
         </p>
@@ -169,10 +169,10 @@ function Usage() {
     <Section title="Usage">
       <div className="rounded-lg bg-surface px-3 py-3 ring-1 ring-hairline">
         <div className="flex items-baseline gap-2">
-          <span className="tabular text-[18px] font-medium">
+          <span className="tabular text-title font-medium">
             {money(data.total.cost)}
           </span>
-          <span className="text-[11.5px] text-faint">
+          <span className="text-ui text-faint">
             across {data.sessions}{" "}
             {data.sessions === 1 ? "session" : "sessions"} ·{" "}
             {formatTokens(data.total.input + data.total.output)} tokens
@@ -193,7 +193,7 @@ function Usage() {
                 />
               ))}
             </div>
-            <div className="mt-1 flex justify-between text-[10px] text-faint">
+            <div className="mt-1 flex justify-between text-label text-faint">
               <span>{data.days[0]?.date}</span>
               <span>{data.days.at(-1)?.date}</span>
             </div>
@@ -218,7 +218,7 @@ function Usage() {
         total={data.total.cost}
       />
 
-      <p className="mt-3 text-[11.5px] leading-relaxed text-faint">
+      <p className="mt-3 text-ui leading-relaxed text-faint">
         Read from your session files, on this machine. This is spend, not
         billing — a payment method and an account are a server and a decision,
         not something to imply with a currency symbol.
@@ -249,7 +249,7 @@ function Breakdown({
             key={row.label}
             className="flex items-center gap-2 rounded-md px-1.5 py-1"
           >
-            <span className="min-w-0 flex-1 truncate text-[11.5px] text-foreground/85">
+            <span className="min-w-0 flex-1 truncate text-ui text-foreground/85">
               {row.label}
             </span>
             <span
@@ -263,7 +263,7 @@ function Breakdown({
                 }}
               />
             </span>
-            <span className="tabular w-14 shrink-0 text-right text-[11.5px]">
+            <span className="tabular w-14 shrink-0 text-right text-ui">
               {money(row.cost)}
             </span>
           </div>
@@ -354,12 +354,12 @@ function Agents() {
           onChange={(next) => setPref("conversionMode", next)}
         />
       </Row>
-      <p className="pb-3 text-[12px] leading-relaxed text-muted-foreground">
+      <p className="pb-3 text-ui leading-relaxed text-muted-foreground">
         Mako uses the provider apps already installed on this machine. Their
         model and reasoning settings are copied once as a sensible starting
         point; after that, choices made in Mako stay in Mako.
       </p>
-      <p className="mb-3 flex items-center gap-1.5 rounded-md bg-surface px-2.5 py-1.5 text-[11px] text-faint">
+      <p className="mb-3 flex items-center gap-1.5 rounded-md bg-surface px-2.5 py-1.5 text-label text-faint">
         <span
           className={cn(
             "size-1.5 rounded-full",
@@ -396,16 +396,16 @@ function Agents() {
             className="flex items-center gap-2.5 border-b border-hairline py-2 last:border-b-0"
           >
             <HarnessIcon harness={entry.id} className="size-4" />
-            <span className="min-w-0 flex-1 text-[12.5px]">{entry.name}</span>
-            <span className="text-[11px] text-faint">{entry.how}</span>
+            <span className="min-w-0 flex-1 text-ui">{entry.name}</span>
+            <span className="text-label text-faint">{entry.how}</span>
             {availability === null ? (
-              <span className="w-14 shimmer text-right text-[11px] text-faint">
+              <span className="w-14 shimmer text-right text-label text-faint">
                 …
               </span>
             ) : availability[entry.id] ? (
-              <span className="text-[11px] text-added">Ready</span>
+              <span className="text-label text-added">Ready</span>
             ) : (
-              <span className="text-[11px] text-faint">Not installed</span>
+              <span className="text-label text-faint">Not installed</span>
             )}
           </div>
         ))}
@@ -536,7 +536,7 @@ function HarnessAccounts() {
             <Eyebrow className="pt-6 pb-2">
               {harness === "claude" ? "Claude Code accounts" : "Codex accounts"}
             </Eyebrow>
-            <p className="pb-2 text-[11.5px] leading-relaxed text-faint">
+            <p className="pb-2 text-ui leading-relaxed text-faint">
               Mako keeps each login isolated while sharing the same sessions,
               skills, and tools. The active account is used for new sessions.
             </p>
@@ -562,7 +562,7 @@ function HarnessAccounts() {
                   >
                     <span
                       className={cn(
-                        "flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
+                        "flex size-7 shrink-0 items-center justify-center rounded-full text-label font-semibold",
                         account.active
                           ? "bg-fill-selected text-foreground"
                           : "bg-raised text-faint"
@@ -573,7 +573,7 @@ function HarnessAccounts() {
                     <span className="min-w-0 flex-none basis-56">
                       <span
                         className={cn(
-                          "block truncate text-[12.5px]",
+                          "block truncate text-ui",
                           account.active
                             ? "font-medium text-foreground"
                             : "text-foreground/85"
@@ -581,7 +581,7 @@ function HarnessAccounts() {
                       >
                         {identity}
                       </span>
-                      <span className="block text-[10px] text-faint">
+                      <span className="block text-label text-faint">
                         {account.active
                           ? "Used for new sessions in Mako"
                           : account.source === "subrouter"
@@ -597,13 +597,13 @@ function HarnessAccounts() {
                           <UsageBar label="5h" window={stats.session} />
                           <UsageBar label="week" window={stats.weekly} />
                           {stats.plan ? (
-                            <span className="text-[10px] text-faint">
+                            <span className="text-label text-faint">
                               {stats.plan}
                             </span>
                           ) : null}
                         </span>
                       ) : stats ? (
-                        <span className="text-[10.5px] text-faint">
+                        <span className="text-label text-faint">
                           {stats.status === "stale-token"
                             ? (stats.detail ?? "Sign in again to refresh usage")
                             : stats.status === "missing-credentials"
@@ -611,18 +611,18 @@ function HarnessAccounts() {
                               : (stats.detail ?? "Usage is temporarily unavailable")}
                         </span>
                       ) : (
-                        <span className="shimmer text-[10.5px] text-faint">
+                        <span className="shimmer text-label text-faint">
                           Loading usage…
                         </span>
                       )}
                     </span>
                     {account.active ? (
-                      <span className="flex shrink-0 items-center gap-1 text-[10.5px] text-foreground">
+                      <span className="flex shrink-0 items-center gap-1 text-label text-foreground">
                         <CheckIcon className="size-3.5" />
                         Active
                       </span>
                     ) : busyAccount === key ? (
-                      <span className="shimmer shrink-0 text-[10.5px] text-faint">
+                      <span className="shimmer shrink-0 text-label text-faint">
                         Switching…
                       </span>
                     ) : null}
@@ -643,7 +643,7 @@ function HarnessAccounts() {
             })}
             {capturing === harness ? (
               <div className="mt-2 rounded-lg bg-surface p-2.5 ring-1 ring-hairline">
-                <p className="pb-2 text-[11.5px] text-muted-foreground">
+                <p className="pb-2 text-ui text-muted-foreground">
                   First run <code className="font-mono text-foreground">{harness === "claude" ? "claude /login" : "codex login"}</code> in a terminal. Then name that login in Mako.
                 </p>
                 <div className="flex items-center gap-2">
@@ -655,7 +655,7 @@ function HarnessAccounts() {
                       if (event.key === "Enter") void capture()
                     }}
                     placeholder="Name, such as Work"
-                    className="h-7 w-44 rounded-md bg-raised px-2 text-[12px] text-foreground placeholder:text-faint focus:ring-1 focus:ring-hairline focus:outline-none"
+                    className="h-7 w-44 rounded-md bg-raised px-2 text-ui text-foreground placeholder:text-faint focus:ring-1 focus:ring-hairline focus:outline-none"
                   />
                   <Action
                     disabled={!captureName.trim()}
@@ -670,7 +670,7 @@ function HarnessAccounts() {
               <button
                 type="button"
                 onClick={() => setCapturing(harness)}
-                className="pressable mt-2 rounded px-1 py-0.5 text-[11.5px] text-faint hover:bg-fill-hover hover:text-foreground"
+                className="pressable mt-2 rounded px-1 py-0.5 text-ui text-faint hover:bg-fill-hover hover:text-foreground"
               >
                 Add another account
               </button>
@@ -697,7 +697,7 @@ function UsageBar({
       className="flex items-center gap-1"
       title={`${used}% used${win.resetsAt ? ` · resets ${formatRelative(new Date(win.resetsAt).toISOString())}` : ""}`}
     >
-      <span className="text-[10px] text-faint">{label}</span>
+      <span className="text-label text-faint">{label}</span>
       <span className="h-1.5 w-16 overflow-hidden rounded-full bg-raised">
         <span
           className={cn(
@@ -711,7 +711,7 @@ function UsageBar({
           style={{ width: `${used}%` }}
         />
       </span>
-      <span className="tabular text-[10px] text-faint">
+      <span className="tabular text-label text-faint">
         {Math.round(used)}%
       </span>
     </span>
@@ -728,7 +728,7 @@ function Automations() {
 
   return (
     <Section title="Automations">
-      <p className="pb-2 text-[12px] leading-relaxed text-muted-foreground">
+      <p className="pb-2 text-ui leading-relaxed text-muted-foreground">
         Prompts that can run on their own, defined in{" "}
         <code className="text-faint">.mako/automations.json</code>. Each one
         starts switched off — a file from a checkout does not get to run an
@@ -737,7 +737,7 @@ function Automations() {
       </p>
 
       {list.length === 0 ? (
-        <p className="rounded-lg bg-surface px-3 py-4 text-center text-[12px] text-faint ring-1 ring-hairline">
+        <p className="rounded-lg bg-surface px-3 py-4 text-center text-ui text-faint ring-1 ring-hairline">
           This project has none. Add <code>.mako/automations.json</code> with a
           name, a prompt, and a trigger of <code>manual</code>,{" "}
           <code>files</code>, or <code>commit</code>.
@@ -756,17 +756,17 @@ function Automations() {
                     void automations.setEnabled(entry.id, !entry.enabled)
                   }
                 />
-                <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">
+                <span className="min-w-0 flex-1 truncate text-ui font-medium">
                   {entry.name}
                 </span>
                 <Action tone="ghost" onClick={() => automations.run(entry.id)}>
                   Run now
                 </Action>
               </div>
-              <p className="mt-1.5 line-clamp-2 pl-[42px] text-[11.5px] leading-relaxed text-muted-foreground">
+              <p className="mt-1.5 line-clamp-2 pl-[42px] text-ui leading-relaxed text-muted-foreground">
                 {entry.prompt}
               </p>
-              <p className="mt-1 pl-[42px] text-[10.5px] text-faint">
+              <p className="mt-1 pl-[42px] text-label text-faint">
                 {entry.trigger === "files"
                   ? `when ${entry.paths.join(", ") || "nothing"} changes`
                   : entry.trigger === "commit"
@@ -783,14 +783,14 @@ function Automations() {
           Reload from disk
         </Action>
         {recent.length > 0 ? (
-          <span className="text-[10.5px] text-faint">
+          <span className="text-label text-faint">
             last run: {recent[0]?.name} ·{" "}
             {formatRelative(new Date(recent[0]?.at ?? 0).toISOString())}
           </span>
         ) : null}
       </div>
 
-      <p className="mt-3 text-[11.5px] leading-relaxed text-faint">
+      <p className="mt-3 text-ui leading-relaxed text-faint">
         There is no schedule trigger. An app that is closed cannot fire one, and
         an app that is open quietly running jobs against your repository is a
         surprise nobody asked for. A file trigger waits a minute between runs,
@@ -813,10 +813,10 @@ function Updates() {
     <Section title="Updates">
       <div className="rounded-lg bg-surface px-3 py-3 ring-1 ring-hairline">
         <div className="flex items-baseline gap-2">
-          <span className="text-[12.5px] font-medium">
+          <span className="text-ui font-medium">
             Mako {version || "—"}
           </span>
-          <span className="text-[11.5px] text-faint">
+          <span className="text-ui text-faint">
             {status === "unsupported"
               ? "running from a checkout, so there is nothing to update"
               : status === "checking"
@@ -832,7 +832,7 @@ function Updates() {
         </div>
 
         {notes ? (
-          <pre className="mt-2 max-h-40 overflow-auto rounded bg-raised p-2 text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
+          <pre className="mt-2 max-h-40 overflow-auto rounded bg-raised p-2 text-label leading-relaxed whitespace-pre-wrap text-muted-foreground">
             {notes}
           </pre>
         ) : null}
@@ -852,7 +852,7 @@ function Updates() {
           </Action>
         </div>
 
-        <p className="mt-3 text-[11.5px] leading-relaxed text-faint">
+        <p className="mt-3 text-ui leading-relaxed text-faint">
           Updates download on their own but never install on their own. A turn
           can run for minutes and touch real files; restarting underneath one is
           not an improvement.
@@ -891,13 +891,13 @@ function Diagnostics() {
 
   return (
     <Section title="Crash reports">
-      <p className="pb-2 text-[12px] leading-relaxed text-muted-foreground">
+      <p className="pb-2 text-ui leading-relaxed text-muted-foreground">
         Written to this machine and nowhere else. Nothing here is sent anywhere
         — copy a report if you want to pass it on.
       </p>
 
       {crashes.length === 0 ? (
-        <p className="rounded-lg bg-surface px-3 py-4 text-center text-[12px] text-faint ring-1 ring-hairline">
+        <p className="rounded-lg bg-surface px-3 py-4 text-center text-ui text-faint ring-1 ring-hairline">
           Nothing has crashed. This stays empty unless something does.
         </p>
       ) : (
@@ -914,19 +914,19 @@ function Diagnostics() {
                 }
                 className="flex w-full items-center gap-2 px-3 py-2 text-left"
               >
-                <span className="shrink-0 rounded bg-raised px-1.5 py-px text-[10px] text-faint">
+                <span className="shrink-0 rounded bg-raised px-1.5 py-px text-label text-faint">
                   {crash.kind.replace("-", " ")}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-[12px]">
+                <span className="min-w-0 flex-1 truncate text-ui">
                   {crash.message}
                 </span>
-                <span className="tabular shrink-0 text-[10.5px] text-faint">
+                <span className="tabular shrink-0 text-label text-faint">
                   {formatRelative(crash.at)}
                 </span>
               </button>
               {openId === crash.id ? (
                 <div className="border-t border-hairline px-3 py-2">
-                  <pre className="max-h-56 overflow-auto font-mono text-[10.5px] leading-relaxed text-faint">
+                  <pre className="max-h-56 overflow-auto font-mono text-label leading-relaxed text-faint">
                     {crash.stack ?? "No stack was captured."}
                   </pre>
                   <div className="mt-2 flex items-center gap-2">
@@ -940,7 +940,7 @@ function Diagnostics() {
                     >
                       Copy the report
                     </Action>
-                    <span className="text-[10.5px] text-faint">
+                    <span className="text-label text-faint">
                       {crash.app.version} · Electron {crash.app.electron} ·{" "}
                       {crash.os.platform} {crash.os.arch}
                     </span>
@@ -1041,7 +1041,7 @@ function CommitPrompt({ fallback }: { fallback: string }) {
 
   return (
     <Section title="Commit messages">
-      <p className="px-0.5 pb-1.5 text-[11px] leading-relaxed text-faint">
+      <p className="px-0.5 pb-1.5 text-label leading-relaxed text-faint">
         The instructions used when drafting a commit message from the diff. The
         default is the prompt Zed ships, which is well tuned; edit it to change
         the house style.
@@ -1058,13 +1058,13 @@ function CommitPrompt({ fallback }: { fallback: string }) {
           setDraft(null)
         }}
         className={cn(
-          "w-full resize-y rounded-lg bg-raised px-2.5 py-2 font-mono text-[11.5px] leading-relaxed",
+          "w-full resize-y rounded-lg bg-raised px-2.5 py-2 font-mono text-ui leading-relaxed",
           "ring-1 ring-hairline focus:outline-none focus-visible:ring-border"
         )}
       />
 
       <div className="mt-1.5 flex items-center gap-2">
-        <span className="text-[10.5px] text-faint">
+        <span className="text-label text-faint">
           {customized ? "Customized" : "Using the default"}
         </span>
         <Action
@@ -1080,7 +1080,7 @@ function CommitPrompt({ fallback }: { fallback: string }) {
           <RotateCcwIcon />
           Restore default
         </Action>
-        <span className="flex items-center gap-1 text-[10.5px] text-faint">
+        <span className="flex items-center gap-1 text-label text-faint">
           <Keys keys={formatChord("mod+shift+g")} /> drafts
         </span>
       </div>
@@ -1102,8 +1102,8 @@ function Row({
   return (
     <div className="flex items-center gap-3 rounded-lg px-0.5 py-1.5">
       <span className="min-w-0 flex-1">
-        <span className="block text-[12.5px]">{label}</span>
-        <span className="block text-[10.5px] text-faint">{hint}</span>
+        <span className="block text-ui">{label}</span>
+        <span className="block text-label text-faint">{hint}</span>
       </span>
       {children}
     </div>
@@ -1151,7 +1151,7 @@ function Segmented<T extends string>({
           type="button"
           onClick={() => onChange(option.value)}
           className={cn(
-            "rounded-[4px] px-2 text-[10.5px] font-medium",
+            "rounded-[4px] px-2 text-label font-medium",
             "[transition:background-color_120ms_ease,color_120ms_ease]",
             value === option.value
               ? "bg-surface text-foreground"

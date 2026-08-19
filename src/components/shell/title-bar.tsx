@@ -155,7 +155,7 @@ function SessionTitle({ name, fallback }: { name?: string; fallback: string }) {
             setEditing(false)
           }
         }}
-        className="no-drag h-6 w-56 rounded-md bg-raised px-2 text-center text-[12.5px] font-medium outline-none ring-1 ring-ring"
+        className="no-drag h-6 w-56 rounded-md bg-raised px-2 text-center text-ui font-medium outline-none ring-1 ring-ring"
       />
     )
   }
@@ -169,7 +169,7 @@ function SessionTitle({ name, fallback }: { name?: string; fallback: string }) {
         setEditing(true)
       }}
       className={cn(
-        "no-drag truncate rounded-md px-2 py-0.5 text-[12.5px] font-medium transition-colors duration-100 hover:bg-fill-hover",
+        "no-drag truncate rounded-md px-2 py-0.5 text-ui font-medium transition-colors duration-100 hover:bg-fill-hover",
         name ? "text-foreground" : "text-faint"
       )}
     >

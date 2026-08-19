@@ -36,6 +36,11 @@ export default defineConfig([
           message:
             "Raw Tailwind hue classes are banned; use the semantic tokens (positive, negative, caution, added, removed).",
         },
+        {
+          selector: "Literal[value=/text-\\[[0-9.]+px\\]/]",
+          message:
+            "Literal pixel type sizes are banned; use the scale (text-label, text-ui, text-title) or prose/code styles.",
+        },
       ],
     },
   },

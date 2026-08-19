@@ -181,25 +181,25 @@ export function MentionMenu({
                 )}
               />
             )}
-            <span className="max-w-[55%] min-w-0 shrink-0 truncate font-mono text-[11.5px] text-foreground/90">
+            <span className="max-w-[55%] min-w-0 shrink-0 truncate font-mono text-ui text-foreground/90">
               {item.title}
             </span>
             {item.hint ? (
-              <span className="min-w-0 flex-1 truncate text-[10.5px] text-faint">
+              <span className="min-w-0 flex-1 truncate text-label text-faint">
                 {item.hint}
               </span>
             ) : (
               <span className="flex-1" />
             )}
             {item.badge ? (
-              <span className="shrink-0 rounded bg-caution/12 px-1 text-[9.5px] text-caution">
+              <span className="shrink-0 rounded bg-caution/12 px-1 text-label text-caution">
                 {item.badge}
               </span>
             ) : null}
           </button>
         ))}
       </div>
-      <div className="flex items-center justify-end gap-1 border-t border-hairline px-2 pt-1.5 pb-0.5 text-[10.5px] text-faint">
+      <div className="flex items-center justify-end gap-1 border-t border-hairline px-2 pt-1.5 pb-0.5 text-label text-faint">
         <Keys keys={["↑", "↓"]} /> move
         <Keys keys={["↩"]} /> insert
         <Keys keys={["Esc"]} /> dismiss

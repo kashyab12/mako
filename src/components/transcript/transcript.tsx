@@ -194,7 +194,7 @@ function SessionTranscript({ sessionId }: { sessionId: string | undefined }) {
                 onClick={showEarlier}
                 className={cn(
                   "pressable mx-auto flex h-7 items-center gap-1.5 rounded-full bg-raised px-3",
-                  "text-[11.5px] text-muted-foreground ring-1 ring-hairline",
+                  "text-ui text-muted-foreground ring-1 ring-hairline",
                   "transition-colors duration-120 hover:text-foreground"
                 )}
               >
@@ -230,7 +230,7 @@ function SessionTranscript({ sessionId }: { sessionId: string | undefined }) {
         style={{ left: `calc(50% - ${showNavigator ? NAVIGATOR_WIDTH / 2 : 0}px)` }}
         className={cn(
           "pressable absolute bottom-3 flex h-7 -translate-x-1/2 items-center gap-1.5 rounded-full",
-          "bg-raised px-3 text-[11.5px] text-muted-foreground ring-1 ring-hairline",
+          "bg-raised px-3 text-ui text-muted-foreground ring-1 ring-hairline",
           "[transition:opacity_180ms_var(--ease-out),transform_180ms_var(--ease-out)]",
           showJump
             ? "pointer-events-auto opacity-100"
@@ -263,10 +263,10 @@ function EmptyTranscript() {
         <div className="flex items-center gap-3.5">
           <MakoMark className="size-8 shrink-0 text-foreground/85" />
           <div className="min-w-0">
-            <p className="text-[16px] leading-tight font-semibold tracking-[-0.01em]">
+            <p className="text-title leading-tight font-semibold tracking-[-0.01em]">
               Ask for anything
             </p>
-            <p className="mt-1 flex min-w-0 items-center gap-1.5 text-[11.5px] text-faint">
+            <p className="mt-1 flex min-w-0 items-center gap-1.5 text-ui text-faint">
               <FolderIcon className="size-3 shrink-0" />
               <span className="truncate" title={cwd}>
                 {cwd ?? "no workspace"}
@@ -322,7 +322,7 @@ function Suggestion({
       }
       className={cn(
         "pressable group flex w-full animate-enter items-center gap-2.5 rounded-md border-t border-hairline",
-        "px-2.5 py-2.5 text-left text-[12.5px] text-muted-foreground",
+        "px-2.5 py-2.5 text-left text-ui text-muted-foreground",
         "[transition:transform_var(--duration-press)_var(--ease-out),color_120ms_ease,background-color_120ms_ease]",
         "first:border-t-0 hover:bg-fill-hover hover:text-foreground"
       )}

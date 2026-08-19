@@ -47,7 +47,7 @@ export function FileView({ file, line }: { file: FileContents; line?: number }) 
 
   if (file.binary) {
     return (
-      <p className="p-4 text-[12px] text-faint">
+      <p className="p-4 text-ui text-faint">
         Binary file, {formatBytes(file.size)}. Nothing to show as text.
       </p>
     )

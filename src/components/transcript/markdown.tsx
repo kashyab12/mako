@@ -111,7 +111,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   return (
     <div className="mako-code group">
       <div className="mako-code-head">
-        <span className="font-mono text-[10px] tracking-wide text-faint select-none">
+        <span className="font-mono text-label tracking-wide text-faint select-none">
           {language ?? "text"}
         </span>
         <button
@@ -123,7 +123,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
             setTimeout(() => setCopied(false), 1200)
           }}
           className={cn(
-            "pressable ml-auto flex h-5 items-center gap-1 rounded px-1.5 text-[10px]",
+            "pressable ml-auto flex h-5 items-center gap-1 rounded px-1.5 text-label",
             "text-faint opacity-0 transition-opacity duration-150",
             "group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
           )}

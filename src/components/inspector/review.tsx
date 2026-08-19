@@ -47,7 +47,7 @@ const SavedComment = memo(function SavedComment({ comment }: { comment: ReviewCo
   return (
     <div className="group flex items-start gap-2 py-0.5">
       <span className="mt-[3px] size-1.5 shrink-0 rounded-full bg-caution" />
-      <p className="min-w-0 flex-1 text-[12px] leading-relaxed whitespace-pre-wrap text-foreground/85">
+      <p className="min-w-0 flex-1 text-ui leading-relaxed whitespace-pre-wrap text-foreground/85">
         {comment.body}
       </p>
       <button
@@ -98,7 +98,7 @@ function Editor({ initial }: { initial: string }) {
           }
         }}
         placeholder="What is wrong with this line?"
-        className="w-full resize-none rounded-md bg-raised px-2 py-1.5 text-[12px] leading-relaxed placeholder:text-faint focus:outline-none focus-visible:ring-1 focus-visible:ring-border"
+        className="w-full resize-none rounded-md bg-raised px-2 py-1.5 text-ui leading-relaxed placeholder:text-faint focus:outline-none focus-visible:ring-1 focus-visible:ring-border"
       />
       <div className="mt-1 flex items-center gap-2">
         <Action tone="outline" onClick={() => review.save(body)}>
@@ -107,7 +107,7 @@ function Editor({ initial }: { initial: string }) {
         <Action tone="ghost" onClick={() => review.cancel()}>
           Cancel
         </Action>
-        <span className="ml-auto text-[10px] text-faint">⌘↩ to save</span>
+        <span className="ml-auto text-label text-faint">⌘↩ to save</span>
       </div>
     </div>
   )
@@ -161,13 +161,13 @@ export function ReviewBar() {
   return (
     <div className="flex shrink-0 items-center gap-2 border-t border-hairline bg-surface px-2.5 py-1.5">
       <span className="size-1.5 shrink-0 rounded-full bg-caution" />
-      <span className="min-w-0 flex-1 truncate text-[11.5px] text-muted-foreground">
+      <span className="min-w-0 flex-1 truncate text-ui text-muted-foreground">
         {count} {count === 1 ? "note" : "notes"} on {files} {files === 1 ? "file" : "files"}
       </span>
       <button
         type="button"
         onClick={() => review.clear()}
-        className="pressable rounded px-1 text-[11px] text-faint hover:text-foreground"
+        className="pressable rounded px-1 text-label text-faint hover:text-foreground"
       >
         Discard
       </button>

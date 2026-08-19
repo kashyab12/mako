@@ -115,7 +115,7 @@ const Row = memo(function Row({
         <span
           className={cn(
             "tabular absolute top-2.5 -left-[19px] z-10 flex size-[15px] items-center justify-center rounded-full",
-            "text-[9px] font-semibold [transition:background-color_160ms_ease,color_160ms_ease,box-shadow_160ms_ease]",
+            "text-label font-semibold [transition:background-color_160ms_ease,color_160ms_ease,box-shadow_160ms_ease]",
             current
               ? "bg-foreground text-background shadow-[0_0_0_3px_var(--surface),0_0_12px_2px_oklch(1_0_0/18%)]"
               : live
@@ -130,21 +130,21 @@ const Row = memo(function Row({
           <div className="flex items-baseline gap-2">
             <p
               className={cn(
-                "line-clamp-2 min-w-0 flex-1 text-[12px] leading-snug",
+                "line-clamp-2 min-w-0 flex-1 text-ui leading-snug",
                 current ? "font-medium text-foreground" : live ? "text-foreground/85" : "text-faint"
               )}
             >
               {checkpoint.text || "Empty message"}
             </p>
             {checkpoint.timestamp ? (
-              <span className="tabular shrink-0 text-[10px] text-faint">
+              <span className="tabular shrink-0 text-label text-faint">
                 {formatRelative(checkpoint.timestamp)}
               </span>
             ) : null}
           </div>
 
           {checkpoint.reply ? (
-            <p className="mt-1 flex items-start gap-1 text-[11px] leading-snug text-faint">
+            <p className="mt-1 flex items-start gap-1 text-label leading-snug text-faint">
               <CornerDownRightIcon className="mt-[3px] size-2.5 shrink-0 opacity-70" />
               <span className="line-clamp-1 min-w-0">{checkpoint.reply}</span>
             </p>
@@ -154,14 +154,14 @@ const Row = memo(function Row({
           {checkpoint.settings.length > 0 || !live ? (
             <div className="mt-1.5 flex flex-wrap items-center gap-1">
               {!live ? (
-                <span className="rounded bg-raised px-1 py-px text-[9.5px] text-faint">
+                <span className="rounded bg-raised px-1 py-px text-label text-faint">
                   off branch
                 </span>
               ) : null}
               {checkpoint.settings.map((setting) => (
                 <span
                   key={setting}
-                  className="truncate rounded bg-raised px-1.5 py-px text-[10px] text-faint/80"
+                  className="truncate rounded bg-raised px-1.5 py-px text-label text-faint/80"
                 >
                   {setting}
                 </span>
@@ -235,7 +235,7 @@ function Takes({ takes, onPick }: { takes: Checkpoint["takes"]; onPick: (id: str
       >
         <ChevronLeftIcon className="size-3" />
       </button>
-      <span className="tabular shrink-0 text-[10px] text-muted-foreground">
+      <span className="tabular shrink-0 text-label text-muted-foreground">
         {at + 1}/{takes.length}
       </span>
       <button
@@ -246,7 +246,7 @@ function Takes({ takes, onPick }: { takes: Checkpoint["takes"]; onPick: (id: str
       >
         <ChevronRightIcon className="size-3" />
       </button>
-      <span className="min-w-0 flex-1 truncate text-[10px] text-faint">{takes[at]?.preview}</span>
+      <span className="min-w-0 flex-1 truncate text-label text-faint">{takes[at]?.preview}</span>
     </div>
   )
 }
@@ -267,13 +267,13 @@ function LaneTab({
       type="button"
       onClick={onClick}
       className={cn(
-        "relative flex h-8 items-center gap-1.5 text-[11.5px] transition-colors duration-100",
+        "relative flex h-8 items-center gap-1.5 text-ui transition-colors duration-100",
         active ? "text-foreground" : "text-faint hover:text-muted-foreground"
       )}
     >
       {label}
       {count !== undefined && count > 0 ? (
-        <span className="tabular text-[10px] text-faint">{count}</span>
+        <span className="tabular text-label text-faint">{count}</span>
       ) : null}
       <span
         className={cn(
@@ -304,7 +304,7 @@ function CheckpointAction({
       onClick={onClick}
       className={cn(
         "pressable flex h-5 items-center gap-1 rounded-md px-1.5",
-        "bg-surface/80 text-[10px] text-faint ring-1 ring-hairline backdrop-blur-sm",
+        "bg-surface/80 text-label text-faint ring-1 ring-hairline backdrop-blur-sm",
         "transition-colors duration-120 hover:text-foreground"
       )}
     >

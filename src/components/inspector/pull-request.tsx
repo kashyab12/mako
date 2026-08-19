@@ -113,7 +113,7 @@ export function PullRequestCard() {
         disabled={pushing}
         className={cn(
           "pressable flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left",
-          "text-[12px] text-muted-foreground transition-colors duration-100 hover:bg-fill-hover hover:text-foreground"
+          "text-ui text-muted-foreground transition-colors duration-100 hover:bg-fill-hover hover:text-foreground"
         )}
       >
         {onDefault ? (
@@ -128,7 +128,7 @@ export function PullRequestCard() {
               : `Push to ${branch}`
             : `Open a pull request for ${branch}`}
         </span>
-        <span className="tabular shrink-0 text-[10.5px] text-faint">{commits}</span>
+        <span className="tabular shrink-0 text-label text-faint">{commits}</span>
       </button>
     </div>
   )
@@ -155,8 +155,8 @@ function GitHubSetup({ status }: { status: GitHubStatus }) {
       <div className="flex items-start gap-2 rounded-md bg-surface px-2 py-2 ring-1 ring-hairline">
         <GitPullRequestIcon className="mt-0.5 size-3.5 shrink-0 text-faint" />
         <span className="min-w-0 flex-1">
-          <span className="block text-[11.5px] text-foreground/90">{title}</span>
-          <span className="mt-0.5 block text-[10.5px] leading-relaxed text-faint">{detail}</span>
+          <span className="block text-ui text-foreground/90">{title}</span>
+          <span className="mt-0.5 block text-label leading-relaxed text-faint">{detail}</span>
         </span>
         {status.installed && !status.authenticated ? (
           <Action tone="ghost" size="xs" onClick={copyLogin}>Copy login command</Action>
@@ -175,7 +175,7 @@ function BehindBranch({ behind, upstream }: { behind: number; upstream?: string 
     <div className="shrink-0 border-t border-hairline px-2.5 py-2">
       <div className="flex items-center gap-2 rounded-md bg-caution/10 px-2 py-1.5 ring-1 ring-caution/20">
         <GitPullRequestIcon className="size-3.5 shrink-0 text-caution" />
-        <span className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">
+        <span className="min-w-0 flex-1 text-label leading-relaxed text-muted-foreground">
           This branch is {behind} {behind === 1 ? "commit" : "commits"} behind {upstream ?? "its upstream"}. Update it before opening a pull request; Mako will never force-push it.
         </span>
         <Action tone="ghost" size="xs" onClick={copyUpdate}>Copy update command</Action>
@@ -268,14 +268,14 @@ function ComposePull({
     <div className="shrink-0 border-t border-hairline px-2.5 py-2">
       <div className="mb-1.5 flex items-center gap-2">
         <GitPullRequestIcon className="size-3.5 shrink-0 text-faint" />
-        <span className="min-w-0 truncate text-[11.5px] text-faint">
+        <span className="min-w-0 truncate text-ui text-faint">
           {branch} →
         </span>
         <select
           aria-label="Pull request base branch"
           value={selectedBase ?? ""}
           onChange={(event) => setSelectedBase(event.target.value)}
-          className="h-6 min-w-0 flex-1 rounded bg-raised px-1.5 text-[11px] text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-border"
+          className="h-6 min-w-0 flex-1 rounded bg-raised px-1.5 text-label text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-border"
         >
           {branches.map((branchName) => (
             <option key={branchName} value={branchName}>
@@ -296,14 +296,14 @@ function ComposePull({
         value={title}
         onChange={(event) => setTitle(event.target.value)}
         placeholder="Title"
-        className="mb-1 h-8 w-full rounded-md bg-raised px-2 text-[12.5px] placeholder:text-faint focus:outline-none focus-visible:ring-1 focus-visible:ring-border"
+        className="mb-1 h-8 w-full rounded-md bg-raised px-2 text-ui placeholder:text-faint focus:outline-none focus-visible:ring-1 focus-visible:ring-border"
       />
       <textarea
         value={body}
         onChange={(event) => setBody(event.target.value)}
         placeholder="What changed, and why"
         rows={4}
-        className="w-full resize-none rounded-md bg-raised px-2 py-1.5 text-[12px] leading-relaxed placeholder:text-faint focus:outline-none focus-visible:ring-1 focus-visible:ring-border"
+        className="w-full resize-none rounded-md bg-raised px-2 py-1.5 text-ui leading-relaxed placeholder:text-faint focus:outline-none focus-visible:ring-1 focus-visible:ring-border"
       />
 
       <div className="mt-1.5 flex items-center gap-2">
@@ -314,13 +314,13 @@ function ComposePull({
           type="button"
           onClick={() => setDraft(!draft)}
           className={cn(
-            "pressable rounded px-1.5 py-1 text-[11px] transition-colors duration-100",
+            "pressable rounded px-1.5 py-1 text-label transition-colors duration-100",
             draft ? "bg-fill-selected text-foreground" : "text-faint hover:text-foreground"
           )}
         >
           Draft
         </button>
-        <span className="ml-auto text-[10.5px] text-faint">pushes the branch first</span>
+        <span className="ml-auto text-label text-faint">pushes the branch first</span>
       </div>
     </div>
   )
@@ -385,12 +385,12 @@ function PullSummary({ pull, loading }: { pull: Pull; loading: boolean }) {
                   : "text-added"
           )}
         />
-        <span className="tabular shrink-0 text-[11.5px] text-faint">#{pull.number}</span>
+        <span className="tabular shrink-0 text-ui text-faint">#{pull.number}</span>
         <button
           type="button"
           onClick={() => void getMako().openUrl(pull.url)}
           title={pull.url}
-          className="min-w-0 flex-1 truncate text-left text-[12px] text-foreground/90 hover:text-foreground"
+          className="min-w-0 flex-1 truncate text-left text-ui text-foreground/90 hover:text-foreground"
         >
           {pull.title}
         </button>
@@ -413,7 +413,7 @@ function PullSummary({ pull, loading }: { pull: Pull; loading: boolean }) {
         </IconAction>
       </div>
 
-      <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 pl-[22px] text-[10.5px] text-faint">
+      <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 pl-[22px] text-label text-faint">
         <span>
           {pull.state === "open" && pull.draft ? "draft" : pull.state} · {pull.base}
         </span>
@@ -484,7 +484,7 @@ function MergeMenu({
           type="button"
           disabled={disabled || merging}
           title={reason ?? "Merge pull request"}
-          className="pressable flex h-6 items-center gap-0.5 rounded px-1.5 text-[10.5px] text-faint hover:bg-fill-hover hover:text-foreground disabled:opacity-40"
+          className="pressable flex h-6 items-center gap-0.5 rounded px-1.5 text-label text-faint hover:bg-fill-hover hover:text-foreground disabled:opacity-40"
         >
           <GitMergeIcon className="size-3" />
           {merging ? "Merging…" : "Merge"}
@@ -492,7 +492,7 @@ function MergeMenu({
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" side="bottom" sideOffset={6} className="w-48 p-1">
-        <p className="px-2 py-1 text-[10.5px] text-faint">Merge strategy</p>
+        <p className="px-2 py-1 text-label text-faint">Merge strategy</p>
         {([
           ["squash", "Squash and merge"],
           ["merge", "Create merge commit"],
@@ -502,7 +502,7 @@ function MergeMenu({
             key={strategy}
             type="button"
             onClick={() => onMerge(strategy)}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11.5px] text-foreground/90 hover:bg-fill-hover"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-ui text-foreground/90 hover:bg-fill-hover"
           >
             <GitMergeIcon className="size-3.5 text-faint" />
             {label}

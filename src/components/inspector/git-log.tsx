@@ -87,7 +87,7 @@ export function GitLog({
 
   if (!root) return null
   if (commits === null) {
-    return <p className="shimmer px-2.5 py-2 text-[11.5px]">Reading history…</p>
+    return <p className="shimmer px-2.5 py-2 text-ui">Reading history…</p>
   }
   if (commits.length === 0) {
     return (
@@ -130,14 +130,14 @@ export function GitLog({
               </span>
               <span className="min-w-0 flex-1">
                 <span className="flex items-baseline gap-2">
-                  <span className="min-w-0 flex-1 truncate text-[12px] text-foreground/85">
+                  <span className="min-w-0 flex-1 truncate text-ui text-foreground/85">
                     {commit.subject}
                   </span>
-                  <span className="tabular shrink-0 text-[10px] text-faint">
+                  <span className="tabular shrink-0 text-label text-faint">
                     {formatRelative(commit.date)}
                   </span>
                 </span>
-                <span className="flex items-center gap-2 text-[10px] text-faint">
+                <span className="flex items-center gap-2 text-label text-faint">
                   <span
                     role="button"
                     tabIndex={-1}
@@ -176,9 +176,9 @@ export function GitLog({
               <div className="min-h-0 overflow-hidden">
                 {expanded ? (
                   commitFiles === undefined ? (
-                    <p className="shimmer py-1 pl-10 text-[10.5px]">Reading the commit…</p>
+                    <p className="shimmer py-1 pl-10 text-label">Reading the commit…</p>
                   ) : commitFiles.length === 0 ? (
-                    <p className="py-1 pl-10 text-[10.5px] text-faint">Nothing readable in it.</p>
+                    <p className="py-1 pl-10 text-label text-faint">Nothing readable in it.</p>
                   ) : (
                     commitFiles.map((file) => {
                       const mark = GLYPH[file.status] ?? GLYPH.modified
@@ -196,14 +196,14 @@ export function GitLog({
                             onPickFile && "hover:bg-fill-hover"
                           )}
                         >
-                          <span className={cn("w-2.5 shrink-0 text-[9.5px] font-semibold", mark?.tone)}>
+                          <span className={cn("w-2.5 shrink-0 text-label font-semibold", mark?.tone)}>
                             {mark?.glyph}
                           </span>
-                          <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-foreground/80">
+                          <span className="min-w-0 flex-1 truncate font-mono text-label text-foreground/80">
                             {file.path}
                           </span>
                           {!file.binary ? (
-                            <span className="tabular shrink-0 text-[9.5px] text-faint">
+                            <span className="tabular shrink-0 text-label text-faint">
                               <span className="text-added">+{file.insertions}</span>{" "}
                               <span className="text-removed">−{file.deletions}</span>
                             </span>

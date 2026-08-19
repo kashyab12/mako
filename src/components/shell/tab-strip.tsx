@@ -94,7 +94,7 @@ const Tab = memo(function Tab({
         className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
       >
         <Status tab={tab} />
-        <span className="truncate text-[12px]">{tab.title}</span>
+        <span className="truncate text-ui">{tab.title}</span>
       </button>
 
       <button

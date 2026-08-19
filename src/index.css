@@ -77,6 +77,31 @@
   --container-content: 760px;
   --container-dialog: 544px;
 
+  /*
+   * Three UI type sizes, no more: label for metadata, ui for everything you
+   * interact with, title for the few real headings. Prose and code have
+   * their own voices in .mako-prose. Tracking flips sign at small sizes —
+   * optical compensation, not styling.
+   */
+  --text-label: 11px;
+  --text-label--line-height: 16px;
+  --text-label--letter-spacing: 0.05px;
+  --text-ui: 13px;
+  --text-ui--line-height: 18px;
+  --text-ui--letter-spacing: -0.04px;
+  --text-title: 15px;
+  --text-title--line-height: 20px;
+  --text-title--letter-spacing: -0.13px;
+
+  /*
+   * Weights come off Geist's variable axis (100-900, step 1). The half
+   * weights are what keep 13px text crisp without reading as bold; routing
+   * them through the standard names migrates every call site at once.
+   */
+  --font-weight-normal: 440;
+  --font-weight-medium: 530;
+  --font-weight-semibold: 640;
+
   /* Motion. The built-in CSS curves are too weak to read as intentional. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
@@ -250,10 +275,12 @@
     font-family: var(--font-sans);
     font-size: 13px;
     line-height: 1.5;
+    letter-spacing: -0.04px;
+    font-weight: 440;
     /* Geist's disambiguated forms; keeps 1/l/I apart at 11px in the rail. */
     font-feature-settings: "ss01", "ss03";
     -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
+    text-rendering: geometricPrecision;
     overscroll-behavior: none;
   }
 
@@ -571,8 +598,9 @@
  * ------------------------------------------------------------------ */
 
 .mako-prose {
-  font-size: 13.5px;
-  line-height: 1.65;
+  font-size: 14px;
+  line-height: 1.6;
+  letter-spacing: -0.04px;
   color: var(--foreground);
   overflow-wrap: anywhere;
 }

@@ -86,16 +86,16 @@ export function PluginsSection() {
   return (
     <div>
       <Eyebrow className="pt-6 pb-2">Plugins</Eyebrow>
-      <p className="pb-3 text-[12px] leading-relaxed text-muted-foreground">
+      <p className="pb-3 text-ui leading-relaxed text-muted-foreground">
         Single files that hot-load into the running window — save one and its
         commands, slots, and panels appear without a reload. Ask the agent to
         write one: it uses its ordinary file tools on{" "}
-        <code className="rounded bg-raised px-1 text-[10.5px]">{dir || "the plugins folder"}</code>{" "}
+        <code className="rounded bg-raised px-1 text-label">{dir || "the plugins folder"}</code>{" "}
         and the window picks it up.
       </p>
 
       {loaded.length === 0 ? (
-        <p className="pb-2 text-[11.5px] text-faint">No plugins yet.</p>
+        <p className="pb-2 text-ui text-faint">No plugins yet.</p>
       ) : (
         loaded.map((plugin) => {
           const editing = open === plugin.id
@@ -112,17 +112,17 @@ export function PluginsSection() {
                     editing && "rotate-90"
                   )}
                 />
-                <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{plugin.id}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-ui">{plugin.id}</span>
                 {plugin.error ? (
                   <span
-                    className="flex min-w-0 items-center gap-1 text-[10.5px] text-negative"
+                    className="flex min-w-0 items-center gap-1 text-label text-negative"
                     title={plugin.error}
                   >
                     <AlertTriangleIcon className="size-3 shrink-0" />
                     <span className="max-w-56 truncate">{plugin.error}</span>
                   </span>
                 ) : (
-                  <span className="flex items-center gap-1 text-[10.5px] text-positive/80">
+                  <span className="flex items-center gap-1 text-label text-positive/80">
                     <CheckIcon className="size-3" />
                     loaded
                   </span>
@@ -155,15 +155,15 @@ export function PluginsSection() {
                     }}
                     spellCheck={false}
                     rows={Math.min(24, Math.max(10, draft.split("\n").length + 1))}
-                    className="w-full resize-y rounded-md bg-surface p-2.5 font-mono text-[11px] leading-relaxed text-foreground/90 focus:ring-1 focus:ring-hairline focus:outline-none"
+                    className="w-full resize-y rounded-md bg-surface p-2.5 font-mono text-label leading-relaxed text-foreground/90 focus:ring-1 focus:ring-hairline focus:outline-none"
                   />
                   <div className="flex items-center gap-2 pt-1.5">
                     <Action disabled={saving || draft === plugin.source} onClick={() => void save(plugin.id)}>
                       Save — reloads live
                     </Action>
-                    <span className="text-[10.5px] text-faint">⌘S saves too</span>
+                    <span className="text-label text-faint">⌘S saves too</span>
                     {plugin.error ? (
-                      <span className="min-w-0 truncate text-[10.5px] text-negative">{plugin.error}</span>
+                      <span className="min-w-0 truncate text-label text-negative">{plugin.error}</span>
                     ) : null}
                   </div>
                 </div>

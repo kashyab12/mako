@@ -69,7 +69,7 @@ function Toolbar() {
                 : "bg-foreground/25"
         )}
       />
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-faint">
+      <span className="min-w-0 flex-1 truncate font-mono text-label text-faint">
         {url ?? (status === "starting" ? "starting…" : "not running")}
       </span>
 
@@ -138,7 +138,7 @@ function Waiting() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
       <MonitorIcon className="size-5 text-faint" />
-      <p className="shimmer text-[12px]">Waiting for the server to say where it is listening…</p>
+      <p className="shimmer text-ui">Waiting for the server to say where it is listening…</p>
     </div>
   )
 }
@@ -162,10 +162,10 @@ function Setup() {
     <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
       <MonitorIcon className="size-5 text-faint" />
       <div className="max-w-[22rem]">
-        <p className="text-[12.5px] font-medium">
+        <p className="text-ui font-medium">
           {status === "failed" ? "The server stopped" : "Nothing is being served yet"}
         </p>
-        <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+        <p className="mt-1 text-ui leading-relaxed text-muted-foreground">
           {status === "failed"
             ? `It exited${exitCode == null ? "" : ` with code ${exitCode}`}. The output is below.`
             : "Run one of this project's scripts, or point the pane at a server you already have running."}
@@ -196,7 +196,7 @@ function Setup() {
             if (event.key === "Enter" && url.trim()) void dev.attach(url.trim())
           }}
           placeholder="http://localhost:3000"
-          className="h-7 min-w-0 flex-1 rounded-md bg-raised px-2 text-[12px] placeholder:text-faint focus:outline-none focus-visible:ring-1 focus-visible:ring-border"
+          className="h-7 min-w-0 flex-1 rounded-md bg-raised px-2 text-ui placeholder:text-faint focus:outline-none focus-visible:ring-1 focus-visible:ring-border"
         />
         <Action tone="ghost" disabled={!url.trim()} onClick={() => void dev.attach(url.trim())}>
           Attach
@@ -225,11 +225,11 @@ function Ports() {
   return (
     <div className="w-full max-w-[22rem]">
       <div className="flex items-center gap-2 pb-1">
-        <span className="text-[10.5px] text-faint">Listening now</span>
+        <span className="text-label text-faint">Listening now</span>
         <button
           type="button"
           onClick={() => void dev.scan()}
-          className="pressable ml-auto rounded px-1 text-[10.5px] text-faint hover:text-foreground"
+          className="pressable ml-auto rounded px-1 text-label text-faint hover:text-foreground"
         >
           Rescan
         </button>
@@ -246,10 +246,10 @@ function Ports() {
               "transition-colors duration-100 hover:bg-fill-hover"
             )}
           >
-            <span className="tabular shrink-0 text-[11.5px] text-foreground/85">{entry.port}</span>
-            <span className="min-w-0 flex-1 truncate text-[11px] text-faint">{entry.command}</span>
+            <span className="tabular shrink-0 text-ui text-foreground/85">{entry.port}</span>
+            <span className="min-w-0 flex-1 truncate text-label text-faint">{entry.command}</span>
             {entry.likely ? (
-              <span className="shrink-0 text-[10px] text-added">dev</span>
+              <span className="shrink-0 text-label text-added">dev</span>
             ) : null}
           </button>
         ))}
@@ -284,7 +284,7 @@ function Logs() {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex h-6 w-full items-center gap-1.5 px-2 text-left text-[10.5px] text-faint transition-colors duration-100 hover:text-foreground"
+        className="flex h-6 w-full items-center gap-1.5 px-2 text-left text-label text-faint transition-colors duration-100 hover:text-foreground"
       >
         <TerminalIcon className="size-3 shrink-0" />
         <span>Server output</span>
@@ -296,7 +296,7 @@ function Logs() {
           className="max-h-40 overflow-y-auto overscroll-contain border-t border-hairline px-2 py-1.5"
         >
           {lines.map((line, index) => (
-            <p key={index} className="font-mono text-[10.5px] leading-relaxed text-faint">
+            <p key={index} className="font-mono text-label leading-relaxed text-faint">
               {line}
             </p>
           ))}

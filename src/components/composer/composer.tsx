@@ -471,7 +471,7 @@ export function Composer() {
           <Banner text="Retrying after a provider error…" />
         ) : null}
         {status.queued > 0 ? (
-          <div className="mb-1.5 flex items-center gap-2 px-1 text-[11px] text-faint">
+          <div className="mb-1.5 flex items-center gap-2 px-1 text-label text-faint">
             <Chip>{status.queued} queued</Chip>
             <span>will be sent when this turn ends</span>
             <button
@@ -574,7 +574,7 @@ export function Composer() {
                 // No max-height and no scrolling of its own — the wrapper owns
                 // both, so the painted layer behind it stays in register.
                 "relative block min-h-[84px] w-full resize-none overflow-hidden bg-transparent px-3 pt-2.5 pb-1",
-                "font-sans text-[13.5px] leading-[1.55] placeholder:text-faint focus:outline-none",
+                "font-sans text-ui leading-[1.55] placeholder:text-faint focus:outline-none",
                 // Transparent glyphs let the overlay show through; the caret
                 // and selection stay native and visible.
                 "text-transparent caret-ember selection:bg-fill-selected selection:text-transparent"
@@ -640,7 +640,7 @@ export function Composer() {
           <BranchChip />
           <span
             className={cn(
-              "ml-auto flex items-center gap-1 text-[10.5px] text-faint",
+              "ml-auto flex items-center gap-1 text-label text-faint",
               "transition-opacity duration-200",
               draft || focused ? "opacity-0" : "opacity-100"
             )}
@@ -696,7 +696,7 @@ function BranchChip() {
   const branch = useSession((state) => state.git?.branch)
   if (!branch) return null
   return (
-    <span className="flex h-7 max-w-[11rem] items-center gap-1 px-1.5 text-[11px] text-faint">
+    <span className="flex h-7 max-w-[11rem] items-center gap-1 px-1.5 text-label text-faint">
       <GitBranchIcon className="size-3 shrink-0" />
       <span className="truncate">{branch}</span>
     </span>
@@ -705,7 +705,7 @@ function BranchChip() {
 
 function Banner({ text }: BannerProps) {
   return (
-    <div className="mb-1.5 flex items-center gap-2 rounded-md bg-raised px-2 py-1 text-[11.5px] text-muted-foreground">
+    <div className="mb-1.5 flex items-center gap-2 rounded-md bg-raised px-2 py-1 text-ui text-muted-foreground">
       <span className="animate-live size-1 rounded-full bg-current" />
       {text}
     </div>
@@ -751,22 +751,22 @@ function ComposerRouting() {
 
   if (live) {
     return (
-      <span className="flex h-7 items-center gap-1.5 rounded-md bg-raised px-2 text-[11.5px] text-foreground/85">
+      <span className="flex h-7 items-center gap-1.5 rounded-md bg-raised px-2 text-ui text-foreground/85">
         <HarnessIcon harness={live.harness} className="size-3.5" />
         {harnessTitle(live.harness)}
-        <span className="text-[10px] text-ember/80">live</span>
+        <span className="text-label text-ember/80">live</span>
         {live.status === "running" ? (
           <button
             type="button"
             onClick={() => acp.cancel()}
             title="Stops this turn only — the session stays live"
-            className="pressable ml-1 rounded px-1 text-[10.5px] text-faint hover:text-foreground"
+            className="pressable ml-1 rounded px-1 text-label text-faint hover:text-foreground"
           >
             stop turn
           </button>
         ) : null}
         {queued ? (
-          <span className="text-[10px] text-faint">1 queued</span>
+          <span className="text-label text-faint">1 queued</span>
         ) : null}
       </span>
     )
@@ -782,19 +782,19 @@ function ComposerRouting() {
         <button
           type="button"
           onClick={() => void threads.abortReply(viewing)}
-          className="pressable flex h-7 items-center gap-1.5 rounded-md bg-raised px-2 text-[11px] text-faint hover:text-foreground"
+          className="pressable flex h-7 items-center gap-1.5 rounded-md bg-raised px-2 text-label text-faint hover:text-foreground"
         >
           <span className="size-1.5 animate-live rounded-full bg-ember" />
           working — stop
         </button>
       ) : null}
       {viewingQueued > 0 ? (
-        <span className="flex h-7 items-center rounded-md bg-raised px-2 text-[10.5px] text-faint">
+        <span className="flex h-7 items-center rounded-md bg-raised px-2 text-label text-faint">
           {viewingQueued} queued
         </span>
       ) : null}
       {moving ? (
-        <span className="animate-enter flex h-7 items-center gap-1 rounded-md bg-fill-selected px-2 text-[10.5px] font-medium text-foreground">
+        <span className="animate-enter flex h-7 items-center gap-1 rounded-md bg-fill-selected px-2 text-label font-medium text-foreground">
           moves here on send
         </span>
       ) : null}

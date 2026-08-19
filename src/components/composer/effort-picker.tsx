@@ -54,7 +54,7 @@ export function EffortPicker({ disabled }: { disabled?: boolean }) {
           disabled={disabled}
           aria-label={`Reasoning effort: ${level}`}
           className={cn(
-            "pressable no-drag flex h-7 items-center gap-1.5 rounded-md px-2 text-[12.5px] font-medium",
+            "pressable no-drag flex h-7 items-center gap-1.5 rounded-md px-2 text-ui font-medium",
             "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease]",
             "hover:not-disabled:bg-fill-hover aria-expanded:bg-fill-selected disabled:opacity-40",
             level === "off" ? "text-faint" : "text-foreground/85"
@@ -83,8 +83,8 @@ export function EffortPicker({ disabled }: { disabled?: boolean }) {
             >
               <Gauge level={option} className="mt-[3px]" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[12.5px] font-medium capitalize">{option}</span>
-                <span className="block text-[11px] leading-snug text-faint">
+                <span className="block text-ui font-medium capitalize">{option}</span>
+                <span className="block text-label leading-snug text-faint">
                   {DESCRIPTIONS[option]}
                 </span>
               </span>
@@ -92,7 +92,7 @@ export function EffortPicker({ disabled }: { disabled?: boolean }) {
             </button>
           )
         })}
-        <div className="mt-1 flex items-center justify-end gap-1 border-t border-hairline px-2 pt-1.5 text-[10.5px] text-faint">
+        <div className="mt-1 flex items-center justify-end gap-1 border-t border-hairline px-2 pt-1.5 text-label text-faint">
           cycle
           <Keys keys={formatChord("mod+.")} />
         </div>

@@ -119,10 +119,10 @@ function Flyout({ label, index, total }: { label: string; index: number; total: 
         "animate-enter rounded-lg bg-popover px-2.5 py-1.5 ring-1 ring-border"
       )}
     >
-      <div className="tabular text-[10px] text-faint">
+      <div className="tabular text-label text-faint">
         Turn {index} of {total}
       </div>
-      <div className="line-clamp-3 text-[12px] leading-snug text-foreground">{label}</div>
+      <div className="line-clamp-3 text-ui leading-snug text-foreground">{label}</div>
     </div>
   )
 }

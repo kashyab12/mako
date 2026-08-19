@@ -105,7 +105,7 @@ function diffLines(before: string, after: string): DiffLine[] {
 
 function DiffBlock({ lines }: { lines: DiffLine[] }) {
   return (
-    <div className="overflow-x-auto font-mono text-[11.5px] leading-[1.6]">
+    <div className="overflow-x-auto font-mono text-ui leading-[1.6]">
       {lines.map((line, index) => (
         <div
           key={index}
@@ -159,14 +159,14 @@ export function BashBody({ call }: ToolViewProps) {
   const command = argAt(call.arguments, "command") ?? ""
   return (
     <div className="space-y-1.5 px-2.5 py-2">
-      <div className="flex gap-2 font-mono text-[11.5px] text-foreground/90">
+      <div className="flex gap-2 font-mono text-ui text-foreground/90">
         <span className="shrink-0 text-muted-foreground select-none">$</span>
         <span className="whitespace-pre-wrap">{command}</span>
       </div>
       {call.result ? (
         <Output text={call.result} isError={call.isError} />
       ) : (
-        <p className="shimmer text-[11.5px]">running…</p>
+        <p className="shimmer text-ui">running…</p>
       )}
     </div>
   )

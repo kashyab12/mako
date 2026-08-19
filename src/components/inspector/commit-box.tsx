@@ -110,7 +110,7 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
           }
           disabled={total === 0}
           spellCheck={false}
-          className="block max-h-40 w-full resize-none bg-transparent px-2.5 pt-2 pb-1 text-[12.5px] leading-[1.5] placeholder:text-faint focus:outline-none disabled:opacity-50"
+          className="block max-h-40 w-full resize-none bg-transparent px-2.5 pt-2 pb-1 text-ui leading-[1.5] placeholder:text-faint focus:outline-none disabled:opacity-50"
         />
 
         <div className="flex items-center gap-1 px-1.5 pb-1.5">
@@ -127,7 +127,7 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
 
           {/* The subject-length hint appears only once it matters. */}
           {overLong ? (
-            <span className="tabular text-[10px] text-caution">{subject.length}/50</span>
+            <span className="tabular text-label text-caution">{subject.length}/50</span>
           ) : null}
 
           <div className="ml-auto flex items-center gap-1">

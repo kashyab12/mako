@@ -278,7 +278,7 @@ function Conversation() {
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
       >
         {exchanges.length === 0 ? (
-          <p className="pt-12 text-center text-[12px] text-faint">
+          <p className="pt-12 text-center text-ui text-faint">
             This session has no readable conversation.
           </p>
         ) : (
@@ -287,7 +287,7 @@ function Conversation() {
               <button
                 type="button"
                 onClick={() => setShowEarlier(true)}
-                className="pressable self-center rounded-md bg-raised px-2.5 py-1 text-[11px] text-faint hover:text-foreground"
+                className="pressable self-center rounded-md bg-raised px-2.5 py-1 text-label text-faint hover:text-foreground"
               >
                 Show {exchanges.length - renderedExchanges.length} earlier turns
               </button>
@@ -296,7 +296,7 @@ function Conversation() {
               <Exchange key={exchange.id} exchange={exchange} />
             ))}
             {run?.status === "running" && thread ? (
-              <div className="animate-enter flex items-center gap-2 px-0.5 text-[12px]">
+              <div className="animate-enter flex items-center gap-2 px-0.5 text-ui">
                 <HarnessIcon
                   harness={thread.ref.harness}
                   className="size-3.5 animate-pulse"

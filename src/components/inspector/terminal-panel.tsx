@@ -93,7 +93,7 @@ export function TerminalPanel() {
       )}
 
       {fault && active ? (
-        <div className="flex shrink-0 items-center gap-2 border-t border-negative/30 bg-negative/10 px-2.5 py-1.5 text-[11px] text-negative">
+        <div className="flex shrink-0 items-center gap-2 border-t border-negative/30 bg-negative/10 px-2.5 py-1.5 text-label text-negative">
           <span className="min-w-0 flex-1 truncate">{fault}</span>
           <button
             type="button"
@@ -123,7 +123,7 @@ function SessionTab({
   return (
     <div
       className={cn(
-        "group flex h-7 max-w-44 items-center rounded-md text-[11px]",
+        "group flex h-7 max-w-44 items-center rounded-md text-label",
         active ? "bg-fill-selected text-foreground" : "text-faint hover:text-muted-foreground"
       )}
     >
@@ -251,7 +251,7 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
     <div className="relative min-h-0 flex-1">
       <div ref={hostRef} className="h-full bg-surface p-2 font-mono" />
       {session.status !== "running" ? (
-        <div className="absolute inset-x-2 bottom-2 flex items-center justify-between rounded-md border border-hairline bg-raised px-2.5 py-1.5 text-[11px] text-muted-foreground">
+        <div className="absolute inset-x-2 bottom-2 flex items-center justify-between rounded-md border border-hairline bg-raised px-2.5 py-1.5 text-label text-muted-foreground">
           <span>
             {session.status === "interrupted"
               ? "Shell interrupted · saved scrollback restored"
@@ -301,7 +301,7 @@ function Action({ label, onClick }: { label: string; onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="pressable mt-1 rounded-md bg-raised px-2.5 py-1.5 text-[11.5px] font-medium text-foreground hover:bg-foreground/15"
+      className="pressable mt-1 rounded-md bg-raised px-2.5 py-1.5 text-ui font-medium text-foreground hover:bg-foreground/15"
     >
       {label}
     </button>

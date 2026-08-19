@@ -191,7 +191,7 @@ export function ChangesPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-7 shrink-0 items-center gap-2 border-b border-hairline px-2.5 text-[10.5px] text-faint">
+      <div className="flex h-7 shrink-0 items-center gap-2 border-b border-hairline px-2.5 text-label text-faint">
         <span>
           {files.length} changed
           {staged > 0 ? ` · ${staged} staged` : ""}
@@ -254,7 +254,7 @@ export function ChangesPanel() {
           {/* Closing from the pane itself, not only from the header: the thing
               you want gone is the thing your pointer is already over. */}
           <div className="flex h-6 shrink-0 items-center gap-2 px-2.5">
-            <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-faint">
+            <span className="min-w-0 flex-1 truncate font-mono text-label text-faint">
               {active?.path ?? ""}
             </span>
             <IconAction
@@ -267,9 +267,9 @@ export function ChangesPanel() {
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
         {!ready ? (
-          <p className="shimmer p-3 text-[11.5px]">Loading diff…</p>
+          <p className="shimmer p-3 text-ui">Loading diff…</p>
         ) : diff.binary || (!diff.oldFile && !diff.newFile) ? (
-          <p className="p-3 text-[11.5px] text-faint">
+          <p className="p-3 text-ui text-faint">
             {diff.binary ? "Binary file — no text diff." : "No text content to compare."}
           </p>
         ) : (
@@ -355,7 +355,7 @@ function CommitsSection({
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex h-7 shrink-0 items-center gap-1.5 px-2.5 text-[10.5px] text-faint transition-colors hover:text-muted-foreground"
+        className="flex h-7 shrink-0 items-center gap-1.5 px-2.5 text-label text-faint transition-colors hover:text-muted-foreground"
       >
         <ChevronRightIcon
           className={cn("size-3 transition-transform duration-200 ease-out", open && "rotate-90")}
@@ -458,10 +458,10 @@ function DirRow({
           )}
         />
         <FolderIcon className="size-3 shrink-0 text-faint" />
-        <span className="min-w-0 flex-1 truncate text-[11.5px] text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate text-ui text-muted-foreground">
           {row.label}
         </span>
-        <span className="tabular shrink-0 pr-1 text-[10px] text-faint">
+        <span className="tabular shrink-0 pr-1 text-label text-faint">
           {row.staged > 0 && row.staged < row.files ? `${row.staged}/${row.files}` : row.files}
         </span>
       </button>
@@ -506,20 +506,20 @@ function FileRow({
       >
         <span
           title={mark.title}
-          className={cn("w-2.5 shrink-0 font-mono text-[10px] font-semibold", mark.tone)}
+          className={cn("w-2.5 shrink-0 font-mono text-label font-semibold", mark.tone)}
         >
           {mark.glyph}
         </span>
         <span
           className={cn(
-            "min-w-0 flex-1 truncate text-[11.5px]",
+            "min-w-0 flex-1 truncate text-ui",
             active ? "text-foreground" : "text-foreground/85"
           )}
         >
           {row.label}
         </span>
         {file.insertions || file.deletions ? (
-          <span className="tabular shrink-0 text-[10px]">
+          <span className="tabular shrink-0 text-label">
             <span className="text-added">+{file.insertions}</span>{" "}
             <span className="text-removed">−{file.deletions}</span>
           </span>

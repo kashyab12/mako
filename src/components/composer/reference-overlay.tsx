@@ -22,7 +22,7 @@ export const ReferenceOverlay = memo(function ReferenceOverlay({ text }: { text:
       // textarea's own text is transparent, it simply disappeared as you
       // typed past the fold. Letting the height come from the content makes it
       // match the textarea's scroll height, which is the whole contract.
-      className="pointer-events-none absolute inset-x-0 top-0 px-3 pt-2.5 pb-1 font-sans text-[13.5px] leading-[1.55] break-words whitespace-pre-wrap text-foreground"
+      className="pointer-events-none absolute inset-x-0 top-0 px-3 pt-2.5 pb-1 font-sans text-ui leading-[1.55] break-words whitespace-pre-wrap text-foreground"
     >
       {segments.map((segment, index) => {
         if (segment.kind === "text") return <span key={index}>{segment.text}</span>

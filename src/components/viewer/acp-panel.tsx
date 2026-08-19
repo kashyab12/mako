@@ -49,7 +49,7 @@ export function AcpPanel() {
   if (starting) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center bg-surface">
-        <div className="flex items-center gap-2 text-[12px] text-faint">
+        <div className="flex items-center gap-2 text-ui text-faint">
           <Loader2Icon className="size-4 animate-spin" />
           Starting the agent…
         </div>
@@ -63,10 +63,10 @@ export function AcpPanel() {
       <div className="flex h-11 shrink-0 items-center gap-2.5 border-b border-hairline px-3.5">
         <HarnessIcon harness={session.harness} className="size-3.5" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[12.5px] font-medium">
+          <p className="truncate text-ui font-medium">
             {session.title ?? `${harnessLabel(session.harness)}, live`}
           </p>
-          <p className="truncate text-[10.5px] text-faint">
+          <p className="truncate text-label text-faint">
             {harnessLabel(session.harness)} · live · {session.cwd}
           </p>
         </div>
@@ -100,7 +100,7 @@ function ModePicker() {
     <select
       value={session.currentMode ?? ""}
       onChange={(event) => acp.setMode(event.target.value)}
-      className="h-6 shrink-0 rounded border border-hairline bg-surface px-1 text-[10.5px] text-muted-foreground focus:outline-none"
+      className="h-6 shrink-0 rounded border border-hairline bg-surface px-1 text-label text-muted-foreground focus:outline-none"
     >
       {session.modes.map((mode) => (
         <option key={mode.id} value={mode.id}>
@@ -132,7 +132,7 @@ function Blocks() {
       className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3"
     >
       {blocks.length === 0 ? (
-        <p className="pt-8 text-center text-[12px] leading-relaxed text-faint">
+        <p className="pt-8 text-center text-ui leading-relaxed text-faint">
           The session is loaded. Anything you send continues it — same
           conversation, same working directory.
         </p>
@@ -140,7 +140,7 @@ function Blocks() {
         blocks.map((block, index) => <Block key={index} block={block} />)
       )}
       {running ? (
-        <div className="flex items-center gap-1.5 py-2 text-[11px] text-faint">
+        <div className="flex items-center gap-1.5 py-2 text-label text-faint">
           <Loader2Icon className="size-3 animate-spin" />
           working
         </div>
@@ -154,13 +154,13 @@ function Block({ block }: { block: AcpBlock }) {
     case "user":
       return (
         <div className="my-3 rounded-lg bg-surface px-3 py-2">
-          <p className="pb-0.5 text-[10.5px] font-medium text-faint">You</p>
-          <p className="text-[12.5px] leading-relaxed whitespace-pre-wrap text-foreground/95">{block.text}</p>
+          <p className="pb-0.5 text-label font-medium text-faint">You</p>
+          <p className="text-ui leading-relaxed whitespace-pre-wrap text-foreground/95">{block.text}</p>
         </div>
       )
     case "text":
       return (
-        <p className="my-2 text-[12.5px] leading-relaxed whitespace-pre-wrap text-foreground/90">{block.text}</p>
+        <p className="my-2 text-ui leading-relaxed whitespace-pre-wrap text-foreground/90">{block.text}</p>
       )
     case "thinking":
       return <Thinking text={block.text} />
@@ -169,9 +169,9 @@ function Block({ block }: { block: AcpBlock }) {
     case "plan":
       return (
         <div className="my-2 rounded-md border border-hairline/60 px-2.5 py-1.5">
-          <p className="pb-1 text-[10.5px] font-medium text-faint">Plan</p>
+          <p className="pb-1 text-label font-medium text-faint">Plan</p>
           {block.entries.map((entry, index) => (
-            <p key={index} className="flex items-center gap-1.5 py-px text-[11.5px] text-muted-foreground">
+            <p key={index} className="flex items-center gap-1.5 py-px text-ui text-muted-foreground">
               {entry.status === "completed" ? (
                 <CheckIcon className="size-3 text-positive/80" />
               ) : entry.status === "in_progress" ? (
@@ -194,13 +194,13 @@ function Thinking({ text }: { text: string }) {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex items-center gap-1 text-[10.5px] text-faint hover:text-muted-foreground"
+        className="flex items-center gap-1 text-label text-faint hover:text-muted-foreground"
       >
         <ChevronRightIcon className={cn("size-3 transition-transform duration-150", open && "rotate-90")} />
         Thinking
       </button>
       {open ? (
-        <p className="mt-1 text-[11.5px] leading-relaxed whitespace-pre-wrap text-faint italic">{text}</p>
+        <p className="mt-1 text-ui leading-relaxed whitespace-pre-wrap text-faint italic">{text}</p>
       ) : null}
     </div>
   )
@@ -222,17 +222,17 @@ function Tool({ block }: { block: AcpBlock & { type: "tool" } }) {
         ) : (
           <Loader2Icon className="size-3 shrink-0 animate-spin text-faint" />
         )}
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">{block.title}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-label text-muted-foreground">{block.title}</span>
       </button>
       {open && (block.input || block.output) ? (
         <div className="max-h-72 overflow-y-auto border-t border-hairline/60">
           {block.input ? (
-            <pre className="px-2 py-1.5 font-mono text-[10.5px] leading-relaxed break-words whitespace-pre-wrap text-faint">
+            <pre className="px-2 py-1.5 font-mono text-label leading-relaxed break-words whitespace-pre-wrap text-faint">
               {block.input}
             </pre>
           ) : null}
           {block.output ? (
-            <pre className="border-t border-hairline/60 px-2 py-1.5 font-mono text-[10.5px] leading-relaxed break-words whitespace-pre-wrap text-faint">
+            <pre className="border-t border-hairline/60 px-2 py-1.5 font-mono text-label leading-relaxed break-words whitespace-pre-wrap text-faint">
               {block.output}
             </pre>
           ) : null}
@@ -254,7 +254,7 @@ function Permission() {
   if (!permission) return null
   return (
     <div className="shrink-0 border-t border-hairline bg-surface/60 px-4 py-2.5">
-      <p className="flex items-center gap-1.5 pb-1.5 text-[11.5px] text-foreground/90">
+      <p className="flex items-center gap-1.5 pb-1.5 text-ui text-foreground/90">
         <ShieldQuestionIcon className="size-3.5 shrink-0 text-caution/90" />
         <span className="min-w-0 truncate font-mono">{permission.title}</span>
       </p>
@@ -265,7 +265,7 @@ function Permission() {
             type="button"
             onClick={() => acp.answerPermission(option.optionId)}
             className={cn(
-              "pressable rounded-md border px-2 py-1 text-[11px] transition-colors",
+              "pressable rounded-md border px-2 py-1 text-label transition-colors",
               option.kind?.startsWith("allow")
                 ? "border-hairline bg-foreground text-background hover:opacity-90"
                 : "border-hairline text-muted-foreground hover:text-foreground"

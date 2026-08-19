@@ -41,7 +41,7 @@ export function KeyboardSection() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search commands"
-          className="h-8 min-w-0 flex-1 rounded-md bg-surface px-2.5 text-[12px] text-foreground ring-1 ring-hairline placeholder:text-faint focus:ring-border focus:outline-none"
+          className="h-8 min-w-0 flex-1 rounded-md bg-surface px-2.5 text-ui text-foreground ring-1 ring-hairline placeholder:text-faint focus:ring-border focus:outline-none"
         />
         {Object.keys(keybindings).length > 0 ? (
           <Action tone="ghost" onClick={() => setPref("keybindings", {})}>
@@ -49,7 +49,7 @@ export function KeyboardSection() {
           </Action>
         ) : null}
       </div>
-      <p className="pb-2 text-[11.5px] leading-relaxed text-faint">
+      <p className="pb-2 text-ui leading-relaxed text-faint">
         Click a shortcut, then press the new keys. Mako shortcuts take priority
         inside the terminal; unassigned terminal keys still go straight to the shell.
       </p>
@@ -72,7 +72,7 @@ export function KeyboardSection() {
           />
         ))}
         {shown.length === 0 ? (
-          <p className="py-8 text-center text-[12px] text-faint">No commands match.</p>
+          <p className="py-8 text-center text-ui text-faint">No commands match.</p>
         ) : null}
       </div>
     </section>
@@ -108,10 +108,10 @@ function ShortcutRow({
     <div className="rounded-lg px-2.5 py-2 hover:bg-surface">
       <div className="flex items-center gap-3">
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[12.5px] text-foreground/90">
+          <span className="block truncate text-ui text-foreground/90">
             {command.title}
           </span>
-          <span className="block text-[10.5px] text-faint">
+          <span className="block text-label text-faint">
             {command.section}
             {keybindings[command.id] !== undefined && command.keys
               ? ` · default ${formatChord(command.keys).join("")}`
@@ -143,7 +143,7 @@ function ShortcutRow({
             {candidate ? (
               <Keys keys={formatChord(candidate)} />
             ) : (
-              <span className="text-[10.5px] text-faint">Press keys</span>
+              <span className="text-label text-faint">Press keys</span>
             )}
           </button>
         ) : (
@@ -156,7 +156,7 @@ function ShortcutRow({
             {current ? (
               <Keys keys={formatChord(current)} />
             ) : (
-              <span className="text-[10.5px] text-faint">None</span>
+              <span className="text-label text-faint">None</span>
             )}
           </button>
         )}
@@ -165,7 +165,7 @@ function ShortcutRow({
         <div className="mt-1.5 flex items-center gap-2 pl-0.5">
           <span
             className={cn(
-              "min-w-0 flex-1 text-[10.5px]",
+              "min-w-0 flex-1 text-label",
               conflicts.length > 0 ? "text-caution" : "text-faint"
             )}
           >
@@ -183,7 +183,7 @@ function ShortcutRow({
           </Action>
         </div>
       ) : conflicts.length > 0 ? (
-        <p className="pt-1 text-[10.5px] text-caution">
+        <p className="pt-1 text-label text-caution">
           Conflicts with {conflicts.map((entry) => entry.title).join(", ")}
         </p>
       ) : null}

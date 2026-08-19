@@ -46,7 +46,7 @@ export function FileViewer() {
     return (
       <div className="animate-enter absolute inset-0 z-20 flex min-h-0 flex-col bg-surface">
         <div className="flex h-9 shrink-0 items-center gap-2 border-b border-hairline px-2.5">
-          <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted-foreground">
+          <span className="min-w-0 flex-1 truncate font-mono text-ui text-muted-foreground">
             {diff.title}
           </span>
           <IconAction label="Close (Esc)" size="xs" onClick={() => viewer.close()}>
@@ -63,11 +63,11 @@ export function FileViewer() {
   return (
     <div className="animate-enter absolute inset-0 z-20 flex min-h-0 flex-col bg-surface">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-hairline px-2.5">
-        <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate font-mono text-ui text-muted-foreground">
           {path}
         </span>
         {file?.truncated ? (
-          <span className="shrink-0 rounded bg-raised px-1.5 py-px text-[10px] text-caution">
+          <span className="shrink-0 rounded bg-raised px-1.5 py-px text-label text-caution">
             first 2 MB
           </span>
         ) : null}
@@ -98,13 +98,13 @@ export function FileViewer() {
 
       <div className={cn("min-h-0 flex-1 overflow-auto", loading && "opacity-60")}>
         {error ? (
-          <p className="p-4 text-[12px] text-removed">{error}</p>
+          <p className="p-4 text-ui text-removed">{error}</p>
         ) : file ? (
-          <Suspense fallback={<p className="shimmer p-4 text-[12px]">Opening…</p>}>
+          <Suspense fallback={<p className="shimmer p-4 text-ui">Opening…</p>}>
             <View file={file} line={line} />
           </Suspense>
         ) : (
-          <p className="shimmer p-4 text-[12px]">Reading {path}…</p>
+          <p className="shimmer p-4 text-ui">Reading {path}…</p>
         )}
       </div>
     </div>
@@ -126,7 +126,7 @@ const LazyDiff = lazy(async () => {
     const theme = prefsStore.get().theme
     const showable = diffs.filter((diff) => !diff.binary && (diff.oldFile || diff.newFile))
     if (showable.length === 0) {
-      return <p className="p-4 text-[12px] text-faint">No text content to compare.</p>
+      return <p className="p-4 text-ui text-faint">No text content to compare.</p>
     }
     return (
       <Virtualizer className="min-h-full">
@@ -145,7 +145,7 @@ const LazyDiff = lazy(async () => {
             }}
           />
         ))}
-        {note ? <p className="p-3 text-[11px] text-faint">{note}</p> : null}
+        {note ? <p className="p-3 text-label text-faint">{note}</p> : null}
       </Virtualizer>
     )
   }
@@ -154,7 +154,7 @@ const LazyDiff = lazy(async () => {
 
 function CenterDiff({ diffs, note }: { diffs: import("@/lib/types").GitDiff[]; note?: string }) {
   return (
-    <Suspense fallback={<p className="shimmer p-4 text-[12px]">Loading diff…</p>}>
+    <Suspense fallback={<p className="shimmer p-4 text-ui">Loading diff…</p>}>
       <LazyDiff diffs={diffs} note={note} />
     </Suspense>
   )

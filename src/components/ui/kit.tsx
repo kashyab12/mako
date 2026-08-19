@@ -8,7 +8,7 @@ import type { ComponentProps, ReactNode } from "react"
 
 const base =
   "pressable no-drag inline-flex shrink-0 select-none items-center justify-center gap-1.5 rounded-md " +
-  "text-[12.5px] font-medium whitespace-nowrap " +
+  "text-ui font-medium whitespace-nowrap " +
   "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease,color_120ms_ease,opacity_120ms_ease] " +
   "disabled:pointer-events-none disabled:opacity-40 " +
   "[&_svg]:pointer-events-none [&_svg]:shrink-0"
@@ -84,7 +84,7 @@ export function Keys({ keys, inverted }: { keys: string[]; inverted?: boolean })
           key={`${key}-${index}`}
           data-slot="kbd"
           className={cn(
-            "inline-flex h-4 min-w-4 items-center justify-center rounded-[3px] px-1 font-sans text-[10px] leading-none",
+            "inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[3px] px-1 font-sans text-label leading-none",
             inverted
               ? "bg-background/15 text-background"
               : "bg-raised text-faint ring-1 ring-hairline ring-inset"
@@ -112,7 +112,7 @@ export function Chip({
   return (
     <span
       className={cn(
-        "inline-flex h-[18px] items-center gap-1 rounded px-1.5 text-[10.5px] font-medium ring-1 ring-inset",
+        "inline-flex h-[18px] items-center gap-1 rounded px-1.5 text-label font-medium ring-1 ring-inset",
         palette,
         className
       )}
@@ -130,7 +130,7 @@ export function Chip({
  */
 export function Eyebrow({ className, ...props }: ComponentProps<"div">) {
   return (
-    <div className={cn("px-1 text-[11px] font-medium text-faint", className)} {...props} />
+    <div className={cn("px-1 text-label font-medium text-faint", className)} {...props} />
   )
 }
 
@@ -156,8 +156,8 @@ export function PanelHeader({
         className
       )}
     >
-      <span className="truncate text-[11.5px] font-semibold text-foreground">{title}</span>
-      {meta ? <span className="truncate text-[11px] text-faint">{meta}</span> : null}
+      <span className="truncate text-ui font-medium text-foreground">{title}</span>
+      {meta ? <span className="truncate text-label text-faint">{meta}</span> : null}
       <div className="ml-auto flex items-center gap-0.5">{actions}</div>
     </header>
   )
@@ -181,8 +181,8 @@ export function Blank({
           {icon}
         </div>
       ) : null}
-      <p className="text-[13px] font-medium text-foreground">{title}</p>
-      {body ? <p className="max-w-[26ch] text-[12px] leading-relaxed text-faint">{body}</p> : null}
+      <p className="text-ui font-medium text-foreground">{title}</p>
+      {body ? <p className="max-w-[30ch] text-ui leading-relaxed text-faint">{body}</p> : null}
       {action}
     </div>
   )

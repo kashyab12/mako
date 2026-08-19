@@ -221,12 +221,12 @@ export function CommandPalette() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder={mode === "files" ? "Open a file by name" : "Search commands, models, sessions…"}
-          className="h-11 w-full border-b border-hairline bg-transparent px-3.5 text-[13.5px] placeholder:text-faint focus:outline-none"
+          className="h-11 w-full border-b border-hairline bg-transparent px-3.5 text-ui placeholder:text-faint focus:outline-none"
         />
 
         <div ref={listRef} className="max-h-[22rem] overflow-y-auto overscroll-contain p-1.5">
           {results.length === 0 ? (
-            <p className="px-2 py-8 text-center text-[12.5px] text-faint">
+            <p className="px-2 py-8 text-center text-ui text-faint">
               {mode === "files" && files.length === 0 ? "Reading the project…" : "No matches"}
             </p>
           ) : (
@@ -249,9 +249,9 @@ export function CommandPalette() {
                       index === cursor && "bg-fill-selected"
                     )}
                   >
-                    <span className="min-w-0 flex-1 truncate text-[12.5px]">{entry.title}</span>
+                    <span className="min-w-0 flex-1 truncate text-ui">{entry.title}</span>
                     {entry.hint ? (
-                      <span className="shrink-0 truncate text-[11px] text-faint">{entry.hint}</span>
+                      <span className="shrink-0 truncate text-label text-faint">{entry.hint}</span>
                     ) : null}
                     {entry.keys?.length ? <Keys keys={entry.keys} /> : null}
                   </button>

@@ -46,10 +46,10 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
             call.isError ? "text-negative" : call.pending ? "text-foreground/80" : "text-faint"
           )}
         />
-        <span className="shrink-0 text-[12px] font-medium text-foreground/90">
+        <span className="shrink-0 text-ui font-medium text-foreground/90">
           {toolLabel(call.name)}
         </span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-faint">{summary}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-ui text-faint">{summary}</span>
         <Status call={call} />
       </button>
 
@@ -69,7 +69,7 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
 function Status({ call }: { call: ToolCall }) {
   if (call.pending) {
     return (
-      <span className="flex shrink-0 items-center gap-1 text-[10.5px] text-ember">
+      <span className="flex shrink-0 items-center gap-1 text-label text-ember">
         <span className="size-1 animate-live rounded-full bg-ember" />
         running
       </span>
@@ -77,7 +77,7 @@ function Status({ call }: { call: ToolCall }) {
   }
   if (call.isError) {
     return (
-      <span className="flex shrink-0 items-center gap-1 text-[10.5px] text-negative">
+      <span className="flex shrink-0 items-center gap-1 text-label text-negative">
         <CircleAlertIcon className="size-3" />
         failed
       </span>
@@ -97,7 +97,7 @@ function DefaultBody({ call, dense }: { call: ToolCall; dense: boolean }) {
     <div className="space-y-2 px-2.5 py-2">
       {args ? (
         <CopyableBlock label="input" text={JSON.stringify(call.arguments, null, 2)}>
-          <pre className="rounded bg-raised px-2 py-1.5 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap text-muted-foreground">
+          <pre className="rounded bg-raised px-2 py-1.5 font-mono text-label leading-relaxed break-words whitespace-pre-wrap text-muted-foreground">
             {JSON.stringify(call.arguments, null, 2)}
           </pre>
         </CopyableBlock>
@@ -105,7 +105,7 @@ function DefaultBody({ call, dense }: { call: ToolCall; dense: boolean }) {
       {call.result ? (
         <Output text={call.result} dense={dense} isError={call.isError} />
       ) : (
-        <p className="shimmer text-[11.5px]">waiting for result…</p>
+        <p className="shimmer text-ui">waiting for result…</p>
       )}
     </div>
   )
@@ -129,7 +129,7 @@ export function Output({
     <CopyableBlock label="output" text={text}>
       <pre
         className={cn(
-          "font-mono text-[11.5px] leading-[1.55] break-words whitespace-pre-wrap",
+          "font-mono text-ui leading-[1.55] break-words whitespace-pre-wrap",
           dense ? "max-h-40 overflow-y-auto" : "max-h-[26rem] overflow-y-auto",
           isError ? "text-negative/90" : "text-muted-foreground"
         )}
@@ -140,7 +140,7 @@ export function Output({
         <button
           type="button"
           onClick={() => setFull(true)}
-          className="mt-1 text-[11px] text-muted-foreground hover:underline"
+          className="mt-1 text-label text-muted-foreground hover:underline"
         >
           Show all {text.length.toLocaleString()} characters
         </button>

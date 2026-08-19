@@ -13,7 +13,7 @@ const Panel = lazy(() =>
 
 export function ChangesPanel() {
   return (
-    <Suspense fallback={<p className="shimmer p-3 text-[11.5px]">Loading diffs…</p>}>
+    <Suspense fallback={<p className="shimmer p-3 text-ui">Loading diffs…</p>}>
       <Panel />
     </Suspense>
   )

@@ -110,14 +110,14 @@ export function FirstRun() {
   return (
     <div className="mt-7 w-full">
       <div className="flex items-center gap-2 pb-1.5">
-        <span className="text-[11px] text-faint">Getting started</span>
-        <span className="tabular text-[10.5px] text-faint/70">
+        <span className="text-label text-faint">Getting started</span>
+        <span className="tabular text-label text-faint/70">
           {STEPS.length - remaining.length}/{STEPS.length}
         </span>
         <button
           type="button"
           onClick={() => setPref("onboarded", true)}
-          className="pressable ml-auto rounded px-1 text-[10.5px] text-faint hover:text-foreground"
+          className="pressable ml-auto rounded px-1 text-label text-faint hover:text-foreground"
         >
           Dismiss
         </button>
@@ -146,14 +146,14 @@ export function FirstRun() {
               <span className="flex min-w-0 flex-1 items-baseline gap-2">
                 <span
                   className={cn(
-                    "shrink-0 text-[12.5px]",
+                    "shrink-0 text-ui",
                     completed ? "text-faint line-through" : "text-foreground/90"
                   )}
                 >
                   {step.title}
                 </span>
                 {isNext ? (
-                  <span className="truncate text-[11px] text-faint">{step.hint}</span>
+                  <span className="truncate text-label text-faint">{step.hint}</span>
                 ) : null}
               </span>
               {isNext && step.id === "provider" ? (
@@ -164,7 +164,7 @@ export function FirstRun() {
                       new CustomEvent("mako:settings", { detail: "agents" })
                     )
                   }
-                  className="pressable shrink-0 rounded px-1.5 py-0.5 text-[10.5px] text-faint hover:bg-fill-hover hover:text-foreground"
+                  className="pressable shrink-0 rounded px-1.5 py-0.5 text-label text-faint hover:bg-fill-hover hover:text-foreground"
                 >
                   Set up
                 </button>
@@ -174,7 +174,7 @@ export function FirstRun() {
                   {formatChord(step.keys).map((key) => (
                     <kbd
                       key={key}
-                      className="rounded border border-hairline bg-raised px-1 text-[10px] text-faint"
+                      className="rounded border border-hairline bg-raised px-1 text-label text-faint"
                     >
                       {key}
                     </kbd>

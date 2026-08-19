@@ -72,7 +72,7 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
               type="button"
               aria-label="Model options"
               className={cn(
-                "pressable no-drag flex h-7 items-center gap-1.5 rounded-md px-2 text-[12.5px] font-medium",
+                "pressable no-drag flex h-7 items-center gap-1.5 rounded-md px-2 text-ui font-medium",
                 "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease]",
                 "text-faint hover:bg-fill-hover hover:text-foreground aria-expanded:bg-fill-selected"
               )}
@@ -110,7 +110,7 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
             )
           }
           className={cn(
-            "pressable no-drag flex h-7 items-center gap-1.5 rounded-md px-2 text-[12.5px] font-medium hover:bg-fill-hover",
+            "pressable no-drag flex h-7 items-center gap-1.5 rounded-md px-2 text-ui font-medium hover:bg-fill-hover",
             fastOn
               ? "bg-caution/10 text-caution"
               : "text-faint hover:text-foreground"
@@ -145,7 +145,7 @@ function OptionSection({
           )
         }
         className={cn(
-          "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[12.5px] hover:bg-fill-hover",
+          "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-ui hover:bg-fill-hover",
           active && "bg-fill-selected"
         )}
       >
@@ -160,7 +160,7 @@ function OptionSection({
     : value ?? option.current ?? option.values.find((entry) => entry.default)?.value
   return (
     <section className="pb-1">
-      <p className="px-2 pt-1.5 pb-1 text-[10.5px] font-medium text-faint">{option.label}</p>
+      <p className="px-2 pt-1.5 pb-1 text-label font-medium text-faint">{option.label}</p>
       {option.values.map((entry) => {
         const active = current === entry.value
         return (
@@ -177,8 +177,8 @@ function OptionSection({
               <Gauge filled={rankOf(entry.value, option.values.map((value) => value.value))} className="mt-[3px]" />
             ) : null}
             <span className="min-w-0 flex-1">
-              <span className="block text-[12.5px]">{entry.label}</span>
-              {entry.description ? <span className="block text-[10.5px] leading-snug text-faint">{entry.description}</span> : null}
+              <span className="block text-ui">{entry.label}</span>
+              {entry.description ? <span className="block text-label leading-snug text-faint">{entry.description}</span> : null}
             </span>
             {active ? <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-foreground" /> : null}
           </button>
