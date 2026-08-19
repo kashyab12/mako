@@ -5,7 +5,7 @@ export function App() {
   return (
     <>
       <AppShell />
-      <Toaster position="bottom-center" offset={64} />
+      <Toaster position="bottom-right" offset={16} />
     </>
   )
 }

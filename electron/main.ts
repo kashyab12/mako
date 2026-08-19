@@ -240,7 +240,7 @@ async function createWindow() {
     // beside it. At y:18 it sat five pixels low and the whole row read as
     // broken.
     trafficLightPosition: { x: 14, y: 13 },
-    backgroundColor: "#111110",
+    backgroundColor: "#0f0f0e",
     show: false,
     webPreferences: {
       preload: join(__dirname, "preload.js"),

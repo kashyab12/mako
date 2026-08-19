@@ -18,10 +18,9 @@ import {
   type Attachment,
 } from "@/lib/attachments"
 import { ReferenceOverlay } from "@/components/composer/reference-overlay"
-import { Chip, IconAction, Keys, Meter } from "@/components/ui/kit"
+import { Chip, IconAction } from "@/components/ui/kit"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slot } from "@/extend/slot"
-import { formatChord } from "@/extend/commands"
 import { mentionAt, replaceMention, type ActiveMention } from "@/lib/mentions"
 import { formatContextWindow, formatCost, formatTokens, textOf } from "@/lib/format"
 import {
@@ -36,6 +35,7 @@ import {
 } from "@/state/session"
 import { threads, threadsStore, useThreads } from "@/state/threads"
 import { acp, acpStore, useAcp } from "@/state/acp"
+import { stage } from "@/state/stage"
 import { getMako } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
 import type { AcpPromptAttachment, Harness } from "@/lib/types"
@@ -43,7 +43,6 @@ import {
   ArrowUpIcon,
   AtSignIcon,
   CornerDownLeftIcon,
-  GitBranchIcon,
   PaperclipIcon,
   SquareIcon,
   XIcon,
@@ -639,20 +638,8 @@ export function Composer() {
          */}
         <div className="mt-1.5 flex min-h-7 items-center gap-1 px-1">
           <ComposerRouting />
-          <BranchChip />
-          <span
-            className={cn(
-              "ml-auto flex items-center gap-1 text-label text-faint",
-              "transition-opacity duration-200",
-              draft || focused ? "opacity-0" : "opacity-100"
-            )}
-          >
-            <Keys
-              keys={formatChord(status.streaming ? "mod+enter" : "mod+k")}
-            />
-            {status.streaming ? "queue" : "commands"}
-          </span>
-          <ContextReading />
+          <span className="ml-auto" />
+          <ContextDial />
         </div>
       </div>
     </div>
@@ -692,28 +679,14 @@ function SendButton({ ready, steering, onSend }: SendButtonProps) {
   )
 }
 
-/** The branch under the field, the way Cursor keeps its own. Quiet fact,
- * not a control — knowing where an agent is about to write is half of
- * trusting it. */
-function BranchChip() {
-  const branch = useSession((state) => state.git?.branch)
-  if (!branch) return null
-  return (
-    <span className="flex h-7 max-w-[11rem] items-center gap-1 px-1.5 text-label text-faint">
-      <GitBranchIcon className="size-3 shrink-0" />
-      <span className="truncate">{branch}</span>
-    </span>
-  )
-}
-
 /**
- * How full the window is and what the session has cost, beside the field
- * whose next send those numbers price. Transplanted from the old status bar;
- * a leaf with one shallow-compared selector so streaming token counts wake
- * this span and nothing else. Both readings keep their nouns — a bare
- * percentage is decoration that looks like information.
+ * The context dial — OpenCode's answer, adopted whole. A 16px progress
+ * circle is the entire inline footprint; the numbers live in its tooltip,
+ * each with its noun, and clicking it opens the Context surface. A fresh
+ * session shows an empty ring, not a row of zeros. One shallow-compared
+ * selector, so streaming token counts wake this span and nothing else.
  */
-const ContextReading = memo(function ContextReading() {
+const ContextDial = memo(function ContextDial() {
   const usage = useSession(
     useCallback(
       (state) => ({
@@ -721,49 +694,64 @@ const ContextReading = memo(function ContextReading() {
         tokens: state.meta?.context?.tokens ?? null,
         window: state.meta?.context?.contextWindow ?? 0,
         cost: state.meta?.cost ?? 0,
-        total: state.meta?.tokens.total ?? 0,
       }),
       []
     ),
     shallowEqual
   )
-  if (usage.window === 0 && usage.cost === 0) return null
-  const percent = usage.percent ?? 0
-  const tone = percent > 90 ? "text-negative" : percent > 72 ? "text-caution" : "text-faint"
+  const percent = Math.min(100, usage.percent ?? 0)
+  const tone =
+    percent > 90 ? "text-negative" : percent > 72 ? "text-caution" : "text-muted-foreground"
+  const radius = 6.5
+  const circumference = 2 * Math.PI * radius
   return (
-    <span className="flex shrink-0 items-center gap-2 pl-2 text-label text-faint">
-      {usage.window > 0 ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="flex items-center gap-1.5">
-              <span className={cn("tabular", tone)}>
-                {usage.tokens == null
-                  ? "context —"
-                  : `context ${formatTokens(usage.tokens)}/${formatContextWindow(usage.window)}`}
-              </span>
-              <Meter
-                value={percent / 100}
-                tone={percent > 90 ? "negative" : percent > 72 ? "caution" : "neutral"}
-                className="w-10"
-              />
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="top">
-            {usage.tokens == null
-              ? "Context usage is unknown until the next response"
-              : `${Math.round(percent)}% of the model's ${formatContextWindow(usage.window)} context window is in use`}
-          </TooltipContent>
-        </Tooltip>
-      ) : null}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="tabular">{formatCost(usage.cost)} spent</span>
-        </TooltipTrigger>
-        <TooltipContent side="top">
-          {formatTokens(usage.total)} tokens billed in this session
-        </TooltipContent>
-      </Tooltip>
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label="Context and spend"
+          onClick={() => stage.toggle("context")}
+          className="pressable flex size-7 shrink-0 items-center justify-center rounded-md transition-colors duration-100 hover:bg-fill-hover"
+        >
+          <svg viewBox="0 0 16 16" className={cn("size-4 -rotate-90", tone)} aria-hidden>
+            <circle
+              cx="8"
+              cy="8"
+              r={radius}
+              fill="none"
+              strokeWidth="2"
+              className="stroke-foreground/15"
+            />
+            <circle
+              cx="8"
+              cy="8"
+              r={radius}
+              fill="none"
+              strokeWidth="2"
+              strokeLinecap="round"
+              stroke="currentColor"
+              strokeDasharray={circumference}
+              strokeDashoffset={circumference * (1 - percent / 100)}
+              className="transition-[stroke-dashoffset] duration-500"
+            />
+          </svg>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="flex-col items-stretch gap-1">
+        <span className="flex justify-between gap-4">
+          <span className="opacity-70">spent</span>
+          <span className="tabular">{formatCost(usage.cost)}</span>
+        </span>
+        <span className="flex justify-between gap-4">
+          <span className="opacity-70">context</span>
+          <span className="tabular">
+            {usage.window > 0 && usage.tokens != null
+              ? `${Math.round(percent)}% · ${formatTokens(usage.tokens)} of ${formatContextWindow(usage.window)}`
+              : "unknown until the next response"}
+          </span>
+        </span>
+      </TooltipContent>
+    </Tooltip>
   )
 })
 
@@ -818,7 +806,7 @@ function ComposerRouting() {
       <span className="flex h-7 items-center gap-1.5 rounded-md bg-raised px-2 text-ui text-foreground/85">
         <HarnessIcon harness={live.harness} className="size-3.5" />
         {harnessTitle(live.harness)}
-        <span className="text-label text-ember/80">live</span>
+        <span className="text-label text-faint">live</span>
         {live.status === "running" ? (
           <button
             type="button"

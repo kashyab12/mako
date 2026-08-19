@@ -99,7 +99,7 @@ function Prompt({ message }: { message: ChatMessage }) {
           at a reading measure, unmistakably theirs without a ring. The
           assistant's reply below stays full-width and chrome-free. */}
       <div className="max-w-[min(82%,64ch)] rounded-xl rounded-br-md bg-raised px-3.5 py-2.5">
-        <div className="text-ui leading-[1.6] whitespace-pre-wrap text-foreground">
+        <div className="text-prose whitespace-pre-wrap text-foreground">
           {segments.map((segment, index) =>
             segment.kind === "text" ? (
               <span key={index}>{segment.text}</span>
@@ -213,7 +213,7 @@ function Response({ message }: { message: ChatMessage }) {
 function Thinking({ text, live }: { text: string; live: boolean }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="rounded-md bg-fill-hover">
+    <div className="rounded-md bg-foreground/[0.045]">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}

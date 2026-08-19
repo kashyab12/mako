@@ -8,7 +8,7 @@
 /* ------------------------------------------------------------------ *
  * Tokens
  *
- * Warm ember neutrals on a two-level architecture: a shadowless chrome
+ * Deep neutral greys on a two-level architecture: a shadowless chrome
  * shell, and content floating on it as elevated cards. Hue appears where
  * it carries meaning (diff, error, warning) plus one ember accent used
  * strictly as punctuation.
@@ -92,6 +92,11 @@
   --text-title: 15px;
   --text-title--line-height: 20px;
   --text-title--letter-spacing: -0.13px;
+  /* The conversation's own size — the prompt bubble must match the prose
+     that answers it, or the exchange reads as two different documents. */
+  --text-prose: 14px;
+  --text-prose--line-height: 1.6;
+  --text-prose--letter-spacing: -0.04px;
 
   /*
    * Weights come off Geist's variable axis (100-900, step 1). The half
@@ -126,8 +131,9 @@
   color-scheme: dark;
 
   /*
-   * Warm ember neutrals — red-shifted near-blacks with a warm off-white,
-   * after Superset's material. Four planes, not a continuous ramp:
+   * Deep neutrals with the faintest warm cast — OpenCode's flat grey
+   * material, Superset's temperature, one ember accent. Four planes, not a
+   * continuous ramp:
    *
    *   shell    the window itself: titlebar, rail, chrome. Shadowless.
    *   surface  a content card floating on the shell (radius 10, elevated).
@@ -135,22 +141,21 @@
    *   popover  floating surfaces — menus, palette, dialogs — always paired
    *            with --elevation-overlay.
    *
-   * Chroma falls as lightness rises, so the warmth reads as material, not
-   * as tint.
+   * The shell sits well below the card — that gap, not decoration, is what
+   * makes the cards read as floating.
    */
-  --shell: oklch(0.182 0.007 38);
-  --surface: oklch(0.23 0.0055 55);
-  --raised: oklch(0.278 0.0045 50);
-  --popover: oklch(0.248 0.0055 55);
-  --foreground: oklch(0.932 0.0035 68);
-  --muted-foreground: oklch(0.724 0.0045 56);
-  --faint: oklch(0.55 0.0045 50);
+  --shell: oklch(0.16 0.002 40);
+  --surface: oklch(0.218 0.002 45);
+  --raised: oklch(0.268 0.002 45);
+  --popover: oklch(0.238 0.002 45);
+  --foreground: oklch(0.93 0.002 50);
+  --muted-foreground: oklch(0.722 0.002 50);
+  --faint: oklch(0.548 0.002 50);
 
-  /* Hairlines are warm-white alphas so they tint whatever they sit on. */
-  --hairline: oklch(0.93 0.01 55 / 10%);
-  --border: oklch(0.93 0.01 55 / 14%);
-  --input: oklch(0.93 0.01 55 / 17%);
-  --ring: oklch(0.93 0.01 55 / 34%);
+  --hairline: oklch(0.93 0.004 50 / 10%);
+  --border: oklch(0.93 0.004 50 / 14%);
+  --input: oklch(0.93 0.004 50 / 17%);
+  --ring: oklch(0.93 0.004 50 / 34%);
 
   /*
    * Interaction state is a tint of the text colour, never the accent and
@@ -172,20 +177,20 @@
    * Elevation: every level bakes a 0.5px hairline ring in, and dark mode
    * adds a 0.5px top rim light — a surface catching light from above.
    */
-  --rim-light: oklch(0.93 0.01 55 / 6%);
+  --rim-light: oklch(0.93 0.004 50 / 6%);
   --elevation-card:
-    0 1px 2px oklch(0.05 0.005 38 / 35%),
+    0 1px 2px oklch(0.05 0.002 40 / 35%),
     0 0 0 0.5px var(--hairline),
     0 -0.5px 0 0 var(--rim-light);
   --elevation-floating:
-    0 8px 16px oklch(0.05 0.005 38 / 30%),
-    0 4px 8px oklch(0.05 0.005 38 / 30%),
-    0 0 0 0.5px oklch(0.93 0.01 55 / 16%),
+    0 8px 16px oklch(0.05 0.002 40 / 30%),
+    0 4px 8px oklch(0.05 0.002 40 / 30%),
+    0 0 0 0.5px oklch(0.93 0.004 50 / 16%),
     0 -0.5px 0 0 var(--rim-light);
   --elevation-overlay:
-    0 16px 32px oklch(0.05 0.005 38 / 30%),
-    0 8px 16px oklch(0.05 0.005 38 / 30%),
-    0 0 0 0.5px oklch(0.93 0.01 55 / 16%),
+    0 16px 32px oklch(0.05 0.002 40 / 30%),
+    0 8px 16px oklch(0.05 0.002 40 / 30%),
+    0 0 0 0.5px oklch(0.93 0.004 50 / 16%),
     0 -0.5px 0 0 var(--rim-light);
 
   /* Hue appears only where it carries meaning, re-tuned warm. */
@@ -205,7 +210,7 @@
   --primary-foreground: var(--shell);
   --secondary: var(--raised);
   --secondary-foreground: var(--foreground);
-  --muted: oklch(0.26 0.005 52);
+  --muted: oklch(0.255 0.002 45);
   --accent: var(--raised);
   --accent-foreground: var(--foreground);
 
@@ -219,18 +224,18 @@
   color-scheme: light;
 
   /* The shell is the recessed plane in both modes: darker than the card. */
-  --shell: oklch(0.943 0.0025 48);
-  --surface: oklch(0.988 0.0015 67);
-  --raised: oklch(0.956 0.0025 55);
-  --popover: oklch(0.994 0.001 67);
-  --foreground: oklch(0.21 0.005 40);
-  --muted-foreground: oklch(0.44 0.004 48);
-  --faint: oklch(0.59 0.0035 48);
+  --shell: oklch(0.938 0.001 45);
+  --surface: oklch(0.992 0.001 60);
+  --raised: oklch(0.955 0.001 50);
+  --popover: oklch(0.996 0.001 60);
+  --foreground: oklch(0.205 0.002 40);
+  --muted-foreground: oklch(0.44 0.002 45);
+  --faint: oklch(0.59 0.002 45);
 
-  --hairline: oklch(0.25 0.01 40 / 9%);
-  --border: oklch(0.25 0.01 40 / 12%);
-  --input: oklch(0.25 0.01 40 / 15%);
-  --ring: oklch(0.25 0.01 40 / 36%);
+  --hairline: oklch(0.25 0.004 40 / 9%);
+  --border: oklch(0.25 0.004 40 / 12%);
+  --input: oklch(0.25 0.004 40 / 15%);
+  --ring: oklch(0.25 0.004 40 / 36%);
 
   --fill-hover: color-mix(in oklab, var(--foreground) 4%, transparent);
   --fill-selected: color-mix(in oklab, var(--foreground) 6%, transparent);
@@ -256,8 +261,8 @@
   --negative: oklch(0.545 0.15 26);
   --caution: oklch(0.59 0.085 75);
 
-  --primary: oklch(0.21 0.005 40);
-  --primary-foreground: oklch(0.988 0.0015 67);
+  --primary: var(--foreground);
+  --primary-foreground: var(--surface);
   --muted: oklch(0.95 0.0025 55);
   --accent: oklch(0.935 0.003 50);
 }
@@ -370,22 +375,6 @@
 
   .no-drag {
     -webkit-app-region: no-drag;
-  }
-
-  /*
-   * An open menu must dismiss on any outside click, but two Electron surfaces
-   * swallow pointerdown before the DOM ever sees it: drag regions (the title
-   * strip) hand the event to the window manager, and <webview> delivers it to
-   * the guest process. Radix's dismissable layer never fires and the menu
-   * sticks open. While a popover is up, suspend both — the same tradeoff as a
-   * native menu, which also blocks window dragging while open.
-   */
-  body:has([data-slot="popover-content"][data-state="open"]) .drag-region {
-    -webkit-app-region: no-drag;
-  }
-
-  body:has([data-slot="popover-content"][data-state="open"]) webview {
-    pointer-events: none;
   }
 
   .tabular {
