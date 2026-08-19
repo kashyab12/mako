@@ -114,6 +114,22 @@ export function rememberHarnessDefault(
 let pendingOpen: { harness: string; cwd: string; since: number } | null = null
 /** The composer harness to give back when the viewer closes. */
 let harnessBeforeViewing: string | null = null
+
+/**
+ * Threads already read this run, so switching back is a paint, not a fetch.
+ * Stale-while-revalidate: the cached conversation shows instantly and the
+ * fresh read replaces it the moment it lands. Bounded; oldest falls out.
+ */
+const threadCache = new Map<string, Thread>()
+const THREAD_CACHE_MAX = 12
+function rememberThread(thread: Thread) {
+  threadCache.delete(thread.ref.path)
+  threadCache.set(thread.ref.path, thread)
+  if (threadCache.size > THREAD_CACHE_MAX) {
+    const oldest = threadCache.keys().next().value
+    if (oldest) threadCache.delete(oldest)
+  }
+}
 let knownPaths = new Set<string>()
 
 export function applyThreads(list: ThreadRef[]) {
@@ -168,9 +184,9 @@ export function applyThreadEntries(path: string, entries: ThreadEntry[], replace
           !(entry as { echo?: boolean }).echo ||
           !(entry.kind === "user" && arrivedUserTexts.has(entry.text))
       )
-  threadsStore.set({
-    viewing: { ...viewing, entries: [...base, ...entries] },
-  })
+  const next = { ...viewing, entries: [...base, ...entries] }
+  threadsStore.set({ viewing: next })
+  rememberThread(next)
 }
 
 /**
@@ -236,10 +252,42 @@ export const threads = {
   /** Open a foreign session read-only, translated to the canonical shape. */
   async view(ref: ThreadRef) {
     if (!hasBridge()) return
+    const cached = threadCache.get(ref.path)
+    if (cached) {
+      // Instant: the last read paints now, the fresh one lands underneath.
+      if (harnessBeforeViewing === null) {
+        harnessBeforeViewing = threadsStore.get().composerHarness
+      }
+      threadsStore.set({
+        viewing: cached,
+        viewingBusy: false,
+        run: null,
+        composerHarness: cached.ref.harness === "pi" ? "devin" : cached.ref.harness,
+      })
+      void getPi().followThread(ref.path, cached.ref.bytes ?? 0)
+      void getPi()
+        .threadRun(ref.path)
+        .then((run) => {
+          if (threadsStore.get().viewing?.ref.path === ref.path) threadsStore.set({ run })
+        })
+        .catch(() => {})
+      void getPi()
+        .openThread(ref.path)
+        .then((fresh) => {
+          if (!fresh) return
+          rememberThread(fresh)
+          if (threadsStore.get().viewing?.ref.path === ref.path) {
+            threadsStore.set({ viewing: fresh })
+          }
+        })
+        .catch(() => {})
+      return
+    }
     threadsStore.set({ viewingBusy: true })
     try {
       const thread = await getPi().openThread(ref.path)
       if (!thread) throw new Error("This session could not be read")
+      rememberThread(thread)
       const run = await getPi().threadRun(ref.path).catch(() => null)
       // The composer adopts this conversation: its agent picker shows the
       // harness that owns the session, and switching it moves the

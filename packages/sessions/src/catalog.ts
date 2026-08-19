@@ -333,14 +333,47 @@ export class SessionCatalog {
   private noticed(path: string): void {
     const provider = this.ownerOf(path)
     if (!provider) return
-    clearTimeout(this.pending.get(path))
+    // Shared-database stores have no per-session file to stat: any write
+    // under the root re-runs that provider's discovery, debounced under
+    // one key so a burst costs one rescan.
+    const key = provider.rescanRoot ? `rescan:${provider.harness}:${provider.roots()[0]}` : path
+    clearTimeout(this.pending.get(key))
     this.pending.set(
-      path,
+      key,
       setTimeout(() => {
-        this.pending.delete(path)
-        void this.refresh(provider, path)
+        this.pending.delete(key)
+        if (provider.rescanRoot) void this.rescanProvider(provider)
+        else void this.refresh(provider, path)
       }, WATCH_DEBOUNCE_MS)
     )
+  }
+
+  /** Re-discover one provider's synthetic files; diff against the cache. */
+  private async rescanProvider(provider: SessionProvider): Promise<void> {
+    const files = await provider.discover().catch((): NativeFile[] => [])
+    const seen = new Set<string>()
+    for (const file of files) {
+      seen.add(file.path)
+      const cached = this.byPath.get(file.path)
+      if (cached && cached.bytes === file.bytes && cached.mtimeMs === file.mtimeMs) continue
+      const ref = await provider.peek(file).catch(() => null)
+      this.byPath.set(file.path, { bytes: file.bytes, mtimeMs: file.mtimeMs, ref })
+      if (ref) this.emit({ type: cached?.ref ? "updated" : "added", ref })
+      // A grown session with watchers gets the honest live view: a re-read.
+      const followers = this.follows.get(file.path)
+      if (followers && followers.size > 0) {
+        const thread = await provider.read(file.path).catch(() => null)
+        if (thread) for (const follower of followers) follower(thread.entries, true)
+      }
+    }
+    const prefix = provider.roots()[0] ?? ""
+    for (const path of [...this.byPath.keys()]) {
+      if (path.startsWith(prefix) && !seen.has(path)) {
+        this.byPath.delete(path)
+        this.emit({ type: "removed", path })
+      }
+    }
+    this.scheduleSave()
   }
 
   private async refresh(provider: SessionProvider, path: string): Promise<void> {

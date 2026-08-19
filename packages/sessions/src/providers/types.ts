@@ -23,6 +23,13 @@ export interface SessionProvider {
   displayName: string
 
   /**
+   * True for stores where many sessions share one database file: a change
+   * under the root cannot be stat-ed per session, so the catalog re-runs
+   * discovery for this provider instead of refreshing one path.
+   */
+  rescanRoot?: boolean
+
+  /**
    * Directories the harness writes sessions under. Used for discovery and
    * for watching; a root that does not exist simply contributes nothing.
    */

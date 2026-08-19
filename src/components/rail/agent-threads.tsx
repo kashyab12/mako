@@ -578,7 +578,10 @@ const ThreadRow = memo(function ThreadRow({
     else void threads.view(ref)
   }
 
-  const lit = active || viewingPath === ref.path
+  // One selection at a time: while a thread is open in the viewer, IT is
+  // the selection — the native tab keeps its state but not its highlight,
+  // because two lit rows read as a broken click.
+  const lit = viewingPath ? viewingPath === ref.path : active
 
   return (
     <button

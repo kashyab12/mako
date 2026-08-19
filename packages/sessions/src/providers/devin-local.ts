@@ -103,9 +103,13 @@ export class DevinLocalProvider implements SessionProvider {
 
   async peek(file: NativeFile): Promise<ThreadRef | null> {
     const meta = await this.metaFor(basename(file.path, ".ndjson"))
+    // The IDE names sessions "acp/devin-cli/<name>"; the CLI's own store
+    // says just "<name>". One session, one identity — normalized here so
+    // the catalog's dedupe collapses the two views of the same thread.
+    const rawId = meta?.sessionId ?? basename(file.path, ".ndjson")
     const ref: ThreadRef = {
       harness: this.harness,
-      nativeId: meta?.sessionId ?? basename(file.path, ".ndjson"),
+      nativeId: rawId.split("/").pop() ?? rawId,
       path: file.path,
       cwd: meta?.cwd,
       title: meta?.title ? (titleFrom(meta.title) ?? meta.title) : undefined,

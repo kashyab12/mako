@@ -36,6 +36,7 @@ import { CodexProvider } from "./providers/codex.js"
 import { CursorProvider } from "./providers/cursor.js"
 import { GrokProvider } from "./providers/grok.js"
 import { DevinLocalProvider } from "./providers/devin-local.js"
+import { DevinCliProvider } from "./providers/devin-cli.js"
 import { ClaudeProvider } from "./providers/claude.js"
 import { PiProvider } from "./providers/pi.js"
 
@@ -53,6 +54,7 @@ export function defaultCatalog(
       new CursorProvider(),
       new GrokProvider(),
       new DevinLocalProvider(),
+      new DevinCliProvider(),
     ],
     options
   )
