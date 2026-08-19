@@ -7,6 +7,7 @@ import { setPref, togglePinned, usePrefs } from "@/state/prefs"
 import { cn } from "@/lib/utils"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import {
+  CheckIcon,
   ChevronRightIcon,
   FolderIcon,
   FolderOpenIcon,
@@ -78,6 +79,8 @@ export function AgentThreads() {
   const filter = usePrefs((prefs) => prefs.agentHarnessFilter)
   const pinned = usePrefs((prefs) => prefs.pinnedThreads)
   const collapsed = usePrefs((prefs) => prefs.collapsedGroups)
+  const scope = usePrefs((prefs) => prefs.railScope)
+  const sortBy = usePrefs((prefs) => prefs.railSortBy)
   const cwd = useSession((state) => state.meta?.cwd)
 
   // The haystack is built once per catalog push, not once per keystroke.
@@ -106,11 +109,12 @@ export function AgentThreads() {
     return indexed
       .filter(
         (entry) =>
+          (scope !== "workspace" || !cwd || entry.ref.cwd === cwd) &&
           (!active || active.has(displayHarness(entry.ref))) &&
           (!needle || entry.haystack.includes(needle))
       )
       .map((entry) => entry.ref)
-  }, [deferred, filter, indexed])
+  }, [cwd, deferred, filter, indexed, scope])
 
   const held = useMemo(() => {
     const set = new Set(pinned)
@@ -129,23 +133,29 @@ export function AgentThreads() {
       if (list) list.push(ref)
       else byCwd.set(key, [ref])
     }
+    const byOrder = (a: ThreadRef, b: ThreadRef): number => {
+      if (sortBy === "name") return (a.title ?? "").localeCompare(b.title ?? "")
+      if (sortBy === "created") return (b.startedAt ?? "").localeCompare(a.startedAt ?? "")
+      return (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")
+    }
     const result: Folder[] = [...byCwd.entries()].map(([key, refs]) => {
-      refs.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
+      refs.sort(byOrder)
       return {
         key: key || "~",
         name: key ? workspaceName(key) : "No folder",
         cwd: key || null,
         refs,
         current: Boolean(cwd) && key === cwd,
-        latest: refs[0]?.updatedAt ?? "",
+        latest: refs.reduce((top, ref) => ((ref.updatedAt ?? "") > top ? ref.updatedAt! : top), ""),
       }
     })
     result.sort((a, b) => {
       if (a.current !== b.current) return a.current ? -1 : 1
+      if (sortBy === "name") return a.name.localeCompare(b.name)
       return b.latest.localeCompare(a.latest)
     })
     return result
-  }, [cwd, matched, pinned])
+  }, [cwd, matched, pinned, sortBy])
 
   const searchActive = Boolean(deferred.trim())
 
@@ -329,19 +339,30 @@ function RailHeader({
 }
 
 /**
- * The harness filter, folded into one glyph. The popover lists each agent
- * with sessions and its count; picking narrows the rail, and the glyph
- * carries a dot while any narrowing is on so filtered never looks empty.
+ * Filter and sort, one glyph. Three sections: which agents (multi-select
+ * with counts), what order (activity, birth, name), and how far (every
+ * folder, or only the one being worked). The glyph carries a dot while any
+ * narrowing is on, so a filtered rail never reads as an empty machine.
  */
 function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter: string[] }) {
   const [open, setOpen] = useState(false)
-  const on = filter.length > 0
+  const sortBy = usePrefs((prefs) => prefs.railSortBy)
+  const scope = usePrefs((prefs) => prefs.railScope)
+  const on = filter.length > 0 || scope === "workspace" || (sortBy !== "recent" && sortBy !== "size")
+
+  const section = "px-2 pt-2 pb-1 text-[10px] font-medium tracking-wide text-faint/80 uppercase"
+  const row = (active: boolean) =>
+    cn(
+      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors duration-100",
+      active ? "bg-raised text-foreground" : "text-foreground/85 hover:bg-raised/60"
+    )
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label="Filter by agent"
+          aria-label="Filter and sort"
           className={cn(
             "pressable relative rounded-md p-1.5 transition-colors duration-100 hover:bg-raised",
             on ? "text-foreground" : "text-faint hover:text-foreground"
@@ -353,7 +374,8 @@ function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter
           ) : null}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" sideOffset={6} className="w-52 p-1">
+      <PopoverContent align="end" sideOffset={6} className="w-56 p-1">
+        <p className={section}>Agents</p>
         {[...counts.entries()]
           .sort((a, b) => b[1] - a[1])
           .map(([harness, count]) => {
@@ -368,27 +390,65 @@ function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter
                     active ? filter.filter((entry) => entry !== harness) : [...filter, harness]
                   )
                 }
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors duration-100",
-                  active ? "bg-raised text-foreground" : "text-foreground/85 hover:bg-raised/60"
-                )}
+                className={row(active)}
               >
                 <HarnessIcon harness={harness} className="size-3.5" tinted={active} />
                 <span className="flex-1">{harnessLabel(harness)}</span>
+                {active ? <CheckIcon className="size-3 text-brand" /> : null}
                 <span className="tabular text-[10.5px] text-faint">{count}</span>
               </button>
             )
           })}
+
+        <p className={section}>Order</p>
+        {(
+          [
+            ["recent", "Latest activity"],
+            ["created", "Newest first"],
+            ["name", "By name"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setPref("railSortBy", value)}
+            className={row(sortBy === value)}
+          >
+            <span className="flex-1">{label}</span>
+            {sortBy === value ? <CheckIcon className="size-3 text-brand" /> : null}
+          </button>
+        ))}
+
+        <p className={section}>Folders</p>
+        {(
+          [
+            ["all", "Every folder"],
+            ["workspace", "This folder only"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setPref("railScope", value)}
+            className={row(scope === value)}
+          >
+            <span className="flex-1">{label}</span>
+            {scope === value ? <CheckIcon className="size-3 text-brand" /> : null}
+          </button>
+        ))}
+
         {on ? (
           <button
             type="button"
             onClick={() => {
               setPref("agentHarnessFilter", [])
+              setPref("railSortBy", "recent")
+              setPref("railScope", "all")
               setOpen(false)
             }}
-            className="mt-0.5 flex w-full items-center justify-center rounded-md border-t border-hairline px-2 py-1.5 text-[11px] text-faint hover:text-foreground"
+            className="mt-1 flex w-full items-center justify-center rounded-md border-t border-hairline px-2 py-1.5 text-[11px] text-faint hover:text-foreground"
           >
-            Show every agent
+            Reset
           </button>
         ) : null}
       </PopoverContent>

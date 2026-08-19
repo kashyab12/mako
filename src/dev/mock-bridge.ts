@@ -339,6 +339,8 @@ export function installMockBridge() {
       truncated: false,
       elapsed: 3,
     }),
+    watchFile: async () => {},
+    unwatchFile: async () => {},
     readFile: async (path: string) => ({
       path,
       contents: `// ${path}\n// The browser mock has no filesystem; this stands in for one.\n`,

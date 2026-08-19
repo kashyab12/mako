@@ -145,6 +145,8 @@ const api = {
 
   listFiles: () => invoke<WorkspaceFile[]>("pi:list-files"),
   readFile: (path: string) => invoke<FileContents>("pi:read-file", path),
+  watchFile: (path: string) => invoke<void>("pi:watch-file", path),
+  unwatchFile: () => invoke<void>("pi:unwatch-file"),
   search: (query: string, options?: SearchOptions) =>
     invoke<SearchResults>("pi:search", query, options),
 

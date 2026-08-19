@@ -284,6 +284,8 @@ export type HostEventBody =
   | { type: "git"; git: GitStatus }
   | { type: "capabilities"; capabilities: Capabilities }
   | { type: "notice"; level: "info" | "success" | "error"; message: string }
+  /** The file open in the viewer changed on disk (any writer). */
+  | { type: "file-changed"; path: string }
   /** A file in the plugins directory changed; the renderer should re-read them. */
   | { type: "plugins-changed" }
   /** Update progress. Window-wide, not tied to any tab. */

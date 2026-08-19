@@ -69,6 +69,12 @@ let window: BrowserWindow | null = null
 const pool = new HostPool(emit)
 let starting: Promise<unknown> | null = null
 
+let fileWatcher: import("node:fs").FSWatcher | null = null
+function stopFileWatch() {
+  fileWatcher?.close()
+  fileWatcher = null
+}
+
 function emit(event: HostEvent) {
   // Git status is recomputed after every turn and on focus, which is exactly
   // when HEAD could have moved — so the commit trigger rides on it rather than
@@ -326,6 +332,25 @@ function bindIpc() {
 
   handle("pi:list-files", () => withHost((h) => h.listFiles()))
   handle("pi:read-file", (_e, path: string) => withHost((h) => h.readWorkspaceFile(path)))
+  /**
+   * Watch the one file the viewer has open. An agent mid-edit rewrites it
+   * every few seconds; the viewer should breathe with it, not wait for a
+   * manual reopen. One watcher, replaced on every call, dropped on unwatch.
+   */
+  handle("pi:watch-file", (_e, path: string) => {
+    stopFileWatch()
+    try {
+      const { watch } = require("node:fs") as typeof import("node:fs")
+      let timer: NodeJS.Timeout | null = null
+      fileWatcher = watch(path, () => {
+        if (timer) clearTimeout(timer)
+        timer = setTimeout(() => emit({ type: "file-changed", path }), 120)
+      })
+    } catch {
+      // A file that cannot be watched simply does not live-update.
+    }
+  })
+  handle("pi:unwatch-file", () => stopFileWatch())
   handle("pi:search", (_e, query: string, options?: SearchOptions) =>
     withHost((h) => h.search(query, options))
   )

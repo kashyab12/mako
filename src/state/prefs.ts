@@ -14,7 +14,7 @@ export type RailMode = "threads" | "agents" | "files"
 /** How the session rail is scoped and grouped, mirroring ORCA's sidebar model. */
 export type RailScope = "workspace" | "all"
 export type RailGroupBy = "none" | "date" | "project"
-export type RailSortBy = "recent" | "name" | "size"
+export type RailSortBy = "recent" | "created" | "name" | "size"
 export type RailDensity = "comfortable" | "compact"
 
 export interface Prefs {
@@ -75,7 +75,7 @@ const defaults: Prefs = {
   showThinking: true,
   denseTools: false,
   railMode: "threads",
-  railScope: "workspace",
+  railScope: "all",
   railGroupBy: "date",
   railSortBy: "recent",
   railDensity: "comfortable",
@@ -98,7 +98,14 @@ function load(): Prefs {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return defaults
-    return { ...defaults, ...(JSON.parse(raw) as Partial<Prefs>) }
+    const stored = JSON.parse(raw) as Partial<Prefs> & { railScopeMigrated?: boolean }
+    // The rail redesigned around showing every folder; a "workspace" scope
+    // persisted under the old design would silently narrow it. One flip.
+    if (!stored.railScopeMigrated) {
+      stored.railScope = "all"
+      stored.railScopeMigrated = true
+    }
+    return { ...defaults, ...stored }
   } catch {
     return defaults
   }

@@ -202,6 +202,9 @@ function applyToActive(event: HostEvent) {
     case "thread-run":
       applyThreadRun(event.run)
       break
+    case "file-changed":
+      void viewer.refresh(event.path)
+      break
     case "acp-session":
       applyAcpSession(event.session)
       break

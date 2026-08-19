@@ -39,17 +39,47 @@ export const viewer = {
   async open(path: string, line?: number) {
     if (!hasBridge()) return
     const mine = ++generation
-    viewerStore.set({ path, line, loading: true, error: undefined, file: undefined, diff: undefined })
+    // Reopening the same file keeps the old text on screen while the fresh
+    // read races in — no white flash, no skeleton for a file already read.
+    const sameFile = viewerStore.get().path === path
+    viewerStore.set({
+      path,
+      line,
+      loading: !sameFile,
+      error: undefined,
+      ...(sameFile ? {} : { file: undefined }),
+      diff: undefined,
+    })
     try {
       const file = await getPi().readFile(path)
       if (mine !== generation) return
       viewerStore.set({ file, loading: false })
+      // Live from here: any writer — an agent mid-edit, a formatter, a
+      // terminal — lands on screen without a manual reopen.
+      void getPi().watchFile(path)
     } catch (error) {
       if (mine !== generation) return
       viewerStore.set({
         loading: false,
         error: error instanceof Error ? error.message : String(error),
       })
+    }
+  },
+
+  /** Re-read what is open — in place, no flash. Used by the disk watcher
+   * and by anything that knows the agent just wrote the file. */
+  async refresh(path?: string) {
+    if (!hasBridge()) return
+    const current = viewerStore.get().path
+    if (!current || (path && current !== path)) return
+    path = current
+    const mine = generation
+    try {
+      const file = await getPi().readFile(path)
+      if (mine !== generation || viewerStore.get().path !== path) return
+      viewerStore.set({ file })
+    } catch {
+      // A transient read failure mid-write resolves on the next event.
     }
   },
 
@@ -77,6 +107,7 @@ export const viewer = {
   },
 
   close() {
+    if (hasBridge()) void getPi().unwatchFile()
     generation += 1
     viewerStore.set({
       path: undefined,
@@ -88,9 +119,4 @@ export const viewer = {
     })
   },
 
-  /** Re-read what is open, after the agent has changed it underneath. */
-  refresh() {
-    const { path, line } = viewerStore.get()
-    if (path) void viewer.open(path, line)
-  },
 }
