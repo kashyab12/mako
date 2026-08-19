@@ -555,10 +555,20 @@ function bindIpc() {
     // config files, refreshed as they change. The curated list is only a
     // floor under what this machine has actually run.
     const defaults = (await readHarnessDefaults())[harness] ?? {}
+    // Session-harvested models, junk excluded: placeholder ids like
+    // <synthetic>, separators, empties — session bookkeeping, not models.
     const seen: string[] = []
     for (const ref of listThreads({ harness })) {
       const model = ref.model
-      if (model && !model.includes("·") && !seen.includes(model)) seen.push(model)
+      if (
+        model &&
+        !model.includes("·") &&
+        !model.includes("<") &&
+        model.trim().length > 1 &&
+        !seen.includes(model)
+      ) {
+        seen.push(model)
+      }
       if (seen.length >= 8) break
     }
     const curated =
@@ -594,6 +604,18 @@ function bindIpc() {
    * directory, opened with the conversation as its first prompt. Pi threads
    * never take this path — they open natively through `pi:open-tab`.
    */
+  /**
+   * Fork at an answer: the conversation up to that turn becomes a NEW
+   * native session on the chosen harness — both lines stay open, and the
+   * fork can wear a different agent than the original.
+   */
+  handle("pi:thread-fork", async (_e, path: string, upto: number, harness: string) => {
+    const materialized = await emitThreadAs(path, harness, upto)
+    if (!materialized) throw new Error("This session could not be forked to that harness")
+    bindLineageDirect(materialized.sessionPath, chainOf(materialized.thread.ref))
+    return { path: materialized.sessionPath }
+  })
+
   handle("pi:thread-continue", async (_e, path: string) => {
     // The deepest form: the thread becomes a *native Pi session* — emitted
     // into Pi's own store and opened like any other, full history in the

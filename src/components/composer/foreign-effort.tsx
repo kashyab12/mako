@@ -30,6 +30,7 @@ interface Tuning {
   efforts: string[]
   fast: boolean
   defaultEffort?: string
+  models: string[]
 }
 
 export function ForeignEffortPicker({ harness }: { harness: string }) {
@@ -43,27 +44,54 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
     void getPi()
       .harnessTuning(harness)
       .then((next) => {
-        setTuning({ efforts: next.efforts, fast: next.fast, defaultEffort: next.defaultEffort })
+        setTuning({
+          efforts: next.efforts,
+          fast: next.fast,
+          defaultEffort: next.defaultEffort,
+          models: next.models,
+        })
         rememberHarnessDefault(harness, {
           model: next.defaultModel || undefined,
           effort: next.defaultEffort,
         })
       })
       .catch(() =>
-        setTuning({ efforts: [], fast: false, defaultEffort: harnessDefault(harness).effort })
+        setTuning({
+          efforts: [],
+          fast: false,
+          defaultEffort: harnessDefault(harness).effort,
+          models: [],
+        })
       )
   }, [harness])
 
   if (!tuning || (tuning.efforts.length === 0 && !tuning.fast)) return null
 
-  const set = (patch: Partial<{ effort?: string; fast?: boolean }>) =>
+  const set = (patch: Partial<{ model?: string; effort?: string; fast?: boolean }>) =>
     setComposerTuning(harness, patch)
 
   const defaults = harnessDefault(harness)
   const encoded = defaults.model ? decomposeModelId(harness, defaults.model) : undefined
   const fallbackEffort = tuning?.defaultEffort ?? defaults.effort ?? encoded?.effort
   const fallbackFast = encoded?.fast ?? false
-  const fastOn = chosen.fast ?? fallbackFast
+
+  /*
+   * Whether fast exists here is DATA, not a hardcoded table: the model in
+   * force either has a fast-lane sibling among the known ids (Devin's
+   * -priority variants), encodes fast itself, or the harness's launch
+   * contract takes a fast parameter (Cursor's bracket flag, reported by
+   * the engine). No sibling, no flag — no bolt. Models change; this reads
+   * whatever they become.
+   */
+  const effectiveModel = chosen.model ?? defaults.model
+  const effectiveDec = effectiveModel ? decomposeModelId(harness, effectiveModel) : undefined
+  const family = effectiveDec?.base
+  const siblings = (tuning?.models ?? []).map((id) => ({ id, dec: decomposeModelId(harness, id) }))
+  const familySiblings = family ? siblings.filter((entry) => entry.dec.base === family) : []
+  const fastSibling = familySiblings.find((entry) => entry.dec.fast)
+  const slowSibling = familySiblings.find((entry) => !entry.dec.fast)
+  const fastCapable = Boolean(tuning?.fast || fastSibling || effectiveDec?.fast)
+  const fastOn = chosen.fast ?? effectiveDec?.fast ?? fallbackFast
   const label = fastOn ? "fast" : (chosen.effort ?? fallbackEffort ?? "effort")
 
   return (
@@ -151,12 +179,22 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
         })}
       </PopoverContent>
     </Popover>
-    {tuning.fast ? (
+    {fastCapable ? (
       <button
         type="button"
         aria-label={fastOn ? "Fast mode on" : "Fast mode off"}
         title={fastOn ? "Fast mode — quicker, lighter reasoning. Click for thorough." : "Fast mode off. Click for quicker answers."}
-        onClick={() => set({ fast: fastOn ? false : true, ...(fastOn ? {} : { effort: undefined }) })}
+        onClick={() => {
+          // A family with fast baked into the id swaps the variant; a
+          // harness with a fast launch flag flips the flag.
+          if (fastOn && slowSibling && effectiveDec?.fast) {
+            set({ model: slowSibling.id, fast: undefined })
+          } else if (!fastOn && fastSibling) {
+            set({ model: fastSibling.id, effort: undefined })
+          } else {
+            set({ fast: fastOn ? false : true, ...(fastOn ? {} : { effort: undefined }) })
+          }
+        }}
         className={cn(
           "pressable no-drag flex h-7 items-center rounded-md px-1.5",
           "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease]",

@@ -3,7 +3,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { formatRelative, workspaceName } from "@/lib/format"
 import { threads, useThreads } from "@/state/threads"
 import { actions, useSession } from "@/state/session"
-import { setPref, togglePinned, usePrefs } from "@/state/prefs"
+import { prefsStore, setPref, togglePinned, usePrefs } from "@/state/prefs"
 import { cn } from "@/lib/utils"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import {
@@ -563,6 +563,8 @@ const ThreadRow = memo(function ThreadRow({
   indent?: boolean
   showFolder?: boolean
 }) {
+  const override = usePrefs((prefs) => prefs.titleOverrides[ref.path])
+  const [editing, setEditing] = useState<string | null>(null)
   // A thread whose CLI is being driven from here right now wears a pulse —
   // the same promise a tab's dot makes: something is working behind this row.
   const working = useThreads((state) => Boolean(state.running[ref.path]))
@@ -622,14 +624,42 @@ const ThreadRow = memo(function ThreadRow({
           className={cn("size-3", working && "animate-pulse")}
         />
       </span>
-      <span
-        className={cn(
-          "min-w-0 flex-1 truncate text-[12.5px]",
-          lit ? "font-medium text-foreground" : "text-foreground/85"
-        )}
-      >
-        {ref.title ?? "Untitled session"}
-      </span>
+      {editing !== null ? (
+        <input
+          autoFocus
+          value={editing}
+          onClick={(event) => event.stopPropagation()}
+          onChange={(event) => setEditing(event.target.value)}
+          onKeyDown={(event) => {
+            event.stopPropagation()
+            if (event.key === "Enter") {
+              const next = editing.trim()
+              const all = { ...prefsStore.get().titleOverrides }
+              if (next && next !== ref.title) all[ref.path] = next
+              else delete all[ref.path]
+              setPref("titleOverrides", all)
+              setEditing(null)
+            }
+            if (event.key === "Escape") setEditing(null)
+          }}
+          onBlur={() => setEditing(null)}
+          className="min-w-0 flex-1 rounded bg-surface px-1 text-[12.5px] text-foreground ring-1 ring-hairline focus:outline-none"
+        />
+      ) : (
+        <span
+          onDoubleClick={(event) => {
+            event.stopPropagation()
+            setEditing(override ?? ref.title ?? "")
+          }}
+          title="Double-click to rename"
+          className={cn(
+            "min-w-0 flex-1 truncate text-[12.5px]",
+            lit ? "font-medium text-foreground" : "text-foreground/85"
+          )}
+        >
+          {override ?? ref.title ?? "Untitled session"}
+        </span>
+      )}
       {showFolder && ref.cwd ? (
         <span className="max-w-[6rem] shrink-0 truncate text-[10px] text-faint/70">
           {workspaceName(ref.cwd)}

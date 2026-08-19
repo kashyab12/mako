@@ -242,7 +242,9 @@ export async function claudeModels(): Promise<string[]> {
     const cached = (state.additionalModelOptionsCache ?? [])
       .map((option) => option.value)
       .filter((value): value is string => Boolean(value))
-    return [...cached, ...aliases.filter((alias) => !cached.includes(alias))]
+    // The cache is Claude's own current catalog; the tier aliases only
+    // earn a place when there is no cache to speak from.
+    return cached.length > 0 ? cached : aliases
   } catch {
     return aliases
   }

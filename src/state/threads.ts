@@ -203,7 +203,30 @@ export function applyThreadEntries(path: string, entries: ThreadEntry[], replace
           !(entry as { echo?: boolean }).echo ||
           !(entry.kind === "user" && arrivedUserTexts.has(entry.text))
       )
-  const next = { ...viewing, entries: [...base, ...entries] }
+  // Offsets can drift (a stale follow, a store that rewrote itself): if the
+  // incoming batch starts with what the transcript already ends with, trim
+  // the overlap instead of doubling it. Identity is the entry's own shape.
+  let incoming = entries
+  if (!replace && base.length > 0 && incoming.length > 0) {
+    const signature = (entry: ThreadEntry) =>
+      `${entry.kind}|${(entry as { at?: string }).at ?? ""}|${
+        entry.kind === "user"
+          ? entry.text
+          : entry.kind === "event"
+            ? entry.label
+            : JSON.stringify(entry.blocks).slice(0, 200)
+      }`
+    const max = Math.min(base.length, incoming.length)
+    for (let size = max; size > 0; size--) {
+      const tail = base.slice(-size)
+      const head = incoming.slice(0, size)
+      if (tail.every((entry, i) => signature(entry) === signature(head[i]!))) {
+        incoming = incoming.slice(size)
+        break
+      }
+    }
+  }
+  const next = { ...viewing, entries: [...base, ...incoming] }
   threadsStore.set({ viewing: next })
   rememberThread(next)
 }
@@ -283,13 +306,15 @@ export const threads = {
         run: null,
         composerHarness: cached.ref.harness === "pi" ? "devin" : cached.ref.harness,
       })
-      void getPi().followThread(ref.path, cached.ref.bytes ?? 0)
       void getPi()
         .threadRun(ref.path)
         .then((run) => {
           if (threadsStore.get().viewing?.ref.path === ref.path) threadsStore.set({ run })
         })
         .catch(() => {})
+      // One follow, registered only after the fresh read, from the fresh
+      // byte offset. Following from the cached (stale) offset once replayed
+      // the overlap into the viewer as duplicates.
       void getPi()
         .openThread(ref.path)
         .then((fresh) => {
@@ -297,6 +322,7 @@ export const threads = {
           rememberThread(fresh)
           if (threadsStore.get().viewing?.ref.path === ref.path) {
             threadsStore.set({ viewing: fresh })
+            void getPi().followThread(ref.path, fresh.ref.bytes ?? 0)
           }
         })
         .catch(() => {})
@@ -452,6 +478,34 @@ export const threads = {
         // opens itself when the watcher sees its first write.
         pendingOpen = { harness, cwd: ref.cwd ?? "", since: Date.now() }
         threadsStore.set({ viewing: null, run: null })
+        return true
+      }
+      return false
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+      return false
+    }
+  },
+
+  /**
+   * Fork at an answer: everything up to that turn becomes a new native
+   * session — same harness or any other — opened here immediately. Both
+   * lines stay alive; the fork carries lineage back to its origin.
+   */
+  async forkAt(ref: ThreadRef, upto: number, harness: string): Promise<boolean> {
+    if (!hasBridge()) return false
+    try {
+      const result = await withConversion(ref.harness, harness, ref.title, () =>
+        getPi().forkThread(ref.path, upto, harness)
+      )
+      const thread = await getPi().openThread(result.path)
+      if (thread) {
+        rememberThread(thread)
+        threadsStore.set({ viewing: thread, run: null, composerHarness: harness === "pi" ? "devin" : harness })
+        void getPi().followThread(result.path, thread.ref.bytes ?? 0)
+        toast("Forked", {
+          description: `A new ${harnessLabelOf(harness)} session from that point — the original is untouched.`,
+        })
         return true
       }
       return false

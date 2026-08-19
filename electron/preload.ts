@@ -57,6 +57,8 @@ const api = {
     invoke<
       { kind: "emitted"; path: string } | { kind: "spawned"; run: ThreadRunState }
     >("pi:thread-continue-with", path, harness, instruction, mode),
+  forkThread: (path: string, upto: number, harness: string) =>
+    invoke<{ path: string }>("pi:thread-fork", path, upto, harness),
   threadRun: (path: string) => invoke<ThreadRunState | null>("pi:thread-run", path),
   startHarness: (
     harness: string,

@@ -9,6 +9,10 @@ import { formatTime, textOf } from "@/lib/format"
 import { parseAttachmentAppendix } from "@/lib/attachments"
 import { responseText, type Exchange as ExchangeData } from "@/lib/exchanges"
 import { actions, useSession } from "@/state/session"
+import { threads, useThreads } from "@/state/threads"
+import { HARNESS_LABEL } from "@/components/rail/agent-threads"
+import { HarnessIcon } from "@/components/ui/provider-icon"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { usePrefs } from "@/state/prefs"
 import { cn } from "@/lib/utils"
 import type { PiMessage } from "@/lib/types"
@@ -262,7 +266,62 @@ function Footer({ exchange }: { exchange: ExchangeData }) {
           {copied ? "Copied answer" : "Copy answer"}
         </button>
       ) : null}
+      <ForkButton exchange={exchange} />
       {last ? <Slot name="transcript.turn.trailing" message={last} /> : null}
     </div>
+  )
+}
+
+/**
+ * Fork from this answer. The conversation up to and including this turn
+ * becomes a NEW thread — on the same harness or any other — while the
+ * original stays open. Foreign turns fork through the emitters (their
+ * message ids carry the entry index); native turns already have Fork on
+ * the prompt, so this stays quiet there.
+ */
+function ForkButton({ exchange }: { exchange: ExchangeData }) {
+  const [open, setOpen] = useState(false)
+  const viewing = useThreads((state) => state.viewing?.ref)
+  const targets = useThreads((state) => state.targets)
+  const last = exchange.response.at(-1)
+  const at = last?.id.startsWith("foreign-") ? Number(last.id.slice("foreign-".length)) : null
+  if (!viewing || at === null || Number.isNaN(at)) return null
+  const options = targets.filter((target) => target !== "pi")
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          title="Fork from this answer into a new thread — any harness"
+          className="pressable flex items-center gap-1 rounded px-1 hover:text-foreground"
+        >
+          <GitForkIcon className="size-3" />
+          Fork
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" side="top" sideOffset={6} className="w-56 p-1">
+        <p className="px-2 pt-1.5 pb-1 text-[10px] font-medium tracking-wide text-faint/80 uppercase">
+          Fork from here into
+        </p>
+        {options.map((target) => (
+          <button
+            key={target}
+            type="button"
+            onClick={() => {
+              setOpen(false)
+              void threads.forkAt(viewing, at, target)
+            }}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-foreground/90 transition-colors duration-100 hover:bg-raised"
+          >
+            <HarnessIcon harness={target} className="size-3.5" />
+            <span className="flex-1">{HARNESS_LABEL[target] ?? target}</span>
+            {target === viewing.harness ? (
+              <span className="text-[10px] text-faint">same agent</span>
+            ) : null}
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
   )
 }

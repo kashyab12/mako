@@ -370,10 +370,17 @@ export async function emitThreadAsCodex(
 /** Every harness whose store we can write, behind one door. */
 export async function emitThreadAs(
   path: string,
-  harness: string
+  harness: string,
+  upto?: number
 ): Promise<{ thread: Thread; sessionId: string; sessionPath: string } | null> {
-  const thread = await openThread(path)
-  if (!thread) return null
+  const opened = await openThread(path)
+  if (!opened) return null
+  // A fork point: the conversation up to and including a chosen turn — a
+  // new session begins where that answer ended.
+  const thread =
+    upto !== undefined && upto < opened.entries.length
+      ? { ref: opened.ref, entries: opened.entries.slice(0, upto + 1) }
+      : opened
   const emitter =
     harness === "claude"
       ? emitClaudeSession

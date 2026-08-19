@@ -62,6 +62,8 @@ export interface Prefs {
    * session told to read it end to end before continuing.
    */
   conversionMode: "native" | "transcript"
+  /** Your names for threads, by path — native stores don't take renames. */
+  titleOverrides: Record<string, string>
   /** Each harness's own defaults as last read from its config — never invented. */
   harnessDefaults: Record<string, { model?: string; effort?: string }>
   /** Overrides the host's default commit-drafting prompt. */
@@ -99,6 +101,7 @@ const defaults: Prefs = {
   agentHarnessFilter: [],
   composerTuning: {},
   harnessDefaults: {},
+  titleOverrides: {},
   conversionMode: "native",
 }
 

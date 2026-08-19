@@ -6,7 +6,6 @@ import { HarnessIcon } from "@/components/ui/provider-icon"
 import { threads, useThreads } from "@/state/threads"
 import type { Exchange as ExchangeData } from "@/lib/exchanges"
 import { threadToMessages } from "@/lib/foreign-thread"
-import { formatRelative } from "@/lib/format"
 import { Loader2Icon } from "lucide-react"
 
 /**
@@ -45,31 +44,9 @@ export function ThreadViewer() {
     )
   }
   if (!thread) return null
-  const { ref } = thread
 
   return (
     <div className="animate-enter flex min-h-0 flex-1 flex-col bg-background">
-      <div className="flex h-11 shrink-0 items-center gap-2.5 border-b border-hairline px-3.5">
-        <span className="flex shrink-0 items-center -space-x-1">
-          {(ref.lineage ?? []).map((origin, index) => (
-            <HarnessIcon
-              key={`${origin.harness}-${index}`}
-              harness={origin.harness}
-              className="size-3.5 opacity-40"
-            />
-          ))}
-          <HarnessIcon harness={ref.harness} className="size-3.5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[12.5px] font-medium">{ref.title ?? "Untitled session"}</p>
-          <p className="truncate text-[10.5px] text-faint">
-            {[...(ref.lineage ?? []).map((origin) => harnessLabel(origin.harness)), harnessLabel(ref.harness)].join(" → ")}
-            {ref.model ? ` · ${ref.model}` : ""}
-            {ref.updatedAt ? ` · ${formatRelative(ref.updatedAt)}` : ""}
-          </p>
-        </div>
-
-      </div>
 
       <Conversation />
     </div>

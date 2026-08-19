@@ -54,7 +54,21 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
           effort: tuning.defaultEffort,
         })
         setFallback(fallbackModel)
-        setModels(tuning.models.filter((model) => model !== fallbackModel))
+        // One row per decomposed identity: the same model reached as a raw
+        // id and as a variant string must not appear twice.
+        const identity = (id: string) => {
+          const dec = decomposeModelId(harness, id)
+          return `${dec.base}|${dec.context ?? ""}|${dec.effort ?? ""}|${dec.fast ?? ""}`
+        }
+        const taken = new Set(fallbackModel ? [identity(fallbackModel)] : [])
+        setModels(
+          tuning.models.filter((model) => {
+            const key = identity(model)
+            if (taken.has(key)) return false
+            taken.add(key)
+            return true
+          })
+        )
       })
       .catch(() => {})
   }, [harness])

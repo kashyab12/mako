@@ -500,6 +500,7 @@ export function installMockBridge() {
       harness === "claude" || harness === "codex"
         ? { kind: "emitted" as const, path: `/mock/emitted-${harness}.jsonl` }
         : { kind: "spawned" as const, run: { path: `fresh:${harness}:1`, harness, status: "running" as const } },
+    forkThread: async (_path: string, _upto: number, harness: string) => ({ path: `/mock/fork-${harness}.jsonl` }),
     threadRun: async () => null,
     startHarness: async (harness: string) => ({ run: { path: `fresh:${harness}:1`, harness, status: "running" as const }, cwd: "/Users/you/mako" }),
     harnessTuning: async (harness: string) =>
