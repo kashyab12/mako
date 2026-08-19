@@ -14,6 +14,8 @@ import type {
   ChatMessage,
   SessionMeta,
   SessionSummary,
+  TerminalEvent,
+  TerminalSession,
   TreeNode,
 } from "@/lib/types"
 
@@ -485,9 +487,26 @@ async function mockThreadContexts(
 
 export function installMockBridge() {
   const listeners = new Set<(event: HostEvent) => void>()
+  const terminalListeners = new Set<(event: TerminalEvent) => void>()
   const emit = (event: HostEvent) =>
     listeners.forEach((listener) => listener(event))
+  const emitTerminal = (event: TerminalEvent) =>
+    terminalListeners.forEach((listener) => listener(event))
   let meta = { ...META }
+  const terminalSequence = 1
+  let terminalSessions: TerminalSession[] = [
+    {
+      id: "mock-terminal-1",
+      title: "mako",
+      cwd: META.cwd,
+      createdAt: Date.now() - 240_000,
+      updatedAt: Date.now(),
+      status: "running",
+      cols: 80,
+      rows: 24,
+      sequence: terminalSequence,
+    },
+  ]
 
   const capabilities: Capabilities = {
     tools: [
@@ -1295,6 +1314,54 @@ export function installMockBridge() {
       url,
       lines: [],
     }),
+    terminalList: async () => terminalSessions,
+    terminalCreate: async (options) => {
+      const now = Date.now()
+      const session: TerminalSession = {
+        id: `mock-terminal-${terminalSessions.length + 1}`,
+        title: options.title ?? options.cwd.split("/").pop() ?? "Terminal",
+        cwd: options.cwd,
+        createdAt: now,
+        updatedAt: now,
+        status: "running",
+        cols: options.cols,
+        rows: options.rows,
+        sequence: 0,
+      }
+      terminalSessions = [session, ...terminalSessions]
+      emitTerminal({ type: "status", session })
+      return session
+    },
+    terminalAttach: async (sessionId: string) => {
+      const session = terminalSessions.find((entry) => entry.id === sessionId)
+      if (!session) throw new Error("Terminal session was not found")
+      return {
+        session,
+        data: sessionId === "mock-terminal-1" ? "printf 'Mako terminal mock ready\\n'\r\nMako terminal mock ready\r\n$ " : "$ ",
+        sequence: session.sequence,
+      }
+    },
+    terminalWrite: async (sessionId: string, data: string) => {
+      const current = terminalSessions.find((session) => session.id === sessionId)
+      if (!current) throw new Error("Terminal session was not found")
+      const sequence = current.sequence + 1
+      terminalSessions = terminalSessions.map((session) =>
+        session.id === sessionId
+          ? { ...session, sequence, updatedAt: Date.now() }
+          : session
+      )
+      emitTerminal({ type: "output", sessionId, sequence, data })
+    },
+    terminalResize: async () => {},
+    terminalKill: async (sessionId: string) => {
+      terminalSessions = terminalSessions.filter((session) => session.id !== sessionId)
+      emitTerminal({ type: "removed", sessionId })
+    },
+    onTerminalEvent: (listener) => {
+      terminalListeners.add(listener)
+      queueMicrotask(() => listener({ type: "connection", state: "ready" }))
+      return () => terminalListeners.delete(listener)
+    },
     updateState: async () => ({
       status: "unsupported" as const,
       version: "0.0.0-mock",

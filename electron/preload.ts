@@ -31,6 +31,10 @@ import type {
   ThreadRunState,
   StagedFile,
   TabSnapshot,
+  TerminalCreateOptions,
+  TerminalEvent,
+  TerminalSession,
+  TerminalSnapshot,
   ThinkingLevel,
   UpdateState,
   UsageSummary,
@@ -366,6 +370,27 @@ const api = {
   devStop: () => invokeTrustedHost<DevServerState>("mako:dev-stop"),
   devAttach: (url: string) =>
     invokeTrustedHost<DevServerState>("mako:dev-attach", url),
+
+  terminalList: () =>
+    invokeTrustedHost<TerminalSession[]>("mako:terminal-list"),
+  terminalCreate: (options: TerminalCreateOptions) =>
+    invokeTrustedHost<TerminalSession>("mako:terminal-create", options),
+  terminalAttach: (sessionId: string) =>
+    invokeTrustedHost<TerminalSnapshot>("mako:terminal-attach", sessionId),
+  terminalWrite: (sessionId: string, data: string) =>
+    invokeTrustedHost<void>("mako:terminal-write", sessionId, data),
+  terminalResize: (sessionId: string, cols: number, rows: number) =>
+    invokeTrustedHost<void>("mako:terminal-resize", sessionId, cols, rows),
+  terminalKill: (sessionId: string) =>
+    invokeTrustedHost<void>("mako:terminal-kill", sessionId),
+  onTerminalEvent: (listener: (event: TerminalEvent) => void): (() => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: TerminalEvent) =>
+      listener(payload)
+    ipcRenderer.on("mako:terminal-event", wrapped)
+    return () => {
+      ipcRenderer.removeListener("mako:terminal-event", wrapped)
+    }
+  },
 
   updateState: () => invokeTrustedHost<UpdateState>("mako:update-state"),
   checkUpdates: () => invokeTrustedHost<UpdateState>("mako:check-updates"),

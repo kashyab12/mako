@@ -96,6 +96,7 @@ import {
   selectAccount,
 } from "./accounts.js"
 import { daemonLoginEnabled, setDaemonLogin } from "./daemon-login.js"
+import { TerminalDaemonClient } from "./terminal-client.js"
 import {
   acpCancel,
   acpClose,
@@ -133,6 +134,7 @@ import type {
   HostEvent,
   McpSyncTarget,
   SearchOptions,
+  TerminalCreateOptions,
   ThinkingLevel,
   ThreadContextOptions,
 } from "./shared.js"
@@ -164,8 +166,14 @@ function appIcon() {
 }
 
 let window: BrowserWindow | null = null
+let terminalClient: TerminalDaemonClient | null = null
 const pool = new HostPool(emit)
 let starting: Promise<unknown> | null = null
+
+function terminal() {
+  if (!terminalClient) throw new Error("Terminal service is not ready")
+  return terminalClient
+}
 
 let fileWatcher: import("node:fs").FSWatcher | null = null
 function stopFileWatch() {
@@ -901,6 +909,25 @@ function bindIpc() {
   handle("mako:dev-stop", () => stopDevServer())
   handle("mako:dev-attach", (_e, url: string) => attachDevServer(url))
 
+  handle("mako:terminal-list", () => terminal().list())
+  handle("mako:terminal-create", (_e, options: TerminalCreateOptions) =>
+    terminal().create(options)
+  )
+  handle("mako:terminal-attach", (_e, sessionId: string) =>
+    terminal().attach(sessionId)
+  )
+  handle("mako:terminal-write", (_e, sessionId: string, data: string) =>
+    terminal().write(sessionId, data)
+  )
+  handle(
+    "mako:terminal-resize",
+    (_e, sessionId: string, cols: number, rows: number) =>
+      terminal().resize(sessionId, cols, rows)
+  )
+  handle("mako:terminal-kill", (_e, sessionId: string) =>
+    terminal().kill(sessionId)
+  )
+
   handle("mako:update-state", () => updateState())
   handle("mako:check-updates", () => check())
   handle("mako:install-update", () => installNow())
@@ -936,6 +963,13 @@ function bindIpc() {
 installCrashReporting()
 
 app.whenReady().then(async () => {
+  terminalClient = new TerminalDaemonClient(
+    join(__dirname, "terminal-daemon.js"),
+    join(app.getPath("userData"), "terminal"),
+    (event) => {
+      if (!window?.isDestroyed()) window?.webContents.send("mako:terminal-event", event)
+    }
+  )
   bindIpc()
   await createWindow()
   installUpdates(emit)
@@ -959,6 +993,7 @@ app.on("window-all-closed", () => {
 })
 
 app.on("before-quit", () => {
+  terminalClient?.dispose()
   stopWatching()
   stopThreads()
   stopDrivers()
