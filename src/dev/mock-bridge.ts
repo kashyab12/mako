@@ -1,4 +1,5 @@
 import type {
+  Automation,
   BootPayload,
   Capabilities,
   GitStatus,
@@ -505,10 +506,12 @@ export function installMockBridge() {
     acpCancel: async () => {},
     acpClose: async () => {},
     continueTargets: async () => ["codex", "claude", "cursor", "grok", "devin"],
-    continueThreadWith: async (_path: string, harness: string, _instruction?: string, _mode?: string) =>
-      harness === "claude" || harness === "codex"
+    continueThreadWith: async (path: string, harness: string) => {
+      void path
+      return harness === "claude" || harness === "codex"
         ? { kind: "emitted" as const, path: `/mock/emitted-${harness}.jsonl` }
-        : { kind: "prepared" as const, prompt: `Read /mock/${harness}-transcript.md`, cwd: "/Users/you/mako" },
+        : { kind: "prepared" as const, prompt: `Read /mock/${harness}-transcript.md`, cwd: "/Users/you/mako" }
+    },
     forkThread: async (_path: string, _upto: number, harness: string) => ({ prompt: `Read /mock/fork-${harness}.md`, cwd: "/Users/you/mako" }),
     threadRun: async () => null,
     startHarness: async (harness: string) => ({ run: { path: `fresh:${harness}:1`, harness, status: "running" as const }, cwd: "/Users/you/mako" }),
@@ -534,7 +537,7 @@ export function installMockBridge() {
     automations: async () => [
       { id: "a1", name: "Check the schema doc", prompt: "A migration changed. Check docs/schema.md still matches.", trigger: "files" as const, paths: ["migrations/*.sql"], enabled: false },
     ],
-    saveAutomations: async (next: unknown) => next as never,
+    saveAutomations: async (next: Automation[]) => next,
     setAutomationEnabled: async () => [],
     runAutomation: async () => {},
     reloadAutomations: async () => [],
