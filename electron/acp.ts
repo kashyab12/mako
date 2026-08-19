@@ -213,6 +213,9 @@ export async function acpStart(
   delete env.CLAUDE_CODE_ENTRYPOINT
   if (harness === "claude") {
     env.ELECTRON_RUN_AS_NODE = "1"
+    if (options.tuning?.options?.agentTeams === true) {
+      env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"
+    }
     if (!env.CLAUDE_CODE_EXECUTABLE) {
       const installed = join(homedir(), ".local", "bin", "claude")
       if (existsSync(installed)) env.CLAUDE_CODE_EXECUTABLE = installed

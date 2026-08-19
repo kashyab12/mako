@@ -268,6 +268,12 @@ export function normalizeClaudeModels(response: ClaudeModelRow[]): HarnessModelC
     if (row.supportsFastMode) {
       options.push({ kind: "boolean", id: "fast", label: "Fast mode", current: false })
     }
+    options.push({
+      kind: "boolean",
+      id: "agentTeams",
+      label: "Agent teams",
+      current: false,
+    })
     const model: HarnessModel = {
       id,
       launchId,
@@ -576,7 +582,7 @@ function harnessMetadata(harness: string): HarnessMetadata {
     return {
       label: "Claude Code",
       transport: "acp",
-      capabilities: ["start", "resume", "fork", "stream", "interrupt", "permissions", "images", "commands", "mcp", "models"],
+      capabilities: ["start", "resume", "fork", "stream", "interrupt", "permissions", "images", "commands", "mcp", "models", "agent-teams"],
     }
   }
   if (harness === "codex") {
