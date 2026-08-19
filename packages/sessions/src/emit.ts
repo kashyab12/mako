@@ -31,10 +31,38 @@ export interface EmitResult {
   path: string
 }
 
+export interface EmitOptions {
+  cwd?: string
+  home?: string
+}
+
 interface Message {
   role: "user" | "assistant"
   text: string
   at?: string
+}
+
+interface PersistedClaudeContent {
+  type: "text"
+  text: string
+}
+
+interface PersistedClaudeMessage {
+  role: Message["role"]
+  model?: "imported"
+  content: PersistedClaudeContent[]
+}
+
+interface PersistedClaudeEntry {
+  type: Message["role"]
+  uuid: string
+  parentUuid: string | null
+  sessionId: string
+  timestamp: string
+  cwd: string
+  isSidechain: false
+  userType?: "external"
+  message: PersistedClaudeMessage
 }
 
 /**
@@ -85,7 +113,7 @@ function flatten(entries: ThreadEntry[]): Message[] {
  */
 export async function emitClaudeSession(
   thread: Thread,
-  options: { cwd?: string; home?: string } = {}
+  options: EmitOptions = {}
 ): Promise<EmitResult> {
   const cwd = options.cwd ?? thread.ref.cwd ?? homedir()
   const home = options.home ?? homedir()
@@ -98,23 +126,22 @@ export async function emitClaudeSession(
   let parentUuid: string | null = null
   for (const message of flatten(thread.entries)) {
     const uuid = randomUUID()
-    lines.push(
-      JSON.stringify({
-        type: message.role,
-        uuid,
-        parentUuid,
-        sessionId,
-        timestamp: message.at ?? new Date().toISOString(),
-        cwd,
-        isSidechain: false,
-        ...(message.role === "user" ? { userType: "external" } : {}),
-        message: {
-          role: message.role,
-          ...(message.role === "assistant" ? { model: "imported" } : {}),
-          content: [{ type: "text", text: message.text }],
-        },
-      })
-    )
+    const entry: PersistedClaudeEntry = {
+      type: message.role,
+      uuid,
+      parentUuid,
+      sessionId,
+      timestamp: message.at ?? new Date().toISOString(),
+      cwd,
+      isSidechain: false,
+      userType: message.role === "user" ? "external" : undefined,
+      message: {
+        role: message.role,
+        model: message.role === "assistant" ? "imported" : undefined,
+        content: [{ type: "text", text: message.text }],
+      },
+    }
+    lines.push(JSON.stringify(entry))
     parentUuid = uuid
   }
 
@@ -130,7 +157,7 @@ export async function emitClaudeSession(
  */
 export async function emitPiSession(
   thread: Thread,
-  options: { cwd?: string; home?: string } = {}
+  options: EmitOptions = {}
 ): Promise<EmitResult> {
   const cwd = options.cwd ?? thread.ref.cwd ?? homedir()
   const home = options.home ?? homedir()
@@ -182,7 +209,7 @@ export async function emitPiSession(
  */
 export async function emitCodexSession(
   thread: Thread,
-  options: { cwd?: string; home?: string } = {}
+  options: EmitOptions = {}
 ): Promise<EmitResult> {
   const cwd = options.cwd ?? thread.ref.cwd ?? homedir()
   const home = options.home ?? homedir()
@@ -243,7 +270,7 @@ function clip(text: string, max: number): string {
  */
 export async function emitGrokSession(
   thread: Thread,
-  options: { cwd?: string; home?: string } = {}
+  options: EmitOptions = {}
 ): Promise<EmitResult> {
   const cwd = options.cwd ?? thread.ref.cwd ?? homedir()
   const home = options.home ?? homedir()
@@ -287,17 +314,11 @@ export async function emitGrokSession(
  */
 export async function emitCursorSession(
   thread: Thread,
-  options: { cwd?: string; home?: string } = {}
+  options: EmitOptions = {}
 ): Promise<EmitResult> {
-  const sqlite = (await import("node:sqlite").catch(() => {
+  const sqlite = await import("node:sqlite").catch(() => {
     throw new Error("Writing Cursor sessions needs Node's built-in SQLite (Node 22.5+)")
-  })) as {
-    DatabaseSync: new (path: string) => {
-      exec(sql: string): void
-      prepare(sql: string): { run(...args: unknown[]): unknown }
-      close(): void
-    }
-  }
+  })
   const { createHash } = await import("node:crypto")
 
   const cwd = options.cwd ?? thread.ref.cwd ?? homedir()
