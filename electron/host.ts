@@ -9,9 +9,11 @@ import {
   createAgentSessionRuntime,
   createAgentSessionServices,
   getAgentDir,
+  parseSessionEntries,
   SessionManager,
   type AgentSession,
   type AgentSessionRuntime,
+  type PromptOptions,
   type SessionEntry,
   type SessionTreeNode,
 } from "@earendil-works/pi-coding-agent"
@@ -99,93 +101,97 @@ const WALK_SKIP = new Set([
 /* serialization                                                       */
 /* ------------------------------------------------------------------ */
 
-function blocksFrom(content: unknown): Block[] {
-  if (typeof content === "string") {
+type RuntimeMessage = AgentSession["messages"][number]
+type RuntimeContentMessage = Extract<
+  RuntimeMessage,
+  { role: "user" | "assistant" | "toolResult" | "custom" }
+>
+type RuntimeContent = RuntimeContentMessage["content"]
+type RuntimeModel = NonNullable<AgentSession["model"]>
+
+interface EntryPreview {
+  preview: string
+  role?: ChatRole
+}
+
+/** Project Pi's owner-typed content blocks onto the renderer wire contract. */
+function blocksFrom(content: RuntimeContent): Block[] {
+  if (!Array.isArray(content)) {
     return content ? [{ type: "text", text: content }] : []
   }
-  if (!Array.isArray(content)) return []
   const blocks: Block[] = []
   for (const part of content) {
-    if (!part || typeof part !== "object") {
-      if (part != null) blocks.push({ type: "text", text: String(part) })
-      continue
-    }
-    const rec = part as Record<string, unknown>
-    switch (rec.type) {
+    switch (part.type) {
       case "thinking":
-        blocks.push({ type: "thinking", thinking: String(rec.thinking ?? "") })
+        blocks.push({ type: "thinking", thinking: part.thinking })
         break
       case "toolCall":
         blocks.push({
           type: "toolCall",
-          id: String(rec.id ?? ""),
-          name: String(rec.name ?? "tool"),
-          arguments: rec.arguments,
+          id: part.id,
+          name: part.name,
+          arguments: part.arguments,
         })
         break
       case "image":
-        blocks.push({ type: "image", mimeType: String(rec.mimeType ?? "") })
+        blocks.push({ type: "image", mimeType: part.mimeType })
         break
-      default:
-        blocks.push({ type: "text", text: String(rec.text ?? "") })
+      case "text":
+        blocks.push({ type: "text", text: part.text })
+        break
     }
   }
   return blocks
 }
 
-function serializeMessage(raw: Record<string, unknown>, id: string): PiMessage {
-  const role = String(raw.role ?? "system")
-  if (role === "toolResult" || role === "tool") {
-    return {
-      id,
-      role: "tool",
-      blocks: blocksFrom(raw.content),
-      timestamp: typeof raw.timestamp === "number" ? raw.timestamp : undefined,
-      toolName: String(raw.toolName ?? "tool"),
-      toolCallId: String(raw.toolCallId ?? ""),
-      isError: Boolean(raw.isError),
-    }
-  }
-  return {
-    id,
-    role: role === "assistant" || role === "user" ? role : "system",
-    blocks: blocksFrom(raw.content),
-    timestamp: typeof raw.timestamp === "number" ? raw.timestamp : undefined,
-    model: typeof raw.model === "string" ? raw.model : undefined,
-    provider: typeof raw.provider === "string" ? raw.provider : undefined,
-    error: typeof raw.errorMessage === "string" ? raw.errorMessage : undefined,
+function serializeMessage(message: RuntimeMessage, id: string): PiMessage {
+  switch (message.role) {
+    case "toolResult":
+      return {
+        id,
+        role: "tool",
+        blocks: blocksFrom(message.content),
+        timestamp: message.timestamp,
+        toolName: message.toolName,
+        toolCallId: message.toolCallId,
+        isError: message.isError,
+      }
+    case "assistant":
+      return {
+        id,
+        role: "assistant",
+        blocks: blocksFrom(message.content),
+        timestamp: message.timestamp,
+        model: message.model,
+        provider: message.provider,
+        error: message.errorMessage,
+      }
+    case "user":
+      return {
+        id,
+        role: "user",
+        blocks: blocksFrom(message.content),
+        timestamp: message.timestamp,
+      }
+    case "custom":
+      return {
+        id,
+        role: "system",
+        blocks: blocksFrom(message.content),
+        timestamp: message.timestamp,
+      }
+    default:
+      return { id, role: "system", blocks: [], timestamp: message.timestamp }
   }
 }
 
-function entryPreview(entry: SessionEntry): { preview: string; role?: ChatRole } {
+function entryPreview(entry: SessionEntry): EntryPreview {
   if (entry.type === "message") {
-    const message = entry.message as unknown as Record<string, unknown>
-    const raw = String(message.role ?? "system")
-    const role: ChatRole =
-      raw === "assistant"
-        ? "assistant"
-        : raw === "user"
-          ? "user"
-          : raw === "toolResult"
-            ? "tool"
-            : "system"
-    const content = message.content
-    let preview = ""
-    if (typeof content === "string") preview = content
-    else if (Array.isArray(content)) {
-      preview = content
-        .map((part) => {
-          if (typeof part === "string") return part
-          if (!part || typeof part !== "object") return ""
-          const rec = part as Record<string, unknown>
-          if (typeof rec.text === "string") return rec.text
-          if (typeof rec.thinking === "string") return rec.thinking
-          if (rec.type === "toolCall") return `→ ${String(rec.name ?? "tool")}`
-          return ""
-        })
-        .join(" ")
-    }
-    return { preview: preview.replace(/\s+/g, " ").trim().slice(0, 200), role }
+    const message = serializeMessage(entry.message, entry.id)
+    const preview = message.blocks
+      .map((block) => block.text ?? block.thinking ?? (block.name ? `→ ${block.name}` : ""))
+      .join(" ")
+    return { preview: preview.replace(/\s+/g, " ").trim().slice(0, 200), role: message.role }
   }
   if (entry.type === "compaction") return { preview: `Compacted · ${entry.summary.slice(0, 140)}` }
   if (entry.type === "branch_summary") return { preview: `Branch · ${entry.summary.slice(0, 140)}` }
@@ -226,29 +232,26 @@ function matcher(term: string, options: SearchOptions): (text: string) => boolea
  * real but unreadable as a row, and is reported as the message that made it.
  */
 function entryText(line: string, test: (text: string) => boolean): { role: ChatRole; text: string } | null {
-  let parsed: Record<string, unknown>
+  // Pi owns the JSONL format and parser. Keep malformed or non-message lines out
+  // before projecting the parsed owner contract onto the search result.
+  const entry = parseSessionEntries(line)[0]
+  if (!entry || entry.type !== "message") return null
+
   try {
-    parsed = JSON.parse(line) as Record<string, unknown>
+    const message = serializeMessage(entry.message, entry.id)
+    const pieces = message.blocks
+      .map((block) => block.text ?? block.thinking ?? (block.name ? `→ ${block.name}` : ""))
+      .filter(Boolean)
+
+    // Prefer the piece that actually matched, so the row shows the hit rather
+    // than whatever happened to come first in a long message.
+    const hit = pieces.find((piece) => test(piece)) ?? pieces[0]
+    if (!hit) return null
+    return { role: message.role, text: snippet(hit, test) }
   } catch {
+    // Older extension entries may not honor the current owner contract.
     return null
   }
-  if (parsed.type !== "message") return null
-  const message = parsed.message as Record<string, unknown> | undefined
-  if (!message) return null
-
-  const raw = String(message.role ?? "system")
-  const role: ChatRole =
-    raw === "assistant" ? "assistant" : raw === "user" ? "user" : raw === "toolResult" ? "tool" : "system"
-
-  const pieces = blocksFrom(message.content)
-    .map((block) => block.text ?? block.thinking ?? (block.name ? `→ ${block.name}` : ""))
-    .filter(Boolean)
-
-  // Prefer the piece that actually matched, so the row shows the hit rather
-  // than whatever happened to come first in a long message.
-  const hit = pieces.find((piece) => test(piece)) ?? pieces[0]
-  if (!hit) return null
-  return { role, text: snippet(hit, test) }
 }
 
 /** A window around the match, so the matched text is visible in one row. */
@@ -306,32 +309,28 @@ function serializeTree(nodes: SessionTreeNode[], leafId: string | null): TreeNod
   return flat
 }
 
-function thinkingLevelsFor(model: {
-  reasoning?: boolean
-  thinkingLevelMap?: Partial<Record<string, string | null>>
-}): ThinkingLevel[] {
+function thinkingLevelsFor(model: RuntimeModel): ThinkingLevel[] {
   if (!model.reasoning) return ["off"]
   const map = model.thinkingLevelMap
   if (!map) return [...THINKING_LEVELS]
   return THINKING_LEVELS.filter((level) => level === "off" || map[level] !== null)
 }
 
-function toModelInfo(model: Record<string, unknown>): ModelInfo {
-  const cost = (model.cost ?? {}) as Record<string, number>
+function toModelInfo(model: RuntimeModel): ModelInfo {
   return {
-    provider: String(model.provider),
-    id: String(model.id),
-    name: String(model.name ?? model.id),
-    reasoning: Boolean(model.reasoning),
-    thinkingLevels: thinkingLevelsFor(model as never),
-    contextWindow: Number(model.contextWindow ?? 0),
-    maxTokens: Number(model.maxTokens ?? 0),
-    input: Array.isArray(model.input) ? (model.input as ("text" | "image")[]) : ["text"],
+    provider: model.provider,
+    id: model.id,
+    name: model.name,
+    reasoning: model.reasoning,
+    thinkingLevels: thinkingLevelsFor(model),
+    contextWindow: model.contextWindow,
+    maxTokens: model.maxTokens,
+    input: model.input,
     cost: {
-      input: Number(cost.input ?? 0),
-      output: Number(cost.output ?? 0),
-      cacheRead: Number(cost.cacheRead ?? 0),
-      cacheWrite: Number(cost.cacheWrite ?? 0),
+      input: model.cost.input,
+      output: model.cost.output,
+      cacheRead: model.cost.cacheRead,
+      cacheWrite: model.cost.cacheWrite,
     },
   }
 }
@@ -555,7 +554,7 @@ export class AgentHost {
       }
       if (meta) this.emit({ type: "meta", meta: this.meta() })
     } catch (error) {
-      this.notice("error", error)
+      this.notice("error", error instanceof Error ? error.message : String(error))
     }
   }
 
@@ -567,32 +566,26 @@ export class AgentHost {
     }, 350)
   }
 
-  private notice(level: "info" | "success" | "error", error: unknown) {
-    this.emit({
-      type: "notice",
-      level,
-      message: error instanceof Error ? error.message : String(error),
-    })
+  private notice(level: "info" | "success" | "error", message: string) {
+    this.emit({ type: "notice", level, message })
   }
 
   /* -------------------------------------------------- reads */
 
   private streamingMessage(): PiMessage | null {
-    const raw = this.session.state.streamingMessage as Record<string, unknown> | undefined
-    if (!raw) return null
-    return { ...serializeMessage(raw, "draft"), streaming: true }
+    const message = this.session.state.streamingMessage
+    if (!message) return null
+    return { ...serializeMessage(message, "draft"), streaming: true }
   }
 
   messages(): PiMessage[] {
-    return this.session.messages.map((message, index) =>
-      serializeMessage(message as unknown as Record<string, unknown>, `m${index}`)
-    )
+    return this.session.messages.map((message, index) => serializeMessage(message, `m${index}`))
   }
 
   meta(): SessionMeta {
     const session = this.session
     const manager = session.sessionManager
-    const model = session.model as unknown as Record<string, unknown> | undefined
+    const model = session.model
     const stats = session.getSessionStats()
     let context: ContextUsage | undefined
     try {
@@ -607,8 +600,8 @@ export class AgentHost {
       cwd: this.cwd,
       leafId: manager.getLeafId(),
       model: model ? toModelInfo(model) : undefined,
-      thinkingLevel: session.thinkingLevel as ThinkingLevel,
-      thinkingLevels: model ? thinkingLevelsFor(model as never) : ["off"],
+      thinkingLevel: session.thinkingLevel,
+      thinkingLevels: model ? thinkingLevelsFor(model) : ["off"],
       isStreaming: session.isStreaming,
       isIdle: session.isIdle,
       isCompacting: session.isCompacting,
@@ -707,10 +700,9 @@ export class AgentHost {
       ? images.map((image) => ({ type: "image" as const, ...image }))
       : undefined
     if (session.isStreaming) {
-      await session.prompt(text, {
-        streamingBehavior: mode ?? "steer",
-        ...(attachments ? { images: attachments } : {}),
-      })
+      const options: PromptOptions = { streamingBehavior: mode ?? "steer" }
+      if (attachments) options.images = attachments
+      await session.prompt(text, options)
       return
     }
     await session.prompt(text, attachments ? { images: attachments } : undefined)
@@ -793,7 +785,7 @@ export class AgentHost {
   async listModels(): Promise<ModelInfo[]> {
     const available = await this.session.modelRuntime.getAvailable()
     return available
-      .map((model) => toModelInfo(model as unknown as Record<string, unknown>))
+      .map((model) => toModelInfo(model))
       .sort((a, b) => a.provider.localeCompare(b.provider) || a.name.localeCompare(b.name))
   }
 
@@ -812,7 +804,7 @@ export class AgentHost {
           name: tool.name,
           description: tool.description,
           active: active.has(tool.name),
-          source: (tool as { sourceInfo?: { source?: string } }).sourceInfo?.source,
+          source: tool.sourceInfo.source,
         }))
       }, []),
       commands: attempt<Capabilities["commands"]>(
@@ -844,7 +836,7 @@ export class AgentHost {
     try {
       this.emit({ type: "capabilities", capabilities: this.capabilities() })
     } catch (error) {
-      this.notice("error", error)
+      this.notice("error", error instanceof Error ? error.message : String(error))
     }
   }
 
@@ -1259,7 +1251,7 @@ export class AgentHost {
       if (!path) continue
       const binary = added === "-"
       files.push({
-        path: path.includes(" => ") ? (path.split(" => ").pop() as string).replace(/}$/, "") : path,
+        path: path.includes(" => ") ? (path.split(" => ").at(-1) ?? path).replace(/}$/, "") : path,
         status: statusOf.get(path) ?? "modified",
         insertions: binary ? 0 : Number(added) || 0,
         deletions: binary ? 0 : Number(removed) || 0,
@@ -1405,11 +1397,9 @@ export class AgentHost {
       ],
     })
 
-    const text = Array.isArray(result.content)
-      ? result.content
-          .map((part) => (part && typeof part === "object" && "text" in part ? String(part.text ?? "") : ""))
-          .join("")
-      : String(result.content ?? "")
+    const text = result.content
+      .map((part) => (part.type === "text" ? part.text : ""))
+      .join("")
 
     const message = text.trim()
     if (!message) throw new Error("The model returned an empty message")
@@ -1497,7 +1487,7 @@ export class AgentHost {
     try {
       this.emit({ type: "git", git: await this.gitStatus() })
     } catch (error) {
-      this.notice("error", error)
+      this.notice("error", error instanceof Error ? error.message : String(error))
     }
   }
 
