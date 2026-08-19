@@ -7,6 +7,8 @@ import { actions, shallowEqual, useSession } from "@/state/session"
 import { prefsStore, setPref, togglePinned, usePrefs } from "@/state/prefs"
 import { cn } from "@/lib/utils"
 import { useTabs, type TabInfo } from "@/state/tabs"
+import { Blank } from "@/components/ui/kit"
+import { formatChord } from "@/extend/commands"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import {
   CheckIcon,
@@ -17,6 +19,7 @@ import {
   FolderPlusIcon,
   ListFilterIcon,
   Loader2Icon,
+  MessagesSquareIcon,
   PinIcon,
   SearchIcon,
   XIcon,
@@ -197,11 +200,29 @@ export function AgentThreads() {
         {!loaded && matched.length === 0 ? (
           <RailSkeleton />
         ) : matched.length === 0 ? (
-          <p className="px-3 pt-8 text-center text-ui leading-relaxed text-faint">
-            {searchActive || filter.length > 0
-              ? "Nothing matches."
-              : "No conversations yet — from any agent."}
-          </p>
+          searchActive || filter.length > 0 ? (
+            <p className="px-3 pt-8 text-center text-ui leading-relaxed text-faint">
+              Nothing matches.
+            </p>
+          ) : (
+            <Blank
+              icon={<MessagesSquareIcon />}
+              title="No conversations yet"
+              body="Threads from every agent land here."
+              hints={[
+                {
+                  label: "Ask for a change",
+                  keys: formatChord("mod+l"),
+                  onSelect: () => window.dispatchEvent(new CustomEvent("mako:focus-composer")),
+                },
+                {
+                  label: "Open a folder",
+                  keys: formatChord("mod+o"),
+                  onSelect: () => void actions.pickWorkspace(),
+                },
+              ]}
+            />
+          )
         ) : searchActive ? (
           <div className="pt-1">
             {matched.slice(0, 80).map((ref) => (
@@ -256,24 +277,21 @@ export function AgentThreads() {
 function RailSkeleton() {
   const widths = [72, 54, 63, 78, 48]
   return (
-    <div className="animate-pulse pt-1" aria-hidden>
+    <div className="pt-1" aria-hidden>
       {[0, 1].map((group) => (
         <div key={group} className="pb-2">
           <div className="flex h-7 items-center gap-1.5 px-1.5">
-            <span className="size-3.5 rounded-[4px] bg-raised" />
-            <span
-              className="h-2.5 rounded-full bg-raised"
-              style={{ width: group === 0 ? 64 : 88 }}
-            />
+            <span className="skeleton size-3.5" />
+            <span className="skeleton h-2.5" style={{ width: group === 0 ? 64 : 88 }} />
           </div>
           {widths.slice(0, group === 0 ? 4 : 3).map((width, row) => (
             <div key={row} className="flex h-7 items-center gap-2 pl-[26px] pr-2">
-              <span className="size-3 rounded-full bg-raised" />
+              <span className="skeleton size-3 rounded-full" />
               <span
-                className="h-2.5 rounded-full bg-raised"
+                className="skeleton h-2.5"
                 style={{ width: `${width}%`, opacity: 1 - (group * 4 + row) * 0.09 }}
               />
-              <span className="ml-auto h-2 w-6 rounded-full bg-raised opacity-60" />
+              <span className="skeleton ml-auto h-2 w-6 opacity-60" />
             </div>
           ))}
         </div>

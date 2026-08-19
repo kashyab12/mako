@@ -1,4 +1,5 @@
 import { useEffect } from "react"
+import { Keys } from "@/components/ui/kit"
 import { formatChord } from "@/extend/commands"
 import { useSession } from "@/state/session"
 import { setPref, usePrefs } from "@/state/prefs"
@@ -169,18 +170,7 @@ export function FirstRun() {
                   Set up
                 </button>
               ) : null}
-              {step.keys ? (
-                <span className="flex shrink-0 gap-0.5">
-                  {formatChord(step.keys).map((key) => (
-                    <kbd
-                      key={key}
-                      className="rounded border border-hairline bg-raised px-1 text-label text-faint"
-                    >
-                      {key}
-                    </kbd>
-                  ))}
-                </span>
-              ) : null}
+              {step.keys ? <Keys keys={formatChord(step.keys)} /> : null}
             </div>
           )
         })}

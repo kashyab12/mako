@@ -5,8 +5,8 @@ import {
   useCommands,
   type DeskCommand,
 } from "@/extend/commands"
+import { Keys } from "@/components/ui/kit"
 import { usePrefs } from "@/state/prefs"
-import { cn } from "@/lib/utils"
 import { XIcon } from "lucide-react"
 
 /**
@@ -142,16 +142,7 @@ export function Guide() {
                     <span className="min-w-0 flex-1 truncate text-ui text-foreground/85">
                       {entry.title}
                     </span>
-                    <span className="flex shrink-0 gap-0.5">
-                      {entry.keys.map((key, index) => (
-                        <kbd
-                          key={`${key}-${index}`}
-                          className="rounded border border-hairline bg-raised px-1 text-label text-faint"
-                        >
-                          {key}
-                        </kbd>
-                      ))}
-                    </span>
+                    <Keys keys={entry.keys} />
                   </div>
                 ))}
               </div>
@@ -174,16 +165,5 @@ function regionKeys(
 
 function Chord({ keys }: { keys?: string }) {
   if (!keys) return null
-  return (
-    <span className="flex shrink-0 gap-0.5">
-      {formatChord(keys).map((key, index) => (
-        <kbd
-          key={`${key}-${index}`}
-          className={cn("rounded border border-hairline bg-raised px-1 text-label text-faint")}
-        >
-          {key}
-        </kbd>
-      ))}
-    </span>
-  )
+  return <Keys keys={formatChord(keys)} />
 }

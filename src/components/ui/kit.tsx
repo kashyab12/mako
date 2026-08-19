@@ -138,41 +138,29 @@ export function Eyebrow({ className, ...props }: ComponentProps<"div">) {
 /* Structure                                                           */
 /* ------------------------------------------------------------------ */
 
-export function PanelHeader({
-  title,
-  meta,
-  actions,
-  className,
-}: {
-  title: ReactNode
-  meta?: ReactNode
-  actions?: ReactNode
-  className?: string
-}) {
-  return (
-    <header
-      className={cn(
-        "flex h-9 shrink-0 items-center gap-2 border-b border-hairline px-2.5",
-        className
-      )}
-    >
-      <span className="truncate text-ui font-medium text-foreground">{title}</span>
-      {meta ? <span className="truncate text-label text-faint">{meta}</span> : null}
-      <div className="ml-auto flex items-center gap-0.5">{actions}</div>
-    </header>
-  )
+export interface BlankHint {
+  label: string
+  keys?: string[]
+  onSelect: () => void
 }
 
+/**
+ * An empty state that launches instead of shrugging. The hints are ghost
+ * action rows — the next thing worth doing, with its chord — because a
+ * blank pane that only describes its own emptiness is a dead end.
+ */
 export function Blank({
   icon,
   title,
   body,
   action,
+  hints,
 }: {
   icon?: ReactNode
   title: string
   body?: string
   action?: ReactNode
+  hints?: BlankHint[]
 }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 px-8 py-12 text-center">
@@ -184,6 +172,21 @@ export function Blank({
       <p className="text-ui font-medium text-foreground">{title}</p>
       {body ? <p className="max-w-[30ch] text-ui leading-relaxed text-faint">{body}</p> : null}
       {action}
+      {hints?.length ? (
+        <div className="mt-3 flex w-full max-w-[19rem] flex-col gap-0.5">
+          {hints.map((hint) => (
+            <button
+              key={hint.label}
+              type="button"
+              onClick={hint.onSelect}
+              className="pressable flex h-9 items-center justify-between rounded-md px-2.5 text-ui text-muted-foreground transition-colors duration-100 hover:bg-fill-hover hover:text-foreground"
+            >
+              {hint.label}
+              {hint.keys ? <Keys keys={hint.keys} /> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }
