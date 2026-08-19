@@ -24,12 +24,17 @@
  * client; if something answers the ping, it exits quietly.
  */
 
-import { createConnection, createServer, type Server, type Socket } from "node:net"
+import {
+  createConnection,
+  createServer,
+  type Server,
+  type Socket,
+} from "node:net"
 import { unlink } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import type { SessionCatalog } from "./catalog.js"
-import type { Thread, ThreadEntry, ThreadRef } from "./format.js"
+import type { Thread, ThreadEntry, ThreadOrigin, ThreadRef } from "./format.js"
 
 export function daemonSocketPath(): string {
   return join(homedir(), ".mako", "syncd.sock")
@@ -42,14 +47,75 @@ export interface DaemonStats {
   version: number
 }
 
-interface Frame {
-  id?: number
-  op?: string
-  path?: string
-  fromByte?: number
-  cwd?: string
-  harness?: string
+type JsonScalar = boolean | number | string | null
+type JsonValue = JsonScalar | JsonRecord | JsonValue[]
+
+interface JsonRecord {
+  [key: string]: JsonValue | undefined
 }
+
+type DaemonRequestFrame =
+  | { id: number; op: "ping" }
+  | { id: number; op: "list"; cwd?: string; harness?: string }
+  | { id: number; op: "open"; path: string }
+  | { id: number; op: "follow"; path: string; fromByte: number }
+  | { id: number; op: "unfollow"; path?: string }
+  | { id: number; op: "retire" }
+
+type DaemonResponseFrame =
+  | {
+      id: number
+      ok: true
+      result: DaemonStats | ThreadRef[] | Thread | null
+    }
+  | { id: number; ok: false; error: string }
+
+export type DaemonEvent =
+  | { event: "added" | "updated"; ref: ThreadRef }
+  | { event: "removed"; path: string }
+  | {
+      event: "entries"
+      path: string
+      entries: ThreadEntry[]
+      replace: boolean
+      replaceFrom?: number
+    }
+
+type DaemonServerFrame = DaemonResponseFrame | DaemonEvent
+
+interface PendingBase {
+  reject: (error: Error) => void
+  timer: ReturnType<typeof setTimeout>
+}
+
+interface PingPending extends PendingBase {
+  kind: "ping"
+  resolve: (stats: DaemonStats) => void
+}
+
+interface ListPending extends PendingBase {
+  kind: "list"
+  resolve: (refs: ThreadRef[]) => void
+}
+
+interface OpenPending extends PendingBase {
+  kind: "open"
+  resolve: (thread: Thread | null) => void
+}
+
+interface AckPending extends PendingBase {
+  kind: "ack"
+  resolve: () => void
+}
+
+type PendingRequest = PingPending | ListPending | OpenPending | AckPending
+
+type ParsedDaemonResponse =
+  | { kind: "ping"; pending: PingPending; result: DaemonStats }
+  | { kind: "list"; pending: ListPending; result: ThreadRef[] }
+  | { kind: "open"; pending: OpenPending; result: Thread | null }
+  | { kind: "ack"; pending: AckPending }
+  | { kind: "error"; pending: PendingRequest; error: Error }
 
 /**
  * Bumped when the wire *data* changes shape, not just the ops — a ref that
@@ -66,27 +132,34 @@ export async function serveCatalog(
 ): Promise<Server> {
   // If a daemon already answers, this one has no job.
   const alive = await pingDaemon(socketPath).catch(() => null)
-  if (alive) throw new Error(`A sync daemon is already running (pid ${alive.pid})`)
+  if (alive)
+    throw new Error(`A sync daemon is already running (pid ${alive.pid})`)
   await unlink(socketPath).catch(() => {}) // A stale socket from a dead process.
 
   const startedAt = Date.now()
   const clients = new Set<Socket>()
   const follows = new Map<Socket, Map<string, () => void>>()
 
-  const broadcast = (message: object) => {
-    const line = `${JSON.stringify(message)}\n`
+  const broadcast = (frame: DaemonEvent) => {
+    const line = serializeDaemonFrame(frame)
     for (const client of clients) client.write(line)
   }
 
-  catalog.onEvent((event) => broadcast({ event: event.type, ...event }))
+  catalog.onEvent((event) => {
+    if (event.type === "removed") {
+      broadcast({ event: "removed", path: event.path })
+      return
+    }
+    broadcast({ event: event.type, ref: event.ref })
+  })
 
   const server = createServer((socket) => {
     clients.add(socket)
     follows.set(socket, new Map())
     let buffer = ""
 
-    const reply = (id: number | undefined, ok: boolean, payload: unknown) => {
-      socket.write(`${JSON.stringify({ id, ok, ...(ok ? { result: payload } : { error: String(payload) }) })}\n`)
+    const reply = (frame: DaemonResponseFrame) => {
+      socket.write(serializeDaemonFrame(frame))
     }
 
     socket.on("data", (chunk) => {
@@ -95,52 +168,65 @@ export async function serveCatalog(
       while ((at = buffer.indexOf("\n")) !== -1) {
         const raw = buffer.slice(0, at)
         buffer = buffer.slice(at + 1)
-        let frame: Frame
-        try {
-          frame = JSON.parse(raw) as Frame
-        } catch {
-          continue
-        }
-        void handle(frame)
+        const frame = parseDaemonRequest(raw)
+        if (frame) void handle(frame)
       }
     })
 
-    const handle = async (frame: Frame) => {
+    const handle = async (frame: DaemonRequestFrame) => {
       try {
         switch (frame.op) {
           case "ping":
-            reply(frame.id, true, {
-              pid: process.pid,
-              startedAt,
-              sessions: catalog.list().length,
-              version: PROTOCOL_VERSION,
-            } satisfies DaemonStats)
+            reply({
+              id: frame.id,
+              ok: true,
+              result: {
+                pid: process.pid,
+                startedAt,
+                sessions: catalog.list().length,
+                version: PROTOCOL_VERSION,
+              },
+            })
             return
           case "list":
-            reply(frame.id, true, catalog.list({ cwd: frame.cwd, harness: frame.harness }))
+            reply({
+              id: frame.id,
+              ok: true,
+              result: catalog.list({ cwd: frame.cwd, harness: frame.harness }),
+            })
             return
-          case "open": {
-            if (!frame.path) throw new Error("open needs a path")
-            reply(frame.id, true, await catalog.open(frame.path))
+          case "open":
+            reply({
+              id: frame.id,
+              ok: true,
+              result: await catalog.open(frame.path),
+            })
             return
-          }
           case "follow": {
-            if (!frame.path) throw new Error("follow needs a path")
             const mine = follows.get(socket)
             mine?.get(frame.path)?.()
-            const stop = catalog.follow(frame.path, frame.fromByte ?? 0, (entries, replaced) => {
-              socket.write(
-                `${JSON.stringify({ event: "entries", path: frame.path, entries, replace: replaced })}\n`
-              )
-            })
+            const stop = catalog.follow(
+              frame.path,
+              frame.fromByte,
+              (entries, replaced, replaceFrom) => {
+                const event: DaemonEvent = {
+                  event: "entries",
+                  path: frame.path,
+                  entries,
+                  replace: replaced,
+                }
+                if (replaceFrom !== undefined) event.replaceFrom = replaceFrom
+                socket.write(serializeDaemonFrame(event))
+              }
+            )
             mine?.set(frame.path, stop)
-            reply(frame.id, true, null)
+            reply({ id: frame.id, ok: true, result: null })
             return
           }
           case "retire": {
             // A newer client wants this vintage gone. Answer, then leave —
             // the socket frees, and the successor takes over the watchers.
-            reply(frame.id, true, null)
+            reply({ id: frame.id, ok: true, result: null })
             setTimeout(() => process.exit(0), 100)
             return
           }
@@ -153,14 +239,16 @@ export async function serveCatalog(
               for (const stop of mine?.values() ?? []) stop()
               mine?.clear()
             }
-            reply(frame.id, true, null)
+            reply({ id: frame.id, ok: true, result: null })
             return
           }
-          default:
-            throw new Error(`Unknown op: ${frame.op}`)
         }
       } catch (error) {
-        reply(frame.id, false, error instanceof Error ? error.message : String(error))
+        reply({
+          id: frame.id,
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        })
       }
     }
 
@@ -190,20 +278,16 @@ export interface DaemonClient {
   unfollow(path?: string): Promise<void>
   /** Ask the daemon to exit — used to replace an older vintage. */
   retire(): Promise<void>
-  onEvent(
-    listener: (event:
-      | { event: "added" | "updated"; ref: ThreadRef }
-      | { event: "removed"; path: string }
-      | { event: "entries"; path: string; entries: ThreadEntry[]; replace?: boolean }
-    ) => void
-  ): () => void
+  onEvent(listener: (event: DaemonEvent) => void): () => void
   /** Fires once if the daemon goes away; the client is dead afterwards. */
   onClose(listener: () => void): void
   close(): void
 }
 
 /** One request, no session kept: proof of life and the stats that ride on it. */
-export async function pingDaemon(socketPath = daemonSocketPath()): Promise<DaemonStats> {
+export async function pingDaemon(
+  socketPath = daemonSocketPath()
+): Promise<DaemonStats> {
   const client = await connectDaemon(socketPath, 1500)
   const stats = client.stats
   client.close()
@@ -218,8 +302,8 @@ export async function connectDaemon(
   socket.setNoDelay(true)
 
   let nextId = 1
-  const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()
-  const eventListeners = new Set<(event: never) => void>()
+  const pending = new Map<number, PendingRequest>()
+  const eventListeners = new Set<(event: DaemonEvent) => void>()
   const closeListeners = new Set<() => void>()
   let buffer = ""
 
@@ -229,27 +313,47 @@ export async function connectDaemon(
     while ((at = buffer.indexOf("\n")) !== -1) {
       const raw = buffer.slice(0, at)
       buffer = buffer.slice(at + 1)
-      let frame: { id?: number; ok?: boolean; result?: unknown; error?: string; event?: string }
-      try {
-        frame = JSON.parse(raw) as typeof frame
-      } catch {
+      const record = parseJsonRecord(raw)
+      if (!record) continue
+      const id = readNumber(record, "id")
+      if (id !== undefined) {
+        const waiter = pending.get(id)
+        if (!waiter) continue
+        const response = parseDaemonResponse(record, waiter)
+        if (!response) continue
+        pending.delete(id)
+        clearTimeout(waiter.timer)
+        switch (response.kind) {
+          case "ping":
+            response.pending.resolve(response.result)
+            break
+          case "list":
+            response.pending.resolve(response.result)
+            break
+          case "open":
+            response.pending.resolve(response.result)
+            break
+          case "ack":
+            response.pending.resolve()
+            break
+          case "error":
+            response.pending.reject(response.error)
+            break
+        }
         continue
       }
-      if (frame.id !== undefined) {
-        const waiter = pending.get(frame.id)
-        pending.delete(frame.id)
-        if (waiter) {
-          if (frame.ok) waiter.resolve(frame.result)
-          else waiter.reject(new Error(frame.error ?? "daemon error"))
-        }
-      } else if (frame.event) {
-        for (const listener of eventListeners) listener(frame as never)
+      const event = parseDaemonEvent(record)
+      if (event) {
+        for (const listener of eventListeners) listener(event)
       }
     }
   })
 
   const dead = () => {
-    for (const waiter of pending.values()) waiter.reject(new Error("The sync daemon went away"))
+    for (const waiter of pending.values()) {
+      clearTimeout(waiter.timer)
+      waiter.reject(new Error("The sync daemon went away"))
+    }
     pending.clear()
     for (const listener of closeListeners) listener()
     closeListeners.clear()
@@ -257,15 +361,59 @@ export async function connectDaemon(
   socket.on("close", dead)
   socket.on("error", () => socket.destroy())
 
-  const request = <T>(frame: object): Promise<T> =>
-    new Promise<T>((resolve, reject) => {
+  const send = (frame: DaemonRequestFrame): void => {
+    socket.write(`${JSON.stringify(frame)}\n`)
+  }
+  const requestTimer = (
+    id: number,
+    reject: (error: Error) => void
+  ): ReturnType<typeof setTimeout> =>
+    setTimeout(() => {
+      if (!pending.delete(id)) return
+      reject(new Error("The sync daemon request timed out"))
+    }, timeoutMs)
+
+  const requestPing = (): Promise<DaemonStats> =>
+    new Promise((resolve, reject) => {
       const id = nextId++
-      pending.set(id, { resolve: resolve as (value: unknown) => void, reject })
-      socket.write(`${JSON.stringify({ id, ...frame })}\n`)
+      const timer = requestTimer(id, reject)
+      pending.set(id, { kind: "ping", resolve, reject, timer })
+      send({ id, op: "ping" })
+    })
+
+  const requestList = (
+    filter: { cwd?: string; harness?: string } = {}
+  ): Promise<ThreadRef[]> =>
+    new Promise((resolve, reject) => {
+      const id = nextId++
+      const timer = requestTimer(id, reject)
+      pending.set(id, { kind: "list", resolve, reject, timer })
+      send({ id, op: "list", cwd: filter.cwd, harness: filter.harness })
+    })
+
+  const requestOpen = (path: string): Promise<Thread | null> =>
+    new Promise((resolve, reject) => {
+      const id = nextId++
+      const timer = requestTimer(id, reject)
+      pending.set(id, { kind: "open", resolve, reject, timer })
+      send({ id, op: "open", path })
+    })
+
+  const requestAck = (
+    frame: (id: number) => DaemonRequestFrame
+  ): Promise<void> =>
+    new Promise((resolve, reject) => {
+      const id = nextId++
+      const timer = requestTimer(id, reject)
+      pending.set(id, { kind: "ack", resolve, reject, timer })
+      send(frame(id))
     })
 
   await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("The sync daemon did not answer")), timeoutMs)
+    const timer = setTimeout(
+      () => reject(new Error("The sync daemon did not answer")),
+      timeoutMs
+    )
     socket.once("connect", () => {
       clearTimeout(timer)
       resolve()
@@ -276,20 +424,312 @@ export async function connectDaemon(
     })
   })
 
-  const stats = await request<DaemonStats>({ op: "ping" })
+  const stats = await requestPing()
 
   return {
     stats,
-    list: (filter) => request({ op: "list", ...filter }),
-    open: (path) => request({ op: "open", path }),
-    follow: (path, fromByte) => request({ op: "follow", path, fromByte }),
-    unfollow: (path) => request({ op: "unfollow", path }),
-    retire: () => request({ op: "retire" }),
+    list: requestList,
+    open: requestOpen,
+    follow: (path, fromByte) =>
+      requestAck((id) => ({ id, op: "follow", path, fromByte })),
+    unfollow: (path) => requestAck((id) => ({ id, op: "unfollow", path })),
+    retire: () => requestAck((id) => ({ id, op: "retire" })),
     onEvent: (listener) => {
-      eventListeners.add(listener as (event: never) => void)
-      return () => eventListeners.delete(listener as (event: never) => void)
+      eventListeners.add(listener)
+      return () => eventListeners.delete(listener)
     },
     onClose: (listener) => void closeListeners.add(listener),
     close: () => socket.destroy(),
   }
+}
+
+function serializeDaemonFrame(frame: DaemonServerFrame): string {
+  return `${JSON.stringify(frame)}\n`
+}
+
+function parseJsonRecord(raw: string): JsonRecord | null {
+  try {
+    const value: JsonValue = JSON.parse(raw)
+    return isJsonRecord(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
+function parseDaemonRequest(raw: string): DaemonRequestFrame | null {
+  const record = parseJsonRecord(raw)
+  if (!record) return null
+  const id = readNumber(record, "id")
+  const op = readString(record, "op")
+  if (id === undefined || !Number.isInteger(id) || id < 0 || !op) return null
+  switch (op) {
+    case "ping":
+      return { id, op }
+    case "list":
+      return {
+        id,
+        op,
+        cwd: readString(record, "cwd"),
+        harness: readString(record, "harness"),
+      }
+    case "open": {
+      const path = readString(record, "path")
+      return path ? { id, op, path } : null
+    }
+    case "follow": {
+      const path = readString(record, "path")
+      const fromByte = readNumber(record, "fromByte")
+      return path && fromByte !== undefined && fromByte >= 0
+        ? { id, op, path, fromByte }
+        : null
+    }
+    case "unfollow":
+      return { id, op, path: readString(record, "path") }
+    case "retire":
+      return { id, op }
+    default:
+      return null
+  }
+}
+
+function parseDaemonResponse(
+  record: JsonRecord,
+  pending: PendingRequest
+): ParsedDaemonResponse | null {
+  const ok = readBoolean(record, "ok")
+  if (ok === false) {
+    return {
+      kind: "error",
+      pending,
+      error: new Error(readString(record, "error") ?? "daemon error"),
+    }
+  }
+  if (ok !== true) return null
+  switch (pending.kind) {
+    case "ping": {
+      const result = parseDaemonStats(record.result)
+      return result ? { kind: "ping", pending, result } : null
+    }
+    case "list": {
+      const result = parseArray(record.result, parseThreadRef)
+      return result ? { kind: "list", pending, result } : null
+    }
+    case "open": {
+      if (record.result === null) return { kind: "open", pending, result: null }
+      const result = parseThread(record.result)
+      return result ? { kind: "open", pending, result } : null
+    }
+    case "ack":
+      return record.result === null ? { kind: "ack", pending } : null
+  }
+}
+
+function parseDaemonEvent(record: JsonRecord): DaemonEvent | null {
+  const event = readString(record, "event")
+  switch (event) {
+    case "added":
+    case "updated": {
+      const ref = parseThreadRef(record.ref)
+      return ref ? { event, ref } : null
+    }
+    case "removed": {
+      const path = readString(record, "path")
+      return path ? { event, path } : null
+    }
+    case "entries": {
+      const path = readString(record, "path")
+      const entries = parseArray(record.entries, parseThreadEntry)
+      const replace = readBoolean(record, "replace")
+      if (!path || !entries || replace === undefined) return null
+      const frame: DaemonEvent = { event, path, entries, replace }
+      const replaceFrom = readNumber(record, "replaceFrom")
+      if (replaceFrom !== undefined) frame.replaceFrom = replaceFrom
+      return frame
+    }
+    default:
+      return null
+  }
+}
+
+function parseDaemonStats(value: JsonValue | undefined): DaemonStats | null {
+  if (!isJsonRecord(value)) return null
+  const pid = readNumber(value, "pid")
+  const startedAt = readNumber(value, "startedAt")
+  const sessions = readNumber(value, "sessions")
+  const version = readNumber(value, "version")
+  return pid !== undefined &&
+    startedAt !== undefined &&
+    sessions !== undefined &&
+    version !== undefined
+    ? { pid, startedAt, sessions, version }
+    : null
+}
+
+function parseThread(value: JsonValue | undefined): Thread | null {
+  if (!isJsonRecord(value)) return null
+  const ref = parseThreadRef(value.ref)
+  const entries = parseArray(value.entries, parseThreadEntry)
+  return ref && entries ? { ref, entries } : null
+}
+
+function parseThreadRef(value: JsonValue | undefined): ThreadRef | null {
+  if (!isJsonRecord(value)) return null
+  const harness = readString(value, "harness")
+  const nativeId = readString(value, "nativeId")
+  const path = readString(value, "path")
+  if (!harness || !nativeId || !path) return null
+  const ref: ThreadRef = { harness, nativeId, path }
+  const cwd = readString(value, "cwd")
+  const title = readString(value, "title")
+  const model = readString(value, "model")
+  const startedAt = readString(value, "startedAt")
+  const updatedAt = readString(value, "updatedAt")
+  const bytes = readNumber(value, "bytes")
+  const lineage = parseArray(value.lineage, parseThreadOrigin)
+  const modelProvider = readString(value, "modelProvider")
+  const archived = readBoolean(value, "archived")
+  if (cwd !== undefined) ref.cwd = cwd
+  if (title !== undefined) ref.title = title
+  if (model !== undefined) ref.model = model
+  if (startedAt !== undefined) ref.startedAt = startedAt
+  if (updatedAt !== undefined) ref.updatedAt = updatedAt
+  if (bytes !== undefined) ref.bytes = bytes
+  if (lineage) ref.lineage = lineage
+  if (modelProvider !== undefined) ref.modelProvider = modelProvider
+  if (archived !== undefined) ref.archived = archived
+  return ref
+}
+
+function parseThreadOrigin(value: JsonValue): ThreadOrigin | null {
+  if (!isJsonRecord(value)) return null
+  const harness = readString(value, "harness")
+  if (!harness) return null
+  const origin: ThreadOrigin = { harness }
+  const title = readString(value, "title")
+  if (title !== undefined) origin.title = title
+  return origin
+}
+
+function parseThreadEntry(value: JsonValue): ThreadEntry | null {
+  if (!isJsonRecord(value)) return null
+  const kind = readString(value, "kind")
+  const at = readString(value, "at")
+  if (kind === "user") {
+    const text = readString(value, "text")
+    if (text === undefined) return null
+    const entry: ThreadEntry = { kind, text }
+    if (at !== undefined) entry.at = at
+    return entry
+  }
+  if (kind === "assistant") {
+    const blocks = parseArray(value.blocks, parseEntryBlock)
+    if (!blocks) return null
+    const entry: ThreadEntry = { kind, blocks }
+    const model = readString(value, "model")
+    const usage = parseTurnUsage(value.usage)
+    if (at !== undefined) entry.at = at
+    if (model !== undefined) entry.model = model
+    if (usage) entry.usage = usage
+    return entry
+  }
+  if (kind === "event") {
+    const label = readString(value, "label")
+    if (label === undefined) return null
+    const entry: ThreadEntry = { kind, label }
+    const detail = readString(value, "detail")
+    if (at !== undefined) entry.at = at
+    if (detail !== undefined) entry.detail = detail
+    return entry
+  }
+  return null
+}
+
+function parseEntryBlock(
+  value: JsonValue
+): Extract<ThreadEntry, { kind: "assistant" }>["blocks"][number] | null {
+  if (!isJsonRecord(value)) return null
+  const type = readString(value, "type")
+  if (type === "text" || type === "thinking") {
+    const text = readString(value, "text")
+    return text === undefined ? null : { type, text }
+  }
+  if (type !== "tool") return null
+  const name = readString(value, "name")
+  if (name === undefined) return null
+  const block: Extract<ThreadEntry, { kind: "assistant" }>["blocks"][number] = {
+    type,
+    name,
+  }
+  const input = readString(value, "input")
+  const output = readString(value, "output")
+  const error = readBoolean(value, "error")
+  if (input !== undefined) block.input = input
+  if (output !== undefined) block.output = output
+  if (error !== undefined) block.error = error
+  return block
+}
+
+function parseTurnUsage(
+  value: JsonValue | undefined
+): Extract<ThreadEntry, { kind: "assistant" }>["usage"] | null {
+  if (!isJsonRecord(value)) return null
+  const usage: NonNullable<
+    Extract<ThreadEntry, { kind: "assistant" }>["usage"]
+  > = {}
+  const input = readNumber(value, "input")
+  const output = readNumber(value, "output")
+  const cacheRead = readNumber(value, "cacheRead")
+  const cacheWrite = readNumber(value, "cacheWrite")
+  const costUsd = readNumber(value, "costUsd")
+  if (input !== undefined) usage.input = input
+  if (output !== undefined) usage.output = output
+  if (cacheRead !== undefined) usage.cacheRead = cacheRead
+  if (cacheWrite !== undefined) usage.cacheWrite = cacheWrite
+  if (costUsd !== undefined) usage.costUsd = costUsd
+  return usage
+}
+
+function parseArray<T>(
+  value: JsonValue | undefined,
+  parse: (item: JsonValue) => T | null
+): T[] | null {
+  if (!Array.isArray(value)) return null
+  const parsed: T[] = []
+  for (const item of value) {
+    const result = parse(item)
+    if (result === null) return null
+    parsed.push(result)
+  }
+  return parsed
+}
+
+function isJsonRecord(value: JsonValue | undefined): value is JsonRecord {
+  return Object.prototype.toString.call(value) === "[object Object]"
+}
+
+function isStringValue(value: JsonValue | undefined): value is string {
+  return Object.prototype.toString.call(value) === "[object String]"
+}
+
+function isNumberValue(value: JsonValue | undefined): value is number {
+  return Object.prototype.toString.call(value) === "[object Number]"
+}
+
+function isBooleanValue(value: JsonValue | undefined): value is boolean {
+  return Object.prototype.toString.call(value) === "[object Boolean]"
+}
+
+function readString(record: JsonRecord, key: string): string | undefined {
+  const value = record[key]
+  return isStringValue(value) ? value : undefined
+}
+
+function readNumber(record: JsonRecord, key: string): number | undefined {
+  const value = record[key]
+  return isNumberValue(value) && Number.isFinite(value) ? value : undefined
+}
+
+function readBoolean(record: JsonRecord, key: string): boolean | undefined {
+  const value = record[key]
+  return isBooleanValue(value) ? value : undefined
 }
