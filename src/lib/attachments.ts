@@ -42,6 +42,31 @@ export interface Attachment {
   pending?: boolean
 }
 
+export interface InlineAttachmentImage {
+  mimeType: string
+  data: string
+}
+
+export interface AttachmentPrompt {
+  text: string
+  images: InlineAttachmentImage[]
+}
+
+export interface AttachmentFileReference {
+  name: string
+  path: string
+}
+
+export interface ParsedAttachmentAppendix {
+  body: string
+  files: AttachmentFileReference[]
+}
+
+interface PendingAttachment {
+  attachment: Attachment
+  file: File
+}
+
 const MAX_INLINE_TEXT = 200_000
 const MAX_BYTES = 256 * 1024 * 1024
 
@@ -81,7 +106,7 @@ export function useAttachments() {
 
   /** Returns the markers to insert, so the caller can place them at the caret. */
   const add = useCallback(async (files: File[]): Promise<string> => {
-    const accepted: Attachment[] = []
+    const accepted: PendingAttachment[] = []
 
     for (const file of files) {
       if (file.size > MAX_BYTES) {
@@ -90,25 +115,28 @@ export function useAttachments() {
       }
       const kind = classify(file)
       accepted.push({
-        id: `${file.name}-${file.size}-${file.lastModified}-${nextIndex.current}`,
-        index: nextIndex.current++,
-        name: file.name,
-        mimeType: file.type || "application/octet-stream",
-        size: file.size,
-        kind,
-        preview: kind === "image" ? URL.createObjectURL(file) : undefined,
-        pending: true,
+        attachment: {
+          id: `${file.name}-${file.size}-${file.lastModified}-${nextIndex.current}`,
+          index: nextIndex.current++,
+          name: file.name,
+          mimeType: file.type || "application/octet-stream",
+          size: file.size,
+          kind,
+          preview: kind === "image" ? URL.createObjectURL(file) : undefined,
+          pending: true,
+        },
+        file,
       })
     }
     if (accepted.length === 0) return ""
 
-    setItems((current) => [...current, ...accepted])
+    setItems((current) => [...current, ...accepted.map((entry) => entry.attachment)])
 
     // Reading and staging happen after the chips are on screen, so a large
     // file never delays the acknowledgement that it was accepted.
     void Promise.all(
-      accepted.map(async (attachment, offset) => {
-        const file = files[files.length - accepted.length + offset]
+      accepted.map(async (entry) => {
+        const { attachment, file } = entry
         try {
           const resolved = await resolve(attachment, file)
           setItems((current) =>
@@ -123,7 +151,7 @@ export function useAttachments() {
       })
     )
 
-    return accepted.map((item) => `[Attachment ${item.index}]`).join(" ")
+    return accepted.map((entry) => `[Attachment ${entry.attachment.index}]`).join(" ")
   }, [])
 
   /**
@@ -217,11 +245,21 @@ function toBase64(file: File): Promise<string> {
     const reader = new FileReader()
     reader.onerror = () => reject(reader.error ?? new Error("read failed"))
     reader.onload = () => {
-      const url = reader.result as string
-      resolve(url.slice(url.indexOf(",") + 1))
+      try {
+        resolve(parseDataUrl(reader.result))
+      } catch (error) {
+        reject(error)
+      }
     }
     reader.readAsDataURL(file)
   })
+}
+
+function parseDataUrl(result: string | ArrayBuffer | null): string {
+  if (result === null || result instanceof ArrayBuffer) throw new Error("file reader returned no data URL")
+  const separator = result.indexOf(",")
+  if (separator === -1) throw new Error("file reader returned an invalid data URL")
+  return result.slice(separator + 1)
 }
 
 /**
@@ -229,11 +267,8 @@ function toBase64(file: File): Promise<string> {
  * markers so the model can tell which one a sentence refers to, and an
  * appendix explains what each marker is.
  */
-export function buildPrompt(
-  draft: string,
-  items: Attachment[]
-): { text: string; images: Array<{ mimeType: string; data: string }> } {
-  const images: Array<{ mimeType: string; data: string }> = []
+export function buildPrompt(draft: string, items: Attachment[]): AttachmentPrompt {
+  const images: InlineAttachmentImage[] = []
   const appendix: string[] = []
 
   for (const item of items) {
@@ -299,14 +334,11 @@ ${item.text}
  * appendix off lets the transcript show the words as words and the files
  * as chips — the attachment stays visible forever, not just at send time.
  */
-export function parseAttachmentAppendix(text: string): {
-  body: string
-  files: Array<{ name: string; path: string }>
-} {
+export function parseAttachmentAppendix(text: string): ParsedAttachmentAppendix {
   const at = text.lastIndexOf("\n---\n[Attachment ")
   if (at === -1) return { body: text, files: [] }
   const appendix = text.slice(at + 5)
-  const files: Array<{ name: string; path: string }> = []
+  const files: AttachmentFileReference[] = []
   for (const match of appendix.matchAll(
     /\[Attachment \d+\] (.+?) — .*?Saved at (.+?); read it from there/g
   )) {

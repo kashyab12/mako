@@ -8,12 +8,13 @@ export function threadToMessages(entries: ThreadEntry[], indexStart = 0): PiMess
     const entryIndex = indexStart + localIndex
     const messageId = `foreign-entry-${entryIndex}`
     if (entry.kind === "user") {
-      messages.push({
+      const message: PiMessage = {
         id: messageId,
         role: "user",
         blocks: [{ type: "text", text: entry.text }],
-        ...(entry.at ? { timestamp: Date.parse(entry.at) || undefined } : {}),
-      })
+      }
+      if (entry.at) message.timestamp = Date.parse(entry.at) || undefined
+      messages.push(message)
       continue
     }
     if (entry.kind === "event") {
@@ -33,24 +34,26 @@ export function threadToMessages(entries: ThreadEntry[], indexStart = 0): PiMess
         const callId = `${messageId}-tool-${blockIndex}`
         blocks.push({ type: "toolCall", id: callId, name: block.name, arguments: block.input })
         if (block.output !== undefined) {
-          blocks.push({
+          const result: Block = {
             type: "toolResult",
             id: callId,
             name: block.name,
             text: block.output,
-            ...(block.error ? { isError: true } : {}),
-          })
+          }
+          if (block.error) result.isError = true
+          blocks.push(result)
         }
       }
     }
     if (blocks.length === 0) continue
-    messages.push({
+    const message: PiMessage = {
       id: messageId,
       role: "assistant",
       blocks,
-      ...(entry.model ? { model: entry.model } : {}),
-      ...(entry.at ? { timestamp: Date.parse(entry.at) || undefined } : {}),
-    })
+    }
+    if (entry.model) message.model = entry.model
+    if (entry.at) message.timestamp = Date.parse(entry.at) || undefined
+    messages.push(message)
   }
   return messages
 }

@@ -55,6 +55,12 @@ export function formatTokens(count: number) {
   return `${(count / 1_000_000).toFixed(1)}M`
 }
 
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 export function formatCost(value: number) {
   if (!value) return "$0.00"
   if (value < 0.01) return "<$0.01"

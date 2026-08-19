@@ -7,12 +7,13 @@ declare global {
 }
 
 export function hasBridge(): boolean {
-  return typeof window !== "undefined" && Boolean(window.pi)
+  return Boolean(globalThis.window?.pi)
 }
 
 export function getPi(): PiBridge {
-  if (!window.pi) {
+  const bridge = globalThis.window?.pi
+  if (!bridge) {
     throw new Error("The desktop bridge is unavailable. Launch with `npm run desktop`.")
   }
-  return window.pi
+  return bridge
 }

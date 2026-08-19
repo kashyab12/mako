@@ -24,7 +24,7 @@ const EDIT_TOOLS = new Set(["edit", "multiedit"])
 const CREATE_TOOLS = new Set(["write"])
 
 /** Edited beats created beats read: show the strongest interaction. */
-const RANK: Record<FileAction, number> = { read: 0, created: 1, edited: 2 }
+const RANK = { read: 0, created: 1, edited: 2 } satisfies Record<FileAction, number>
 
 export function touchedFiles(messages: PiMessage[]): TouchedFile[] {
   const byPath = new Map<string, TouchedFile>()
