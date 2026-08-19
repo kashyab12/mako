@@ -16,25 +16,91 @@
  * exist as a file.
  */
 
+import { stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { stat } from "node:fs/promises"
-import { titleFrom, type Thread, type ThreadEntry, type ThreadRef } from "../format.js"
-import type { NativeFile, SessionProvider } from "./types.js"
+import type { DatabaseSync, SQLOutputValue } from "node:sqlite"
+import {
+  clip,
+  EntrySink,
+  titleFrom,
+  type EntryBlock,
+  type Thread,
+  type ThreadEntry,
+  type ThreadRef,
+} from "../format.js"
+import type {
+  NativeFile,
+  SessionFollower,
+  SessionProvider,
+  SessionUpdate,
+} from "./types.js"
 
-interface SqliteDatabase {
-  prepare(sql: string): { all(...args: unknown[]): unknown[]; get(...args: unknown[]): unknown }
-  close(): void
+type SqliteFields = Record<string, SQLOutputValue>
+type StoredTimestamp = number | undefined
+type ToolBlock = Extract<EntryBlock, { type: "tool" }>
+type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject
+
+type TextSource = JsonValue | SQLOutputValue | undefined
+
+interface JsonObject {
+  [key: string]: JsonValue
 }
 
-let sqliteOpen: ((path: string) => SqliteDatabase) | null | undefined
+type ChatContent = JsonValue
 
-async function openDatabase(path: string): Promise<SqliteDatabase | null> {
+interface ToolFunction {
+  name?: string
+  arguments?: JsonValue
+}
+
+interface ToolCall {
+  id?: string
+  name?: string
+  arguments?: JsonValue
+  function?: ToolFunction
+}
+
+interface ChatMessage {
+  role?: string
+  content?: ChatContent
+  thinking?: ChatContent
+  tool_calls?: ToolCall[]
+  tool_call_id?: string
+}
+
+interface DiscoveryRow {
+  id: string
+  activity: StoredTimestamp
+  top: number
+}
+
+interface SessionRow {
+  workingDirectory?: string
+  model?: string
+  title?: string
+  createdAt: StoredTimestamp
+  lastActivityAt: StoredTimestamp
+}
+
+interface MessageRow {
+  rowId: number
+  chatMessage?: string
+  createdAt: StoredTimestamp
+}
+
+interface MessageTranslator {
+  push(row: MessageRow): void
+  snapshot(): ThreadEntry[]
+  readonly unmatchedToolResult: boolean
+}
+
+let sqliteOpen: ((path: string) => DatabaseSync) | null | undefined
+
+async function openDatabase(path: string): Promise<DatabaseSync | null> {
   if (sqliteOpen === undefined) {
     try {
-      const sqlite = (await import("node:sqlite")) as {
-        DatabaseSync: new (path: string, options?: { readOnly?: boolean }) => SqliteDatabase
-      }
+      const sqlite = await import("node:sqlite")
       sqliteOpen = (file) => new sqlite.DatabaseSync(file, { readOnly: true })
     } catch {
       sqliteOpen = null
@@ -49,14 +115,9 @@ async function openDatabase(path: string): Promise<SqliteDatabase | null> {
 }
 
 /** Epoch seconds or millis — the store has carried both readings. */
-function isoOf(value: unknown): string | undefined {
-  if (typeof value !== "number" || value <= 0) return undefined
+function isoOf(value: StoredTimestamp): string | undefined {
+  if (value === undefined || value <= 0) return undefined
   return new Date(value > 1e12 ? value : value * 1000).toISOString()
-}
-
-interface ChatMessage {
-  role?: string
-  content?: unknown
 }
 
 export class DevinCliProvider implements SessionProvider {
@@ -85,24 +146,25 @@ export class DevinCliProvider implements SessionProvider {
     const db = await openDatabase(this.dbPath())
     if (!db) return []
     try {
-      const rows = db
+      const stored = db
         .prepare(
           `SELECT s.id AS id, s.last_activity_at AS activity,
                   (SELECT COALESCE(MAX(row_id), 0) FROM message_nodes m WHERE m.session_id = s.id) AS top
            FROM sessions s WHERE s.hidden = 0`
         )
-        .all() as Array<{ id?: string; activity?: number; top?: number }>
-      return rows.flatMap((row) => {
-        if (!row.id) return []
+        .all()
+      const files: NativeFile[] = []
+      for (const fields of stored) {
+        const row = parseDiscoveryRow(fields)
+        if (!row) continue
         const at = isoOf(row.activity)
-        return [
-          {
-            path: `${this.dbPath()}#${row.id}`,
-            bytes: row.top ?? 0,
-            mtimeMs: at ? Date.parse(at) : info.mtimeMs,
-          },
-        ]
-      })
+        files.push({
+          path: `${this.dbPath()}#${row.id}`,
+          bytes: row.top,
+          mtimeMs: at ? Date.parse(at) : info.mtimeMs,
+        })
+      }
+      return files
     } catch {
       return []
     } finally {
@@ -116,30 +178,23 @@ export class DevinCliProvider implements SessionProvider {
     const db = await openDatabase(this.dbPath())
     if (!db) return null
     try {
-      const row = db
+      const stored = db
         .prepare(
           "SELECT working_directory, model, title, created_at, last_activity_at FROM sessions WHERE id = ?"
         )
-        .get(id) as
-        | {
-            working_directory?: string
-            model?: string
-            title?: string
-            created_at?: number
-            last_activity_at?: number
-          }
-        | undefined
-      if (!row) return null
+        .get(id)
+      if (!stored) return null
+      const row = parseSessionRow(stored)
       return {
         harness: this.harness,
         nativeId: id,
         path: file.path,
-        cwd: row.working_directory,
+        cwd: row.workingDirectory,
         title: row.title ? (titleFrom(row.title) ?? row.title) : undefined,
         model: row.model,
         modelProvider: "devin",
-        startedAt: isoOf(row.created_at),
-        updatedAt: isoOf(row.last_activity_at),
+        startedAt: isoOf(row.createdAt),
+        updatedAt: isoOf(row.lastActivityAt),
         bytes: file.bytes,
       }
     } catch {
@@ -159,39 +214,259 @@ export class DevinCliProvider implements SessionProvider {
     const db = await openDatabase(this.dbPath())
     if (!db) return null
     try {
-      const rows = db
+      const stored = db
         .prepare(
-          "SELECT chat_message, created_at FROM message_nodes WHERE session_id = ? ORDER BY node_id"
+          "SELECT row_id, chat_message, created_at FROM message_nodes WHERE session_id = ? ORDER BY row_id"
         )
-        .all(id) as Array<{ chat_message?: string; created_at?: number }>
-      const entries: ThreadEntry[] = []
-      for (const row of rows) {
-        if (!row.chat_message) continue
-        let message: ChatMessage
-        try {
-          message = JSON.parse(row.chat_message) as ChatMessage
-        } catch {
-          continue
-        }
-        const text = contentText(message.content)
-        if (!text.trim()) continue
-        const at = isoOf(row.created_at)
-        if (message.role === "user") {
-          entries.push({ kind: "user", at, text })
-        } else if (message.role === "assistant") {
-          entries.push({ kind: "assistant", at, blocks: [{ type: "text", text }] })
-        }
-        // System rows are rules preambles and tool scaffolding — provider
-        // bookkeeping, not conversation.
+        .iterate(id)
+      const into = translator()
+      let cursor = 0
+      for (const fields of stored) {
+        const row = parseMessageRow(fields)
+        cursor = Math.max(cursor, row.rowId)
+        into.push(row)
       }
-      ref.bytes = rows.length
-      return { ref, entries }
+      ref.bytes = cursor
+      return { ref, entries: into.snapshot() }
     } catch {
       return null
     } finally {
       db.close()
     }
   }
+
+  createFollower(path: string, fromByte: number): SessionFollower {
+    const id = idOf(path)
+    let cursor = fromByte
+    let into = translator()
+    let previous: string[] = []
+
+    return {
+      get offset() {
+        return cursor
+      },
+      next: async (): Promise<SessionUpdate> => {
+        if (!id) return unchangedUpdate(cursor)
+        const db = await openDatabase(this.dbPath())
+        if (!db) return unchangedUpdate(cursor)
+        try {
+          const stored = db
+            .prepare(
+              "SELECT row_id, chat_message, created_at FROM message_nodes WHERE session_id = ? AND row_id > ? ORDER BY row_id"
+            )
+            .iterate(id, cursor)
+          let changed = false
+          for (const fields of stored) {
+            const row = parseMessageRow(fields)
+            cursor = Math.max(cursor, row.rowId)
+            into.push(row)
+            changed = true
+          }
+          if (!changed) return unchangedUpdate(cursor)
+          if (into.unmatchedToolResult) {
+            const full = await this.read(path)
+            cursor = full?.ref.bytes ?? cursor
+            into = translator()
+            previous = []
+            return {
+              entries: full?.entries ?? [],
+              nextByte: cursor,
+              replace: true,
+              replaceFrom: 0,
+            }
+          }
+          const current = into.snapshot()
+          let shared = 0
+          while (
+            shared < previous.length &&
+            previous[shared] === JSON.stringify(current[shared])
+          ) {
+            shared += 1
+          }
+          const appended = shared === previous.length
+          const entries = appended
+            ? current.slice(previous.length)
+            : current.slice(shared)
+          previous = current.map((entry) => JSON.stringify(entry))
+          const update: SessionUpdate = {
+            entries: structuredClone(entries),
+            nextByte: cursor,
+            replace: !appended,
+          }
+          if (!appended) update.replaceFrom = shared
+          return update
+        } finally {
+          db.close()
+        }
+      },
+    }
+  }
+}
+
+function translator(): MessageTranslator {
+  const sink = new EntrySink()
+  const tools = new Map<string, ToolBlock>()
+  let unmatchedToolResult = false
+
+  return {
+    push(row) {
+      if (!row.chatMessage) return
+      const message = parseChatMessage(row.chatMessage)
+      if (!message) return
+      const at = isoOf(row.createdAt)
+      if (message.role === "user") {
+        const text = contentText(message.content)
+        if (text.trim()) sink.push({ kind: "user", at, text })
+        return
+      }
+      if (message.role === "assistant") {
+        const blocks: EntryBlock[] = []
+        const thinking = contentText(message.thinking)
+        if (thinking.trim()) blocks.push({ type: "thinking", text: thinking })
+        for (const call of message.tool_calls ?? []) {
+          const name = call.name ?? call.function?.name ?? "tool"
+          const rawInput = call.arguments ?? call.function?.arguments
+          const block: ToolBlock = {
+            type: "tool",
+            name,
+            input: toolInputText(rawInput),
+          }
+          blocks.push(block)
+          if (call.id) tools.set(call.id, block)
+        }
+        const text = contentText(message.content)
+        if (text.trim()) blocks.push({ type: "text", text })
+        if (blocks.length > 0) sink.push({ kind: "assistant", at, blocks })
+        return
+      }
+      if (message.role === "tool") {
+        const block = message.tool_call_id
+          ? tools.get(message.tool_call_id)
+          : undefined
+        if (!block) {
+          unmatchedToolResult = true
+          return
+        }
+        const output = contentText(message.content)
+        if (output) block.output = clip(output)
+      }
+    },
+    snapshot() {
+      return sink.snapshot()
+    },
+    get unmatchedToolResult() {
+      return unmatchedToolResult
+    },
+  }
+}
+
+function unchangedUpdate(nextByte: number): SessionUpdate {
+  return { entries: [], nextByte, replace: false }
+}
+
+function parseDiscoveryRow(fields: SqliteFields): DiscoveryRow | null {
+  if (!isTextValue(fields.id) || !fields.id) return null
+  return {
+    id: fields.id,
+    activity: sqliteNumber(fields.activity),
+    top: isSqliteNumber(fields.top) ? fields.top : 0,
+  }
+}
+
+function parseSessionRow(fields: SqliteFields): SessionRow {
+  return {
+    workingDirectory: sqliteText(fields.working_directory),
+    model: sqliteText(fields.model),
+    title: sqliteText(fields.title),
+    createdAt: sqliteNumber(fields.created_at),
+    lastActivityAt: sqliteNumber(fields.last_activity_at),
+  }
+}
+
+function parseMessageRow(fields: SqliteFields): MessageRow {
+  return {
+    rowId: isSqliteNumber(fields.row_id) ? fields.row_id : 0,
+    chatMessage: sqliteText(fields.chat_message),
+    createdAt: sqliteNumber(fields.created_at),
+  }
+}
+
+function parseChatMessage(text: string): ChatMessage | null {
+  try {
+    const parsed: JsonValue = JSON.parse(text)
+    if (!isJsonObject(parsed)) return null
+    return {
+      role: jsonText(parsed.role),
+      content: parsed.content,
+      thinking: parsed.thinking,
+      tool_calls: parseToolCalls(parsed.tool_calls),
+      tool_call_id: jsonText(parsed.tool_call_id),
+    }
+  } catch {
+    return null
+  }
+}
+
+function parseToolCalls(value: JsonValue | undefined): ToolCall[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const calls: ToolCall[] = []
+  for (const item of value) {
+    if (!isJsonObject(item)) continue
+    calls.push({
+      id: jsonText(item.id),
+      name: jsonText(item.name),
+      arguments: item.arguments,
+      function: parseToolFunction(item.function),
+    })
+  }
+  return calls
+}
+
+function parseToolFunction(
+  value: JsonValue | undefined
+): ToolFunction | undefined {
+  if (!isJsonObject(value)) return undefined
+  return {
+    name: jsonText(value.name),
+    arguments: value.arguments,
+  }
+}
+
+function sqliteText(value: SQLOutputValue | undefined): string | undefined {
+  return isTextValue(value) ? value : undefined
+}
+
+function jsonText(value: JsonValue | undefined): string | undefined {
+  return isTextValue(value) ? value : undefined
+}
+
+function sqliteNumber(value: SQLOutputValue | undefined): StoredTimestamp {
+  return isSqliteNumber(value) ? value : undefined
+}
+
+function isTextValue(value: TextSource): value is string {
+  return Object.prototype.toString.call(value) === "[object String]"
+}
+
+function isSqliteNumber(value: SQLOutputValue | undefined): value is number {
+  return (
+    Object.prototype.toString.call(value) === "[object Number]" &&
+    Number.isFinite(Number(value))
+  )
+}
+
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return (
+    value !== null &&
+    value !== undefined &&
+    Object(value) === value &&
+    !Array.isArray(value)
+  )
+}
+
+function toolInputText(input: JsonValue | undefined): string | undefined {
+  if (input === undefined) return undefined
+  return clip(isTextValue(input) ? input : JSON.stringify(input))
 }
 
 function idOf(path: string): string | null {
@@ -199,17 +474,19 @@ function idOf(path: string): string | null {
   return at === -1 ? null : path.slice(at + 1) || null
 }
 
-function contentText(content: unknown): string {
-  if (typeof content === "string") return content
+function contentText(content: ChatContent | undefined): string {
+  if (isTextValue(content)) return content
+  if (isJsonObject(content)) {
+    if (isTextValue(content.text)) return content.text
+    if (isTextValue(content.thinking)) return content.thinking
+    if (content.content !== undefined) return contentText(content.content)
+  }
   if (Array.isArray(content)) {
     return content
-      .map((part) =>
-        typeof part === "string"
-          ? part
-          : typeof (part as { text?: string })?.text === "string"
-            ? (part as { text: string }).text
-            : ""
-      )
+      .map((part) => {
+        if (isTextValue(part)) return part
+        return isJsonObject(part) && isTextValue(part.text) ? part.text : ""
+      })
       .filter(Boolean)
       .join("\n")
   }
