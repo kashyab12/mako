@@ -86,8 +86,12 @@ function Status({ call }: { call: ToolCall }) {
   return null
 }
 
+function parseArgumentEntries(value: ToolCall["arguments"]) {
+  return Object.entries(Object(value))
+}
+
 function DefaultBody({ call, dense }: { call: ToolCall; dense: boolean }) {
-  const args = call.arguments && Object.keys(call.arguments as object).length > 0
+  const args = parseArgumentEntries(call.arguments).length > 0
 
   return (
     <div className="space-y-2 px-2.5 py-2">

@@ -1,4 +1,4 @@
-import type { ComponentType } from "react"
+import { createElement, type ComponentType } from "react"
 import { type ToolViewProps } from "@/extend/slots"
 import { Output } from "@/components/transcript/tool-row"
 import { argAt, editsOf } from "@/lib/tools"
@@ -15,18 +15,18 @@ import {
 } from "lucide-react"
 
 /** Icon by tool name, so the transcript is scannable without reading labels. */
-const ICONS: Record<string, ComponentType<{ className?: string }>> = {
-  bash: SquareTerminalIcon,
-  edit: FilePenLineIcon,
-  multiedit: FilePenLineIcon,
-  write: FilePlusIcon,
-  read: FileTextIcon,
-  grep: SearchIcon,
-  find: SearchIcon,
-  ls: FolderTreeIcon,
-  webfetch: GlobeIcon,
-  websearch: GlobeIcon,
-}
+const ICONS = new Map([
+  ["bash", SquareTerminalIcon],
+  ["edit", FilePenLineIcon],
+  ["multiedit", FilePenLineIcon],
+  ["write", FilePlusIcon],
+  ["read", FileTextIcon],
+  ["grep", SearchIcon],
+  ["find", SearchIcon],
+  ["ls", FolderTreeIcon],
+  ["webfetch", GlobeIcon],
+  ["websearch", GlobeIcon],
+])
 
 /**
  * Resolves a tool's glyph — a registered view's override first, then the
@@ -43,8 +43,8 @@ export function ToolGlyph({
   override?: ComponentType<{ className?: string }>
   className?: string
 }) {
-  const Glyph = override ?? ICONS[name.toLowerCase()] ?? WrenchIcon
-  return <Glyph className={className} />
+  const Glyph = override ?? ICONS.get(name.toLowerCase()) ?? WrenchIcon
+  return createElement(Glyph, { className })
 }
 
 /* ------------------------------------------------------------------ */

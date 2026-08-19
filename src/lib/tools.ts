@@ -1,6 +1,62 @@
 import type { Block, PiMessage } from "@/lib/types"
 import type { ToolCall } from "@/extend/slots"
 
+type ToolScalar = boolean | number | string | null
+type ToolContent = ToolScalar | ToolArguments | ToolContent[]
+
+interface ToolArguments {
+  [key: string]: ToolContent | undefined
+}
+
+interface ToolEdit {
+  oldText: string
+  newText: string
+}
+
+function parseToolContent<Content>(value: Content): ToolContent | undefined {
+  let serialized: string | undefined
+  try {
+    serialized = JSON.stringify(value)
+  } catch {
+    return undefined
+  }
+  if (serialized === undefined) return undefined
+  try {
+    const content: ToolContent = JSON.parse(serialized)
+    return content
+  } catch {
+    return undefined
+  }
+}
+
+function isToolArguments(content: ToolContent | undefined): content is ToolArguments {
+  return (
+    content !== undefined &&
+    content !== null &&
+    !Array.isArray(content) &&
+    Object.prototype.toString.call(content) === "[object Object]"
+  )
+}
+
+function parseToolArguments<Content>(value: Content): ToolArguments | undefined {
+  const content = parseToolContent(value)
+  return isToolArguments(content) ? content : undefined
+}
+
+function stringContent(content: ToolContent | undefined): string | undefined {
+  return Object.prototype.toString.call(content) === "[object String]"
+    ? String(content)
+    : undefined
+}
+
+function parseToolEdit(content: ToolContent): ToolEdit {
+  const edit = isToolArguments(content) ? content : undefined
+  return {
+    oldText: stringContent(edit?.oldText) ?? "",
+    newText: stringContent(edit?.newText) ?? "",
+  }
+}
+
 /**
  * Fold `tool` messages back into the assistant turn that called them. Pi's
  * message log keeps results as separate entries; the transcript reads far
@@ -74,25 +130,23 @@ export function pairTools(blocks: Block[]): ToolCall[] {
 }
 
 /** The one argument worth putting on a collapsed row. */
-export function primaryArgument(value: unknown): string {
-  if (!value || typeof value !== "object") return ""
-  const record = value as Record<string, unknown>
+export function primaryArgument<Content>(value: Content): string {
+  const args = parseToolArguments(value)
+  if (!args) return ""
   const candidate =
-    record.path ??
-    record.file_path ??
-    record.filePath ??
-    record.command ??
-    record.pattern ??
-    record.query ??
-    record.url ??
-    record.directory
-  return candidate == null ? "" : String(candidate)
+    args.path ??
+    args.file_path ??
+    args.filePath ??
+    args.command ??
+    args.pattern ??
+    args.query ??
+    args.url ??
+    args.directory
+  return candidate === undefined || candidate === null ? "" : String(candidate)
 }
 
-export function argAt(value: unknown, key: string): string | undefined {
-  if (!value || typeof value !== "object") return undefined
-  const found = (value as Record<string, unknown>)[key]
-  return typeof found === "string" ? found : undefined
+export function argAt<Content>(value: Content, key: string): string | undefined {
+  return stringContent(parseToolArguments(value)?.[key])
 }
 
 export function countLines(text?: string) {
@@ -103,17 +157,11 @@ export function countLines(text?: string) {
 }
 
 /** Normalize the edit tool's arguments: a list of edits, or the legacy pair. */
-export function editsOf(call: ToolCall): Array<{ oldText: string; newText: string }> {
-  const args = call.arguments as Record<string, unknown> | undefined
+export function editsOf(call: ToolCall): ToolEdit[] {
+  const args = parseToolArguments(call.arguments)
   if (!args) return []
-  if (Array.isArray(args.edits)) {
-    return (args.edits as Array<{ oldText?: string; newText?: string }>).map((edit) => ({
-      oldText: edit.oldText ?? "",
-      newText: edit.newText ?? "",
-    }))
-  }
-  if (typeof args.oldText === "string" && typeof args.newText === "string") {
-    return [{ oldText: args.oldText, newText: args.newText }]
-  }
-  return []
+  if (Array.isArray(args.edits)) return args.edits.map(parseToolEdit)
+  const oldText = stringContent(args.oldText)
+  const newText = stringContent(args.newText)
+  return oldText === undefined || newText === undefined ? [] : [{ oldText, newText }]
 }
