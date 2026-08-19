@@ -35,6 +35,7 @@ import {
   renderTranscript,
   renderTranscriptBundle,
   type TranscriptBundleMetadata,
+  type TranscriptOptions,
   type DaemonClient,
   type DaemonStats,
   type DevinAccount,
@@ -45,13 +46,11 @@ import {
 } from "@mako/sessions"
 import { annotate, bindLineage, loadLineage } from "./lineage.js"
 import { ensureDaemonLoginDefault } from "./daemon-login.js"
+import type { JsonObject, JsonValue } from "./codex-app-protocol.js"
 import type { HostEvent } from "./shared.js"
 
 /** Refs sent to the renderer per push. Nobody scrolls ten years of history. */
 const LIST_CAP = 600
-
-/** Catalog changes are bursty (an agent mid-turn saves constantly). */
-const PUSH_DEBOUNCE_MS = 80
 
 let catalog: SessionCatalog | null = null
 let daemon: DaemonClient | null = null
@@ -59,7 +58,6 @@ let daemon: DaemonClient | null = null
 const mirror = new Map<string, ThreadRef>()
 let devinSender: DevinRemote | null = null
 let emit: (event: HostEvent) => void = () => {}
-let pushTimer: NodeJS.Timeout | null = null
 
 /**
  * Prefer the daemon; run locally only when it cannot exist.
@@ -82,8 +80,10 @@ export function installThreads(send: (event: HostEvent) => void): void {
       devinSender = new DevinRemote(await devinAccounts())
       if (await connectViaDaemon()) return
       spawnDaemon()
-      await new Promise((resolve) => setTimeout(resolve, 600))
-      if (await connectViaDaemon()) return
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        if (await connectViaDaemon()) return
+      }
       await runLocalCatalog()
     } catch (error) {
       // A catalog that failed to build must say so — an empty rail with no
@@ -101,11 +101,20 @@ async function connectViaDaemon(): Promise<boolean> {
   try {
     const client = await connectDaemon()
     if (client.stats.version < PROTOCOL_VERSION) {
-      // An older daemon serves refs shaped for its own vintage. Retire it
-      // and report no daemon — the caller spawns a fresh one.
-      await client.retire().catch(() => {})
+      const pid = client.stats.pid
+      await Promise.race([
+        client.retire().catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, 150)),
+      ])
       client.close()
-      await new Promise((resolve) => setTimeout(resolve, 300))
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      if (pid !== process.pid && processIsAlive(pid)) {
+        try {
+          process.kill(pid, "SIGTERM")
+        } catch {
+          // It exited between the liveness check and the signal.
+        }
+      }
       return false
     }
     daemon = client
@@ -116,12 +125,18 @@ async function connectViaDaemon(): Promise<boolean> {
       if (event.event === "added" || event.event === "updated") {
         mirror.set(event.ref.path, event.ref)
         if (event.event === "added") bindLineage(event.ref)
-        schedulePush()
+        emit({ type: "thread-ref", ref: annotate(event.ref) })
       } else if (event.event === "removed") {
         mirror.delete(event.path)
-        schedulePush()
+        emit({ type: "thread-removed", path: event.path })
       } else if (event.event === "entries") {
-        emit({ type: "thread-entries", path: event.path, entries: event.entries, replace: event.replace })
+        emit({
+          type: "thread-entries",
+          path: event.path,
+          entries: event.entries,
+          replace: event.replace,
+          replaceFrom: event.replaceFrom,
+        })
       }
     })
     client.onClose(() => {
@@ -129,6 +144,15 @@ async function connectViaDaemon(): Promise<boolean> {
       daemon = null
       void runLocalCatalog().catch(() => {})
     })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
     return true
   } catch {
     return false
@@ -170,9 +194,12 @@ async function runLocalCatalog(): Promise<void> {
   push()
   catalog.startWatching()
   catalog.onEvent((event) => {
-    // A new session may be the one a continuation is waiting to claim.
     if (event.type === "added") bindLineage(event.ref)
-    schedulePush()
+    if (event.type === "removed") {
+      emit({ type: "thread-removed", path: event.path })
+    } else {
+      emit({ type: "thread-ref", ref: annotate(event.ref) })
+    }
   })
 }
 
@@ -198,15 +225,51 @@ export function daemonStatus(): DaemonStats | null {
 async function devinAccounts(): Promise<DevinAccount[]> {
   try {
     const raw = await readFile(join(homedir(), ".mako", "devin.json"), "utf8")
-    const parsed = JSON.parse(raw) as { accounts?: DevinAccount[] }
-    return Array.isArray(parsed.accounts) ? parsed.accounts : []
+    return parseDevinAccounts(raw)
   } catch {
     return []
   }
 }
 
+function parseDevinAccounts(raw: string): DevinAccount[] {
+  const value: JsonValue = JSON.parse(raw)
+  if (!isJsonObject(value) || !Array.isArray(value.accounts)) return []
+
+  const accounts: DevinAccount[] = []
+  for (const candidate of value.accounts) {
+    if (!isJsonObject(candidate)) continue
+    const name = stringValue(candidate.name)
+    const apiKey = stringValue(candidate.apiKey)
+    if (name === undefined || apiKey === undefined) continue
+    const account: DevinAccount = { name, apiKey }
+    const apiUrl = stringValue(candidate.apiUrl)
+    if (apiUrl !== undefined) account.apiUrl = apiUrl
+    accounts.push(account)
+  }
+  return accounts
+}
+
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return (
+    value !== undefined &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.prototype.toString.call(value) === "[object Object]"
+  )
+}
+
+function stringValue(value: JsonValue | undefined): string | undefined {
+  return isString(value) ? value : undefined
+}
+
+function isString(value: JsonValue | undefined): value is string {
+  return Object.prototype.toString.call(value) === "[object String]"
+}
+
 /** The configured Devin accounts, keys masked for display. */
-export async function devinAccountsMasked(): Promise<Array<{ name: string; key: string }>> {
+export async function devinAccountsMasked(): Promise<
+  Array<{ name: string; key: string }>
+> {
   const accounts = await devinAccounts()
   return accounts.map((account) => ({
     name: account.name,
@@ -219,7 +282,9 @@ export async function devinAccountsMasked(): Promise<Array<{ name: string; key: 
  * after a rebuild is warm — unchanged files are stat-only — so this costs a
  * moment, not a rescan of the world.
  */
-export async function saveDevinAccounts(accounts: DevinAccount[]): Promise<void> {
+export async function saveDevinAccounts(
+  accounts: DevinAccount[]
+): Promise<void> {
   // The renderer never sees real keys, so an unchanged account arrives as
   // the sentinel "__keep__" and keeps the key already on disk.
   const existing = await devinAccounts()
@@ -231,14 +296,21 @@ export async function saveDevinAccounts(accounts: DevinAccount[]): Promise<void>
   const { mkdir, writeFile } = await import("node:fs/promises")
   const dir = join(homedir(), ".mako")
   await mkdir(dir, { recursive: true })
-  await writeFile(join(dir, "devin.json"), JSON.stringify({ accounts: resolved }, null, 2) + "\n", "utf8")
+  await writeFile(
+    join(dir, "devin.json"),
+    JSON.stringify({ accounts: resolved }, null, 2) + "\n",
+    "utf8"
+  )
   const send = emit
   stopThreads()
   installThreads(send)
 }
 
 /** Whether a path belongs to a remote source (and can be replied to by it). */
-export async function sendRemote(path: string, message: string): Promise<boolean> {
+export async function sendRemote(
+  path: string,
+  message: string
+): Promise<boolean> {
   // Sending needs only the account key, not the catalog, so it works the
   // same whichever process owns the watchers.
   if (!devinSender?.configured || !devinSender.owns(path)) return false
@@ -252,7 +324,9 @@ export function remoteHarnesses(): string[] {
 }
 
 /** A new Devin cloud session from a prompt; polling surfaces it shortly. */
-export async function startDevin(prompt: string): Promise<{ sessionId: string; path: string }> {
+export async function startDevin(
+  prompt: string
+): Promise<{ sessionId: string; path: string }> {
   if (!devinSender?.configured) {
     throw new Error("Add a Devin service key in Settings → Agents first")
   }
@@ -265,10 +339,11 @@ export function stopThreads(): void {
   daemon?.close()
   daemon = null
   mirror.clear()
-  if (pushTimer) clearTimeout(pushTimer)
 }
 
-export function listThreads(filter: { cwd?: string; harness?: string } = {}): ThreadRef[] {
+export function listThreads(
+  filter: { cwd?: string; harness?: string } = {}
+): ThreadRef[] {
   const refs = daemon
     ? [...mirror.values()]
         .filter(
@@ -282,7 +357,9 @@ export function listThreads(filter: { cwd?: string; harness?: string } = {}): Th
 }
 
 export async function openThread(path: string): Promise<Thread | null> {
-  const thread = daemon ? await daemon.open(path) : await (catalog?.open(path) ?? null)
+  const thread = daemon
+    ? await daemon.open(path)
+    : await (catalog?.open(path) ?? null)
   return thread ? { ...thread, ref: annotate(thread.ref) } : null
 }
 
@@ -304,9 +381,19 @@ export function followThread(path: string, fromByte: number): void {
     return
   }
   unfollow =
-    catalog?.follow(path, fromByte, (entries: ThreadEntry[], replaced: boolean) => {
-      emit({ type: "thread-entries", path, entries, replace: replaced })
-    }) ?? null
+    catalog?.follow(
+      path,
+      fromByte,
+      (entries: ThreadEntry[], replaced: boolean, replaceFrom?: number) => {
+        emit({
+          type: "thread-entries",
+          path,
+          entries,
+          replace: replaced,
+          replaceFrom,
+        })
+      }
+    ) ?? null
 }
 
 export function unfollowThread(): void {
@@ -314,13 +401,30 @@ export function unfollowThread(): void {
   unfollow = null
 }
 
-const HARNESS_NAMES: Record<string, string> = {
+const HARNESS_NAMES = {
   pi: "Pi",
   codex: "Codex",
   claude: "Claude Code",
   cursor: "Cursor",
   grok: "Grok",
   devin: "Devin",
+} satisfies Partial<Record<ThreadRef["harness"], string>>
+
+function transcriptOptions(
+  harness: ThreadRef["harness"],
+  instruction: string | undefined
+): TranscriptOptions {
+  const options: TranscriptOptions = {
+    from: isNamedHarness(harness) ? HARNESS_NAMES[harness] : harness,
+  }
+  if (instruction) options.instruction = instruction
+  return options
+}
+
+function isNamedHarness(
+  harness: ThreadRef["harness"]
+): harness is keyof typeof HARNESS_NAMES {
+  return Object.hasOwn(HARNESS_NAMES, harness)
 }
 
 /**
@@ -329,13 +433,16 @@ const HARNESS_NAMES: Record<string, string> = {
  * harnesses whose native store we cannot yet write; the ones we can write
  * get the real thing via the emitters below.
  */
-export async function handoffFor(path: string, instruction?: string): Promise<string | null> {
+export async function handoffFor(
+  path: string,
+  instruction?: string
+): Promise<string | null> {
   const thread = await openThread(path)
   if (!thread) return null
-  return renderTranscript(thread, {
-    from: HARNESS_NAMES[thread.ref.harness] ?? thread.ref.harness,
-    ...(instruction ? { instruction } : {}),
-  })
+  return renderTranscript(
+    thread,
+    transcriptOptions(thread.ref.harness, instruction)
+  )
 }
 
 export interface TranscriptArtifact {
@@ -345,7 +452,10 @@ export interface TranscriptArtifact {
   metadata: TranscriptBundleMetadata
 }
 
-const transcriptArtifacts = new Map<string, { version: string; artifact: TranscriptArtifact }>()
+const transcriptArtifacts = new Map<
+  string,
+  { version: string; artifact: TranscriptArtifact }
+>()
 
 export async function transcriptArtifactFor(
   path: string,
@@ -356,7 +466,8 @@ export async function transcriptArtifactFor(
   const cacheKey = `${path}:${upto ?? "all"}`
   const version = `${known?.bytes ?? "?"}:${known?.updatedAt ?? "?"}:${instruction ?? ""}`
   const cached = transcriptArtifacts.get(cacheKey)
-  if (cached?.version === version && existsSync(cached.artifact.file)) return cached.artifact
+  if (cached?.version === version && existsSync(cached.artifact.file))
+    return cached.artifact
 
   const opened = await openThread(path)
   if (!opened) return null
@@ -364,15 +475,19 @@ export async function transcriptArtifactFor(
     upto !== undefined && upto < opened.entries.length
       ? { ref: opened.ref, entries: opened.entries.slice(0, upto + 1) }
       : opened
-  const bundle = renderTranscriptBundle(thread, {
-    from: HARNESS_NAMES[thread.ref.harness] ?? thread.ref.harness,
-    ...(instruction ? { instruction } : {}),
-  })
-  const digest = createHash("sha256")
-    .update(bundle.markdown)
-    .update("\0")
-  for (const asset of bundle.assets) digest.update(asset.path).update("\0").update(asset.content).update("\0")
-  const root = join(homedir(), ".mako", "transcripts", digest.digest("hex").slice(0, 24))
+  const bundle = renderTranscriptBundle(
+    thread,
+    transcriptOptions(thread.ref.harness, instruction)
+  )
+  const digest = createHash("sha256").update(bundle.markdown).update("\0")
+  for (const asset of bundle.assets)
+    digest.update(asset.path).update("\0").update(asset.content).update("\0")
+  const root = join(
+    homedir(),
+    ".mako",
+    "transcripts",
+    digest.digest("hex").slice(0, 24)
+  )
   await Promise.all(
     bundle.assets.map(async (asset) => {
       const file = join(root, asset.path)
@@ -398,7 +513,9 @@ export async function transcriptArtifactFor(
  * the emitted file opens like any Pi session, full history in the
  * transcript and in context, no handoff preamble anywhere.
  */
-export async function emitThreadAsPi(path: string): Promise<{ thread: Thread; sessionPath: string } | null> {
+export async function emitThreadAsPi(
+  path: string
+): Promise<{ thread: Thread; sessionPath: string } | null> {
   const thread = await openThread(path)
   if (!thread) return null
   const emitted = await emitPiSession(thread)
@@ -454,14 +571,6 @@ export async function emitThreadAs(
   if (!emitter) return null
   const emitted = await emitter(thread, {})
   return { thread, sessionId: emitted.sessionId, sessionPath: emitted.path }
-}
-
-function schedulePush(): void {
-  if (pushTimer) return
-  pushTimer = setTimeout(() => {
-    pushTimer = null
-    push()
-  }, PUSH_DEBOUNCE_MS)
 }
 
 function push(): void {
