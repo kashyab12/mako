@@ -15,6 +15,7 @@
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc -b --force",
     "test:mcp": "tsx scripts/test-mcp.ts",
+    "test:tuning": "tsx scripts/test-tuning-import.ts",
     "preview": "vite preview",
     "package": "npm run build && electron-builder --publish never",
     "release": "npm run build && electron-builder --publish always"

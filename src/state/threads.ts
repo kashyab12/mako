@@ -3,6 +3,7 @@ import { prefsStore, setPref } from "@/state/prefs"
 import { getMako, hasBridge } from "@/lib/bridge"
 import { toast } from "sonner"
 import type {
+  HarnessProfile,
   Thread,
   ThreadEntry,
   ThreadRef,
@@ -156,33 +157,81 @@ export function setComposerTuning(
 }
 
 /**
- * Each harness's own defaults, as last read from its config files by the
- * engine and remembered here — never invented. Until the first read lands
- * there is simply no name to show, and honesty beats a wrong model id.
+ * Copy a provider's starting selection into Mako once. After this boundary,
+ * provider config is discovery metadata only: Mako owns the model and option
+ * values and never follows later external changes.
  */
-export function harnessDefault(harness: string): {
-  model?: string
-  effort?: string
-} {
-  return prefsStore.get().harnessDefaults[harness] ?? {}
+export function initializeComposerTuning(profile: HarnessProfile): void {
+  if (!profile.available) return
+  const prefs = prefsStore.get()
+  if (prefs.providerTuningImported.includes(profile.id)) return
+
+  const current = threadsStore.get().composerTuning[profile.id]
+  if (!hasExplicitTuning(current)) {
+    const imported = tuningFromProfile(profile)
+    if (!imported) return
+    const next = {
+      ...threadsStore.get().composerTuning,
+      [profile.id]: imported,
+    }
+    threadsStore.set({ composerTuning: next })
+    setPref("composerTuning", next)
+  }
+  setPref("providerTuningImported", [
+    ...prefs.providerTuningImported,
+    profile.id,
+  ])
 }
 
-export function rememberHarnessDefault(
-  harness: string,
-  next: { model?: string; effort?: string }
-) {
-  const all = prefsStore.get().harnessDefaults
-  if (!next.model && !next.effort) {
-    if (all[harness]) {
-      const cleared = { ...all }
-      delete cleared[harness]
-      setPref("harnessDefaults", cleared)
+function hasExplicitTuning(tuning: ComposerTuning | undefined): boolean {
+  return Boolean(
+    tuning?.model ||
+      tuning?.effort !== undefined ||
+      tuning?.fast !== undefined ||
+      (tuning?.options && Object.keys(tuning.options).length > 0)
+  )
+}
+
+function tuningFromProfile(profile: HarnessProfile): ComposerTuning | null {
+  const identity = profile.configuredModel ?? profile.defaultModel
+  const model = profile.models.find(
+    (entry) =>
+      entry.id === identity ||
+      entry.launchId === identity ||
+      entry.aliases?.includes(identity ?? "")
+  )
+  if (!model) return null
+
+  const options: HarnessOptionValues = {}
+  for (const option of model.options) {
+    if (option.kind === "boolean") {
+      options[option.id] = option.current
+      continue
     }
-    return
+    const value =
+      option.current ?? option.values.find((entry) => entry.default)?.value
+    if (value !== undefined) options[option.id] = value
   }
-  const current = all[harness]
-  if (current?.model === next.model && current?.effort === next.effort) return
-  setPref("harnessDefaults", { ...all, [harness]: next })
+  const effortOption = model.options.find(
+    (option) =>
+      option.kind === "select" &&
+      /effort|reason/i.test(`${option.id} ${option.label}`)
+  )
+  const fastOption = model.options.find(
+    (option) => /fast|speed/i.test(`${option.id} ${option.label}`)
+  )
+  const effort =
+    effortOption?.kind === "select"
+      ? options[effortOption.id]
+      : undefined
+  const fast = fastOption ? options[fastOption.id] : undefined
+  const imported: ComposerTuning = { model: model.id }
+  if (effort !== undefined && effort !== true && effort !== false) {
+    imported.effort = effort
+  }
+  if (fast !== undefined) imported.fast = fast === true || fast === "true"
+  if (Object.keys(options).length > 0) imported.options = options
+  return imported
 }
 
 /** A just-started conversation waiting for its session file to appear. */

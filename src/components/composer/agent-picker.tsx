@@ -3,10 +3,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { harnessLabel } from "@/components/rail/harness-meta"
 import {
-  harnessDefault,
+  initializeComposerTuning,
   setComposerHarness,
-  setComposerTuning,
-  threadsStore,
   useThreads,
 } from "@/state/threads"
 import { getMako, hasBridge } from "@/lib/bridge"
@@ -67,19 +65,7 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
       .then((items) => {
         const next = Object.fromEntries(items.map((profile) => [profile.id, profile]))
         setProfiles(next)
-        for (const [harness, current] of Object.entries(
-          threadsStore.get().composerTuning
-        )) {
-          if (!current.model || !next[harness]) continue
-          const canonical = harnessModelByIdentity(next[harness], current.model)
-          if (canonical?.id === current.model) continue
-          setComposerTuning(harness, {
-            model: canonical?.id,
-            effort: undefined,
-            fast: undefined,
-            options: undefined,
-          })
-        }
+        for (const profile of items) initializeComposerTuning(profile)
       })
       .catch(() => {})
   }, [])
@@ -88,12 +74,11 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
 
   const modelFor = (harness: string): string | undefined => {
     const profile = profiles[harness]
-    if (!profile) return harnessDefault(harness).model
-    return harnessModelByIdentity(profile, tuning[harness]?.model)?.id ??
-      harnessModelByIdentity(
-        profile,
-        profile.configuredModel ?? profile.defaultModel
-      )?.id
+    if (!profile) return tuning[harness]?.model
+    return (
+      harnessModelByIdentity(profile, tuning[harness]?.model)?.id ??
+      tuning[harness]?.model
+    )
   }
 
   const pick = (harness: string) => {

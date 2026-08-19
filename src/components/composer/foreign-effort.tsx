@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { setComposerTuning, useThreads } from "@/state/threads"
+import {
+  initializeComposerTuning,
+  setComposerTuning,
+  useThreads,
+} from "@/state/threads"
 import { getMako, hasBridge } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
 import { harnessModelByIdentity } from "@/lib/types"
@@ -20,13 +24,16 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
 
   useEffect(() => {
     if (!hasBridge()) return
-    void getMako().harnessTuning(harness).then(setProfile).catch(() => {})
+    void getMako()
+      .harnessTuning(harness)
+      .then((next) => {
+        setProfile(next)
+        initializeComposerTuning(next)
+      })
+      .catch(() => {})
   }, [harness])
 
-  const model = harnessModelByIdentity(
-    profile ?? undefined,
-    chosen.model ?? profile?.configuredModel ?? profile?.defaultModel
-  )
+  const model = harnessModelByIdentity(profile ?? undefined, chosen.model)
   const options = model?.options ?? []
   if (options.length === 0) return null
 

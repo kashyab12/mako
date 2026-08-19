@@ -63,6 +63,8 @@ export interface Prefs {
       options?: Record<string, string | boolean>
     }
   >
+  /** Providers whose initial settings have already been copied into Mako. */
+  providerTuningImported: string[]
   /**
    * How a conversation moves to another harness. Transcript replay is the
    * loss-aware default; session import is the compatibility path for stores
@@ -71,8 +73,6 @@ export interface Prefs {
   conversionMode: "native" | "transcript"
   /** Your names for threads, by path — native stores don't take renames. */
   titleOverrides: Record<string, string>
-  /** Each harness's own defaults as last read from its config — never invented. */
-  harnessDefaults: Record<string, { model?: string; effort?: string }>
   /** Overrides the host's default commit-drafting prompt. */
   commitPrompt?: string
 }
@@ -108,7 +108,7 @@ const defaults: Prefs = {
   pinnedThreads: [],
   agentHarnessFilter: [],
   composerTuning: {},
-  harnessDefaults: {},
+  providerTuningImported: [],
   titleOverrides: {},
   conversionMode: "transcript",
 }
@@ -211,21 +211,6 @@ function readComposerTuning(
   return tuning
 }
 
-function readHarnessDefaults(
-  value: StoredValue
-): Prefs["harnessDefaults"] {
-  if (!isJsonObject(value)) return {}
-  const harnessDefaults: Prefs["harnessDefaults"] = {}
-  for (const [harness, entry] of Object.entries(value)) {
-    if (!isJsonObject(entry)) continue
-    harnessDefaults[harness] = {
-      model: readOptionalString(entry.model),
-      effort: readOptionalString(entry.effort),
-    }
-  }
-  return harnessDefaults
-}
-
 function parsePrefs(value: JsonValue): Prefs | null {
   if (!isJsonObject(value)) return null
   const prefs: Prefs = {
@@ -290,13 +275,16 @@ function parsePrefs(value: JsonValue): Prefs | null {
     ),
     composerHarness: readComposerHarness(value.composerHarness),
     composerTuning: readComposerTuning(value.composerTuning),
+    providerTuningImported: readStringList(
+      value.providerTuningImported,
+      defaults.providerTuningImported
+    ),
     conversionMode: readChoice(
       value.conversionMode,
       ["native", "transcript"],
       defaults.conversionMode
     ),
     titleOverrides: readStringRecord(value.titleOverrides),
-    harnessDefaults: readHarnessDefaults(value.harnessDefaults),
     commitPrompt: readOptionalString(value.commitPrompt),
   }
 

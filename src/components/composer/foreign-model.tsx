@@ -4,10 +4,8 @@ import { Eyebrow } from "@/components/ui/kit"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { harnessLabel } from "@/components/rail/harness-meta"
 import {
-  harnessDefault,
-  rememberHarnessDefault,
+  initializeComposerTuning,
   setComposerTuning,
-  threadsStore,
   useThreads,
 } from "@/state/threads"
 import { getMako, hasBridge } from "@/lib/bridge"
@@ -29,20 +27,7 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
       .harnessTuning(harness)
       .then((next) => {
         setProfile(next)
-        rememberHarnessDefault(harness, {
-          model: next.configuredModel ?? next.defaultModel,
-        })
-        const current = threadsStore.get().composerTuning[harness]?.model
-        if (!current) return
-        const canonical = harnessModelByIdentity(next, current)
-        if (canonical?.id !== current) {
-          setComposerTuning(harness, {
-            model: canonical?.id,
-            effort: undefined,
-            fast: undefined,
-            options: undefined,
-          })
-        }
+        initializeComposerTuning(next)
       })
       .catch(() => {})
   }, [harness])
@@ -51,17 +36,12 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
     load()
   }, [load])
 
-  const inherited = profile
-    ? harnessModelByIdentity(
-        profile,
-        profile.configuredModel ?? profile.defaultModel
-      )?.id
-    : harnessDefault(harness).model
-  const effective = harnessModelByIdentity(profile ?? undefined, chosen)?.id ?? inherited
+  const effective =
+    harnessModelByIdentity(profile ?? undefined, chosen)?.id ?? chosen
   const selected = harnessModelByIdentity(profile ?? undefined, effective)
   const models = useMemo(() => rankModels(profile?.models ?? [], query), [profile?.models, query])
 
-  const set = (model?: string) => {
+  const set = (model: string) => {
     setComposerTuning(harness, {
       model,
       effort: undefined,
@@ -111,7 +91,6 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
               key={model.id}
               model={model}
               selected={effective === model.id}
-              inherited={!chosen && effective === model.id}
               onChoose={() => set(model.id)}
             />
           ))}
@@ -119,13 +98,8 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
             <p className="px-2 py-5 text-center text-[11.5px] text-faint">No models match.</p>
           ) : null}
         </div>
-        <div className="flex items-center justify-between border-t border-hairline px-2 py-1.5 text-[10.5px] text-faint">
-          <span>{profile?.models.length ?? 0} models reported by the provider</span>
-          {chosen ? (
-            <button type="button" onClick={() => set(undefined)} className="pressable rounded px-1 hover:text-foreground">
-              Use provider setting
-            </button>
-          ) : null}
+        <div className="border-t border-hairline px-2 py-1.5 text-[10.5px] text-faint">
+          {profile?.models.length ?? 0} models reported by the provider
         </div>
       </PopoverContent>
     </Popover>
@@ -135,12 +109,10 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
 function ModelRow({
   model,
   selected,
-  inherited,
   onChoose,
 }: {
   model: HarnessModel
   selected: boolean
-  inherited: boolean
   onChoose: () => void
 }) {
   const optionSummary = model.options
@@ -162,7 +134,6 @@ function ModelRow({
       <span className="min-w-0 flex-1">
         <span className={cn("block truncate text-[12.5px]", selected ? "font-medium text-foreground" : "text-foreground/90")}>
           {model.label}
-          {inherited ? <span className="ml-1.5 text-[10px] font-normal text-faint">provider setting</span> : null}
         </span>
         <span className="mt-0.5 block truncate font-mono text-[10.5px] text-faint">
           {model.id}

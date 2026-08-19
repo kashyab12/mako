@@ -345,9 +345,11 @@ function Agents() {
         />
       </Row>
       <p className="pb-3 text-[12px] leading-relaxed text-muted-foreground">
-        Every agent whose sessions appear in the Threads rail, and whether its
-        CLI is on this machine. Installing a CLI is all it takes — sessions are
-        found and watched automatically.
+        Every provider whose sessions appear in the rail, and whether its
+        native control transport is available. The first time Mako sees a
+        provider, it copies that provider&apos;s model, reasoning, Fast mode, and
+        context defaults as a starting point. From then on Mako owns those
+        choices—changes made in either place do not rewrite the other.
       </p>
       <p className="mb-3 flex items-center gap-1.5 rounded-md bg-surface px-2.5 py-1.5 text-[11px] text-faint">
         <span
