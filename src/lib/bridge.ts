@@ -4,6 +4,10 @@ declare global {
   interface Window {
     mako?: MakoBridge
   }
+
+  interface WindowEventMap {
+    "mako:inspector-panel": CustomEvent<string>
+  }
 }
 
 export function hasBridge(): boolean {

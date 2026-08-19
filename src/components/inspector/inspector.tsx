@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useInspectorPanels } from "@/extend/slots"
 import { setPref, usePrefs, type InspectorTab } from "@/state/prefs"
 import { useSession } from "@/state/session"
@@ -41,6 +41,20 @@ export function Inspector() {
     },
     [persistedTab]
   )
+
+  useEffect(() => {
+    const open = (event: Event) => {
+      if (
+        !(event instanceof CustomEvent) ||
+        Object.prototype.toString.call(event.detail) !== "[object String]"
+      ) {
+        return
+      }
+      selectTab(String(event.detail))
+    }
+    window.addEventListener("mako:inspector-panel", open)
+    return () => window.removeEventListener("mako:inspector-panel", open)
+  }, [selectTab])
 
   const Current = panels.find((panel) => panel.id === active)?.render
 

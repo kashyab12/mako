@@ -282,6 +282,20 @@ const DESK_COMMANDS: DeskCommand[] = [
     },
   },
   {
+    id: "view.terminal",
+    title: "Show terminal",
+    section: "View",
+    keys: "mod+alt+4",
+    run: () => {
+      setPref("inspectorOpen", true)
+      requestAnimationFrame(() => {
+        window.dispatchEvent(
+          new CustomEvent("mako:inspector-panel", { detail: "terminal" })
+        )
+      })
+    },
+  },
+  {
     id: "view.group-by-project",
     title: "Group sessions by project",
     section: "Workspace",
