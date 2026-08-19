@@ -1,7 +1,11 @@
 import { createHook, createStore } from "@/state/store"
 import { getMako, hasBridge } from "@/lib/bridge"
 import { toast } from "sonner"
-import { threadsStore, withConversion } from "@/state/threads"
+import {
+  setThreadRunning,
+  threadsStore,
+  withConversion,
+} from "@/state/threads"
 import type {
   AcpPermissionRequest,
   AcpPromptAttachment,
@@ -41,6 +45,7 @@ interface AcpState {
   blocks: AcpBlock[]
   permission: AcpPermissionRequest | null
   starting: boolean
+  threadPath?: string
   /** Typed while the agent was working; sent the moment it goes quiet. */
   queued: { text: string; attachments: AcpPromptAttachment[] } | null
 }
@@ -59,9 +64,10 @@ export const acpStore = createStore<AcpState>({
 export const useAcp = createHook(acpStore)
 
 export function applyAcpSession(session: AcpSessionState) {
-  const { session: current, queued } = acpStore.get()
+  const { session: current, queued, threadPath } = acpStore.get()
   if (!current || current.id !== session.id) return
   acpStore.set({ session })
+  if (threadPath) setThreadRunning(threadPath, session.status === "running")
   if (session.status === "failed" && session.error) toast.error(session.error)
   // A message typed mid-turn goes the moment the agent goes quiet — that is
   // what queueing promised.
@@ -176,7 +182,7 @@ export const acp = {
       }
       if (canResume) options.resume = ref.nativeId
       const session = await getMako().acpStart(harness, ref.cwd ?? "", options)
-      acpStore.set({ session, starting: false })
+      acpStore.set({ session, starting: false, threadPath: ref.path })
       if (contextPrompt) await getMako().acpPrompt(session.id, contextPrompt)
     } catch (error) {
       acpStore.set({ starting: false })
@@ -192,7 +198,13 @@ export const acp = {
     if (!hasBridge()) return false
     const previous = acpStore.get().session
     if (previous) await getMako().acpClose(previous.id)
-    acpStore.set({ starting: true, blocks: [], permission: null })
+    setThreadRunning(ref.path, true)
+    acpStore.set({
+      starting: true,
+      blocks: [],
+      permission: null,
+      threadPath: ref.path,
+    })
     try {
       const session = await getMako().acpStart(ref.harness, ref.cwd ?? "", {
         title: ref.title,
@@ -203,7 +215,8 @@ export const acp = {
       await getMako().acpPrompt(session.id, prompt, attachments)
       return true
     } catch (error) {
-      acpStore.set({ starting: false })
+      setThreadRunning(ref.path, false)
+      acpStore.set({ starting: false, threadPath: undefined })
       toast.error(error instanceof Error ? error.message : String(error))
       return false
     }
@@ -223,7 +236,12 @@ export const acp = {
     attachments: AcpPromptAttachment[] = []
   ) {
     if (!hasBridge()) return false
-    acpStore.set({ starting: true, blocks: [], permission: null })
+    acpStore.set({
+      starting: true,
+      blocks: [],
+      permission: null,
+      threadPath: undefined,
+    })
     try {
       const session = await getMako().acpStart(harness, cwd, {
         tuning: threadsStore.get().composerTuning[harness],
@@ -277,8 +295,15 @@ export const acp = {
   },
 
   close() {
-    const { session } = acpStore.get()
+    const { session, threadPath } = acpStore.get()
     if (session && hasBridge()) void getMako().acpClose(session.id)
-    acpStore.set({ session: null, blocks: [], permission: null, queued: null })
+    if (threadPath) setThreadRunning(threadPath, false)
+    acpStore.set({
+      session: null,
+      blocks: [],
+      permission: null,
+      queued: null,
+      threadPath: undefined,
+    })
   },
 }

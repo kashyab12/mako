@@ -307,12 +307,16 @@ export function applyThreads(list: ThreadRef[]) {
 }
 
 /** A native run started, finished, or failed, on any thread. */
-export function applyThreadRun(run: ThreadRunState) {
-  const { viewing, running } = threadsStore.get()
-  const next = { ...running }
-  if (run.status === "running") next[run.path] = true
-  else delete next[run.path]
+export function setThreadRunning(path: string, active: boolean) {
+  const next = { ...threadsStore.get().running }
+  if (active) next[path] = true
+  else delete next[path]
   threadsStore.set({ running: next })
+}
+
+export function applyThreadRun(run: ThreadRunState) {
+  const { viewing } = threadsStore.get()
+  setThreadRunning(run.path, run.status === "running")
   if (viewing && viewing.ref.path === run.path) threadsStore.set({ run })
   if (run.status === "failed" && run.error) toast.error(run.error)
   // A finished run releases its queue: the next waiting prompt goes out
