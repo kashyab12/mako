@@ -33,74 +33,6 @@ interface ResumeCommand {
   args: string[]
 }
 
-/** How each harness resumes a session headlessly with one new message. */
-const RESUME: Record<
-  string,
-  (nativeId: string, prompt: string, tuning?: FreshOptions) => ResumeCommand
-> = {
-  codex: (id, prompt, tuning) => ({
-    command: "codex",
-    args: [
-      "exec",
-      "resume",
-      id,
-      prompt,
-      "--sandbox",
-      "workspace-write",
-      "--skip-git-repo-check",
-      ...(tuning?.model ? ["-m", tuning.model] : []),
-      ...(tuning?.effort || typeof tuning?.options?.effort === "string"
-        ? ["-c", `model_reasoning_effort="${tuning.effort ?? tuning.options?.effort}"`]
-        : []),
-      ...(typeof tuning?.options?.serviceTier === "string"
-        ? ["-c", `service_tier="${tuning.options.serviceTier}"`]
-        : []),
-    ],
-  }),
-  // No --fork-session: the default reuses the session id, so the turn lands
-  // in the same file the viewer is tailing.
-  claude: (id, prompt, tuning) => ({
-    command: "claude",
-    args: [
-      "-p",
-      prompt,
-      "--resume",
-      id,
-      "--dangerously-skip-permissions",
-      ...(tuning?.model ? ["--model", tuning.model] : []),
-      ...(tuning?.effort ? ["--effort", tuning.effort] : []),
-    ],
-  }),
-  cursor: (id, prompt, tuning) => ({
-    command: "cursor-agent",
-    args: [
-      "-p",
-      prompt,
-      "--resume",
-      id,
-      "--force",
-      // Only when a model was chosen: effort/fast are bracket parameters on
-      // the model flag, and passing "auto[...]" would silently change the
-      // session's model just to express an effort.
-      ...(tuning?.model ? ["--model", cursorModel(tuning) ?? tuning.model] : []),
-    ],
-  }),
-  grok: (id, prompt, tuning) => ({
-    command: "agent",
-    args: [
-      "-p",
-      prompt,
-      "--resume",
-      id,
-      "--always-approve",
-      ...(tuning?.model ? ["--model", tuning.model] : []),
-      ...(tuning?.effort || typeof tuning?.options?.effort === "string"
-        ? ["--reasoning-effort", String(tuning.effort ?? tuning.options?.effort)]
-        : []),
-    ],
-  }),
-}
-
 /**
  * How each harness starts a *new* headless session with an opening prompt.
  * Used by cross-harness continuation: the rendered handoff becomes the first
@@ -114,11 +46,39 @@ export interface FreshOptions {
   options?: Record<string, string | boolean>
 }
 
+interface CommandTuning {
+  model?: string
+  effort?: string
+  cliEffort?: string
+  fast?: boolean
+  serviceTier?: string
+}
+
+function stringOption(value: string | boolean | undefined): string | undefined {
+  if (value === undefined || value === true || value === false) return undefined
+  return value
+}
+
+function commandTuning(options: FreshOptions | undefined): CommandTuning {
+  if (!options) return {}
+  const tuning: CommandTuning = {}
+  const optionEffort = stringOption(options.options?.effort)
+  const serviceTier = stringOption(options.options?.serviceTier)
+  if (options.model !== undefined) tuning.model = options.model
+  if (options.effort !== undefined) tuning.effort = options.effort
+  if (options.effort || optionEffort !== undefined) {
+    tuning.cliEffort = options.effort ?? optionEffort
+  }
+  if (options.fast !== undefined) tuning.fast = options.fast
+  if (serviceTier !== undefined) tuning.serviceTier = serviceTier
+  return tuning
+}
+
 /**
  * Cursor takes tuning as bracket parameters on the model itself —
  * `sonnet-4.5[effort=high,fast=true]` — so its options fold into one flag.
  */
-function cursorModel(options: FreshOptions): string | undefined {
+function cursorModel(options: CommandTuning): string | undefined {
   const params: string[] = []
   if (options.effort) params.push(`effort=${options.effort}`)
   if (options.fast !== undefined) params.push(`fast=${options.fast}`)
@@ -127,8 +87,100 @@ function cursorModel(options: FreshOptions): string | undefined {
   return params.length > 0 ? `${base}[${params.join(",")}]` : base
 }
 
-const FRESH: Record<string, (prompt: string, options: FreshOptions) => ResumeCommand> = {
-  codex: (prompt, options) => ({
+function buildCodexResume(
+  id: string,
+  prompt: string,
+  options?: FreshOptions
+): ResumeCommand {
+  const tuning = commandTuning(options)
+  return {
+    command: "codex",
+    args: [
+      "exec",
+      "resume",
+      id,
+      prompt,
+      "--sandbox",
+      "workspace-write",
+      "--skip-git-repo-check",
+      ...(tuning.model ? ["-m", tuning.model] : []),
+      ...(tuning.cliEffort !== undefined
+        ? ["-c", `model_reasoning_effort="${tuning.cliEffort}"`]
+        : []),
+      ...(tuning.serviceTier !== undefined
+        ? ["-c", `service_tier="${tuning.serviceTier}"`]
+        : []),
+    ],
+  }
+}
+
+function buildClaudeResume(
+  id: string,
+  prompt: string,
+  options?: FreshOptions
+): ResumeCommand {
+  const tuning = commandTuning(options)
+  return {
+    command: "claude",
+    args: [
+      "-p",
+      prompt,
+      "--resume",
+      id,
+      "--dangerously-skip-permissions",
+      ...(tuning.model ? ["--model", tuning.model] : []),
+      ...(tuning.effort ? ["--effort", tuning.effort] : []),
+    ],
+  }
+}
+
+function buildCursorResume(
+  id: string,
+  prompt: string,
+  options?: FreshOptions
+): ResumeCommand {
+  const tuning = commandTuning(options)
+  return {
+    command: "cursor-agent",
+    args: [
+      "-p",
+      prompt,
+      "--resume",
+      id,
+      "--force",
+      // Only when a model was chosen: effort/fast are bracket parameters on
+      // the model flag, and passing "auto[...]" would silently change the
+      // session's model just to express an effort.
+      ...(tuning.model ? ["--model", cursorModel(tuning) ?? tuning.model] : []),
+    ],
+  }
+}
+
+function buildGrokResume(
+  id: string,
+  prompt: string,
+  options?: FreshOptions
+): ResumeCommand {
+  const tuning = commandTuning(options)
+  return {
+    command: "agent",
+    args: [
+      "-p",
+      prompt,
+      "--resume",
+      id,
+      "--always-approve",
+      ...(tuning.model ? ["--model", tuning.model] : []),
+      ...(tuning.cliEffort !== undefined
+        ? ["--reasoning-effort", tuning.cliEffort]
+        : []),
+    ],
+  }
+}
+
+function buildCodexFresh(prompt: string, options: FreshOptions): ResumeCommand {
+  const tuning = commandTuning(options)
+  return {
     command: "codex",
     args: [
       "exec",
@@ -136,44 +188,76 @@ const FRESH: Record<string, (prompt: string, options: FreshOptions) => ResumeCom
       "--sandbox",
       "workspace-write",
       "--skip-git-repo-check",
-      ...(options.model ? ["-m", options.model] : []),
-      ...(options.effort || typeof options.options?.effort === "string"
-        ? ["-c", `model_reasoning_effort="${options.effort ?? options.options?.effort}"`]
+      ...(tuning.model ? ["-m", tuning.model] : []),
+      ...(tuning.cliEffort !== undefined
+        ? ["-c", `model_reasoning_effort="${tuning.cliEffort}"`]
         : []),
-      ...(typeof options.options?.serviceTier === "string"
-        ? ["-c", `service_tier="${options.options.serviceTier}"`]
+      ...(tuning.serviceTier !== undefined
+        ? ["-c", `service_tier="${tuning.serviceTier}"`]
         : []),
     ],
-  }),
-  claude: (prompt, options) => ({
+  }
+}
+
+function buildClaudeFresh(
+  prompt: string,
+  options: FreshOptions
+): ResumeCommand {
+  const tuning = commandTuning(options)
+  return {
     command: "claude",
     args: [
       "-p",
       prompt,
       "--dangerously-skip-permissions",
-      ...(options.model ? ["--model", options.model] : []),
-      ...(options.effort ? ["--effort", options.effort] : []),
+      ...(tuning.model ? ["--model", tuning.model] : []),
+      ...(tuning.effort ? ["--effort", tuning.effort] : []),
     ],
-  }),
-  cursor: (prompt, options) => {
-    const model = cursorModel(options)
-    return {
-      command: "cursor-agent",
-      args: ["-p", prompt, "--force", ...(model ? ["--model", model] : [])],
-    }
-  },
-  grok: (prompt, options) => ({
+  }
+}
+
+function buildCursorFresh(
+  prompt: string,
+  options: FreshOptions
+): ResumeCommand {
+  const model = cursorModel(commandTuning(options))
+  return {
+    command: "cursor-agent",
+    args: ["-p", prompt, "--force", ...(model ? ["--model", model] : [])],
+  }
+}
+
+function buildGrokFresh(prompt: string, options: FreshOptions): ResumeCommand {
+  const tuning = commandTuning(options)
+  return {
     command: "agent",
     args: [
       "-p",
       prompt,
       "--always-approve",
-      ...(options.model ? ["--model", options.model] : []),
-      ...(options.effort || typeof options.options?.effort === "string"
-        ? ["--reasoning-effort", String(options.effort ?? options.options?.effort)]
+      ...(tuning.model ? ["--model", tuning.model] : []),
+      ...(tuning.cliEffort !== undefined
+        ? ["--reasoning-effort", tuning.cliEffort]
         : []),
     ],
-  }),
+  }
+}
+
+/** How each harness resumes a session headlessly with one new message. */
+const RESUME = {
+  codex: buildCodexResume,
+  // No --fork-session: the default reuses the session id, so the turn lands
+  // in the same file the viewer is tailing.
+  claude: buildClaudeResume,
+  cursor: buildCursorResume,
+  grok: buildGrokResume,
+}
+
+const FRESH = {
+  codex: buildCodexFresh,
+  claude: buildClaudeFresh,
+  cursor: buildCursorFresh,
+  grok: buildGrokFresh,
 }
 
 export function resumableHarnesses(): string[] {
@@ -215,9 +299,17 @@ export async function resumeNative(
   const existing = runs.get(ref.path)
   if (existing && existing.state.status === "running") return existing.state
 
-  const make = RESUME[ref.harness]
-  if (!make) throw new Error(`Sessions from ${ref.harness} cannot be resumed here`)
-  return launch(ref.path, ref.harness, ref.cwd, make(ref.nativeId, prompt, tuning))
+  const make = Object.entries(RESUME).find(
+    ([harness]) => harness === ref.harness
+  )?.[1]
+  if (!make)
+    throw new Error(`Sessions from ${ref.harness} cannot be resumed here`)
+  return launch(
+    ref.path,
+    ref.harness,
+    ref.cwd,
+    make(ref.nativeId, prompt, tuning)
+  )
 }
 
 /**
@@ -235,9 +327,17 @@ export async function startFresh(
   prompt: string,
   options: FreshOptions = {}
 ): Promise<ThreadRunState> {
-  const make = FRESH[harness]
-  if (!make) throw new Error(`A new ${harness} session cannot be started from here`)
-  return launch(`fresh:${harness}:${++freshCounter}`, harness, cwd, make(prompt, options))
+  const make = Object.entries(FRESH).find(
+    ([candidate]) => candidate === harness
+  )?.[1]
+  if (!make)
+    throw new Error(`A new ${harness} session cannot be started from here`)
+  return launch(
+    `fresh:${harness}:${++freshCounter}`,
+    harness,
+    cwd,
+    make(prompt, options)
+  )
 }
 
 async function launch(
@@ -282,7 +382,9 @@ async function launch(
   child.on("error", (error) => {
     finish(run, {
       status: "failed",
-      error: error.message.includes("ENOENT") ? `${command} is not installed` : error.message,
+      error: error.message.includes("ENOENT")
+        ? `${command} is not installed`
+        : error.message,
     })
   })
   child.on("exit", (code, signal) => {
