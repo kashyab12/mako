@@ -555,6 +555,9 @@ export const threads = {
       }
       return true
     }
+    if (threadsStore.get().acpable.includes(ref.harness)) {
+      return (await import("@/state/acp")).acp.resumeAndSend(ref, prompt)
+    }
     // Paint the message NOW. The CLI takes a second to launch and the tail
     // another moment to land; a reply that vanishes into that gap reads as
     // a send that failed. The echo carries a flag so the real turn from the

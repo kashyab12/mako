@@ -63,17 +63,12 @@ import {
 import { HostPool } from "./pool.js"
 import {
   daemonStatus,
-  devinAccountsMasked,
-  startDevin,
   emitThreadAs,
   followThread,
   threadsReady,
   installThreads,
   listThreads,
   openThread,
-  remoteHarnesses,
-  saveDevinAccounts,
-  sendRemote,
   stopThreads,
   transcriptArtifactFor,
   transcriptInlineFor,
@@ -657,8 +652,7 @@ function bindIpc() {
   )
   handle("mako:thread-unfollow", () => unfollowThread())
   handle("mako:thread-resumable", () => [
-    ...resumableHarnesses(),
-    ...remoteHarnesses(),
+    ...new Set([...resumableHarnesses(), ...acpHarnesses()]),
   ])
   handle("mako:thread-continue-targets", async () =>
     (await harnessProfiles())
@@ -745,12 +739,6 @@ function bindIpc() {
       accountUsage(harness, name)
   )
 
-  handle("mako:devin-accounts", () => devinAccountsMasked())
-  handle(
-    "mako:devin-accounts-save",
-    (_e, accounts: Array<{ name: string; apiKey: string }>) =>
-      saveDevinAccounts(accounts)
-  )
   handle("mako:harness-profiles", () => harnessProfiles())
   handle("mako:harness-availability", async () =>
     Object.fromEntries(
@@ -873,12 +861,6 @@ function bindIpc() {
     ) => {
       const live = await ready()
       const cwd = live.active.workspace
-      if (harness === "devin") {
-        // Devin works in its own cloud, not this folder; polling lists the
-        // session moments after it exists.
-        await startDevin(prompt)
-        return { run: null, cwd: "" }
-      }
       const profile = await harnessProfile(harness)
       return {
         run: await startFresh(
@@ -910,11 +892,6 @@ function bindIpc() {
         options?: Record<string, string | boolean>
       }
     ) => {
-      // A remote session (Devin) takes the message through its API and keeps
-      // working in the cloud; the follow poll streams what it does next.
-      if (await sendRemote(path, prompt)) {
-        return { path, harness: "devin", status: "done" as const }
-      }
       const thread = await openThread(path)
       if (!thread) throw new Error("This session could not be read")
       const profile = await harnessProfile(thread.ref.harness)

@@ -166,7 +166,7 @@ assert.equal(collisionCalls.length, 0)
 const staleThread = {
   harness: "devin",
   nativeId: "stale-after-prefetch",
-  path: "devin://work/stale-after-prefetch",
+  path: "/sessions/devin.db#stale-after-prefetch",
   title: "Survives catalog refresh",
 }
 const staleToken = threadToken(staleThread.harness, staleThread.nativeId)

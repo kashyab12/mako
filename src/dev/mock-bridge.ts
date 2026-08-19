@@ -1071,8 +1071,6 @@ export function installMockBridge() {
                 resetsAt: Date.now() + 2 * 86_400_000,
               },
             },
-    devinAccounts: async () => [{ name: "work", key: "apk_…f3a1" }],
-    saveDevinAccounts: async () => {},
     harnessProfiles: async () => [
       {
         id: "claude",

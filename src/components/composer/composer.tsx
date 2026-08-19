@@ -301,16 +301,7 @@ export function Composer() {
       const attachmentPrompt = buildForeignPrompt(text, staged)
       const full = await appendThreadReferences(
         attachmentPrompt,
-        threadsStore.get().threads,
-        {
-          // Only Devin Cloud cannot open this machine's transcript paths.
-          // Local Devin ACP reads the content-addressed bundle like every other
-          // local provider and keeps the larger, sidecar-preserving context.
-          inline:
-            viewingRef?.path.startsWith("devin://") ||
-            (harness === "devin" &&
-              !threadsStore.get().acpable.includes("devin")),
-        }
+        threadsStore.get().threads
       )
       if (!full.trim()) return
       const acpAttachments = staged.map(toAcpPromptAttachment)

@@ -184,6 +184,31 @@ export const acp = {
     }
   },
 
+  async resumeAndSend(
+    ref: ThreadRef,
+    prompt: string,
+    attachments: AcpPromptAttachment[] = []
+  ) {
+    if (!hasBridge()) return false
+    const previous = acpStore.get().session
+    if (previous) await getMako().acpClose(previous.id)
+    acpStore.set({ starting: true, blocks: [], permission: null })
+    try {
+      const session = await getMako().acpStart(ref.harness, ref.cwd ?? "", {
+        title: ref.title,
+        resume: ref.nativeId,
+        tuning: threadsStore.get().composerTuning[ref.harness],
+      })
+      acpStore.set({ session, starting: false })
+      await getMako().acpPrompt(session.id, prompt, attachments)
+      return true
+    } catch (error) {
+      acpStore.set({ starting: false })
+      toast.error(error instanceof Error ? error.message : String(error))
+      return false
+    }
+  },
+
   /**
    * A brand-new live conversation: the agent starts in the workspace and the
    * first prompt goes the moment the session is ready. This is what makes

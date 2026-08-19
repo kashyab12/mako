@@ -18,7 +18,7 @@ export {
   type ThreadRef,
   type TurnUsage,
 } from "./format.js"
-export { SessionCatalog, type CatalogEvent, type RemoteSource } from "./catalog.js"
+export { SessionCatalog, type CatalogEvent } from "./catalog.js"
 export { SessionArchive } from "./archive.js"
 export { connectDaemon, daemonSocketPath, pingDaemon, PROTOCOL_VERSION, serveCatalog, type DaemonClient, type DaemonStats } from "./daemon.js"
 export {
@@ -37,8 +37,6 @@ export { CodexProvider } from "./providers/codex.js"
 export { CursorProvider } from "./providers/cursor.js"
 export { GrokProvider } from "./providers/grok.js"
 export { ClaudeProvider } from "./providers/claude.js"
-export { DevinRemote, type DevinAccount } from "./providers/devin.js"
-
 import { SessionCatalog } from "./catalog.js"
 import { CodexProvider } from "./providers/codex.js"
 import { CursorProvider } from "./providers/cursor.js"
@@ -47,11 +45,9 @@ import { DevinLocalProvider } from "./providers/devin-local.js"
 import { DevinCliProvider } from "./providers/devin-cli.js"
 import { ClaudeProvider } from "./providers/claude.js"
 
-import { DevinRemote, type DevinAccount } from "./providers/devin.js"
-
 /** The catalog with every built-in provider, ready to scan. */
 export function defaultCatalog(
-  options: { cachePath?: string; archivePath?: string; devinAccounts?: DevinAccount[] } = {}
+  options: { cachePath?: string; archivePath?: string } = {}
 ): SessionCatalog {
   const catalog = new SessionCatalog(
     [
@@ -64,7 +60,5 @@ export function defaultCatalog(
     ],
     options
   )
-  const devin = new DevinRemote(options.devinAccounts ?? [])
-  if (devin.configured) catalog.addRemote(devin)
   return catalog
 }

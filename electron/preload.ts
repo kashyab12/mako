@@ -184,12 +184,6 @@ const api = {
     invokeTrustedHost<AccountUsage>("mako:account-usage", harness, name),
 
   /* The Agents settings section. */
-  devinAccounts: () =>
-    invokeTrustedHost<Array<{ name: string; key: string }>>(
-      "mako:devin-accounts"
-    ),
-  saveDevinAccounts: (accounts: Array<{ name: string; apiKey: string }>) =>
-    invokeTrustedHost<void>("mako:devin-accounts-save", accounts),
   harnessProfiles: () =>
     invokeTrustedHost<HarnessProfile[]>("mako:harness-profiles"),
   harnessAvailability: () =>

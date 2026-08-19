@@ -15,7 +15,7 @@
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
-import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { mkdir, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { app } from "electron"
@@ -23,7 +23,6 @@ import {
   connectDaemon,
   PROTOCOL_VERSION,
   defaultCatalog,
-  DevinRemote,
   emitClaudeSession,
   emitCodexSession,
   emitCursorSession,
@@ -34,7 +33,6 @@ import {
   type TranscriptOptions,
   type DaemonClient,
   type DaemonStats,
-  type DevinAccount,
   type SessionCatalog,
   type Thread,
   type ThreadEntry,
@@ -42,7 +40,6 @@ import {
 } from "@mako/sessions"
 import { annotate, bindLineage, loadLineage } from "./lineage.js"
 import { ensureDaemonLoginDefault } from "./daemon-login.js"
-import type { JsonObject, JsonValue } from "./codex-app-protocol.js"
 import type {
   HostEvent,
   ThreadFileContext,
@@ -56,7 +53,6 @@ let catalog: SessionCatalog | null = null
 let daemon: DaemonClient | null = null
 /** Daemon mode's synchronous view: filled once, patched by events. */
 const mirror = new Map<string, ThreadRef>()
-let devinSender: DevinRemote | null = null
 let emit: (event: HostEvent) => void = () => {}
 let recoveringDaemon: Promise<void> | null = null
 let stopping = false
@@ -80,7 +76,6 @@ export function installThreads(send: (event: HostEvent) => void): void {
       // Sync should simply be on: the LaunchAgent installs itself the first
       // time, and only an explicit opt-out in settings keeps it off.
       void ensureDaemonLoginDefault()
-      devinSender = new DevinRemote(await devinAccounts())
       if (await connectViaDaemon()) return
       spawnDaemon()
       for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -218,7 +213,6 @@ async function runLocalCatalog(): Promise<void> {
     // Same archive the daemon uses — whichever process runs the catalog,
     // the durable copy lands in one place.
     archivePath: join(homedir(), ".mako", "archive"),
-    devinAccounts: await devinAccounts(),
   })
   await catalog.scan()
   push()
@@ -241,126 +235,6 @@ export function threadsReady(): boolean {
 /** For the settings surface: is the daemon doing the work, and since when. */
 export function daemonStatus(): DaemonStats | null {
   return daemon?.stats ?? null
-}
-
-/**
- * Devin accounts, from `~/.mako/devin.json`:
- *
- *     { "accounts": [{ "name": "work", "apiKey": "apk_…" }] }
- *
- * A service key from app.devin.ai settings — the CLI's own credentials
- * authenticate a different surface and cannot list sessions. No file, no
- * Devin: the source simply is not registered.
- */
-async function devinAccounts(): Promise<DevinAccount[]> {
-  try {
-    const raw = await readFile(join(homedir(), ".mako", "devin.json"), "utf8")
-    return parseDevinAccounts(raw)
-  } catch {
-    return []
-  }
-}
-
-function parseDevinAccounts(raw: string): DevinAccount[] {
-  const value: JsonValue = JSON.parse(raw)
-  if (!isJsonObject(value) || !Array.isArray(value.accounts)) return []
-
-  const accounts: DevinAccount[] = []
-  for (const candidate of value.accounts) {
-    if (!isJsonObject(candidate)) continue
-    const name = stringValue(candidate.name)
-    const apiKey = stringValue(candidate.apiKey)
-    if (name === undefined || apiKey === undefined) continue
-    const account: DevinAccount = { name, apiKey }
-    const apiUrl = stringValue(candidate.apiUrl)
-    if (apiUrl !== undefined) account.apiUrl = apiUrl
-    accounts.push(account)
-  }
-  return accounts
-}
-
-function isJsonObject(value: JsonValue | undefined): value is JsonObject {
-  return (
-    value !== undefined &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.prototype.toString.call(value) === "[object Object]"
-  )
-}
-
-function stringValue(value: JsonValue | undefined): string | undefined {
-  return isString(value) ? value : undefined
-}
-
-function isString(value: JsonValue | undefined): value is string {
-  return Object.prototype.toString.call(value) === "[object String]"
-}
-
-/** The configured Devin accounts, keys masked for display. */
-export async function devinAccountsMasked(): Promise<
-  Array<{ name: string; key: string }>
-> {
-  const accounts = await devinAccounts()
-  return accounts.map((account) => ({
-    name: account.name,
-    key: `apk_…${account.apiKey.slice(-4)}`,
-  }))
-}
-
-/**
- * Replace the Devin accounts and rebuild the catalog around them. The scan
- * after a rebuild is warm — unchanged files are stat-only — so this costs a
- * moment, not a rescan of the world.
- */
-export async function saveDevinAccounts(
-  accounts: DevinAccount[]
-): Promise<void> {
-  // The renderer never sees real keys, so an unchanged account arrives as
-  // the sentinel "__keep__" and keeps the key already on disk.
-  const existing = await devinAccounts()
-  const resolved = accounts.flatMap((account) => {
-    if (account.apiKey !== "__keep__") return [account]
-    const kept = existing.find((entry) => entry.name === account.name)
-    return kept ? [kept] : []
-  })
-  const { mkdir, writeFile } = await import("node:fs/promises")
-  const dir = join(homedir(), ".mako")
-  await mkdir(dir, { recursive: true })
-  await writeFile(
-    join(dir, "devin.json"),
-    JSON.stringify({ accounts: resolved }, null, 2) + "\n",
-    "utf8"
-  )
-  const send = emit
-  stopThreads()
-  installThreads(send)
-}
-
-/** Whether a path belongs to a remote source (and can be replied to by it). */
-export async function sendRemote(
-  path: string,
-  message: string
-): Promise<boolean> {
-  // Sending needs only the account key, not the catalog, so it works the
-  // same whichever process owns the watchers.
-  if (!devinSender?.configured || !devinSender.owns(path)) return false
-  await devinSender.send(path, message)
-  return true
-}
-
-/** Harnesses whose sessions are remote and replyable through their API. */
-export function remoteHarnesses(): string[] {
-  return devinSender?.configured ? ["devin"] : []
-}
-
-/** A new Devin cloud session from a prompt; polling surfaces it shortly. */
-export async function startDevin(
-  prompt: string
-): Promise<{ sessionId: string; path: string }> {
-  if (!devinSender?.configured) {
-    throw new Error("Add a Devin service key in Settings → Agents first")
-  }
-  return devinSender.createSession(prompt)
 }
 
 export function stopThreads(): void {

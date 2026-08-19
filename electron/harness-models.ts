@@ -604,7 +604,7 @@ function harnessMetadata(harness: string): HarnessMetadata {
     return {
       label: "Devin",
       transport: "acp",
-      capabilities: ["start", "resume", "stream", "interrupt", "permissions", "images", "commands", "mcp", "models", "cloud"],
+      capabilities: ["start", "resume", "stream", "interrupt", "permissions", "images", "commands", "mcp", "models"],
     }
   }
   return { label: harness, transport: "remote", capabilities: [] }

@@ -37,9 +37,7 @@ const HARNESSES = Object.entries(HARNESS_LABEL).map(([id, name]) => ({
  * The harnesses this machine can host, and the accounts that need keys.
  *
  * Provider rows report the native control transport Mako found on this
- * machine. Claude and Codex can route through several isolated account homes;
- * Devin can additionally connect cloud sessions through service keys kept in
- * ~/.mako/devin.json and never displayed beyond the last four characters.
+ * machine. Claude and Codex can route through several isolated account homes.
  */
 export function AgentsSection() {
   const conversionMode = usePrefs((prefs) => prefs.conversionMode)
