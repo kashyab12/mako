@@ -58,6 +58,8 @@ export function harnessLabel(harness: Harness): string {
 /** Rows a folder shows before "More": generous for the folder being worked. */
 const LEAD_ROWS = 5
 const REST_ROWS = 3
+/** Each press of "More" reveals this many further rows. */
+const PAGE_ROWS = 5
 /** Folders quiet longer than this start out collapsed. */
 const COLD_MS = 7 * 24 * 3600_000
 
@@ -73,7 +75,9 @@ interface Folder {
 export function AgentThreads() {
   const [query, setQuery] = useState("")
   const [searching, setSearching] = useState(false)
-  const [showAll, setShowAll] = useState<Record<string, boolean>>({})
+  // Extra pages unfolded per folder — More reveals a handful at a time,
+  // not the whole archive in one avalanche.
+  const [pages, setPages] = useState<Record<string, number>>({})
   const deferred = useDeferredValue(query)
   const all = useThreads((state) => state.threads)
   const loaded = useThreads((state) => state.loaded)
@@ -216,8 +220,8 @@ export function AgentThreads() {
                       : [...collapsed, key]
                   )
                 }}
-                showingAll={Boolean(showAll[folder.key])}
-                onShowAll={(next) => setShowAll((prev) => ({ ...prev, [folder.key]: next }))}
+                pages={pages[folder.key] ?? 0}
+                onPages={(next) => setPages((prev) => ({ ...prev, [folder.key]: next }))}
               />
             ))}
           </>
@@ -466,14 +470,14 @@ function FolderSection({
   folder,
   collapsed,
   onToggle,
-  showingAll,
-  onShowAll,
+  pages,
+  onPages,
 }: {
   folder: Folder
   collapsed: boolean
   onToggle: () => void
-  showingAll: boolean
-  onShowAll: (next: boolean) => void
+  pages: number
+  onPages: (next: number) => void
 }) {
   // A cold folder starts closed, a warm one open; the stored flag means
   // "the user flipped this one from its default", so both kinds remember.
@@ -482,7 +486,7 @@ function FolderSection({
   const closed = collapsed ? !cold : cold
 
   const lead = folder.current ? LEAD_ROWS : REST_ROWS
-  const visible = showingAll ? folder.refs : folder.refs.slice(0, lead)
+  const visible = folder.refs.slice(0, lead + pages * PAGE_ROWS)
   const hidden = folder.refs.length - visible.length
 
   return (
@@ -528,16 +532,16 @@ function FolderSection({
           {hidden > 0 ? (
             <button
               type="button"
-              onClick={() => onShowAll(true)}
+              onClick={() => onPages(pages + 1)}
               className="flex h-6 w-full items-center rounded-md pl-8 text-left text-[11px] text-faint transition-colors duration-100 hover:bg-raised/50 hover:text-muted-foreground"
             >
               More
               <span className="tabular ml-1 text-[10px] text-faint/60">{hidden}</span>
             </button>
-          ) : showingAll && folder.refs.length > lead ? (
+          ) : pages > 0 ? (
             <button
               type="button"
-              onClick={() => onShowAll(false)}
+              onClick={() => onPages(0)}
               className="flex h-6 w-full items-center rounded-md pl-8 text-left text-[11px] text-faint transition-colors duration-100 hover:bg-raised/50 hover:text-muted-foreground"
             >
               Less
