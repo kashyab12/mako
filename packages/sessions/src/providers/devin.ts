@@ -31,19 +31,38 @@ export interface DevinAccount {
 const DEFAULT_API = "https://api.devin.ai"
 const LIST_LIMIT = 100
 
+type JsonScalar = boolean | number | string | null
+type JsonValue = JsonScalar | JsonRecord | JsonValue[]
+
+interface JsonRecord {
+  [key: string]: JsonValue | undefined
+}
+
+interface DevinRequestOptions {
+  method: "GET" | "POST"
+  body?: string
+}
+
 interface DevinSessionSummary {
-  session_id?: string
+  sessionId: string
   title?: string
-  created_at?: string
-  updated_at?: string
-  status_enum?: string
+  createdAt?: string
+  updatedAt?: string
+  status?: string
+}
+
+interface DevinSessionDetails {
+  title?: string
+  createdAt?: string
+  updatedAt?: string
+  status?: string
+  messages: DevinMessage[]
 }
 
 interface DevinMessage {
-  type?: string
-  message?: string
+  kind: "user" | "assistant"
+  text: string
   timestamp?: string
-  username?: string
 }
 
 export class DevinRemote {
@@ -68,21 +87,20 @@ export class DevinRemote {
     const perAccount = await Promise.all(
       this.accounts.map(async (account) => {
         try {
-          const body = (await this.request(account, `/v1/sessions?limit=${LIST_LIMIT}`)) as {
-            sessions?: DevinSessionSummary[]
-          }
-          return (body.sessions ?? []).flatMap((session) => {
-            if (!session.session_id) return []
+          const sessions = parseSessionList(
+            await this.request(account, `/v1/sessions?limit=${LIST_LIMIT}`, { method: "GET" })
+          )
+          return sessions.map((session) => {
             const ref: ThreadRef = {
               harness: this.harness,
-              nativeId: session.session_id,
-              path: `devin://${account.name}/${session.session_id}`,
+              nativeId: session.sessionId,
+              path: `devin://${account.name}/${session.sessionId}`,
               title: titleFrom(session.title) ?? session.title,
-              startedAt: session.created_at,
-              updatedAt: session.updated_at ?? session.created_at,
-              model: session.status_enum ? `Devin · ${session.status_enum}` : "Devin",
+              startedAt: session.createdAt,
+              updatedAt: session.updatedAt ?? session.createdAt,
+              model: session.status ? `Devin · ${session.status}` : "Devin",
             }
-            return [ref]
+            return ref
           })
         } catch {
           return []
@@ -97,33 +115,29 @@ export class DevinRemote {
     if (!located) return null
     const { account, sessionId } = located
     try {
-      const body = (await this.request(account, `/v1/session/${sessionId}`)) as {
-        title?: string
-        created_at?: string
-        updated_at?: string
-        status_enum?: string
-        messages?: DevinMessage[]
-      }
+      const body = parseSessionDetails(
+        await this.request(account, `/v1/session/${sessionId}`, { method: "GET" })
+      )
+      if (!body) return null
       const ref: ThreadRef = {
         harness: this.harness,
         nativeId: sessionId,
         path,
         title: titleFrom(body.title) ?? body.title,
-        startedAt: body.created_at,
-        updatedAt: body.updated_at ?? body.created_at,
-        model: body.status_enum ? `Devin · ${body.status_enum}` : "Devin",
+        startedAt: body.createdAt,
+        updatedAt: body.updatedAt ?? body.createdAt,
+        model: body.status ? `Devin · ${body.status}` : "Devin",
       }
       const entries: ThreadEntry[] = []
-      for (const message of body.messages ?? []) {
-        const text = message.message ?? ""
-        if (!text.trim()) continue
-        if (message.type === "user_message") {
-          entries.push({ kind: "user", at: message.timestamp, text })
-        } else if (message.type === "devin_message") {
+      for (const message of body.messages) {
+        if (!message.text.trim()) continue
+        if (message.kind === "user") {
+          entries.push({ kind: "user", at: message.timestamp, text: message.text })
+        } else {
           entries.push({
             kind: "assistant",
             at: message.timestamp,
-            blocks: [{ type: "text", text }],
+            blocks: [{ type: "text", text: message.text }],
           })
         }
       }
@@ -143,12 +157,14 @@ export class DevinRemote {
       ? this.accounts.find((entry) => entry.name === accountName)
       : this.accounts[0]
     if (!account) throw new Error("No Devin account is configured")
-    const body = (await this.request(account, "/v1/sessions", {
-      method: "POST",
-      body: JSON.stringify({ prompt }),
-    })) as { session_id?: string }
-    if (!body.session_id) throw new Error("Devin did not return a session id")
-    return { sessionId: body.session_id, path: `devin://${account.name}/${body.session_id}` }
+    const sessionId = parseCreatedSession(
+      await this.request(account, "/v1/sessions", {
+        method: "POST",
+        body: JSON.stringify({ prompt }),
+      })
+    )
+    if (!sessionId) throw new Error("Devin did not return a session id")
+    return { sessionId, path: `devin://${account.name}/${sessionId}` }
   }
 
   /** Devin's native resume: the message joins the running cloud session. */
@@ -166,25 +182,105 @@ export class DevinRemote {
   private locate(path: string): { account: DevinAccount; sessionId: string } | null {
     const match = /^devin:\/\/([^/]+)\/(.+)$/.exec(path)
     if (!match) return null
-    const account = this.accounts.find((entry) => entry.name === match[1])
-    return account ? { account, sessionId: match[2] as string } : null
+    const accountName = match[1]
+    const sessionId = match[2]
+    if (!accountName || !sessionId) return null
+    const account = this.accounts.find((entry) => entry.name === accountName)
+    return account ? { account, sessionId } : null
   }
 
-  private async request(account: DevinAccount, path: string, init: RequestInit = {}): Promise<unknown> {
+  private async request(
+    account: DevinAccount,
+    path: string,
+    options: DevinRequestOptions
+  ): Promise<string> {
     const base = (account.apiUrl ?? DEFAULT_API).replace(/\/$/, "")
     const response = await fetch(`${base}${path}`, {
-      ...init,
+      method: options.method,
       headers: {
         Authorization: `Bearer ${account.apiKey}`,
         "Content-Type": "application/json",
-        ...(init.headers ?? {}),
       },
+      body: options.body,
       signal: AbortSignal.timeout(20_000),
     })
     if (!response.ok) {
       throw new Error(`Devin API ${response.status} for ${path}`)
     }
-    const text = await response.text()
-    return text ? (JSON.parse(text) as unknown) : {}
+    return response.text()
   }
+}
+
+function parseSessionList(raw: string): DevinSessionSummary[] {
+  const root = parseJsonRecord(raw)
+  if (!root) return []
+  const value = root["sessions"]
+  if (!Array.isArray(value)) return []
+  const sessions: DevinSessionSummary[] = []
+  for (const candidate of value) {
+    if (!isJsonRecord(candidate)) continue
+    const sessionId = readString(candidate, "session_id")
+    if (!sessionId) continue
+    sessions.push({
+      sessionId,
+      title: readString(candidate, "title"),
+      createdAt: readString(candidate, "created_at"),
+      updatedAt: readString(candidate, "updated_at"),
+      status: readString(candidate, "status_enum"),
+    })
+  }
+  return sessions
+}
+
+function parseSessionDetails(raw: string): DevinSessionDetails | null {
+  const root = parseJsonRecord(raw)
+  if (!root) return null
+  const messages = root["messages"]
+  if (messages !== undefined && !Array.isArray(messages)) return null
+  return {
+    title: readString(root, "title"),
+    createdAt: readString(root, "created_at"),
+    updatedAt: readString(root, "updated_at"),
+    status: readString(root, "status_enum"),
+    messages: parseMessages(messages),
+  }
+}
+
+function parseMessages(value: JsonValue | undefined): DevinMessage[] {
+  if (!Array.isArray(value)) return []
+  const messages: DevinMessage[] = []
+  for (const candidate of value) {
+    if (!isJsonRecord(candidate)) continue
+    const type = readString(candidate, "type")
+    const text = readString(candidate, "message")
+    if (!text) continue
+    const kind = type === "user_message" ? "user" : type === "devin_message" ? "assistant" : null
+    if (!kind) continue
+    messages.push({ kind, text, timestamp: readString(candidate, "timestamp") })
+  }
+  return messages
+}
+
+function parseCreatedSession(raw: string): string | undefined {
+  const root = parseJsonRecord(raw)
+  return root ? readString(root, "session_id") : undefined
+}
+
+function parseJsonRecord(raw: string): JsonRecord | null {
+  if (!raw) return null
+  try {
+    const value: JsonValue = JSON.parse(raw)
+    return isJsonRecord(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
+function isJsonRecord(value: JsonValue | undefined): value is JsonRecord {
+  return Object.prototype.toString.call(value) === "[object Object]"
+}
+
+function readString(record: JsonRecord, key: string): string | undefined {
+  const value = record[key]
+  return Object.prototype.toString.call(value) === "[object String]" ? String(value) : undefined
 }
