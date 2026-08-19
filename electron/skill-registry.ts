@@ -3,7 +3,6 @@ import { constants, existsSync } from "node:fs"
 import { access, lstat, readdir, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import {
-  basename,
   delimiter,
   dirname,
   join,
@@ -25,9 +24,9 @@ import type {
 } from "./shared.js"
 
 const PROVIDERS = ["claude", "codex", "cursor", "grok", "devin"] as const
-const MAX_SKILL_FILES = 256
-const MAX_SKILL_BYTES = 8 * 1024 * 1024
-const MAX_SKILL_FILE_BYTES = 2 * 1024 * 1024
+const MAX_SKILL_FILES = 1024
+const MAX_SKILL_BYTES = 64 * 1024 * 1024
+const MAX_SKILL_FILE_BYTES = 16 * 1024 * 1024
 const MAX_SCAN_DEPTH = 5
 const skillName = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const frontmatterSchema = z
@@ -140,8 +139,6 @@ async function readSkill(
     const reasons: string[] = []
     if (!skillName.test(metadata.name))
       reasons.push("name is not lowercase kebab-case")
-    if (metadata.name !== basename(directory))
-      reasons.push("frontmatter name does not match its directory")
     if (packageFiles.blockReason) reasons.push(packageFiles.blockReason)
     const hash = hashFiles(packageFiles.files)
     const record: SkillRecord = {

@@ -9,12 +9,23 @@ export function SkillsSection() {
   const state = useSkills((value) => value)
   const [targets, setTargets] = useState<SkillSyncTarget[]>([])
   const [scope, setScope] = useState<"user" | "workspace">("user")
+  const [query, setQuery] = useState("")
 
   useEffect(() => {
     void skills.load()
   }, [])
 
   const snapshot = state.snapshot
+  const term = query.trim().toLowerCase()
+  const shown = snapshot?.skills.filter(
+    (skill) =>
+      !term ||
+      skill.name.toLowerCase().includes(term) ||
+      skill.description.toLowerCase().includes(term) ||
+      skill.origins.some((origin) =>
+        `${origin.provider} ${origin.scope}`.includes(term)
+      )
+  ) ?? []
   const toggleTarget = (target: SkillSyncTarget) => {
     setTargets((current) =>
       current.some((candidate) => sameTarget(candidate, target))
@@ -97,9 +108,17 @@ export function SkillsSection() {
             })}
           </div>
 
-          <Eyebrow className="px-0 pb-1">Discovered skills</Eyebrow>
+          <div className="mb-2 flex items-center gap-2">
+            <Eyebrow className="flex-1 px-0">Discovered skills</Eyebrow>
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Filter skills"
+              className="h-7 w-48 rounded-md bg-surface px-2 text-label text-foreground ring-1 ring-hairline placeholder:text-faint focus:ring-border focus:outline-none"
+            />
+          </div>
           <div className="flex flex-col rounded-lg bg-surface ring-1 ring-hairline">
-            {snapshot.skills.map((skill) => {
+            {shown.map((skill) => {
               const previews = state.previews[skill.id] ?? []
               const previewsCurrent =
                 previews.length === targets.length &&
@@ -115,7 +134,7 @@ export function SkillsSection() {
                 <div
                   key={skill.id}
                   className={cn(
-                    "flex gap-2.5 border-b border-hairline px-2.5 py-2.5 last:border-b-0",
+                    "contain-turn flex gap-2.5 border-b border-hairline px-2.5 py-2.5 last:border-b-0",
                     !skill.portable && "opacity-60"
                   )}
                 >
@@ -191,9 +210,11 @@ export function SkillsSection() {
                 </div>
               )
             })}
-            {snapshot.skills.length === 0 ? (
+            {shown.length === 0 ? (
               <p className="px-3 py-8 text-center text-ui text-faint">
-                No Agent Skills were found in global or project roots.
+                {snapshot.skills.length === 0
+                  ? "No Agent Skills were found in global or project roots."
+                  : "No skills match this filter."}
               </p>
             ) : null}
           </div>
