@@ -9,7 +9,7 @@
     "desktop": "npm run build:electron && concurrently -k -n web,electron -c magenta,cyan \"vite --host 127.0.0.1 --port 5173\" \"wait-on http://127.0.0.1:5173 && node electron/start.mjs\"",
     "build:electron": "tsc -p tsconfig.electron.json",
     "build": "npm run build:electron && tsc -b && vite build",
-    "icons": "swiftc -O -o build/make-icns scripts/make-icns.swift && build/make-icns mako-icons/dark/desktop-1024.png build/Mako.iconset && iconutil -c icns build/Mako.iconset -o build/Mako.icns",
+    "icons": "swiftc -O -o build/make-icns scripts/make-icns.swift && build/make-icns mako-icons/_masters/glyph-on-dark.png build/Mako.iconset && iconutil -c icns build/Mako.iconset -o build/Mako.icns",
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc -b --force",
