@@ -282,7 +282,7 @@ function Conversation() {
             This session has no readable conversation.
           </p>
         ) : (
-          <div className="mx-auto flex w-full max-w-[760px] flex-col gap-7 px-6 py-6">
+          <div className="mx-auto flex w-full max-w-content flex-col gap-7 px-6 py-6">
             {!showEarlier && exchanges.length > renderedExchanges.length ? (
               <button
                 type="button"

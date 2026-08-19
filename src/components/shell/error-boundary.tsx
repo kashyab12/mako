@@ -61,7 +61,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
     return (
       <div className="flex h-svh flex-col items-center justify-center gap-5 bg-background px-8 text-foreground">
         <MakoMark className="size-8 text-foreground/40" />
-        <div className="max-w-[34rem] text-center">
+        <div className="max-w-dialog text-center">
           <h1 className="text-[15px] font-medium">Something in the interface broke</h1>
           <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">
             The agent kept running — it lives in a separate process, so nothing was lost. A report
@@ -69,7 +69,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
           </p>
         </div>
 
-        <pre className="max-h-40 w-full max-w-[34rem] overflow-auto rounded-lg bg-surface p-3 text-left font-mono text-[11px] leading-relaxed text-faint ring-1 ring-hairline">
+        <pre className="max-h-40 w-full max-w-dialog overflow-auto rounded-lg bg-surface p-3 text-left font-mono text-[11px] leading-relaxed text-faint ring-1 ring-hairline">
           {error.message}
           {info ? info.split("\n").slice(0, 6).join("\n") : ""}
         </pre>

@@ -105,7 +105,7 @@ export function SettingsView({ initialSection = "agents" }: { initialSection?: s
       </nav>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="mx-auto w-full max-w-[42rem] px-6 py-6">
+        <div className="mx-auto w-full max-w-content px-6 py-6">
           {section === "appearance" ? <Appearance /> : null}
           {section === "keyboard" ? <KeyboardSection /> : null}
           {section === "transcript" ? <Transcript /> : null}

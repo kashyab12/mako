@@ -17,10 +17,6 @@ export interface GitHubState {
   loading: boolean
   /** The branch the current `pull` was fetched for, so a switch invalidates it. */
   branch?: string
-  /** The owner's avatar as a data URL, once the host has fetched and cached it. */
-  avatar?: string
-  /** Which repo `avatar` belongs to, so moving workspace does not show the last one. */
-  avatarFor?: string
 }
 
 export const githubStore = createStore<GitHubState>({ loading: false })
@@ -34,23 +30,6 @@ export const github = {
     if (!hasBridge() || githubStore.get().status) return
     const status = await getMako().githubStatus().catch(() => undefined)
     if (status) githubStore.set({ status })
-    void github.ensureAvatar()
-  },
-
-  /**
-   * The project's logo.
-   *
-   * Best effort and quiet: a repo with no avatar, a rate limit, or no network
-   * all end the same way, with the folder icon that was there before.
-   */
-  async ensureAvatar() {
-    if (!hasBridge()) return
-    const { status, avatarFor } = githubStore.get()
-    const repo = status?.repo
-    if (!repo || avatarFor === repo) return
-    githubStore.set({ avatarFor: repo })
-    const avatar = await getMako().repoAvatar(repo).catch(() => undefined)
-    if (avatar && githubStore.get().avatarFor === repo) githubStore.set({ avatar })
   },
 
   async refresh(branch?: string) {
@@ -58,7 +37,7 @@ export const github = {
     await github.ensureStatus()
     const status = githubStore.get().status
     if (!status?.authenticated || !status.repo) {
-      githubStore.set({ pull: null, loading: false, branch, avatar: undefined })
+      githubStore.set({ pull: null, loading: false, branch })
       return
     }
     const mine = ++generation

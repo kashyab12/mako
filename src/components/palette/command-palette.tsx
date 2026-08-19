@@ -214,7 +214,7 @@ export function CommandPalette() {
     >
       <div
         onKeyDown={onKeyDown}
-        className="glass-panel w-full max-w-[34rem] overflow-hidden rounded-xl"
+        className="glass-panel w-full max-w-dialog overflow-hidden rounded-xl"
       >
         <input
           autoFocus

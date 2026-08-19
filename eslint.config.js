@@ -20,4 +20,23 @@ export default defineConfig([
       globals: { ...globals.browser, ...globals.node },
     },
   },
+  {
+    // Design-token guards: hue is spent only through the semantic tokens
+    // (positive/negative/caution, diff add/remove), never as a raw Tailwind
+    // palette class. provider-icon.tsx draws brand marks, which are logos,
+    // not UI color.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/components/ui/provider-icon.tsx"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "Literal[value=/(?:text|bg|ring|border|from|to|via)-(?:red|emerald|amber|green|blue|orange|yellow|rose|sky|violet|indigo|teal|lime|cyan|fuchsia|pink)-[0-9]/]",
+          message:
+            "Raw Tailwind hue classes are banned; use the semantic tokens (positive, negative, caution, added, removed).",
+        },
+      ],
+    },
+  },
 ])

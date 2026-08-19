@@ -186,7 +186,7 @@ function SessionTranscript({ sessionId }: { sessionId: string | undefined }) {
             // every token: within a session the key never changes, so a
             // streaming turn costs nothing here.
             key={sessionId ?? "none"}
-            className="animate-thread mx-auto flex w-full max-w-[760px] flex-col gap-7 px-6 py-6"
+            className="animate-thread mx-auto flex w-full max-w-content flex-col gap-7 px-6 py-6"
           >
             {hidden > 0 ? (
               <button

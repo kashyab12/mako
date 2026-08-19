@@ -13,9 +13,7 @@ export type RailMode = "threads" | "agents" | "files"
 
 /** How the session rail is scoped and grouped, mirroring ORCA's sidebar model. */
 export type RailScope = "workspace" | "all"
-export type RailGroupBy = "none" | "date" | "project"
 export type RailSortBy = "recent" | "created" | "name" | "size"
-export type RailDensity = "comfortable" | "compact"
 
 interface PreferenceStringMap {
   [key: string]: string
@@ -35,9 +33,7 @@ export interface Prefs {
   denseTools: boolean
   railMode: RailMode
   railScope: RailScope
-  railGroupBy: RailGroupBy
   railSortBy: RailSortBy
-  railDensity: RailDensity
   collapsedGroups: string[]
   collapsedDirs: string[]
   /** Folders open in the project tree. Keys are folded paths, not path prefixes. */
@@ -98,9 +94,7 @@ const defaults: Prefs = {
   denseTools: false,
   railMode: "threads",
   railScope: "all",
-  railGroupBy: "date",
   railSortBy: "recent",
-  railDensity: "comfortable",
   collapsedGroups: [],
   collapsedDirs: [],
   openDirs: [],
@@ -244,20 +238,10 @@ function parsePrefs(value: JsonValue): Prefs | null {
       ["workspace", "all"],
       defaults.railScope
     ),
-    railGroupBy: readChoice(
-      value.railGroupBy,
-      ["none", "date", "project"],
-      defaults.railGroupBy
-    ),
     railSortBy: readChoice(
       value.railSortBy,
       ["recent", "created", "name", "size"],
       defaults.railSortBy
-    ),
-    railDensity: readChoice(
-      value.railDensity,
-      ["comfortable", "compact"],
-      defaults.railDensity
     ),
     collapsedGroups: readStringList(
       value.collapsedGroups,

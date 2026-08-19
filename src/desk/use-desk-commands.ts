@@ -307,13 +307,6 @@ const DESK_COMMANDS: DeskCommand[] = [
     },
   },
   {
-    id: "view.group-by-project",
-    title: "Group sessions by project",
-    section: "Workspace",
-    run: () =>
-      setPref("railGroupBy", prefsStore.get().railGroupBy === "project" ? "date" : "project"),
-  },
-  {
     id: "view.all-projects",
     title: "Show sessions from every project",
     section: "Workspace",

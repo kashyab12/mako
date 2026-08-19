@@ -461,7 +461,7 @@ export function Composer() {
 
   return (
     <div className="shrink-0 px-6 pt-1 pb-4">
-      <div className="mx-auto w-full max-w-[760px]">
+      <div className="mx-auto w-full max-w-content">
         <Slot name="composer.above" meta={meta} />
 
         {status.compacting ? (

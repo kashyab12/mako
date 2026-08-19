@@ -66,6 +66,14 @@
   --radius-2xl: 14px;
   --radius-3xl: 18px;
 
+  /*
+   * Two content measures for the whole desk: reading surfaces (transcript,
+   * composer, settings, guide) share one column; compact floating surfaces
+   * (palette, error card) share the other. A third width is a bug.
+   */
+  --container-content: 760px;
+  --container-dialog: 544px;
+
   /* Motion. The built-in CSS curves are too weak to read as intentional. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
@@ -132,8 +140,6 @@
   --added: oklch(0.7350 0.1050 152);
   --removed: oklch(0.6900 0.1450 22);
 
-  --rail-width: 264px;
-  --inspector-width: 400px;
   --titlebar-height: 38px;
 }
 
@@ -824,10 +830,4 @@
   25% { opacity: 1; }
   75% { opacity: 1; }
   100% { transform: translateX(2.2rem); opacity: 0; }
-}
-
-/* Fast mode's lightning, gently alive while it is on. */
-@keyframes fast-alive {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.65; transform: scale(0.92); }
 }
