@@ -8,6 +8,7 @@ import { z } from "zod"
 import {
   acpMcpServers,
   atomicMergeMcpJson,
+  codexMcpConfig,
   managedMcpDefinitions,
   mergeMcpDefinitions,
   parseProviderJson,
@@ -394,6 +395,85 @@ async function testManagedDefinitions(): Promise<void> {
   })
 }
 
+async function testMakoRuntimeProjection(): Promise<void> {
+  const managed = (
+    name: "browser-use" | "mako-local-tools" | "cua-driver",
+    command: string,
+    args: string[]
+  ): McpDiscoveredDefinition => ({
+    definition: {
+      name,
+      transport: "stdio",
+      command,
+      args,
+      envNames: name === "mako-local-tools" ? ["ELECTRON_RUN_AS_NODE"] : [],
+      headerNames: [],
+      portable: true,
+    },
+    origin: {
+      provider: "mako",
+      account: "local",
+      scope: "managed",
+      provenance: "Mako managed (test)",
+    },
+  })
+  const snapshot: McpRegistrySnapshot = {
+    cwd: tmpdir(),
+    generatedAt: 1,
+    providers: [],
+    servers: mergeMcpDefinitions([
+      managed("browser-use", "uvx", ["browser-use", "--cli-mcp"]),
+      managed("mako-local-tools", process.execPath, ["local-tools.js"]),
+      managed("cua-driver", "cua-driver", ["mcp"]),
+    ]).map((server) => ({
+      ...server,
+      managed: true,
+      availability: "available" as const,
+    })),
+  }
+  assert.deepEqual(
+    acpMcpServers(snapshot, "claude", ["stdio"]).map((server) => server.name),
+    ["browser-use", "mako-local-tools"]
+  )
+  const codex = codexMcpConfig(snapshot)
+  const servers = z
+    .object({ mcp_servers: z.record(z.string(), z.json()) })
+    .parse(codex).mcp_servers
+  assert.deepEqual(Object.keys(servers).sort(), [
+    "browser-use",
+    "mako-local-tools",
+  ])
+  const browserServer = snapshot.servers.find(
+    (server) => server.name === "browser-use"
+  )
+  assert.ok(browserServer)
+  const preview = await previewMcpSync(
+    snapshot,
+    browserServer.id,
+    {
+      provider: "claude",
+      account: "default",
+      scope: "user",
+    }
+  )
+  assert.equal(preview.action, "blocked")
+  assert.match(preview.blockReason ?? "", /sessions launched by Mako/)
+
+  const nativeSnapshot: McpRegistrySnapshot = {
+    ...snapshot,
+    servers: mergeMcpDefinitions([
+      managed("browser-use", "uvx", ["browser-use", "--cli-mcp"]),
+      managed("mako-local-tools", process.execPath, ["local-tools.js"]),
+      discovered("claude", "node_repl", { command: process.execPath }),
+    ]).map((server) => ({
+      ...server,
+      managed: server.origins.some((origin) => origin.provider === "mako"),
+      availability: "available" as const,
+    })),
+  }
+  assert.deepEqual(acpMcpServers(nativeSnapshot, "claude", ["stdio"]), [])
+}
+
 function testLocalSchemas(): void {
   assert.equal(LOCAL_TOOL_INPUTS.apps.safeParse({}).success, true)
   assert.equal(LOCAL_TOOL_INPUTS.apps.safeParse({ extra: true }).success, false)
@@ -425,6 +505,11 @@ function testLocalSchemas(): void {
       .success,
     false
   )
+  assert.equal(
+    LOCAL_TOOL_INPUTS.exec.safeParse({ source: "print(mac.list_apps())" })
+      .success,
+    true
+  )
 }
 
 testProtocolVersion()
@@ -438,5 +523,6 @@ await testSerializedGuardedMerge()
 await testGuardedAtomicMerge()
 testAcpProjection()
 await testManagedDefinitions()
+await testMakoRuntimeProjection()
 testLocalSchemas()
 console.log("MCP tests passed")

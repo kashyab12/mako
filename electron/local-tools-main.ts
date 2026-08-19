@@ -39,6 +39,7 @@ export const LOCAL_TOOL_INPUTS = {
       language: z.enum(["AppleScript", "JavaScript"]).default("AppleScript"),
     })
     .strict(),
+  exec: z.object({ source: z.string().min(1).max(100_000) }).strict(),
 } as const
 
 type ProcessResult = { stdout: string; stderr: string; code: number | null }
@@ -144,24 +145,26 @@ function pythonProgram(expression: string, input: JsonValue): string {
   ].join("\n")
 }
 
-async function runHarness(
-  expression: string,
-  input: JsonValue,
+async function runHarnessProgram(
+  source: string,
   signal: AbortSignal
 ): Promise<string> {
   const command = await executable("macos-harness")
   if (!command) throw new Error("macOS Harness is not installed")
-  const result = await runProcess(
-    command,
-    [],
-    pythonProgram(expression, input),
-    signal
-  )
+  const result = await runProcess(command, [], source, signal)
   if (result.code !== 0)
     throw new Error(
       result.stderr.trim() || `macOS Harness exited with code ${result.code}`
     )
   return result.stdout.trim() || "Completed"
+}
+
+async function runHarness(
+  expression: string,
+  input: JsonValue,
+  signal: AbortSignal
+): Promise<string> {
+  return runHarnessProgram(pythonProgram(expression, input), signal)
 }
 
 function textResult(text: string) {
@@ -194,7 +197,7 @@ export function createLocalToolsServer(): McpServer {
       },
     },
     (_args, extra) =>
-      safeResult(() => runHarness("mac.apps()", {}, extra.signal))
+      safeResult(() => runHarness("mac.list_apps()", {}, extra.signal))
   )
   server.registerTool(
     "mako_macos_state",
@@ -210,7 +213,11 @@ export function createLocalToolsServer(): McpServer {
     },
     ({ app }, extra) =>
       safeResult(() =>
-        runHarness("mac.state(input['app'])", { app }, extra.signal)
+        runHarness(
+          "mac.get_app_state(input['app'], screenshot=False)",
+          { app },
+          extra.signal
+        )
       )
   )
   server.registerTool(
@@ -317,6 +324,22 @@ export function createLocalToolsServer(): McpServer {
           extra.signal
         )
       )
+  )
+  server.registerTool(
+    "mako_macos_exec",
+    {
+      description:
+        "Run one bounded macOS Harness Python program for a desktop-app decision. The program may use preloaded mac, Path, and subprocess; prefer browser_exec for websites. Bundle reversible actions, then print one verification result.",
+      inputSchema: LOCAL_TOOL_INPUTS.exec,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    },
+    ({ source }, extra) =>
+      safeResult(() => runHarnessProgram(source, extra.signal))
   )
   return server
 }

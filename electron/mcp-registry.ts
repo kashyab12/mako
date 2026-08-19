@@ -608,3 +608,47 @@ export function projectPortableDefinitions(
     )
     .map(safeDefinition)
 }
+
+const MAKO_RUNTIME_SERVERS = new Set(["browser-use", "mako-local-tools"])
+
+export function projectRuntimeDefinitions(
+  snapshot: McpRegistrySnapshot,
+  provider: Provider,
+  transports: readonly McpTransport[]
+): McpServerDefinition[] {
+  const nativeNames = new Set(
+    snapshot.servers
+      .filter(
+        (server) =>
+          server.availability !== "unavailable" &&
+          server.origins.some((origin) => origin.provider === provider)
+      )
+      .map((server) => server.name)
+  )
+  const nativeBrowser = [...nativeNames].some((name) =>
+    /browser|chrome|playwright|node_repl/i.test(name)
+  )
+  const nativeComputer = [...nativeNames].some((name) =>
+    /computer|cua|sky|node_repl/i.test(name)
+  )
+  return snapshot.servers
+    .filter((server) => {
+      const managed = server.origins.some(
+        (origin) => origin.provider === "mako"
+      )
+      const managedRuntime =
+        MAKO_RUNTIME_SERVERS.has(server.name) &&
+        !server.blockReason &&
+        (server.name !== "browser-use" || !nativeBrowser) &&
+        (server.name !== "mako-local-tools" || !nativeComputer)
+      return (
+        server.portable &&
+        !server.conflict &&
+        server.availability !== "unavailable" &&
+        transports.includes(server.transport) &&
+        !nativeNames.has(server.name) &&
+        (!managed || managedRuntime)
+      )
+    })
+    .map(safeDefinition)
+}

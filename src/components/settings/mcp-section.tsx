@@ -32,9 +32,10 @@ export function McpSection() {
   return (
     <div>
       <p className="pb-3 text-ui leading-relaxed text-muted-foreground">
-        Servers found in each agent&apos;s native configuration, deduplicated by
-        connection. Environment and header values stay in the host and never
-        reach this view. Discovery is read-only.
+        Servers found in each provider&apos;s configuration, deduplicated by
+        connection. Mako-managed Browser Use and computer use attach only to
+        sessions launched here; they are never written into provider clients.
+        Environment and header values stay in the host.
       </p>
 
       {state.status === "loading" && !snapshot ? (
@@ -121,6 +122,7 @@ export function McpSection() {
                   )
                 : []
               const disabled =
+                server.managed ||
                 !server.portable ||
                 server.availability === "unavailable" ||
                 Boolean(server.conflict)
@@ -141,7 +143,9 @@ export function McpSection() {
                         {server.transport}
                       </span>
                       {server.managed ? (
-                        <span className="text-label text-faint">optional</span>
+                        <span className="text-label text-faint">
+                          Mako sessions only
+                        </span>
                       ) : null}
                       {server.conflict ? (
                         <span className="flex items-center gap-1 text-label text-caution">

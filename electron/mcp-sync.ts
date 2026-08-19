@@ -201,6 +201,12 @@ export async function previewMcpSync(
   target: McpSyncTarget
 ): Promise<McpSyncPreview> {
   const definition = findServer(snapshot, serverId)
+  if (definition.managed)
+    return blockedPreview(
+      serverId,
+      target,
+      "Mako-managed tools attach only to sessions launched by Mako"
+    )
   const status = snapshot.providers.find(
     (entry) => entry.id === target.provider
   )
@@ -290,6 +296,10 @@ export async function applyMcpSync(
   target: McpSyncTarget
 ): Promise<void> {
   const definition = findServer(snapshot, serverId)
+  if (definition.managed)
+    throw new Error(
+      "Mako-managed tools attach only to sessions launched by Mako"
+    )
   if (!definition.portable || definition.conflict)
     throw new Error(
       definition.blockReason ?? "Resolve this server conflict before syncing"

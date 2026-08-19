@@ -11,6 +11,7 @@ export {
   mergeMcpDefinitions,
   parseProviderJson,
   projectPortableDefinitions,
+  projectRuntimeDefinitions,
 } from "./mcp-registry.js"
 export {
   acpMcpServers,

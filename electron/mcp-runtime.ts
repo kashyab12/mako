@@ -1,5 +1,5 @@
 import type { McpServer } from "@agentclientprotocol/sdk"
-import { projectPortableDefinitions } from "./mcp-registry.js"
+import { projectRuntimeDefinitions } from "./mcp-registry.js"
 import type {
   McpProvider,
   McpRegistrySnapshot,
@@ -22,7 +22,7 @@ export function acpMcpServers(
   provider: Exclude<McpProvider, "mako">,
   transports: readonly McpTransport[]
 ): McpServer[] {
-  return projectPortableDefinitions(snapshot, provider, transports).flatMap(
+  return projectRuntimeDefinitions(snapshot, provider, transports).flatMap(
     (definition): McpServer[] => {
       if (definition.transport === "stdio" && definition.command) {
         return [
@@ -75,7 +75,7 @@ function codexDefinition(definition: McpServerDefinition): JsonObject | null {
 
 export function codexMcpConfig(snapshot: McpRegistrySnapshot): JsonObject {
   const servers: JsonObject = {}
-  for (const definition of projectPortableDefinitions(snapshot, "codex", [
+  for (const definition of projectRuntimeDefinitions(snapshot, "codex", [
     "stdio",
     "http",
   ])) {
