@@ -58,6 +58,8 @@ let daemon: DaemonClient | null = null
 const mirror = new Map<string, ThreadRef>()
 let devinSender: DevinRemote | null = null
 let emit: (event: HostEvent) => void = () => {}
+let recoveringDaemon: Promise<void> | null = null
+let stopping = false
 
 /**
  * Prefer the daemon; run locally only when it cannot exist.
@@ -71,6 +73,7 @@ let emit: (event: HostEvent) => void = () => {}
  */
 export function installThreads(send: (event: HostEvent) => void): void {
   emit = send
+  stopping = false
   void (async () => {
     try {
       await loadLineage()
@@ -140,14 +143,41 @@ async function connectViaDaemon(): Promise<boolean> {
       }
     })
     client.onClose(() => {
-      // The daemon died underneath us; carry on locally rather than blank.
+      // The daemon died underneath us; restart it before falling back locally.
       daemon = null
-      void runLocalCatalog().catch(() => {})
+      if (!stopping) void recoverDaemon()
     })
     return true
   } catch {
     return false
   }
+}
+
+function recoverDaemon(): Promise<void> {
+  recoveringDaemon ??= (async () => {
+    spawnDaemon()
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)))
+      if (stopping) return
+      if (await connectViaDaemon()) {
+        emit({
+          type: "notice",
+          level: "success",
+          message: "Session sync recovered without interrupting your work.",
+        })
+        return
+      }
+    }
+    await runLocalCatalog()
+    emit({
+      type: "notice",
+      level: "error",
+      message: "Session sync could not restart. Mako is watching locally until the next launch.",
+    })
+  })().finally(() => {
+    recoveringDaemon = null
+  })
+  return recoveringDaemon
 }
 
 function processIsAlive(pid: number): boolean {
@@ -334,6 +364,7 @@ export async function startDevin(
 }
 
 export function stopThreads(): void {
+  stopping = true
   catalog?.stop()
   catalog = null
   daemon?.close()
