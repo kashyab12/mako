@@ -2,6 +2,7 @@ import { useEffect } from "react"
 import {
   commands,
   isTypingTarget,
+  keysFor,
   matchesChord,
   registerCommands,
   type DeskCommand,
@@ -47,6 +48,13 @@ function cycleEffort() {
 }
 
 const DESK_COMMANDS: DeskCommand[] = [
+  {
+    id: "view.command-palette",
+    title: "Open command palette",
+    section: "View",
+    keys: "mod+k",
+    run: openPalette,
+  },
   {
     id: "session.new",
     title: "New session",
@@ -130,6 +138,9 @@ const DESK_COMMANDS: DeskCommand[] = [
     run: () => {
       setPref("inspectorOpen", true)
       setPref("inspectorTab", "changes")
+      requestAnimationFrame(() =>
+        window.dispatchEvent(new CustomEvent("mako:draft-commit"))
+      )
     },
   },
   {
@@ -377,13 +388,13 @@ export function useDeskCommands() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const mod = event.metaKey || event.ctrlKey
-
-      if (mod && event.key.toLowerCase() === "k") {
-        event.preventDefault()
-        openPalette()
+      if (
+        event.target instanceof HTMLElement &&
+        event.target.closest("[data-keybinding-capture]")
+      ) {
         return
       }
+      const mod = event.metaKey || event.ctrlKey
 
       // ⌘1…⌘9 jumps straight to a tab — the one shortcut every tabbed app
       // agrees on. Bound here rather than as nine palette commands nobody
@@ -403,8 +414,10 @@ export function useDeskCommands() {
       // Unmodified keys belong to whatever the user is typing into.
       if (!mod && !event.altKey && isTypingTarget(event.target)) return
 
+      const overrides = prefsStore.get().keybindings
       for (const command of commands.list()) {
-        if (!command.keys || !matchesChord(event, command.keys)) continue
+        const keys = keysFor(command, overrides)
+        if (!keys || !matchesChord(event, keys)) continue
         if (command.when?.() === false) continue
         event.preventDefault()
         void command.run()
@@ -412,7 +425,7 @@ export function useDeskCommands() {
       }
     }
 
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
+    window.addEventListener("keydown", onKey, true)
+    return () => window.removeEventListener("keydown", onKey, true)
   }, [])
 }

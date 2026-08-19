@@ -17,6 +17,10 @@ export type RailGroupBy = "none" | "date" | "project"
 export type RailSortBy = "recent" | "created" | "name" | "size"
 export type RailDensity = "comfortable" | "compact"
 
+interface PreferenceStringMap {
+  [key: string]: string
+}
+
 export interface Prefs {
   theme: Theme
   railOpen: boolean
@@ -65,6 +69,7 @@ export interface Prefs {
   >
   /** Providers whose initial settings have already been copied into Mako. */
   providerTuningImported: string[]
+  keybindings: PreferenceStringMap
   /**
    * How a conversation moves to another harness. Transcript replay is the
    * loss-aware default; session import is the compatibility path for stores
@@ -72,7 +77,7 @@ export interface Prefs {
    */
   conversionMode: "native" | "transcript"
   /** Your names for threads, by path — native stores don't take renames. */
-  titleOverrides: Record<string, string>
+  titleOverrides: PreferenceStringMap
   /** Overrides the host's default commit-drafting prompt. */
   commitPrompt?: string
 }
@@ -109,6 +114,7 @@ const defaults: Prefs = {
   agentHarnessFilter: [],
   composerTuning: {},
   providerTuningImported: [],
+  keybindings: {},
   titleOverrides: {},
   conversionMode: "transcript",
 }
@@ -174,9 +180,9 @@ function readStringList(value: StoredValue, fallback: string[]): string[] {
   return value
 }
 
-function readStringRecord(value: StoredValue): Prefs["titleOverrides"] {
+function readStringRecord(value: StoredValue): PreferenceStringMap {
   if (!isJsonObject(value)) return {}
-  const record: Prefs["titleOverrides"] = {}
+  const record: PreferenceStringMap = {}
   for (const [key, entry] of Object.entries(value)) {
     if (isJsonString(entry)) record[key] = entry
   }
@@ -279,6 +285,7 @@ function parsePrefs(value: JsonValue): Prefs | null {
       value.providerTuningImported,
       defaults.providerTuningImported
     ),
+    keybindings: readStringRecord(value.keybindings),
     conversionMode: readChoice(
       value.conversionMode,
       ["native", "transcript"],

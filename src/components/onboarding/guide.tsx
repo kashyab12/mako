@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react"
-import { formatChord, useCommands } from "@/extend/commands"
+import {
+  formatChord,
+  keysFor,
+  useCommands,
+  type DeskCommand,
+} from "@/extend/commands"
+import { usePrefs } from "@/state/prefs"
 import { cn } from "@/lib/utils"
 import { XIcon } from "lucide-react"
 
@@ -20,34 +26,34 @@ import { XIcon } from "lucide-react"
 
 interface Region {
   name: string
-  keys?: string
+  commandId: string
   what: string
 }
 
 const REGIONS: Region[] = [
   {
     name: "Sidebar",
-    keys: "mod+b",
+    commandId: "view.toggle-rail",
     what: "Your conversations in this project, or the project's files. The header wears the project's logo.",
   },
   {
     name: "Tabs",
-    keys: "mod+t",
+    commandId: "tab.new",
     what: "Several agents at once. A background tab keeps working and says so with a dot.",
   },
   {
     name: "Conversation",
-    keys: "mod+l",
+    commandId: "session.focus-composer",
     what: "Ask here. While a turn runs, Enter steers it and ⌘↩ queues a follow-up.",
   },
   {
     name: "Inspector",
-    keys: "mod+i",
+    commandId: "view.toggle-inspector",
     what: "What changed, what the agent has in context, and every turn as a point you can go back to.",
   },
   {
     name: "Preview",
-    keys: "mod+shift+p",
+    commandId: "view.preview",
     what: "The dev server, beside the conversation, plus everything listening on this machine.",
   },
 ]
@@ -55,6 +61,7 @@ const REGIONS: Region[] = [
 export function Guide() {
   const [open, setOpen] = useState(false)
   const commands = useCommands()
+  const keybindings = usePrefs((prefs) => prefs.keybindings)
 
   useEffect(() => {
     const show = () => setOpen(true)
@@ -78,13 +85,14 @@ export function Guide() {
   const sections = useMemo(() => {
     const grouped = new Map<string, Array<{ title: string; keys: string[] }>>()
     for (const command of commands) {
-      if (!command.keys) continue
+      const keys = keysFor(command, keybindings)
+      if (!keys) continue
       const list = grouped.get(command.section) ?? []
-      list.push({ title: command.title, keys: formatChord(command.keys) })
+      list.push({ title: command.title, keys: formatChord(keys) })
       grouped.set(command.section, list)
     }
     return [...grouped.entries()]
-  }, [commands])
+  }, [commands, keybindings])
 
   if (!open) return null
 
@@ -120,7 +128,7 @@ export function Guide() {
                 <span className="min-w-0 flex-1 text-[11.5px] leading-relaxed text-muted-foreground">
                   {region.what}
                 </span>
-                <Chord keys={region.keys} />
+                <Chord keys={regionKeys(region, commands, keybindings)} />
               </div>
             ))}
           </div>
@@ -153,6 +161,15 @@ export function Guide() {
       </div>
     </div>
   )
+}
+
+function regionKeys(
+  region: Region,
+  commands: DeskCommand[],
+  keybindings: Readonly<Record<string, string>>
+): string | undefined {
+  const command = commands.find((entry) => entry.id === region.commandId)
+  return command ? keysFor(command, keybindings) : undefined
 }
 
 function Chord({ keys }: { keys?: string }) {

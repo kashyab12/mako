@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Eyebrow, Keys } from "@/components/ui/kit"
-import { formatChord, useCommands, type DeskCommand } from "@/extend/commands"
+import {
+  formatChord,
+  keysFor,
+  useCommands,
+  type DeskCommand,
+} from "@/extend/commands"
 import { fuzzy, rank } from "@/lib/fuzzy"
 import { firstLine } from "@/lib/format"
 import { actions, useSession } from "@/state/session"
-import { modelKey, noteModelUse } from "@/state/prefs"
+import { modelKey, noteModelUse, usePrefs } from "@/state/prefs"
 import { useWorkspaceFiles } from "@/state/files"
 import { viewer } from "@/state/viewer"
 import { cn } from "@/lib/utils"
@@ -42,6 +47,7 @@ export function CommandPalette() {
 
   const files = useWorkspaceFiles(open && mode === "files")
   const deskCommands = useCommands()
+  const keybindings = usePrefs((prefs) => prefs.keybindings)
   const sessions = useSession((state) => state.sessions)
   const models = useSession((state) => state.models)
   const piCommands = useSession((state) => state.capabilities.commands)
@@ -94,7 +100,7 @@ export function CommandPalette() {
   const entries = useMemo<Entry[]>(() => {
     const list: Entry[] = deskCommands
       .filter((command) => command.when?.() !== false)
-      .map((command) => toEntry(command))
+      .map((command) => toEntry(command, keybindings))
 
     for (const command of piCommands) {
       list.push({
@@ -132,7 +138,7 @@ export function CommandPalette() {
     }
 
     return list
-  }, [activeModel, deskCommands, models, piCommands, sessions])
+  }, [activeModel, deskCommands, keybindings, models, piCommands, sessions])
 
   const results = useMemo(() => {
     if (mode === "files") return fileEntries
@@ -259,13 +265,16 @@ export function CommandPalette() {
   )
 }
 
-function toEntry(command: DeskCommand): Entry {
+function toEntry(
+  command: DeskCommand,
+  keybindings: Readonly<Record<string, string>>
+): Entry {
   return {
     id: command.id,
     section: command.section,
     title: command.title,
     hint: command.hint,
-    keys: formatChord(command.keys),
+    keys: formatChord(keysFor(command, keybindings)),
     run: () => void command.run(),
   }
 }

@@ -12,6 +12,7 @@ import type { UsageSummary } from "@/lib/types"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { PluginsSection } from "@/components/settings/plugins-section"
 import { McpSection } from "@/components/settings/mcp-section"
+import { KeyboardSection } from "@/components/settings/keyboard-section"
 import { CheckIcon, RotateCcwIcon, XIcon } from "lucide-react"
 import { toast } from "sonner"
 
@@ -20,6 +21,7 @@ const SECTIONS = [
   { id: "commits", label: "Git & pull requests" },
   { id: "mcp", label: "External tools" },
   { id: "appearance", label: "Appearance" },
+  { id: "keyboard", label: "Keyboard shortcuts" },
   { id: "transcript", label: "Conversation" },
   { id: "usage", label: "Usage & limits" },
   { id: "automations", label: "Automations" },
@@ -105,6 +107,7 @@ export function SettingsView({ initialSection = "agents" }: { initialSection?: s
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="mx-auto w-full max-w-[42rem] px-6 py-6">
           {section === "appearance" ? <Appearance /> : null}
+          {section === "keyboard" ? <KeyboardSection /> : null}
           {section === "transcript" ? <Transcript /> : null}
           {section === "commits" ? (
             <CommitPrompt fallback={defaultPrompt} />

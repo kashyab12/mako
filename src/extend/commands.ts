@@ -39,6 +39,13 @@ export function runCommand(id: string) {
   return true
 }
 
+export function keysFor(
+  command: DeskCommand,
+  overrides: Readonly<Record<string, string>>
+): string | undefined {
+  return overrides[command.id] ?? command.keys
+}
+
 export function useCommands(): DeskCommand[] {
   return useRegistry(commands).list()
 }
@@ -54,11 +61,12 @@ export function matchesChord(event: KeyboardEvent, chord: string): boolean {
   const parts = chord.toLowerCase().split("+")
   const key = parts.at(-1) ?? ""
   const wants = new Set(parts.slice(0, -1))
-  const mod = isMac ? event.metaKey : event.ctrlKey
-  if (wants.has("mod") !== mod) return false
+  const wantsMeta = wants.has("meta") || (isMac && wants.has("mod"))
+  const wantsControl = wants.has("ctrl") || (!isMac && wants.has("mod"))
+  if (wantsMeta !== event.metaKey) return false
+  if (wantsControl !== event.ctrlKey) return false
   if (wants.has("shift") !== event.shiftKey) return false
   if (wants.has("alt") !== event.altKey) return false
-  if (!wants.has("mod") && (isMac ? event.ctrlKey : event.metaKey)) return false
   const pressed = event.key.toLowerCase()
   if (pressed === key) return true
   // Option-modified keys report their composed character on macOS, and shifted
@@ -90,7 +98,27 @@ const PHYSICAL_KEYS: PhysicalKey[] = [
   { character: "-", code: "Minus" },
   { character: "=", code: "Equal" },
   { character: "`", code: "Backquote" },
+  { character: "space", code: "Space" },
 ]
+
+export function chordFromEvent(event: KeyboardEvent): string | null {
+  if (["Control", "Meta", "Alt", "Shift"].includes(event.key)) return null
+  const physical = PHYSICAL_KEYS.find(({ code }) => code === event.code)?.character
+  const key =
+    physical ??
+    (/^Key[A-Z]$/.test(event.code)
+      ? event.code.slice(3).toLowerCase()
+      : /^Digit[0-9]$/.test(event.code)
+        ? event.code.slice(5)
+        : event.key.toLowerCase())
+  if (!key || key === "dead") return null
+  const modifiers: string[] = []
+  if (event.metaKey) modifiers.push(isMac ? "mod" : "meta")
+  if (event.ctrlKey) modifiers.push(isMac ? "ctrl" : "mod")
+  if (event.shiftKey) modifiers.push("shift")
+  if (event.altKey) modifiers.push("alt")
+  return [...modifiers, key].join("+")
+}
 
 /** Render a chord for display: "mod+k" → "⌘K" on macOS, "Ctrl K" elsewhere. */
 export function formatChord(chord?: string): string[] {
@@ -99,6 +127,10 @@ export function formatChord(chord?: string): string[] {
     switch (part) {
       case "mod":
         return isMac ? "⌘" : "Ctrl"
+      case "meta":
+        return isMac ? "⌘" : "Meta"
+      case "ctrl":
+        return isMac ? "⌃" : "Ctrl"
       case "shift":
         return isMac ? "⇧" : "Shift"
       case "alt":
@@ -109,6 +141,8 @@ export function formatChord(chord?: string): string[] {
         return "Esc"
       case "backspace":
         return "⌫"
+      case "space":
+        return "Space"
       case "arrowup":
         return "↑"
       case "arrowdown":

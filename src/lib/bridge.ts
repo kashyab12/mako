@@ -6,6 +6,7 @@ declare global {
   }
 
   interface WindowEventMap {
+    "mako:draft-commit": CustomEvent
     "mako:inspector-panel": CustomEvent<string>
   }
 }

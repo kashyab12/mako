@@ -3,7 +3,7 @@ import { Action, IconAction, Keys } from "@/components/ui/kit"
 import { formatChord } from "@/extend/commands"
 import { getMako } from "@/lib/bridge"
 import { actions, useSession } from "@/state/session"
-import { prefsStore } from "@/state/prefs"
+import { prefsStore, usePrefs } from "@/state/prefs"
 import { cn } from "@/lib/utils"
 import { SparklesIcon, UploadIcon } from "lucide-react"
 import { toast } from "sonner"
@@ -21,6 +21,9 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
   const [drafting, setDrafting] = useState(false)
   const [busy, setBusy] = useState(false)
   const field = useRef<HTMLTextAreaElement>(null)
+  const draftKeys = usePrefs(
+    (prefs) => prefs.keybindings["workspace.generate-commit"] ?? "mod+shift+g"
+  )
 
   const ahead = useSession((state) => state.git?.ahead ?? 0)
   const branch = useSession((state) => state.git?.branch)
@@ -67,7 +70,7 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
     }
   }, [busy, message])
 
-  // ⌘↩ commits, ⌘⇧G drafts — both live while the panel has focus.
+  // ⌘↩ commits while the message field has focus.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey
@@ -76,14 +79,16 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
         event.preventDefault()
         void commit()
       }
-      if (event.shiftKey && event.key.toLowerCase() === "g") {
-        event.preventDefault()
-        void draft()
-      }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [commit, draft])
+  }, [commit])
+
+  useEffect(() => {
+    const draftFromCommand = () => void draft()
+    window.addEventListener("mako:draft-commit", draftFromCommand)
+    return () => window.removeEventListener("mako:draft-commit", draftFromCommand)
+  }, [draft])
 
   const subject = message.split("\n")[0] ?? ""
   const overLong = subject.length > 50
@@ -111,7 +116,7 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
         <div className="flex items-center gap-1 px-1.5 pb-1.5">
           <IconAction
             label="Draft a message from the diff"
-            keys={formatChord("mod+shift+g")}
+            keys={formatChord(draftKeys)}
             side="top"
             size="xs"
             disabled={total === 0 || drafting}
