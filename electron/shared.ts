@@ -329,6 +329,60 @@ export interface SkillSummary {
   source?: string
 }
 
+export type SkillProvider = McpProvider | "agents"
+export type SkillScope = "user" | "workspace"
+
+export interface SkillOrigin {
+  provider: SkillProvider
+  account: string
+  scope: SkillScope
+  provenance: string
+}
+
+export interface SkillRecord {
+  id: string
+  name: string
+  description: string
+  hash: string
+  bytes: number
+  files: number
+  portable: boolean
+  origins: SkillOrigin[]
+  license?: string
+  compatibility?: string
+  allowedTools?: string[]
+  blockReason?: string
+  conflict?: "name" | "drift"
+}
+
+export interface SkillProviderStatus {
+  id: Exclude<SkillProvider, "agents">
+  label: string
+  account: string
+  available: boolean
+}
+
+export interface SkillRegistrySnapshot {
+  cwd: string
+  generatedAt: number
+  skills: SkillRecord[]
+  providers: SkillProviderStatus[]
+}
+
+export interface SkillSyncTarget {
+  provider: Exclude<SkillProvider, "agents">
+  account: string
+  scope: SkillScope
+}
+
+export interface SkillSyncPreview {
+  skillId: string
+  target: SkillSyncTarget
+  action: "add" | "replace" | "remove" | "unchanged" | "blocked"
+  summary: string
+  blockReason?: string
+}
+
 export interface Capabilities {
   tools: ToolSummary[]
   commands: CommandSummary[]

@@ -14,6 +14,7 @@ import type {
   ChatMessage,
   SessionMeta,
   SessionSummary,
+  SkillRegistrySnapshot,
   TerminalEvent,
   TerminalSession,
   TreeNode,
@@ -385,6 +386,60 @@ const MCP: McpRegistrySnapshot = {
       managed: true,
       availability: "available",
       detail: "uvx is available",
+    },
+  ],
+}
+
+const SKILLS: SkillRegistrySnapshot = {
+  cwd: META.cwd,
+  generatedAt: Date.now(),
+  providers: MCP.providers.map(({ id, label, account, available }) => ({
+    id,
+    label,
+    account,
+    available,
+  })),
+  skills: [
+    {
+      id: "mock-review",
+      name: "code-review",
+      description: "Review a change for correctness, regressions, and missing tests.",
+      hash: "a".repeat(64),
+      bytes: 2_480,
+      files: 3,
+      portable: true,
+      origins: [
+        {
+          provider: "claude",
+          account: "default",
+          scope: "user",
+          provenance: "/Users/you/.claude/skills/code-review/SKILL.md",
+        },
+        {
+          provider: "agents",
+          account: "local",
+          scope: "workspace",
+          provenance: `${META.cwd}/.agents/skills/code-review/SKILL.md`,
+        },
+      ],
+    },
+    {
+      id: "mock-deploy-one",
+      name: "deploy",
+      description: "Deploy the current project after verification.",
+      hash: "b".repeat(64),
+      bytes: 1_280,
+      files: 1,
+      portable: true,
+      conflict: "drift",
+      origins: [
+        {
+          provider: "cursor",
+          account: "default",
+          scope: "user",
+          provenance: "/Users/you/.cursor/skills/deploy/SKILL.md",
+        },
+      ],
     },
   ],
 }
@@ -810,6 +865,20 @@ export function installMockBridge() {
       summary: `Add server to ${target.provider}`,
     }),
     applyMcpSync: async () => MCP,
+    discoverSkills: async () => SKILLS,
+    previewSkillSync: async (skillId, target) => ({
+      skillId,
+      target,
+      action: "add" as const,
+      summary: `Add skill to ${target.provider}`,
+    }),
+    previewSkillRemove: async (skillId, target) => ({
+      skillId,
+      target,
+      action: "remove" as const,
+      summary: `Remove skill from ${target.provider}`,
+    }),
+    applySkillSync: async () => SKILLS,
 
     gitStatus: async () => GIT,
     gitDiff: async (path: string) => ({

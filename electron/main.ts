@@ -130,6 +130,12 @@ import {
 } from "./plugins.js"
 import { discoverMcpRegistry } from "./mcp-registry.js"
 import { applyMcpSync, previewMcpSync } from "./mcp-sync.js"
+import { discoverSkillRegistry } from "./skill-registry.js"
+import {
+  applySkillSync,
+  previewSkillRemove,
+  previewSkillSync,
+} from "./skill-sync.js"
 import type {
   AcpPromptAttachment,
   BootPayload,
@@ -137,6 +143,7 @@ import type {
   MakoComputerPermissions,
   McpSyncTarget,
   SearchOptions,
+  SkillSyncTarget,
   TerminalCreateOptions,
   ThinkingLevel,
   ThreadContextOptions,
@@ -785,6 +792,52 @@ function bindIpc() {
       await applyMcpSync(snapshot, serverId, target)
       return discoverMcpRegistry(host.workspace, app.getAppPath())
     })
+  )
+
+  handle("mako:skills-discover", () =>
+    withHost((host) => discoverSkillRegistry(host.workspace))
+  )
+  handle(
+    "mako:skills-sync-preview",
+    (_e, skillId: string, target: SkillSyncTarget) =>
+      withHost(async (host) =>
+        previewSkillSync(
+          await discoverSkillRegistry(host.workspace),
+          skillId,
+          target
+        )
+      )
+  )
+  handle(
+    "mako:skills-remove-preview",
+    (_e, skillId: string, target: SkillSyncTarget) =>
+      withHost(async (host) =>
+        previewSkillRemove(
+          await discoverSkillRegistry(host.workspace),
+          skillId,
+          target
+        )
+      )
+  )
+  handle(
+    "mako:skills-sync-apply",
+    (_e, skillId: string, targets: SkillSyncTarget[]) =>
+      withHost(async (host) => {
+        const snapshot = await discoverSkillRegistry(host.workspace)
+        const source = snapshot.skills.find((skill) => skill.id === skillId)
+          ?.origins[0]
+        const ordered = [...targets].sort((left, right) => {
+          const matches = (target: SkillSyncTarget) =>
+            source?.provider === target.provider &&
+            source.account === target.account &&
+            source.scope === target.scope
+          return Number(matches(left)) - Number(matches(right))
+        })
+        for (const target of ordered) {
+          await applySkillSync(snapshot, skillId, target)
+        }
+        return discoverSkillRegistry(host.workspace)
+      })
   )
 
   /* Interactive foreign agents over ACP. */

@@ -22,6 +22,9 @@ import type {
   SearchResults,
   SessionState,
   SessionSummary,
+  SkillRegistrySnapshot,
+  SkillSyncPreview,
+  SkillSyncTarget,
   AcpPromptAttachment,
   AcpSessionState,
   Thread,
@@ -219,6 +222,27 @@ const api = {
       "mako:mcp-sync-apply",
       serverId,
       target
+    ),
+
+  discoverSkills: () =>
+    invokeTrustedHost<SkillRegistrySnapshot>("mako:skills-discover"),
+  previewSkillSync: (skillId: string, target: SkillSyncTarget) =>
+    invokeTrustedHost<SkillSyncPreview>(
+      "mako:skills-sync-preview",
+      skillId,
+      target
+    ),
+  previewSkillRemove: (skillId: string, target: SkillSyncTarget) =>
+    invokeTrustedHost<SkillSyncPreview>(
+      "mako:skills-remove-preview",
+      skillId,
+      target
+    ),
+  applySkillSync: (skillId: string, targets: SkillSyncTarget[]) =>
+    invokeTrustedHost<SkillRegistrySnapshot>(
+      "mako:skills-sync-apply",
+      skillId,
+      targets
     ),
 
   /* Tabs. Session-scoped calls below always address the active tab. */

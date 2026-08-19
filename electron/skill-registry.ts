@@ -1,0 +1,401 @@
+import { createHash } from "node:crypto"
+import { constants, existsSync } from "node:fs"
+import { access, lstat, readdir, readFile } from "node:fs/promises"
+import { homedir } from "node:os"
+import {
+  basename,
+  delimiter,
+  dirname,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path"
+import { parse } from "yaml"
+import { z } from "zod"
+import { selectedAccount } from "./accounts.js"
+import type {
+  SkillOrigin,
+  SkillProvider,
+  SkillProviderStatus,
+  SkillRecord,
+  SkillRegistrySnapshot,
+  SkillScope,
+  SkillSyncTarget,
+} from "./shared.js"
+
+const PROVIDERS = ["claude", "codex", "cursor", "grok", "devin"] as const
+const MAX_SKILL_FILES = 256
+const MAX_SKILL_BYTES = 8 * 1024 * 1024
+const MAX_SKILL_FILE_BYTES = 2 * 1024 * 1024
+const MAX_SCAN_DEPTH = 5
+const skillName = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const frontmatterSchema = z
+  .object({
+    name: z.string().min(1).max(64),
+    description: z.string().min(1).max(1024),
+    license: z.string().min(1).max(256).optional(),
+    compatibility: z.string().min(1).max(500).optional(),
+    "allowed-tools": z
+      .union([z.string(), z.array(z.string())])
+      .optional(),
+  })
+  .passthrough()
+
+export type SkillProviderId = (typeof PROVIDERS)[number]
+
+export interface SkillRoot {
+  provider: SkillProvider
+  account: string
+  scope: SkillScope
+  root: string
+}
+
+interface SkillFiles {
+  files: Array<{ path: string; contents: Buffer }>
+  bytes: number
+  blockReason?: string
+}
+
+interface DiscoveredSkill {
+  record: SkillRecord
+}
+
+function posixPath(value: string): string {
+  return value.split(sep).join("/")
+}
+
+function parseFrontmatter(contents: string) {
+  const match = /^---\s*\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(contents)
+  if (!match?.[1]) return null
+  const parsed = frontmatterSchema.safeParse(parse(match[1]))
+  return parsed.success ? parsed.data : null
+}
+
+function allowedTools(value: string | string[] | undefined): string[] | undefined {
+  if (Array.isArray(value)) return value.filter(Boolean)
+  const parsed = value?.split(/\s+/).filter(Boolean)
+  return parsed?.length ? parsed : undefined
+}
+
+async function readSkillFiles(directory: string): Promise<SkillFiles> {
+  const files: Array<{ path: string; contents: Buffer }> = []
+  let bytes = 0
+  let blockReason: string | undefined
+
+  async function walk(current: string): Promise<void> {
+    if (blockReason) return
+    const entries = await readdir(current, { withFileTypes: true })
+    for (const entry of entries.sort((left, right) =>
+      left.name.localeCompare(right.name)
+    )) {
+      if (blockReason) return
+      const path = join(current, entry.name)
+      if (entry.isSymbolicLink()) {
+        blockReason = "contains symbolic links"
+        return
+      }
+      if (entry.isDirectory()) {
+        await walk(path)
+        continue
+      }
+      if (!entry.isFile()) continue
+      const stats = await lstat(path)
+      if (stats.size > MAX_SKILL_FILE_BYTES) {
+        blockReason = `contains a file larger than ${MAX_SKILL_FILE_BYTES} bytes`
+        return
+      }
+      const contents = await readFile(path)
+      bytes += contents.byteLength
+      files.push({ path: posixPath(relative(directory, path)), contents })
+      if (files.length > MAX_SKILL_FILES || bytes > MAX_SKILL_BYTES) {
+        blockReason = "exceeds Mako's bounded skill package limits"
+        return
+      }
+    }
+  }
+
+  await walk(directory)
+  return { files, bytes, blockReason }
+}
+
+function hashFiles(files: SkillFiles["files"]): string {
+  const digest = createHash("sha256")
+  for (const file of files) {
+    digest.update(file.path).update("\0").update(file.contents).update("\0")
+  }
+  return digest.digest("hex")
+}
+
+async function readSkill(
+  directory: string,
+  origin: SkillOrigin
+): Promise<DiscoveredSkill | null> {
+  const manifest = join(directory, "SKILL.md")
+  try {
+    const raw = await readFile(manifest, "utf8")
+    const metadata = parseFrontmatter(raw)
+    if (!metadata) return null
+    const packageFiles = await readSkillFiles(directory)
+    const reasons: string[] = []
+    if (!skillName.test(metadata.name))
+      reasons.push("name is not lowercase kebab-case")
+    if (metadata.name !== basename(directory))
+      reasons.push("frontmatter name does not match its directory")
+    if (packageFiles.blockReason) reasons.push(packageFiles.blockReason)
+    const hash = hashFiles(packageFiles.files)
+    const record: SkillRecord = {
+      id: createHash("sha256")
+        .update(metadata.name)
+        .update("\0")
+        .update(hash)
+        .digest("hex")
+        .slice(0, 16),
+      name: metadata.name,
+      description: metadata.description,
+      hash,
+      bytes: packageFiles.bytes,
+      files: packageFiles.files.length,
+      portable: reasons.length === 0,
+      origins: [origin],
+    }
+    if (metadata.license) record.license = metadata.license
+    if (metadata.compatibility) record.compatibility = metadata.compatibility
+    const tools = allowedTools(metadata["allowed-tools"])
+    if (tools) record.allowedTools = tools
+    if (reasons.length) record.blockReason = reasons.join("; ")
+    return { record }
+  } catch {
+    return null
+  }
+}
+
+async function findSkillDirectories(
+  root: string,
+  depth = 0
+): Promise<string[]> {
+  if (depth > MAX_SCAN_DEPTH) return []
+  let entries
+  try {
+    entries = await readdir(root, { withFileTypes: true })
+  } catch {
+    return []
+  }
+  const directories: string[] = []
+  if (entries.some((entry) => entry.isFile() && entry.name === "SKILL.md")) {
+    directories.push(root)
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith(".")) continue
+    directories.push(
+      ...(await findSkillDirectories(join(root, entry.name), depth + 1))
+    )
+  }
+  return directories
+}
+
+function workspaceBases(cwd: string): string[] {
+  const bases: string[] = []
+  let current = resolve(cwd)
+  while (true) {
+    bases.push(current)
+    if (existsSync(join(current, ".git"))) break
+    const parent = dirname(current)
+    if (parent === current) break
+    current = parent
+  }
+  return bases
+}
+
+export async function skillRoots(cwd: string): Promise<SkillRoot[]> {
+  const home = homedir()
+  const claude = await selectedAccount("claude")
+  const codex = await selectedAccount("codex")
+  const roots: SkillRoot[] = [
+    {
+      provider: "agents",
+      account: "local",
+      scope: "user",
+      root: join(home, ".agents", "skills"),
+    },
+    {
+      provider: "claude",
+      account: claude.name,
+      scope: "user",
+      root: join(claude.dir ?? join(home, ".claude"), "skills"),
+    },
+    {
+      provider: "codex",
+      account: codex.name,
+      scope: "user",
+      root: join(codex.dir ?? join(home, ".codex"), "skills"),
+    },
+    {
+      provider: "cursor",
+      account: "default",
+      scope: "user",
+      root: join(home, ".cursor", "skills"),
+    },
+    {
+      provider: "grok",
+      account: "default",
+      scope: "user",
+      root: join(home, ".grok", "skills"),
+    },
+    {
+      provider: "devin",
+      account: "default",
+      scope: "user",
+      root: join(home, ".config", "devin", "skills"),
+    },
+    {
+      provider: "devin",
+      account: "default",
+      scope: "user",
+      root: join(home, ".devin", "skills"),
+    },
+  ]
+  for (const base of workspaceBases(cwd)) {
+    for (const [provider, folder] of [
+      ["agents", ".agents"],
+      ["claude", ".claude"],
+      ["codex", ".codex"],
+      ["cursor", ".cursor"],
+      ["grok", ".grok"],
+      ["devin", ".devin"],
+    ] as const) {
+      roots.push({
+        provider,
+        account: provider === "agents" ? "local" : "default",
+        scope: "workspace",
+        root: join(base, folder, "skills"),
+      })
+    }
+  }
+  const unique = new Map(roots.map((root) => [root.root, root]))
+  return [...unique.values()]
+}
+
+export async function skillTargetRoot(
+  cwd: string,
+  target: SkillSyncTarget
+): Promise<string> {
+  if (target.scope === "workspace") {
+    return join(cwd, `.${target.provider}`, "skills")
+  }
+  const account = await selectedAccount(target.provider)
+  if (account.name !== target.account) {
+    throw new Error("The target account is no longer selected")
+  }
+  if (target.provider === "claude")
+    return join(account.dir ?? join(homedir(), ".claude"), "skills")
+  if (target.provider === "codex")
+    return join(account.dir ?? join(homedir(), ".codex"), "skills")
+  if (target.provider === "cursor") return join(homedir(), ".cursor", "skills")
+  if (target.provider === "grok") return join(homedir(), ".grok", "skills")
+  return join(homedir(), ".config", "devin", "skills")
+}
+
+function mergeSkills(skills: DiscoveredSkill[]): SkillRecord[] {
+  const records = new Map<string, SkillRecord>()
+  const hashesByName = new Map<string, Set<string>>()
+  for (const skill of skills) {
+    const key = `${skill.record.name}\0${skill.record.hash}`
+    const existing = records.get(key)
+    if (existing) {
+      existing.origins.push(...skill.record.origins)
+    } else {
+      records.set(key, { ...skill.record, origins: [...skill.record.origins] })
+    }
+    const hashes = hashesByName.get(skill.record.name) ?? new Set<string>()
+    hashes.add(skill.record.hash)
+    hashesByName.set(skill.record.name, hashes)
+  }
+  return [...records.values()]
+    .map((record) =>
+      (hashesByName.get(record.name)?.size ?? 0) > 1
+        ? { ...record, conflict: "drift" as const }
+        : record
+    )
+    .sort((left, right) => left.name.localeCompare(right.name))
+}
+
+async function providerStatuses(): Promise<SkillProviderStatus[]> {
+  return Promise.all(
+    PROVIDERS.map(async (provider) => {
+      const account = await selectedAccount(provider)
+      const command =
+        provider === "cursor"
+          ? "cursor-agent"
+          : provider === "grok"
+            ? join(homedir(), ".grok", "bin", "grok")
+            : provider
+      let available = false
+      const candidates = command.includes("/")
+        ? [command]
+        : (process.env.PATH ?? "")
+            .split(delimiter)
+            .filter(Boolean)
+            .map((folder) => join(folder, command))
+      for (const candidate of candidates) {
+        try {
+          await access(candidate, constants.X_OK)
+          available = true
+          break
+        } catch {
+          continue
+        }
+      }
+      return {
+        id: provider,
+        label: provider === "claude" ? "Claude Code" : provider[0].toUpperCase() + provider.slice(1),
+        account: account.name,
+        available,
+      }
+    })
+  )
+}
+
+export async function discoverSkillRecords(
+  roots: SkillRoot[]
+): Promise<SkillRecord[]> {
+  const discovered: DiscoveredSkill[] = []
+  for (const root of roots) {
+    for (const directory of await findSkillDirectories(root.root)) {
+      const skill = await readSkill(directory, {
+        provider: root.provider,
+        account: root.account,
+        scope: root.scope,
+        provenance: join(directory, "SKILL.md"),
+      })
+      if (skill) discovered.push(skill)
+    }
+  }
+  return mergeSkills(discovered)
+}
+
+export async function discoverSkillRegistry(
+  cwd: string
+): Promise<SkillRegistrySnapshot> {
+  return {
+    cwd,
+    generatedAt: Date.now(),
+    skills: await discoverSkillRecords(await skillRoots(cwd)),
+    providers: await providerStatuses(),
+  }
+}
+
+export function skillSourceDirectory(
+  snapshot: SkillRegistrySnapshot,
+  skillId: string
+): string {
+  const skill = snapshot.skills.find((entry) => entry.id === skillId)
+  if (!skill) throw new Error("That skill is no longer in the registry")
+  const source = skill.origins[0]?.provenance
+  if (!source) throw new Error("That skill has no readable source")
+  return dirname(source)
+}
+
+export async function hashSkillDirectory(directory: string): Promise<string> {
+  return hashFiles((await readSkillFiles(directory)).files)
+}
