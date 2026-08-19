@@ -1,4 +1,14 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron"
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  nativeImage,
+  nativeTheme,
+  shell,
+  type BrowserWindowConstructorOptions,
+} from "electron"
 import { watch } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -32,7 +42,11 @@ import { createPull, githubStatus, listPulls, pullForBranch, repoAvatar, rerunCh
 import { HostPool } from "./pool.js"
 import { daemonStatus, devinAccountsMasked, startDevin, emitThreadAs, emitThreadAsClaude, emitThreadAsPi, followThread, threadsReady, installThreads, listThreads, openThread, remoteHarnesses, saveDevinAccounts, sendRemote, stopThreads, transcriptArtifactFor, unfollowThread } from "./threads.js"
 import { abortNative, bindDrivers, resumableHarnesses, resumeNative, startFresh, stopDrivers, threadRun } from "./drivers.js"
-import { harnessProfile, harnessProfiles } from "./harnesses.js"
+import {
+  harnessProfile,
+  harnessProfiles,
+  resolveHarnessTuning,
+} from "./harnesses.js"
 import { bindLineageDirect, chainOf, expectLineage } from "./lineage.js"
 import { accountUsage, captureAccount, listAccounts, removeAccount, selectAccount } from "./accounts.js"
 import { daemonLoginEnabled, setDaemonLogin } from "./daemon-login.js"
@@ -70,6 +84,11 @@ function appIcon() {
 let window: BrowserWindow | null = null
 const pool = new HostPool(emit)
 let starting: Promise<unknown> | null = null
+
+interface ThreadContinuationOptions {
+  cwd?: string
+  sessionPath: string
+}
 
 let fileWatcher: import("node:fs").FSWatcher | null = null
 function stopFileWatch() {
@@ -112,9 +131,8 @@ async function createWindow() {
   const icon = appIcon()
   if (icon && process.platform === "darwin") app.dock?.setIcon(icon)
 
-  window = new BrowserWindow({
+  const windowOptions: BrowserWindowConstructorOptions = {
     title: "Mako",
-    ...(icon ? { icon } : {}),
     width: 1480,
     height: 940,
     minWidth: 900,
@@ -140,7 +158,9 @@ async function createWindow() {
       // the app's own.
       webviewTag: true,
     },
-  })
+  }
+  if (icon) windowOptions.icon = icon
+  window = new BrowserWindow(windowOptions)
 
   window.once("ready-to-show", () => {
     // Full working area, not a floating rectangle someone has to drag out.
@@ -342,7 +362,6 @@ function bindIpc() {
   handle("pi:watch-file", (_e, path: string) => {
     stopFileWatch()
     try {
-      const { watch } = require("node:fs") as typeof import("node:fs")
       let timer: NodeJS.Timeout | null = null
       fileWatcher = watch(path, () => {
         if (timer) clearTimeout(timer)
@@ -515,7 +534,7 @@ function bindIpc() {
   handle("pi:acp-harnesses", () => ["codex", ...acpHarnesses()])
   handle(
     "pi:acp-start",
-    (
+    async (
       _e,
       harness: string,
       cwd: string,
@@ -524,7 +543,16 @@ function bindIpc() {
         title?: string
         tuning?: { model?: string; effort?: string; fast?: boolean; options?: Record<string, string | boolean> }
       }
-    ) => (harness === "codex" ? codexAppStart(cwd, options) : acpStart(harness, cwd, options))
+    ) => {
+      const profile = await harnessProfile(harness)
+      const resolved = {
+        ...options,
+        tuning: resolveHarnessTuning(profile, options?.tuning),
+      }
+      return harness === "codex"
+        ? codexAppStart(cwd, resolved)
+        : acpStart(harness, cwd, resolved)
+    }
   )
   handle("pi:acp-state", (_e, id: string) => codexAppState(id) ?? acpState(id))
   handle("pi:acp-prompt", (_e, id: string, text: string, attachments?: AcpPromptAttachment[]) =>
@@ -550,7 +578,12 @@ function bindIpc() {
       _e,
       harness: string,
       prompt: string,
-      options?: { model?: string; effort?: string; fast?: boolean }
+      options?: {
+        model?: string
+        effort?: string
+        fast?: boolean
+        options?: Record<string, string | boolean>
+      }
     ) => {
       const live = await ready()
       const cwd = live.active.workspace
@@ -560,14 +593,33 @@ function bindIpc() {
         await startDevin(prompt)
         return { run: null, cwd: "" }
       }
-      return { run: await startFresh(harness, cwd, prompt, options), cwd }
+      const profile = await harnessProfile(harness)
+      return {
+        run: await startFresh(
+          harness,
+          cwd,
+          prompt,
+          resolveHarnessTuning(profile, options)
+        ),
+        cwd,
+      }
     }
   )
 
   handle("pi:harness-tuning", (_e, harness: string) => harnessProfile(harness))
 
   handle("pi:thread-run", (_e, path: string) => threadRun(path))
-  handle("pi:thread-resume", async (_e, path: string, prompt: string, tuning?: { model?: string; effort?: string; fast?: boolean }) => {
+  handle("pi:thread-resume", async (
+    _e,
+    path: string,
+    prompt: string,
+    tuning?: {
+      model?: string
+      effort?: string
+      fast?: boolean
+      options?: Record<string, string | boolean>
+    }
+  ) => {
     // A remote session (Devin) takes the message through its API and keeps
     // working in the cloud; the follow poll streams what it does next.
     if (await sendRemote(path, prompt)) {
@@ -575,7 +627,12 @@ function bindIpc() {
     }
     const thread = await openThread(path)
     if (!thread) throw new Error("This session could not be read")
-    return await resumeNative(thread.ref, prompt, tuning)
+    const profile = await harnessProfile(thread.ref.harness)
+    return await resumeNative(
+      thread.ref,
+      prompt,
+      resolveHarnessTuning(profile, tuning)
+    )
   })
   handle("pi:thread-abort-run", (_e, path: string) => abortNative(path))
   /**
@@ -612,10 +669,11 @@ function bindIpc() {
     if (!materialized) throw new Error("This session could not be read for continuation")
     bindLineageDirect(materialized.sessionPath, chainOf(materialized.thread.ref))
     const live = await ready()
-    const tab = await live.open({
-      ...(materialized.thread.ref.cwd ? { cwd: materialized.thread.ref.cwd } : {}),
+    const openOptions: ThreadContinuationOptions = {
       sessionPath: materialized.sessionPath,
-    })
+    }
+    if (materialized.thread.ref.cwd) openOptions.cwd = materialized.thread.ref.cwd
+    const tab = await live.open(openOptions)
     if (materialized.thread.ref.title) live.active.setName(materialized.thread.ref.title)
     return tab
   })
