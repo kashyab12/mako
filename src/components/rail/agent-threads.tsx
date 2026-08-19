@@ -190,7 +190,9 @@ export function AgentThreads() {
       />
       <ActiveAgents activity={activity} />
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3">
+      <div className="scroll-fade-scope flex min-h-0 flex-1 flex-col">
+      <span aria-hidden className="scroll-fade-top [--fade-from:var(--shell)]" />
+      <div className="scroll-fade-scroller min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3">
         {!loaded && matched.length === 0 ? (
           <RailSkeleton />
         ) : matched.length === 0 ? (
@@ -239,6 +241,7 @@ export function AgentThreads() {
             ))}
           </>
         )}
+      </div>
       </div>
     </div>
   )

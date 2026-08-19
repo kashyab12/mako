@@ -167,8 +167,9 @@ function SessionTranscript({ sessionId }: { sessionId: string | undefined }) {
   const showNavigator = !empty && shown.length >= 3
 
   return (
-    <div ref={pane} className="relative flex min-h-0 flex-1 flex-col">
+    <div ref={pane} className="scroll-fade-scope relative flex min-h-0 flex-1 flex-col">
       <Slot name="transcript.header" meta={undefined} />
+      <span aria-hidden className="scroll-fade-top" />
 
       <div
         ref={viewport}
@@ -176,7 +177,7 @@ function SessionTranscript({ sessionId }: { sessionId: string | undefined }) {
         // The navigator's gutter is reserved here rather than overlaid, so the
         // centred column shifts left instead of running underneath the ticks.
         style={{ paddingInlineEnd: showNavigator ? NAVIGATOR_WIDTH : 0 }}
-        className="group/transcript min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        className="scroll-fade-scroller group/transcript min-h-0 flex-1 overflow-y-auto overscroll-contain"
       >
         {empty ? (
           <EmptyTranscript />

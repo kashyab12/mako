@@ -8,10 +8,10 @@
 /* ------------------------------------------------------------------ *
  * Tokens
  *
- * One achromatic ramp, a light accent, and three semantic hues that only
- * appear where they carry meaning. Elevation is expressed as steps on the
- * ramp, never as shadow — that is what keeps the surface quiet at this
- * density.
+ * Warm ember neutrals on a two-level architecture: a shadowless chrome
+ * shell, and content floating on it as elevated cards. Hue appears where
+ * it carries meaning (diff, error, warning) plus one ember accent used
+ * strictly as punctuation.
  * ------------------------------------------------------------------ */
 
 @theme inline {
@@ -102,15 +102,24 @@
   --font-weight-medium: 530;
   --font-weight-semibold: 640;
 
-  /* Motion. The built-in CSS curves are too weak to read as intentional. */
-  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
-  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  /*
+   * Motion: two curves total. --ease-out for everything that arrives,
+   * --ease-swift for everything that leaves. Exits are faster than
+   * entrances — attention has already moved on.
+   */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-swift: cubic-bezier(0.2, 0, 0, 1);
 
   --duration-press: 120ms;
-  --duration-tooltip: 140ms;
-  --duration-menu: 180ms;
+  --duration-tooltip: 120ms;
+  --duration-tooltip-out: 80ms;
+  --duration-menu: 160ms;
   --duration-panel: 240ms;
+
+  /* The tool-status label spring; surfaces may retune locally. */
+  --tool-motion-spring: 480ms;
+  --tool-motion-fade: 240ms;
+  --tool-motion-blur: 2px;
 }
 
 :root {
@@ -496,7 +505,7 @@
     transparent
   );
   transform: translateX(-100%);
-  animation: mako-skeleton 1.6s var(--ease-in-out) infinite;
+  animation: mako-skeleton 1.6s ease-in-out infinite;
 }
 
 @keyframes mako-skeleton {
@@ -543,7 +552,7 @@
 }
 
 .animate-live {
-  animation: mako-pulse 1.5s var(--ease-in-out) infinite;
+  animation: mako-pulse 1.5s ease-in-out infinite;
 }
 
 /*
@@ -565,6 +574,13 @@
     transform var(--duration-tooltip) var(--ease-out);
 }
 
+/* Exits are faster than entrances — attention has already moved on. */
+[data-slot="tooltip-content"][data-state="closed"],
+[data-slot="popover-content"][data-state="closed"] {
+  transition-duration: var(--duration-tooltip-out);
+  transition-timing-function: var(--ease-swift);
+}
+
 .shimmer {
   background: linear-gradient(90deg, var(--faint) 0%, var(--foreground) 45%, var(--faint) 90%);
   background-size: 200% 100%;
@@ -572,6 +588,92 @@
   background-clip: text;
   color: transparent;
   animation: mako-sweep 2.2s linear infinite;
+}
+
+/*
+ * Per-character shimmer for streaming labels. Each glyph carries its own
+ * copy of the animation offset by --i; the delays are *negative*, so on the
+ * very first frame every character is already mid-animation — the label
+ * never has a cold start.
+ */
+@keyframes mako-shimmer-char {
+  0%,
+  100% {
+    color: var(--faint);
+  }
+  50% {
+    color: var(--foreground);
+  }
+}
+
+.shimmer-chars > span {
+  animation: mako-shimmer-char 1.4s linear infinite;
+  animation-delay: calc(var(--i, 0) * -70ms);
+}
+
+/*
+ * A label that changes in place — "Reading…" becoming "Read" — as one
+ * object rather than two elements swapping. Both labels stack in a single
+ * grid cell; the container springs its width (interpolate-size lets `auto`
+ * animate) while the labels crossfade, with the blur resolving before the
+ * fade so the incoming text sharpens as it lands.
+ */
+.status-swap {
+  display: inline-grid;
+  width: auto;
+  transition: width var(--tool-motion-spring) var(--ease-out);
+}
+
+.status-swap > * {
+  grid-area: 1 / 1;
+  transition:
+    opacity var(--tool-motion-fade) var(--ease-out),
+    filter calc(var(--tool-motion-fade) * 0.8) var(--ease-out);
+}
+
+.status-swap > [data-stale] {
+  opacity: 0;
+  filter: blur(calc(var(--tool-motion-blur) * 0.45));
+  pointer-events: none;
+}
+
+/*
+ * Scroll-driven edge fades: the top edge appears the instant anything is
+ * scrolled past it, with zero JS and no scroll listeners. The overlays are
+ * siblings rather than masks so `content-visibility` on the rows beneath
+ * is never disturbed. Browsers without scroll timelines simply show no fade.
+ */
+.scroll-fade-scope {
+  position: relative;
+  timeline-scope: --scroll-fade;
+}
+
+.scroll-fade-scroller {
+  scroll-timeline: --scroll-fade y;
+}
+
+.scroll-fade-top {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 14px;
+  pointer-events: none;
+  z-index: 1;
+  visibility: hidden;
+  background: linear-gradient(to bottom, var(--fade-from, var(--surface)), transparent);
+}
+
+@supports (animation-timeline: scroll()) {
+  @keyframes mako-fade-edge {
+    to {
+      visibility: visible;
+    }
+  }
+
+  .scroll-fade-top {
+    animation: mako-fade-edge steps(1, end) both;
+    animation-timeline: --scroll-fade;
+    animation-range: 0 0.5px;
+  }
 }
 
 /*
@@ -590,6 +692,19 @@
 
   .pressable:active:not(:disabled) {
     transform: none;
+  }
+
+  .shimmer,
+  .shimmer-chars > span {
+    animation: none;
+    background: none;
+    color: var(--muted-foreground);
+  }
+
+  .status-swap,
+  .status-swap > * {
+    transition: opacity 120ms ease !important;
+    filter: none;
   }
 }
 
