@@ -23,32 +23,210 @@ import {
   type ThreadEntry,
   type ThreadRef,
 } from "../format.js"
-import { createJsonlFollower, parseLine, readHead, readLines, snapshotSink, walkFiles } from "../jsonl.js"
+import {
+  createJsonlFollower,
+  parseLine,
+  readHead,
+  readLines,
+  snapshotSink,
+  walkFiles,
+  type LineTranslator,
+} from "../jsonl.js"
 import type { NativeFile, SessionProvider } from "./types.js"
 
+type ClaudeJsonScalar = boolean | number | string | null
+type ClaudeJsonValue = ClaudeJsonScalar | ClaudeJsonObject | ClaudeJsonValue[]
+
+interface ClaudeJsonObject {
+  [key: string]: ClaudeJsonValue | undefined
+}
+
+interface ClaudeTextContent {
+  type: "text"
+  text?: string
+}
+
+interface ClaudeThinkingContent {
+  type: "thinking"
+  thinking?: string
+}
+
+interface ClaudeToolUseContent {
+  type: "tool_use"
+  id?: string
+  name: string
+  input?: ClaudeJsonValue
+}
+
+interface ClaudeToolResultContent {
+  type: "tool_result"
+  toolUseId: string
+  content?: ClaudeContent
+  isError: boolean
+}
+
+interface ClaudeOtherContent {
+  type: "other"
+}
+
+type ClaudeContentBlock =
+  | ClaudeTextContent
+  | ClaudeThinkingContent
+  | ClaudeToolUseContent
+  | ClaudeToolResultContent
+  | ClaudeOtherContent
+type ClaudeContent = string | ClaudeContentBlock[]
+
+interface ClaudeUsage {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+}
+
+interface ClaudeMessage {
+  role?: string
+  model?: string
+  content?: ClaudeContent
+  usage?: ClaudeUsage
+}
+
 interface ClaudeLine {
-  type?: string
+  type: string
   uuid?: string
   timestamp?: string
   sessionId?: string
   cwd?: string
-  isSidechain?: boolean
-  isMeta?: boolean
-  isCompactSummary?: boolean
-  message?: { role?: string; model?: string; content?: unknown; usage?: Record<string, unknown> }
+  isSidechain: boolean
+  isMeta: boolean
+  isCompactSummary: boolean
+  message?: ClaudeMessage
+}
+
+type AssistantEntry = Extract<ThreadEntry, { kind: "assistant" }>
+type ClaudeToolBlock = EntryBlock & { type: "tool" }
+
+interface ClaudeTranslator extends LineTranslator {
+  done(): ThreadEntry[]
 }
 
 /** Text a user line starts with when the harness, not the user, wrote it. */
-const NOT_A_PROMPT = /^(?:<(?:command-name|command-message|local-command|system-reminder|task-notification)|Caveat: )/
+const NOT_A_PROMPT =
+  /^(?:<(?:command-name|command-message|local-command|system-reminder|task-notification)|Caveat: )/
 
-function plainText(content: unknown): string {
-  if (typeof content === "string") return content
-  if (!Array.isArray(content)) return ""
-  return content
-    .map((part) => {
-      const rec = part as Record<string, unknown>
-      return rec?.type === "text" && typeof rec.text === "string" ? rec.text : ""
+function isString(value: ClaudeJsonValue | undefined): value is string {
+  return Object.prototype.toString.call(value) === "[object String]"
+}
+
+function isJsonObject(
+  value: ClaudeJsonValue | undefined
+): value is ClaudeJsonObject {
+  return Object.prototype.toString.call(value) === "[object Object]"
+}
+
+function stringValue(value: ClaudeJsonValue | undefined): string | undefined {
+  return isString(value) ? value : undefined
+}
+
+function parseContentBlock(value: ClaudeJsonValue): ClaudeContentBlock {
+  if (!isJsonObject(value)) return { type: "other" }
+  switch (stringValue(value["type"])) {
+    case "text":
+      return { type: "text", text: stringValue(value["text"]) }
+    case "thinking":
+      return { type: "thinking", thinking: stringValue(value["thinking"]) }
+    case "tool_use":
+      return {
+        type: "tool_use",
+        id: stringValue(value["id"]),
+        name: String(value["name"] ?? "tool"),
+        input: value["input"],
+      }
+    case "tool_result":
+      return {
+        type: "tool_result",
+        toolUseId: stringValue(value["tool_use_id"]) ?? "",
+        content: parseContent(value["content"]),
+        isError: value["is_error"] === true,
+      }
+    default:
+      return { type: "other" }
+  }
+}
+
+function parseContent(
+  value: ClaudeJsonValue | undefined
+): ClaudeContent | undefined {
+  if (isString(value)) return value
+  if (!Array.isArray(value)) return undefined
+  return value.map(parseContentBlock)
+}
+
+function tokenCount(value: ClaudeJsonValue | undefined): number {
+  return Number(value ?? 0)
+}
+
+function parseUsage(
+  value: ClaudeJsonValue | undefined
+): ClaudeUsage | undefined {
+  if (!isJsonObject(value)) return undefined
+  return {
+    input: tokenCount(value["input_tokens"]),
+    output: tokenCount(value["output_tokens"]),
+    cacheRead: tokenCount(value["cache_read_input_tokens"]),
+    cacheWrite: tokenCount(value["cache_creation_input_tokens"]),
+  }
+}
+
+function parseMessage(
+  value: ClaudeJsonValue | undefined
+): ClaudeMessage | undefined {
+  if (!isJsonObject(value)) return undefined
+  return {
+    role: stringValue(value["role"]),
+    model: stringValue(value["model"]),
+    content: parseContent(value["content"]),
+    usage: parseUsage(value["usage"]),
+  }
+}
+
+function parseClaudeLine(raw: string): ClaudeLine | null {
+  const root = parseLine(raw)
+  if (!root) return null
+  const type = stringValue(root["type"])
+  if (!type) return null
+  return {
+    type,
+    uuid: stringValue(root["uuid"]),
+    timestamp: stringValue(root["timestamp"]),
+    sessionId: stringValue(root["sessionId"]),
+    cwd: stringValue(root["cwd"]),
+    isSidechain: root["isSidechain"] === true,
+    isMeta: root["isMeta"] === true,
+    isCompactSummary: root["isCompactSummary"] === true,
+    message: parseMessage(root["message"]),
+  }
+}
+
+function parseDeclaredRoots(raw: string): string[] {
+  try {
+    const parsed: ClaudeJsonValue = JSON.parse(raw)
+    if (!isJsonObject(parsed)) return []
+    const roots = parsed["claude"]
+    if (!Array.isArray(roots)) return []
+    return roots.flatMap((root) => {
+      const path = stringValue(root)
+      return path === undefined ? [] : [path]
     })
+  } catch {
+    return []
+  }
+}
+
+function plainText(content: ClaudeContent | undefined): string {
+  if (!Array.isArray(content)) return content ?? ""
+  return content
+    .map((part) => (part.type === "text" ? (part.text ?? "") : ""))
     .join("")
 }
 
@@ -101,10 +279,10 @@ export class ClaudeProvider implements SessionProvider {
     const env = process.env["CLAUDE_CONFIG_DIR"]
     if (env) push(join(env, "projects"))
     try {
-      const declared = JSON.parse(
+      const declared = parseDeclaredRoots(
         readFileSync(join(this.home, ".mako", "roots.json"), "utf8")
-      ) as { claude?: string[] }
-      for (const dir of declared.claude ?? []) push(dir)
+      )
+      for (const dir of declared) push(dir)
     } catch {
       // No declaration file: nothing declared.
     }
@@ -127,7 +305,9 @@ export class ClaudeProvider implements SessionProvider {
   async discover(): Promise<NativeFile[]> {
     const paths = (
       await Promise.all(
-        this.roots().map((root) => walkFiles(root, (name) => name.endsWith(".jsonl"), 2))
+        this.roots().map((root) =>
+          walkFiles(root, (name) => name.endsWith(".jsonl"), 2)
+        )
       )
     ).flat()
     const files = await Promise.all(
@@ -153,17 +333,29 @@ export class ClaudeProvider implements SessionProvider {
       bytes: file.bytes,
     }
     for (const raw of head.split("\n")) {
-      const line = parseLine(raw) as ClaudeLine | null
-      if (!line?.type) continue
-      if (!ref.nativeId && typeof line.sessionId === "string") ref.nativeId = line.sessionId
-      if (!ref.cwd && typeof line.cwd === "string") ref.cwd = line.cwd
-      if (!ref.startedAt && typeof line.timestamp === "string") ref.startedAt = line.timestamp
-      if (!ref.model && line.type === "assistant" && typeof line.message?.model === "string") {
+      const line = parseClaudeLine(raw)
+      if (!line) continue
+      if (!ref.nativeId && line.sessionId !== undefined)
+        ref.nativeId = line.sessionId
+      if (!ref.cwd && line.cwd !== undefined) ref.cwd = line.cwd
+      if (!ref.startedAt && line.timestamp !== undefined)
+        ref.startedAt = line.timestamp
+      if (
+        !ref.model &&
+        line.type === "assistant" &&
+        line.message?.model !== undefined
+      ) {
         ref.model = line.message.model
       }
-      if (!ref.title && line.type === "user" && !line.isSidechain && !line.isMeta) {
+      if (
+        !ref.title &&
+        line.type === "user" &&
+        !line.isSidechain &&
+        !line.isMeta
+      ) {
         const text = plainText(line.message?.content)
-        if (text.trim() && !NOT_A_PROMPT.test(text.trimStart())) ref.title = titleFrom(text)
+        if (text.trim() && !NOT_A_PROMPT.test(text.trimStart()))
+          ref.title = titleFrom(text)
       }
       if (ref.nativeId && ref.title && ref.model) break
     }
@@ -174,7 +366,11 @@ export class ClaudeProvider implements SessionProvider {
   async read(path: string): Promise<Thread | null> {
     const file = await stat(path).catch(() => null)
     if (!file) return null
-    const ref = await this.peek({ path, bytes: file.size, mtimeMs: file.mtimeMs })
+    const ref = await this.peek({
+      path,
+      bytes: file.size,
+      mtimeMs: file.mtimeMs,
+    })
     if (!ref) return null
     const into = translator()
     await readLines(path, 0, into.push)
@@ -185,26 +381,26 @@ export class ClaudeProvider implements SessionProvider {
     return createJsonlFollower(path, fromByte, translator)
   }
 
-  async tail(path: string, fromByte: number): Promise<{ entries: ThreadEntry[]; nextByte: number }> {
+  async tail(
+    path: string,
+    fromByte: number
+  ): Promise<{ entries: ThreadEntry[]; nextByte: number }> {
     const into = translator()
     const nextByte = await readLines(path, fromByte, into.push)
     return { entries: into.done(), nextByte }
   }
 }
 
-function translator(): {
-  push: (raw: string) => void
-  snapshot: () => ThreadEntry[]
-  done: () => ThreadEntry[]
-} {
-  type AssistantEntry = Extract<ThreadEntry, { kind: "assistant" }>
+function translator(): ClaudeTranslator {
   const sink = new EntrySink()
   let assistant: AssistantEntry | null = null
-  const toolsById = new Map<string, EntryBlock & { type: "tool" }>()
+  const toolsById = new Map<string, ClaudeToolBlock>()
+  let started = false
+  let needsReset = false
 
   const push = (raw: string): void => {
-    const line = parseLine(raw) as ClaudeLine | null
-    if (!line?.type || line.isSidechain) return
+    const line = parseClaudeLine(raw)
+    if (!line || line.isSidechain) return
 
     if (line.type === "summary") return
 
@@ -215,77 +411,90 @@ function translator(): {
       if (Array.isArray(content)) {
         let onlyResults = true
         for (const part of content) {
-          const rec = part as Record<string, unknown>
-          if (rec?.type !== "tool_result") {
+          if (part.type !== "tool_result") {
             onlyResults = false
             continue
           }
-          const id = typeof rec.tool_use_id === "string" ? rec.tool_use_id : ""
-          const block = toolsById.get(id)
+          const block = toolsById.get(part.toolUseId)
           if (block) {
-            block.output = clip(plainText(rec.content) || (typeof rec.content === "string" ? rec.content : ""))
-            if (rec.is_error === true) block.error = true
-            toolsById.delete(id)
+            block.output = clip(plainText(part.content))
+            if (part.isError) block.error = true
+            toolsById.delete(part.toolUseId)
+          } else if (part.toolUseId) {
+            needsReset = true
           }
         }
         if (onlyResults) return
       }
       if (line.isMeta) return
       if (line.isCompactSummary) {
-        sink.push({ kind: "event", at: line.timestamp, label: "Compacted", detail: undefined })
+        sink.push({
+          kind: "event",
+          at: line.timestamp,
+          label: "Compacted",
+          detail: undefined,
+        })
         assistant = null
         return
       }
       const text = plainText(content)
       if (!text.trim() || NOT_A_PROMPT.test(text.trimStart())) return
       assistant = null
+      started = true
       sink.push({ kind: "user", at: line.timestamp, text })
       return
     }
 
     if (line.type !== "assistant") return
+    if (!started) needsReset = true
+    started = true
     const message = line.message
     if (!message || !Array.isArray(message.content)) return
     if (!assistant) {
-      assistant = { kind: "assistant", at: line.timestamp, model: message.model, blocks: [] }
+      assistant = {
+        kind: "assistant",
+        at: line.timestamp,
+        model: message.model,
+        blocks: [],
+      }
       sink.push(assistant)
     }
     const turn: AssistantEntry = assistant
     for (const part of message.content) {
-      const rec = part as Record<string, unknown>
-      switch (rec?.type) {
+      switch (part.type) {
         case "text":
-          if (typeof rec.text === "string" && rec.text) {
-            turn.blocks.push({ type: "text", text: rec.text })
-          }
+          if (part.text) turn.blocks.push({ type: "text", text: part.text })
           break
         case "thinking":
-          if (typeof rec.thinking === "string" && rec.thinking) {
-            turn.blocks.push({ type: "thinking", text: rec.thinking })
-          }
+          if (part.thinking)
+            turn.blocks.push({ type: "thinking", text: part.thinking })
           break
         case "tool_use": {
-          const block: EntryBlock & { type: "tool" } = {
+          const block: ClaudeToolBlock = {
             type: "tool",
-            name: String(rec.name ?? "tool"),
-            input: clip(rec.input === undefined ? undefined : JSON.stringify(rec.input)),
+            name: part.name,
+            input: clip(
+              part.input === undefined ? undefined : JSON.stringify(part.input)
+            ),
           }
-          if (typeof rec.id === "string") toolsById.set(rec.id, block)
+          if (part.id !== undefined) toolsById.set(part.id, block)
           turn.blocks.push(block)
           break
         }
       }
     }
-    const usage = message.usage
-    if (usage) {
-      turn.usage = {
-        input: Number(usage.input_tokens ?? 0),
-        output: Number(usage.output_tokens ?? 0),
-        cacheRead: Number(usage.cache_read_input_tokens ?? 0),
-        cacheWrite: Number(usage.cache_creation_input_tokens ?? 0),
-      }
-    }
+    if (message.usage) turn.usage = message.usage
   }
 
-  return { push, snapshot: () => snapshotSink(sink), done: () => snapshotSink(sink) }
+  return {
+    push,
+    snapshot: () => snapshotSink(sink),
+    done: () => snapshotSink(sink),
+    commitBatch: () => {
+      assistant = null
+    },
+    get needsReset() {
+      return needsReset
+    },
+  }
 }
