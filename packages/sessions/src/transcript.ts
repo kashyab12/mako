@@ -477,12 +477,15 @@ function renderUsage(usage: TurnUsage | undefined): string[] {
 function lossesFor(conversation: Conversation, firstIncludedTurn: number, includePreamble: boolean): TranscriptLoss[] {
   const losses: TranscriptLoss[] = []
   if (conversation.leadingHistoryNotice) {
-    losses.push({
+    const loss: Extract<TranscriptLoss, { kind: "source-truncation" }> = {
       kind: "source-truncation",
       label: conversation.leadingHistoryNotice.label,
-      ...(conversation.leadingHistoryNotice.detail === undefined ? {} : { detail: conversation.leadingHistoryNotice.detail }),
-      ...(conversation.leadingHistoryNotice.at === undefined ? {} : { at: conversation.leadingHistoryNotice.at }),
-    })
+    }
+    if (conversation.leadingHistoryNotice.detail !== undefined) {
+      loss.detail = conversation.leadingHistoryNotice.detail
+    }
+    if (conversation.leadingHistoryNotice.at !== undefined) loss.at = conversation.leadingHistoryNotice.at
+    losses.push(loss)
   }
   if (firstIncludedTurn > 0) {
     losses.push({
