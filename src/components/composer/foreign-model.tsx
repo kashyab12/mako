@@ -26,6 +26,19 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
   const [typed, setTyped] = useState("")
   const chosen = useThreads((state) => state.composerTuning[harness]?.model)
 
+  // Context-window variants of the model in force — claude-fable-5 versus
+  // claude-fable-5[1m] is one model with two windows, not two models. When
+  // the family has more than one, a small toggle appears beside this
+  // picker; the rows stay clean single entries.
+  const effective = chosen ?? fallback
+  const family = effective ? decomposeModelId(harness, effective).base : ""
+  const contextVariants = family
+    ? [...new Set([fallback, ...models])]
+        .filter(Boolean)
+        .map((id) => ({ id, dec: decomposeModelId(harness, id) }))
+        .filter((entry) => entry.dec.base === family)
+    : []
+
   useEffect(() => {
     if (!hasBridge()) return
     setModels([])
@@ -63,6 +76,7 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
   }
 
   return (
+    <>
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
@@ -138,6 +152,28 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
         </div>
       </PopoverContent>
     </Popover>
+    {contextVariants.length > 1 ? (
+      <button
+        type="button"
+        aria-label="Context window"
+        title="Context window — the same model, a different window size"
+        onClick={() => {
+          const at = contextVariants.findIndex((entry) => entry.id === effective)
+          const next = contextVariants[(at + 1) % contextVariants.length]!
+          set(next.id)
+        }}
+        className={cn(
+          "pressable no-drag flex h-7 items-center gap-1 rounded-md px-1.5 text-[10.5px] font-medium",
+          "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease]",
+          "text-faint hover:bg-raised hover:text-foreground"
+        )}
+      >
+        <span className="rounded-[3px] border border-current/40 px-1 leading-[1.3]">
+          {decomposeModelId(harness, effective).context ?? "std"}
+        </span>
+      </button>
+    ) : null}
+    </>
   )
 }
 
