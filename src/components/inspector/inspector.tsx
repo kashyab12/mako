@@ -1,8 +1,18 @@
-import { useEffect } from "react"
+import { useCallback, useState } from "react"
 import { useInspectorPanels } from "@/extend/slots"
-import { setPref, usePrefs } from "@/state/prefs"
+import { setPref, usePrefs, type InspectorTab } from "@/state/prefs"
 import { useSession } from "@/state/session"
 import { cn } from "@/lib/utils"
+
+const PERSISTED_TABS = {
+  changes: true,
+  context: true,
+  history: true,
+} satisfies Record<InspectorTab, boolean>
+
+function isPersistedTab(id: string): id is InspectorTab {
+  return Object.hasOwn(PERSISTED_TABS, id)
+}
 
 /**
  * A tab host whose tabs come from a registry, so a plugin contributes a whole
@@ -11,15 +21,26 @@ import { cn } from "@/lib/utils"
  */
 export function Inspector() {
   const panels = useInspectorPanels()
-  const active = usePrefs((prefs) => prefs.inspectorTab)
-  const changeCount = useSession((state) => state.git?.files.length ?? 0)
-
+  const persistedTab = usePrefs((prefs) => prefs.inspectorTab)
+  const [extensionTab, setExtensionTab] = useState<{
+    id: string
+    persistedTab: InspectorTab
+  }>()
+  const selected = extensionTab?.persistedTab === persistedTab ? extensionTab.id : persistedTab
   // A removed plugin must not leave the inspector pointing at nothing.
-  useEffect(() => {
-    if (panels.length && !panels.some((panel) => panel.id === active)) {
-      setPref("inspectorTab", panels[0].id as never)
-    }
-  }, [active, panels])
+  const active = panels.some((panel) => panel.id === selected) ? selected : panels[0]?.id
+  const changeCount = useSession((state) => state.git?.files.length ?? 0)
+  const selectTab = useCallback(
+    (id: string) => {
+      if (isPersistedTab(id)) {
+        setExtensionTab(undefined)
+        setPref("inspectorTab", id)
+        return
+      }
+      setExtensionTab({ id, persistedTab })
+    },
+    [persistedTab]
+  )
 
   const Current = panels.find((panel) => panel.id === active)?.render
 
@@ -33,7 +54,7 @@ export function Inspector() {
             <button
               key={panel.id}
               type="button"
-              onClick={() => setPref("inspectorTab", panel.id as never)}
+              onClick={() => selectTab(panel.id)}
               className={cn(
                 "pressable relative flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium",
                 "[transition:transform_var(--duration-press)_var(--ease-out),color_120ms_ease,background-color_120ms_ease]",

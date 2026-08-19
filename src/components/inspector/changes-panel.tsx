@@ -45,13 +45,19 @@ function lineAt(diff: GitDiff, line: number, side: "additions" | "deletions"): s
   return file?.contents.split("\n")[line - 1]
 }
 
-const MARK: Record<GitFile["status"], { glyph: string; tone: string; title: string }> = {
+interface StatusMark {
+  glyph: string
+  tone: string
+  title: string
+}
+
+const MARK = {
   added: { glyph: "A", tone: "text-added", title: "Added" },
   untracked: { glyph: "U", tone: "text-added", title: "Untracked" },
   modified: { glyph: "M", tone: "text-caution", title: "Modified" },
   deleted: { glyph: "D", tone: "text-removed", title: "Deleted" },
   renamed: { glyph: "R", tone: "text-foreground/70", title: "Renamed" },
-}
+} satisfies Record<GitFile["status"], StatusMark>
 
 export function ChangesPanel() {
   const git = useSession((state) => state.git)

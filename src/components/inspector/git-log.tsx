@@ -24,13 +24,18 @@ interface CommitFile {
   binary: boolean
 }
 
-const GLYPH: Record<string, { glyph: string; tone: string }> = {
+interface StatusGlyph {
+  glyph: string
+  tone: string
+}
+
+const GLYPH = {
   added: { glyph: "A", tone: "text-added" },
   modified: { glyph: "M", tone: "text-caution" },
   deleted: { glyph: "D", tone: "text-removed" },
   renamed: { glyph: "R", tone: "text-foreground/70" },
   untracked: { glyph: "U", tone: "text-added" },
-}
+} satisfies Record<GitFileStatus, StatusGlyph>
 
 export function GitLog({
   onPickFile,

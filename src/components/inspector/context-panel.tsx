@@ -109,11 +109,11 @@ const FILE_ICON = {
   created: FilePlusIcon,
 } satisfies Record<FileAction, typeof FileTextIcon>
 
-const FILE_TONE: Record<FileAction, string> = {
+const FILE_TONE = {
   read: "text-faint",
   edited: "text-caution",
   created: "text-added",
-}
+} satisfies Record<FileAction, string>
 
 function Files() {
   const messages = useSession((state) => state.messages)
