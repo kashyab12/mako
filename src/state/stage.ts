@@ -16,6 +16,7 @@ import { tabsStore } from "@/state/tabs"
  */
 export interface TabStage {
   companion: string | null
+  dock: string | null
   presentation: "beside" | "over"
 }
 
@@ -23,7 +24,11 @@ interface StageState {
   byTab: Record<string, TabStage>
 }
 
-const CLOSED: TabStage = { companion: null, presentation: "beside" }
+const CLOSED: TabStage = {
+  companion: null,
+  dock: null,
+  presentation: "beside",
+}
 
 export const stageStore = createStore<StageState>({ byTab: {} })
 export const useStage = createHook(stageStore)
@@ -41,27 +46,45 @@ function activeTab(): string {
 }
 
 export const stage = {
-  open(surfaceId: string, options: { presentation?: "beside" | "over" } = {}) {
+  open(
+    surfaceId: string,
+    options: { presentation?: "beside" | "over"; remember?: boolean } = {}
+  ) {
     const tabId = activeTab()
     if (!tabId) return
     write(tabId, {
+      ...stageOf(tabId),
       companion: surfaceId,
       presentation: options.presentation ?? "beside",
     })
-    setPref("lastCompanion", surfaceId)
+    if (options.remember !== false) setPref("lastCompanion", surfaceId)
   },
 
   close() {
     const tabId = activeTab()
     if (!tabId) return
-    write(tabId, CLOSED)
+    write(tabId, {
+      ...stageOf(tabId),
+      companion: null,
+      presentation: "beside",
+    })
   },
 
-  toggle(surfaceId: string) {
+  toggle(surfaceId: string, options: { remember?: boolean } = {}) {
     const tabId = activeTab()
     if (!tabId) return
     if (stageOf(tabId).companion === surfaceId) stage.close()
-    else stage.open(surfaceId)
+    else stage.open(surfaceId, options)
+  },
+
+  toggleDock(surfaceId: string) {
+    const tabId = activeTab()
+    if (!tabId) return
+    const current = stageOf(tabId)
+    write(tabId, {
+      ...current,
+      dock: current.dock === surfaceId ? null : surfaceId,
+    })
   },
 
   /**

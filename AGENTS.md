@@ -88,9 +88,9 @@ registerSurface({ id, label, icon, render, minWidth })        // stage companion
 
 The stage's surfaces — Changes, Context, History, Files, Terminal, Preview —
 are all registered through `registerSurface` on exactly the same footing as
-anything a plugin would add. One surface opens at a time. Reading surfaces
-open beside the chat at a fixed, draggable width; Terminal opens below it at
-a fixed, draggable height. Neither uses percentage splits. The chat card stays
+anything a plugin would add. One reading surface opens beside the chat at a
+fixed, draggable width; the independent Terminal dock can remain open below it
+at a fixed, draggable height. Neither uses percentage splits. The chat card stays
 mounted under a covering companion so the transcript keeps its scroll and stream.
 
 Slots are declared in `SlotMap` (`src/extend/slots.ts`) — that table is the

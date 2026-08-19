@@ -45,7 +45,7 @@ const REGIONS: Region[] = [
   {
     name: "Surfaces",
     commandId: "view.toggle-companion",
-    what: "Changes, context, history, files, terminal, and the preview — one at a time beside the chat, as an equal card. ⌘2 through ⌘9 jump straight to one.",
+    what: "Changes, context, history, files, and preview open beside the chat with ⌘2 through ⌘6. The terminal opens independently below with ⌘J.",
   },
   {
     name: "Sessions",

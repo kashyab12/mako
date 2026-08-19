@@ -16,6 +16,7 @@ import { ContextPanel } from "@/components/inspector/context-panel"
 import { HistoryPanel } from "@/components/inspector/history-panel"
 import { TerminalPanel } from "@/components/inspector/terminal-lazy"
 import { PreviewPane } from "@/components/preview/preview-pane"
+import { TerminalDockToggle } from "@/components/stage/terminal-dock-toggle"
 import { BashBody, EditBody, WriteBody } from "@/components/transcript/tool-views"
 import { argAt, countLines, editsOf, primaryArgument } from "@/lib/tools"
 import { fileName } from "@/lib/format"
@@ -78,6 +79,7 @@ export function installBuiltins(): () => void {
     // Identity, through the same slots a plugin would use.
     registerSlot("identity", "titlebar.trailing", IdentityBadge, -10),
     registerSlot("identity", "rail.footer", IdentityRow, -10),
+    registerSlot("terminal-dock", "composer.trailing", TerminalDockToggle, -10),
 
     registerToolView("bash", {
       summary: (call: ToolCall) => argAt(call.arguments, "command") ?? "",

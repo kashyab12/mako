@@ -261,7 +261,7 @@ const DESK_COMMANDS: DeskCommand[] = [
     title: "Toggle the companion pane",
     section: "View",
     keys: "mod+i",
-    hint: "Hide what is open beside the chat, or bring back the last one",
+    hint: "Hide the open reading surface, or bring back the last one",
     run: () => stage.toggleCompanion(),
   },
   {
@@ -284,9 +284,11 @@ const DESK_COMMANDS: DeskCommand[] = [
   },
   {
     id: "view.terminal",
-    title: "Show terminal",
+    title: "Toggle terminal dock",
     section: "View",
-    run: () => stage.toggle("terminal"),
+    keys: "mod+j",
+    hint: "Open the terminal below the conversation",
+    run: () => stage.toggleDock("terminal"),
   },
   {
     id: "view.all-projects",
@@ -366,11 +368,11 @@ export function useDeskCommands() {
       }
       const mod = event.metaKey || event.ctrlKey
 
-      // ⌘1 shows the chat; ⌘2…⌘9 toggle the surfaces in strip order. Bound
-      // here rather than as nine palette commands nobody would search for.
-      // Both `key` and `code` are consulted: `code` is layout-independent,
-      // `key` is what synthetic events actually carry. Attached sessions
-      // cycle with ⌘⇧[ and ⌘⇧] instead.
+      // ⌘1 shows the chat; ⌘2…⌘9 open the reading surfaces in strip order.
+      // Terminal is a dock with its own ⌘J command. Bound here rather than as
+      // nine palette commands nobody would search for. Both `key` and `code`
+      // are consulted: `code` is layout-independent, `key` is what synthetic
+      // events actually carry. Attached sessions cycle with ⌘⇧[ and ⌘⇧] instead.
       const digit = digitOf(event)
       if (mod && !event.shiftKey && !event.altKey && digit > 0) {
         event.preventDefault()
@@ -378,8 +380,11 @@ export function useDeskCommands() {
           stage.showChat()
           stage.close()
         } else {
-          const target = surfaces.list().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[digit - 2]
-          if (target) stage.toggle(target.id)
+          const target = surfaces
+            .list()
+            .filter((surface) => surface.placement !== "bottom")
+            .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[digit - 2]
+          if (target) stage.open(target.id)
         }
         return
       }

@@ -24,10 +24,14 @@ import { cn } from "@/lib/utils"
 import type { TabStage } from "@/state/stage"
 
 /** Identity-stable fallback so the selector never allocates per render. */
-const NO_COMPANION: TabStage = { companion: null, presentation: "beside" }
+const NO_COMPANION: TabStage = {
+  companion: null,
+  dock: null,
+  presentation: "beside",
+}
 
 /**
- * The stage: the chat card, and at most one companion beside or below it.
+ * The stage: chat, one reading companion beside it, and an independent dock.
  *
  * The chat card is rendered first, in a stable position, and is *hidden*
  * rather than unmounted when a companion covers the stage — opening a diff
@@ -49,7 +53,8 @@ export function Stage() {
     if (seeded.current || !activeId) return
     seeded.current = true
     const last = prefsStore.get().lastCompanion
-    if (last && surfaces.some((surface) => surface.id === last)) stage.open(last)
+    const remembered = surfaces.find((surface) => surface.id === last)
+    if (remembered && remembered.placement !== "bottom") stage.open(remembered.id)
     else if (last) setPref("lastCompanion", null)
   }, [activeId, surfaces])
 
@@ -78,11 +83,12 @@ export function Stage() {
 
   const companionRef = useRef<HTMLDivElement>(null)
   const dockRef = useRef<HTMLDivElement>(null)
-  const surface = tabStage.companion
+  const sideSurface = tabStage.companion
     ? surfaces.find((entry) => entry.id === tabStage.companion)
     : undefined
-  const docked = surface?.placement === "bottom"
-  const sideSurface = docked ? undefined : surface
+  const dockSurface = tabStage.dock
+    ? surfaces.find((entry) => entry.id === tabStage.dock)
+    : undefined
   const min = Math.max(sideSurface?.minWidth ?? 0, COMPANION_MIN_DEFAULT)
   const width = sideSurface
     ? clampCompanionWidth({
@@ -91,15 +97,15 @@ export function Stage() {
         min,
       })
     : 0
-  const dockMin = surface?.minHeight ?? 180
+  const dockMin = dockSurface?.minHeight ?? 180
   const dockMax = clampDockHeight({
     height: 9999,
     available: available?.height,
     min: dockMin,
   })
-  const dockHeight = docked
+  const dockHeight = dockSurface
     ? clampDockHeight({
-        height: surfaceHeights[surface.id] ?? 280,
+        height: surfaceHeights[dockSurface.id] ?? 280,
         available: available?.height,
         min: dockMin,
       })
@@ -166,7 +172,7 @@ export function Stage() {
         ) : null}
       </div>
 
-      {docked && surface ? (
+      {dockSurface ? (
         <>
           <Divider
             side="bottom"
@@ -180,7 +186,7 @@ export function Stage() {
             onCommit={(next) =>
               setPref("surfaceHeights", {
                 ...prefsStore.get().surfaceHeights,
-                [surface.id]: next,
+                [dockSurface.id]: next,
               })
             }
           />
@@ -189,7 +195,7 @@ export function Stage() {
             style={{ height: dockHeight }}
             className="card relative mx-2 mb-2 flex shrink-0 flex-col overflow-hidden"
           >
-            <CompanionBody render={surface.render} />
+            <CompanionBody render={dockSurface.render} />
           </div>
         </>
       ) : null}
