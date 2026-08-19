@@ -1,6 +1,5 @@
-import { memo, useCallback, useMemo, useState } from "react"
+import { memo, useCallback, useMemo } from "react"
 import { Blank } from "@/components/ui/kit"
-import { GitLog } from "@/components/inspector/git-log"
 import { Slot } from "@/extend/slot"
 import { checkpointsOf, type Checkpoint } from "@/lib/thread"
 import { formatRelative } from "@/lib/format"
@@ -16,8 +15,6 @@ import {
   SplitIcon,
 } from "lucide-react"
 
-type Lane = "turns" | "commits"
-
 /**
  * Your turns, as rewind points.
  *
@@ -28,8 +25,6 @@ type Lane = "turns" | "commits"
  * because indentation is what made the raw graph unreadable.
  */
 export function HistoryPanel() {
-  const [lane, setLane] = useState<Lane>("turns")
-  const hasRepo = useSession((state) => Boolean(state.git?.root))
   const tree = useSession((state) => state.tree)
 
   const checkpoints = useMemo(() => checkpointsOf(tree), [tree])
@@ -37,42 +32,26 @@ export function HistoryPanel() {
   const branch = useCallback((id: string) => void actions.fork(id), [])
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      {hasRepo ? (
-        <div className="flex shrink-0 items-center gap-3 border-b border-hairline px-2.5">
-          <LaneTab
-            label="Turns"
-            count={checkpoints.length}
-            active={lane === "turns"}
-            onClick={() => setLane("turns")}
-          />
-          <LaneTab label="Commits" active={lane === "commits"} onClick={() => setLane("commits")} />
+    <div className="h-full min-h-0 overflow-y-auto overscroll-contain">
+      {checkpoints.length === 0 ? (
+        <Blank
+          icon={<HistoryIcon />}
+          title="No turns yet"
+          body="Every message you send becomes a point you can rewind to. Nothing is deleted — going back only moves where the conversation continues."
+        />
+      ) : (
+        <div className="px-2.5 py-2.5">
+          {checkpoints.map((checkpoint, index) => (
+            <Row
+              key={checkpoint.id}
+              checkpoint={checkpoint}
+              index={index + 1}
+              onRewind={rewind}
+              onBranch={branch}
+            />
+          ))}
         </div>
-      ) : null}
-
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        {lane === "commits" && hasRepo ? (
-          <GitLog />
-        ) : checkpoints.length === 0 ? (
-          <Blank
-            icon={<HistoryIcon />}
-            title="No turns yet"
-            body="Every message you send becomes a point you can rewind to. Nothing is deleted — going back only moves where the conversation continues."
-          />
-        ) : (
-          <div className="px-2.5 py-2.5">
-            {checkpoints.map((checkpoint, index) => (
-              <Row
-                key={checkpoint.id}
-                checkpoint={checkpoint}
-                index={index + 1}
-                onRewind={rewind}
-                onBranch={branch}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      )}
     </div>
   )
 }
@@ -248,40 +227,6 @@ function Takes({ takes, onPick }: { takes: Checkpoint["takes"]; onPick: (id: str
       </button>
       <span className="min-w-0 flex-1 truncate text-label text-faint">{takes[at]?.preview}</span>
     </div>
-  )
-}
-
-function LaneTab({
-  label,
-  count,
-  active,
-  onClick,
-}: {
-  label: string
-  count?: number
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "relative flex h-8 items-center gap-1.5 text-ui transition-colors duration-100",
-        active ? "text-foreground" : "text-faint hover:text-muted-foreground"
-      )}
-    >
-      {label}
-      {count !== undefined && count > 0 ? (
-        <span className="tabular text-label text-faint">{count}</span>
-      ) : null}
-      <span
-        className={cn(
-          "absolute inset-x-0 -bottom-px h-px transition-opacity duration-150",
-          active ? "bg-foreground/60 opacity-100" : "opacity-0"
-        )}
-      />
-    </button>
   )
 }
 
