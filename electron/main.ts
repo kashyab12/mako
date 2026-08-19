@@ -377,6 +377,9 @@ function bindIpc() {
   handle("pi:stage-file", (_e, name: string, base64: string) =>
     withHost((h) => h.stageFile(name, base64))
   )
+  handle("pi:stage-file-path", (_e, sourcePath: string) =>
+    withHost((h) => h.stageFilePath(sourcePath))
+  )
   handle("pi:default-commit-prompt", () => COMMIT_PROMPT)
 
   handle("pi:list-plugins", () => listPlugins())

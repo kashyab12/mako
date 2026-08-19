@@ -148,7 +148,17 @@ export class SessionCatalog {
       if (filter.cwd && ref.cwd !== filter.cwd) return
       refs.push(ref)
     }
-    for (const entry of this.byPath.values()) admit(entry.ref)
+    // One session, one row: the same conversation reachable through two
+    // paths (symlinked stores, copied homes) keeps its freshest ref only.
+    const byIdentity = new Map<string, ThreadRef>()
+    for (const entry of this.byPath.values()) {
+      const ref = entry.ref
+      if (!ref) continue
+      const key = `${ref.harness}:${ref.nativeId}`
+      const held = byIdentity.get(key)
+      if (!held || (ref.updatedAt ?? "") > (held.updatedAt ?? "")) byIdentity.set(key, ref)
+    }
+    for (const ref of byIdentity.values()) admit(ref)
     for (const ref of this.remoteRefs.values()) admit(ref)
     // Sessions whose native store forgot them. The archive did not.
     if (this.archive) {

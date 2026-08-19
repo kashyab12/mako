@@ -984,6 +984,25 @@ export class AgentHost {
     return { path: target, name: safe, size: bytes.byteLength }
   }
 
+  /**
+   * Stage by copying from where the file already is. Drag-and-drop and the
+   * file picker know the OS path, so the fast route is a filesystem copy in
+   * this process — a 200MB video costs one clonefile-ish copy, not a
+   * 270MB base64 string marshalled across the IPC boundary.
+   */
+  async stageFilePath(sourcePath: string): Promise<StagedFile> {
+    const dir = join(getAgentDir(), "attachments")
+    await mkdir(dir, { recursive: true })
+    const name = sourcePath.split("/").pop() ?? "attachment"
+    const safe = name.replace(/[/\\]/g, "_").slice(0, 120) || "attachment"
+    const stamp = `${Date.now().toString(36)}-${Math.round(Math.random() * 1e6).toString(36)}`
+    const target = join(dir, `${stamp}-${safe}`)
+    const { copyFile, stat } = await import("node:fs/promises")
+    await copyFile(sourcePath, target)
+    const info = await stat(target)
+    return { path: target, name: safe, size: info.size }
+  }
+
   /** Absolute path for a workspace-relative one, for reveal/open. */
   /* -------------------------------------------------- search */
 

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron"
+import { contextBridge, ipcRenderer, webUtils } from "electron"
 import type {
   Automation,
   BootPayload,
@@ -170,6 +170,15 @@ const api = {
     invoke<string>("pi:git-generate-message", prompt),
   stageFile: (name: string, base64: string) =>
     invoke<StagedFile>("pi:stage-file", name, base64),
+  stageFilePath: (sourcePath: string) => invoke<StagedFile>("pi:stage-file-path", sourcePath),
+  /** The OS path behind a dropped/picked File — the fast lane for staging. */
+  pathForFile: (file: File) => {
+    try {
+      return webUtils.getPathForFile(file) || null
+    } catch {
+      return null
+    }
+  },
   listPlugins: () => invoke<Array<{ id: string; source: string }>>("pi:list-plugins"),
   pluginsDir: () => invoke<string>("pi:plugins-dir"),
   writePlugin: (id: string, source: string) => invoke<void>("pi:write-plugin", id, source),

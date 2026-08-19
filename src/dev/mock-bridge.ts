@@ -340,6 +340,8 @@ export function installMockBridge() {
       elapsed: 3,
     }),
     watchFile: async () => {},
+    stageFilePath: async (sourcePath: string) => ({ path: sourcePath, name: sourcePath.split("/").pop() ?? "f", size: 1 }),
+    pathForFile: () => null,
     unwatchFile: async () => {},
     readFile: async (path: string) => ({
       path,

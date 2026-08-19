@@ -182,19 +182,33 @@ async function resolve(attachment: Attachment, file: File): Promise<Attachment> 
       pending: false,
     }
   }
+  // The fast lane: a dropped or picked file has an OS path, and staging is
+  // then one filesystem copy in the engine — nothing crosses the IPC
+  // boundary. Base64 marshalling is only the fallback for files that truly
+  // have no path (a paste from another app's clipboard).
+  const sourcePath = getPi().pathForFile?.(file) ?? null
+  if (sourcePath) {
+    const staged = await getPi().stageFilePath(sourcePath)
+    return { ...attachment, stagedPath: staged.path, pending: false }
+  }
   const staged = await getPi().stageFile(file.name, await toBase64(file))
   return { ...attachment, stagedPath: staged.path, pending: false }
 }
 
-async function toBase64(file: File): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  // Chunked so a large file cannot exceed the argument limit of fromCharCode.
-  let binary = ""
-  const CHUNK = 0x8000
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
-  }
-  return btoa(binary)
+/**
+ * The browser's own encoder, off the main thread — not a fromCharCode loop
+ * that freezes the composer for the length of a video.
+ */
+function toBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"))
+    reader.onload = () => {
+      const url = reader.result as string
+      resolve(url.slice(url.indexOf(",") + 1))
+    }
+    reader.readAsDataURL(file)
+  })
 }
 
 /**

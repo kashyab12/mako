@@ -12,7 +12,7 @@
 
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { existsSync, readFileSync, readdirSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs"
 import { stat } from "node:fs/promises"
 import {
   clip,
@@ -79,8 +79,24 @@ export class ClaudeProvider implements SessionProvider {
       return [this.root, ...this.extraRoots.value]
     }
     const extras: string[] = []
+    // Identity is the *real* path: router setups symlink their per-profile
+    // projects dirs straight back at ~/.claude/projects, and scanning the
+    // same store through five names lists every session five times.
+    const seen = new Set<string>()
+    const realOf = (dir: string): string => {
+      try {
+        return realpathSync(dir)
+      } catch {
+        return dir
+      }
+    }
+    if (existsSync(this.root)) seen.add(realOf(this.root))
     const push = (dir: string) => {
-      if (dir && dir !== this.root && existsSync(dir) && !extras.includes(dir)) extras.push(dir)
+      if (!dir || !existsSync(dir)) return
+      const real = realOf(dir)
+      if (seen.has(real)) return
+      seen.add(real)
+      extras.push(real)
     }
     const env = process.env["CLAUDE_CONFIG_DIR"]
     if (env) push(join(env, "projects"))
