@@ -37,7 +37,7 @@ Token streaming must never re-send the session. The host emits `stream` with
 only the in-flight message; `messages`, `tree`, and `git` go out only when they
 actually change, and every burst is coalesced into one flush per frame. On the
 renderer side components subscribe through selectors, so a token wakes the one
-turn rendering it — not the rail, the inspector, or the status bar.
+turn rendering it — not the rail, the stage strip, or the titlebar's readings.
 
 Three rules hold this together, and each has a specific failure it prevents:
 
@@ -49,8 +49,8 @@ Three rules hold this together, and each has a specific failure it prevents:
   turn in the session.
 - **Long lists are virtualized, long content uses `content-visibility`.** The
   rail is windowed with `@tanstack/react-virtual`; transcript turns and
-  inspector rows carry `.contain-turn` so offscreen work is skipped without
-  the fragility of windowing variable-height streaming content.
+  surface-panel rows carry `.contain-turn` so offscreen work is skipped
+  without the fragility of windowing variable-height streaming content.
 
 `useVirtualizer` makes the React Compiler bail out of the component that calls
 it, so it stays isolated in `rail/virtual-sessions.tsx`. Keep it there.
@@ -83,11 +83,15 @@ registered through them, so nothing built-in is privileged:
 registerCommand({ id, title, section, keys: "mod+j", run })  // palette + keyboard
 registerSlot("my-badge", "composer.controls", Component)      // UI seams
 registerToolView("bash", { summary, body, icon })             // transcript rows
-registerInspectorPanel({ id, label, icon, render })           // whole tabs
+registerSurface({ id, label, icon, render, minWidth })        // stage companions
 ```
 
-The inspector ships three panels — Changes, Context, History — registered on
-exactly the same footing as anything a plugin would add.
+The stage's surfaces — Changes, Context, History, Files, Terminal, Preview —
+are all registered through `registerSurface` on exactly the same footing as
+anything a plugin would add. One companion opens beside the chat at a time;
+the chat card reserves its minimum width and the companion keeps a fixed,
+draggable one — never a percentage split. The chat card stays mounted under
+a covering companion so the transcript keeps its scroll and stream.
 
 Slots are declared in `SlotMap` (`src/extend/slots.ts`) — that table is the
 contract for what may render where and with which props. Adding a seam means
@@ -167,10 +171,23 @@ deliberate action and never rides along with a commit.
 ## Design rules
 
 - Tokens live in `src/index.css` and nowhere else. No literal colors in
-  components; no shadow for elevation — step the surface instead.
-- **The ramp is achromatic and the accent is light, not coloured.** Hue is
-  spent only where it carries meaning: diff add/remove, error, warning. A
-  brand hue is what makes a tool look like a landing page.
+  components. Chrome (`--shell`) carries no shadow, ever; content floats on
+  it as rounded cards (`.card`, radius 10) whose elevation is a baked 0.5px
+  hairline plus, in dark, a 0.5px top rim light. Real shadows exist only on
+  floating surfaces (`.overlay-panel`: menus, palette, dialogs).
+- **The ramp is warm ember neutrals — red-shifted near-blacks, warm
+  off-white text — and stays that quiet.** Ember (`--ember`) is punctuation,
+  not brand: the live/working dot, the composer caret, at most one badge.
+  Never on links, borders, focus, selection, hover fills, icons at rest, or
+  any fill larger than a badge; if two ember moments are visible in one
+  pane, one is wrong. Selection and hover are tints of the text colour
+  (`--fill-hover` / `--fill-selected`), never the accent. Beyond ember, hue
+  appears only where it carries meaning: diff add/remove, error, warning.
+- **Three UI type sizes only** — `text-label` (11), `text-ui` (13),
+  `text-title` (15) — plus prose (14) and code (12). Weights come off
+  Geist's variable axis as 440/530/640 through the standard `font-normal`/
+  `font-medium`/`font-semibold` classes. No literal `text-[Npx]` in
+  components; eslint enforces both this and the raw-hue ban.
 - **No uppercase micro-labels.** Section labels are sentence case with no
   letterspacing. Uppercase + tracking at 10px is the most recognisable tell of
   a generated interface and it costs legibility for nothing.
@@ -178,15 +195,20 @@ deliberate action and never rides along with a commit.
   decoration that looks like information. Write `context 141K/400K` and
   `$6.62 spent`.
 - Geist for UI, the platform monospace for code. Do not ship a code webfont.
-- Entrances are `--ease-out` and under 250ms. Nothing animates from `scale(0)`.
-  Anything triggered by keyboard many times a day (the palette) does not
-  animate at all.
+- Two curves: `--ease-out` for everything that arrives, `--ease-swift` for
+  everything that leaves — exits faster than entrances. Entrances stay under
+  250ms and nothing animates from `scale(0)`. Anything triggered by keyboard
+  many times a day (the palette) does not animate at all.
 - Pressable surfaces carry the `pressable` class.
 
 ## Product surface
 
-Provider sessions, the built-in runtime's session tree, and the current git diff. No worktree
-manager.
+Provider sessions, the built-in runtime's session tree, and the current git
+diff. No worktree manager. There is no status bar: the always-on facts live
+in the titlebar's right cluster, and the context/cost readings sit beside
+the composer, next to the send they price. The rail is the vertical thread
+list; horizontal tabs mean surfaces of the current thread, never more
+sessions.
 
 ## Working on the UI
 

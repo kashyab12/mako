@@ -7,6 +7,7 @@ import {
 } from "@/extend/commands"
 import { Keys } from "@/components/ui/kit"
 import { usePrefs } from "@/state/prefs"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { XIcon } from "lucide-react"
 
 /**
@@ -34,12 +35,7 @@ const REGIONS: Region[] = [
   {
     name: "Sidebar",
     commandId: "view.toggle-rail",
-    what: "Your conversations in this project, or the project's files. The header wears the project's logo.",
-  },
-  {
-    name: "Tabs",
-    commandId: "tab.new",
-    what: "Several agents at once. A background tab keeps working and says so with a dot.",
+    what: "Your conversations from every agent, or the project's files. An attached session wears its working dot right on the row.",
   },
   {
     name: "Conversation",
@@ -47,14 +43,19 @@ const REGIONS: Region[] = [
     what: "Ask here. While a turn runs, Enter steers it and ⌘↩ queues a follow-up.",
   },
   {
-    name: "Inspector",
-    commandId: "view.toggle-inspector",
-    what: "What changed, what the agent has in context, and every turn as a point you can go back to.",
+    name: "Surfaces",
+    commandId: "view.toggle-companion",
+    what: "Changes, context, history, files, terminal, and the preview — one at a time beside the chat, as an equal card. ⌘2 through ⌘9 jump straight to one.",
   },
   {
-    name: "Preview",
-    commandId: "view.preview",
-    what: "The dev server, beside the conversation, plus everything listening on this machine.",
+    name: "Sessions",
+    commandId: "tab.new",
+    what: "A second conversation kept running beside this one. Background work keeps going; ⌘⇧[ and ⌘⇧] cycle through them.",
+  },
+  {
+    name: "Account",
+    commandId: "view.settings",
+    what: "Who GitHub and your providers think you are — top right, with usage and a one-click account switch.",
   },
 ]
 
@@ -69,18 +70,6 @@ export function Guide() {
     return () => window.removeEventListener("mako:guide", show)
   }, [])
 
-  useEffect(() => {
-    if (!open) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault()
-        setOpen(false)
-      }
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [open])
-
   /** Only commands with a chord: this is a key map, not a command list. */
   const sections = useMemo(() => {
     const grouped = new Map<string, Array<{ title: string; keys: string[] }>>()
@@ -94,19 +83,10 @@ export function Guide() {
     return [...grouped.entries()]
   }, [commands, keybindings])
 
-  if (!open) return null
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="What is where"
-      className="fixed inset-0 z-50 flex items-start justify-center bg-background/70 pt-[8vh] backdrop-blur-[2px]"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) setOpen(false)
-      }}
-    >
-      <div className="overlay-panel flex max-h-[80vh] w-full max-w-content flex-col overflow-hidden rounded-xl">
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent size="md" aria-label="What is where" className="flex max-h-[80vh] flex-col overflow-hidden p-0">
+        <DialogTitle className="sr-only">What is where</DialogTitle>
         <div className="flex h-11 shrink-0 items-center gap-2 border-b border-hairline px-3.5">
           <span className="text-ui font-medium">What is where</span>
           <span className="text-ui text-faint">and every key that does something</span>
@@ -149,8 +129,8 @@ export function Guide() {
             ))}
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
