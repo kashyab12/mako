@@ -12,7 +12,6 @@ import { getPi } from "@/lib/bridge"
 import { prefsStore, setPref, togglePref } from "@/state/prefs"
 import { tabsStore } from "@/state/tabs"
 import { search } from "@/state/search"
-import type { ThinkingLevel } from "@/lib/types"
 
 const openPalette = () => {
   window.dispatchEvent(new CustomEvent("pi:palette"))
@@ -43,7 +42,7 @@ function cycleEffort() {
   if (!meta) return
   const levels = meta.thinkingLevels
   if (levels.length <= 1) return
-  const index = levels.indexOf(meta.thinkingLevel as ThinkingLevel)
+  const index = levels.indexOf(meta.thinkingLevel)
   void actions.setThinking(levels[(index + 1) % levels.length])
 }
 

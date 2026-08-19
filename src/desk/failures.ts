@@ -17,6 +17,18 @@ import { getPi, hasBridge } from "@/lib/bridge"
 const seen = new Set<string>()
 const LIMIT = 25
 
+interface RejectionReport {
+  message: string
+  stack?: string
+}
+
+function parseRejection(reason: PromiseRejectionEvent["reason"]): RejectionReport {
+  if (reason instanceof Error) return { message: reason.message, stack: reason.stack }
+  const boxed = Object(reason)
+  if (boxed !== reason && boxed.constructor === String) return { message: String(reason) }
+  return { message: "Unhandled rejection" }
+}
+
 function report(
   kind: "renderer-error" | "renderer-rejection",
   message: string,
@@ -41,11 +53,7 @@ export function watchForFailures() {
   })
 
   window.addEventListener("unhandledrejection", (event) => {
-    const reason = event.reason as unknown
-    if (reason instanceof Error) {
-      report("renderer-rejection", reason.message, reason.stack)
-      return
-    }
-    report("renderer-rejection", typeof reason === "string" ? reason : "Unhandled rejection")
+    const failure = parseRejection(event.reason)
+    report("renderer-rejection", failure.message, failure.stack)
   })
 }
