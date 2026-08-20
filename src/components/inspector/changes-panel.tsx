@@ -17,12 +17,14 @@ import type { GitDiff, GitFile } from "@/lib/types"
 import {
   CheckCircle2Icon,
   ChevronRightIcon,
+  Columns2Icon,
   FolderIcon,
   MinusIcon,
   PanelBottomCloseIcon,
   PanelBottomOpenIcon,
   PlusIcon,
   RefreshCwIcon,
+  WrapTextIcon,
   XIcon,
 } from "lucide-react"
 
@@ -68,6 +70,8 @@ export function ChangesPanel() {
   const autoOpenDiff = usePrefs((prefs) => prefs.autoOpenDiff)
   const [selected, setSelected] = useState<string>()
   const [diff, setDiff] = useState<GitDiff>()
+  const [diffStyle, setDiffStyle] = useState<"unified" | "split">("unified")
+  const [wrapDiff, setWrapDiff] = useState(false)
 
   const rows = useMemo(() => buildFileTree(files, collapsed), [collapsed, files])
   const staged = useMemo(() => files.filter((file) => file.staged).length, [files])
@@ -253,10 +257,31 @@ export function ChangesPanel() {
         <div className="relative flex min-h-0 flex-1 flex-col border-t border-hairline">
           {/* Closing from the pane itself, not only from the header: the thing
               you want gone is the thing your pointer is already over. */}
-          <div className="flex h-6 shrink-0 items-center gap-2 px-2.5">
+          <div className="flex h-7 shrink-0 items-center gap-1 px-2.5">
             <span className="min-w-0 flex-1 truncate font-mono text-label text-faint">
               {active?.path ?? ""}
             </span>
+            <IconAction
+              label={diffStyle === "unified" ? "Show side by side" : "Show unified diff"}
+              size="xs"
+              data-on={diffStyle === "split" || undefined}
+              onClick={() =>
+                setDiffStyle((current) =>
+                  current === "unified" ? "split" : "unified"
+                )
+              }
+            >
+              <Columns2Icon />
+            </IconAction>
+            <IconAction
+              label={wrapDiff ? "Disable line wrapping" : "Wrap long lines"}
+              size="xs"
+              data-on={wrapDiff || undefined}
+              onClick={() => setWrapDiff((current) => !current)}
+            >
+              <WrapTextIcon />
+            </IconAction>
+            <span aria-hidden className="mx-1 h-4 w-px bg-hairline" />
             <IconAction
               label="Close the diff"
               size="xs"
@@ -282,10 +307,8 @@ export function ChangesPanel() {
                   : { oldFile: diff.oldFile!, newFile: null })}
               options={{
                 themeType: theme === "light" ? "light" : "dark",
-                // Unified, not split. This panel is a few hundred pixels wide;
-                // two columns of code in it means every line is truncated and
-                // the gutter — where the comment control lives — is off-screen.
-                diffStyle: "unified",
+                diffStyle,
+                overflow: wrapDiff ? "wrap" : "scroll",
                 // Off by default, which is why the comment control rendered
                 // nowhere at all. `onGutterUtilityClick` is the other half of
                 // this API and the two are mutually exclusive — a custom slot
