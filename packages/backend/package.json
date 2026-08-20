@@ -1,0 +1,40 @@
+{
+  "name": "@mako/backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "eve build && next build",
+    "build:vercel": "next build",
+    "dev": "next dev",
+    "lint": "oxlint --config ../../oxlint.config.ts app agent src test",
+    "start": "next start",
+    "test": "tsx test/run.ts",
+    "test:live": "node --env-file=.env.local --import tsx test/live.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@chat-adapter/slack": "4.37.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "@vercel/connect": "0.8.0",
+    "ai": "7.0.58",
+    "eve": "0.36.0",
+    "mcp-handler": "2.1.0",
+    "next": "16.3.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "oxlint": "1.79.0",
+    "tsx": "4.23.12",
+    "typescript": "~6"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

@@ -7,7 +7,16 @@ import { defineConfig, globalIgnores } from "eslint/config"
 
 export default defineConfig([
   // `ignore/` holds full reference monorepos; linting them costs minutes.
-  globalIgnores(["dist", "dist-electron", "ignore", "node_modules"]),
+  globalIgnores([
+    "**/.eve/**",
+    "**/.next/**",
+    "**/.output/**",
+    "**/.vercel/**",
+    "dist",
+    "dist-electron",
+    "ignore",
+    "node_modules",
+  ]),
   {
     files: ["src/**/*.{ts,tsx}", "electron/**/*.ts"],
     extends: [
@@ -16,6 +25,13 @@ export default defineConfig([
       reactHooks.configs.flat.recommended,
       reactRefresh.configs.vite,
     ],
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.node },
+    },
+  },
+  {
+    files: ["packages/backend/**/*.{ts,tsx}"],
+    extends: [js.configs.recommended, tseslint.configs.recommended],
     languageOptions: {
       globals: { ...globals.browser, ...globals.node },
     },

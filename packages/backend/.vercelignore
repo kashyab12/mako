@@ -1,0 +1,8 @@
+.env*
+.eve
+.next
+.output
+.vercel
+node_modules
+test
+*.tsbuildinfo

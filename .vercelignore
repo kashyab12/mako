@@ -1,0 +1,15 @@
+*
+!package.json
+!package-lock.json
+!packages
+packages/*
+!packages/backend
+!packages/backend/**
+packages/backend/.env*
+packages/backend/.eve/**
+packages/backend/.next/**
+packages/backend/.output/**
+packages/backend/.vercel/**
+packages/backend/node_modules/**
+packages/backend/test/**
+packages/backend/*.tsbuildinfo
