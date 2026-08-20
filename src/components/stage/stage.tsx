@@ -239,8 +239,11 @@ const CompanionBody = memo(function CompanionBody({
  * provider and routes to whoever owns the open conversation.
  */
 function ConversationSurface() {
+  const viewingPath = useThreads((state) => state.viewing?.ref.path)
   const viewing = useThreads((state) => Boolean(state.viewing) || state.viewingBusy)
   const live = useAcp((state) => Boolean(state.session) || state.starting)
+  const liveThreadPath = useAcp((state) => state.threadPath)
+  if (viewing && (!live || viewingPath !== liveThreadPath)) return <ThreadViewer />
   if (live) return <AcpPanel />
-  return viewing ? <ThreadViewer /> : <Transcript />
+  return <Transcript />
 }

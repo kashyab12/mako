@@ -95,6 +95,7 @@ export function AgentThreads() {
   const all = useThreads((state) => state.threads)
   const loaded = useThreads((state) => state.loaded)
   const running = useThreads((state) => state.running)
+  const observed = useThreads((state) => state.observed)
   const filter = usePrefs((prefs) => prefs.agentHarnessFilter)
   const pinned = usePrefs((prefs) => prefs.pinnedThreads)
   const pinnedProjects = usePrefs((prefs) => prefs.pinnedProjects)
@@ -104,49 +105,38 @@ export function AgentThreads() {
   const cwd = useSession((state) => state.meta?.cwd)
   const now = useLiveTime()
 
-  // The haystack is built once per catalog push, not once per keystroke.
-  const indexed = useMemo(
-    () =>
-      all.map((ref) => ({
-        ref,
-        haystack:
-          `${ref.title ?? ""} ${ref.cwd ?? ""} ${harnessLabel(ref.harness)} ${ref.model ?? ""}`.toLowerCase(),
-      })),
-    [all]
-  )
-
   const counts = useMemo(() => {
     const byHarness = new Map<string, number>()
-    for (const entry of indexed) {
-      const harness = entry.ref.harness
-      byHarness.set(harness, (byHarness.get(harness) ?? 0) + 1)
+    for (const ref of all) {
+      byHarness.set(ref.harness, (byHarness.get(ref.harness) ?? 0) + 1)
     }
     return byHarness
-  }, [indexed])
+  }, [all])
 
   const activity = useMemo(() => {
     const byHarness = new Map<string, number>()
     for (const ref of all) {
-      if (!running[ref.path]) continue
+      if (!running[ref.path] && !observed[ref.path]) continue
       byHarness.set(ref.harness, (byHarness.get(ref.harness) ?? 0) + 1)
     }
     return [...byHarness.entries()].map(
       ([harness, count]): AgentActivity => ({ harness, count })
     )
-  }, [all, running])
+  }, [all, observed, running])
 
   const matched = useMemo(() => {
     const needle = deferred.trim().toLowerCase()
     const active = filter.length > 0 ? new Set(filter) : null
-    return indexed
-      .filter(
-        (entry) =>
-          (scope !== "workspace" || !cwd || entry.ref.cwd === cwd) &&
-          (!active || active.has(entry.ref.harness)) &&
-          (!needle || entry.haystack.includes(needle))
-      )
-      .map((entry) => entry.ref)
-  }, [cwd, deferred, filter, indexed, scope])
+    return all.filter(
+      (ref) =>
+        (scope !== "workspace" || !cwd || ref.cwd === cwd) &&
+        (!active || active.has(ref.harness)) &&
+        (!needle ||
+          `${ref.title ?? ""} ${ref.cwd ?? ""} ${harnessLabel(ref.harness)} ${ref.model ?? ""}`
+            .toLowerCase()
+            .includes(needle))
+    )
+  }, [all, cwd, deferred, filter, scope])
 
   const held = useMemo(() => {
     const set = new Set(pinned)
@@ -431,7 +421,7 @@ function ActiveAgents({ activity }: { activity: AgentActivity[] }) {
           <HarnessIcon harness={entry.harness} className="size-3" />
           <span>{harnessLabel(entry.harness)}</span>
           <span className="size-1.5 animate-live rounded-full bg-current" />
-          {entry.count > 1 ? <span>{entry.count} running</span> : <span>running</span>}
+          {entry.count > 1 ? <span>{entry.count} active</span> : <span>active</span>}
         </span>
       ))}
     </div>
@@ -761,6 +751,8 @@ const ThreadRow = memo(function ThreadRow({
   // A thread whose CLI is being driven from here right now wears a pulse —
   // the same promise a tab's dot makes: something is working behind this row.
   const working = useThreads((state) => Boolean(state.running[ref.path]))
+  const observed = useThreads((state) => Boolean(state.observed[ref.path]))
+  const activeElsewhere = !working && observed
   const isPinned = usePrefs((prefs) => prefs.pinnedThreads.includes(ref.path))
   const active = useSession((state) => state.meta?.sessionFile === ref.path)
   const viewingPath = useThreads((state) => state.viewing?.ref.path)
@@ -810,7 +802,7 @@ const ThreadRow = memo(function ThreadRow({
         ))}
         <HarnessIcon
           harness={ref.harness}
-          className={cn("size-3", working && "animate-live")}
+          className={cn("size-3", (working || activeElsewhere) && "animate-live")}
         />
       </span>
       {editing !== null ? (
@@ -879,7 +871,15 @@ const ThreadRow = memo(function ThreadRow({
         />
       ) : null}
       {working ? (
-        <Loader2Icon className="size-3 shrink-0 animate-spin text-ember/80" aria-label="Working" />
+        <Loader2Icon
+          className="size-3 shrink-0 animate-spin text-ember/80"
+          aria-label="Working in Mako"
+        />
+      ) : activeElsewhere ? (
+        <Loader2Icon
+          className="size-3 shrink-0 animate-spin text-foreground/45"
+          aria-label="Live activity"
+        />
       ) : ref.updatedAt ? (
         <span className="tabular shrink-0 text-label text-faint">
           {formatRelative(ref.updatedAt)}

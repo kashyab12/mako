@@ -291,7 +291,11 @@ export function Composer() {
       // Attachments ride as staged file paths so every local CLI reads the
       // same bytes without base64 crossing IPC.
       const liveSession = acpStore.get().session
+      const liveThreadPath = acpStore.get().threadPath
       const viewingRef = threadsStore.get().viewing?.ref
+      const viewingOwnsComposer = Boolean(
+        viewingRef && viewingRef.path !== liveThreadPath
+      )
       const harness = threadsStore.get().composerHarness
       // Wait out staging — a screenshot mid-copy must not race the send
       // and leave a dead [Attachment N] marker with no file behind it —
@@ -326,13 +330,7 @@ export function Composer() {
       update("")
       setMention(null)
       let ok: boolean
-      if (liveSession) {
-        // Mod+Enter while the agent runs: stop the turn, then send — the
-        // live protocol's own interrupt. Plain Enter queues agent-side.
-        if (mode && liveSession.status === "running") acp.cancel()
-        await acp.send(full, acpAttachments)
-        ok = true
-      } else if (viewingRef) {
+      if (viewingRef && (!liveSession || viewingOwnsComposer)) {
         // An archived conversation has no native session to resume — a
         // reply re-materializes it: the emitters write a fresh native
         // session (same harness or any other) from the archived history,
@@ -343,6 +341,12 @@ export function Composer() {
               ? await threads.interruptAndSend(viewingRef, full)
               : await threads.reply(viewingRef, full)
             : await threads.moveAndSend(viewingRef, harness, full)
+      } else if (liveSession) {
+        // Mod+Enter while the agent runs: stop the turn, then send — the
+        // live protocol's own interrupt. Plain Enter queues agent-side.
+        if (mode && liveSession.status === "running") acp.cancel()
+        await acp.send(full, acpAttachments)
+        ok = true
       } else if (threadsStore.get().acpable.includes(harness)) {
         ok = await acp.startFresh(
           harness,
@@ -449,15 +453,20 @@ export function Composer() {
   const busy = status.streaming || status.compacting
   const liveHarness = useAcp((state) => state.session?.harness ?? null)
   const liveRunning = useAcp((state) => state.session?.status === "running")
+  const liveThreadPath = useAcp((state) => state.threadPath)
   const routedHarness = useThreads(
     (state) => state.viewing?.ref.harness ?? null
+  )
+  const routedPath = useThreads((state) => state.viewing?.ref.path)
+  const liveOwnsComposer = Boolean(
+    liveHarness && (!routedPath || routedPath === liveThreadPath)
   )
   const viewingRunning = useThreads((state) => state.run?.status === "running")
   const viewingArchived = useThreads((state) =>
     Boolean(state.viewing?.ref.archived)
   )
   const newHarness = useThreads((state) => state.composerHarness)
-  const placeholder = liveHarness
+  const placeholder = liveOwnsComposer && liveHarness
     ? liveRunning
       ? `${harnessTitle(liveHarness)} is working — Enter queues your message`
       : `Reply — ${harnessTitle(liveHarness)} answers live`

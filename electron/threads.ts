@@ -264,9 +264,40 @@ export function listThreads(
 
 export async function openThread(path: string): Promise<Thread | null> {
   const thread = daemon
-    ? await daemon.open(path)
+    ? await openThreadViaDaemon(path)
     : await (catalog?.open(path) ?? null)
   return thread ? { ...thread, ref: annotate(thread.ref) } : null
+}
+
+async function openThreadViaDaemon(path: string): Promise<Thread | null> {
+  const client = daemon
+  if (!client) return openThreadDirect(path)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const fallback = new Promise<Thread | null>((resolve) => {
+    timer = setTimeout(
+      () => void openThreadDirect(path).then(resolve, () => resolve(null)),
+      500
+    )
+  })
+  try {
+    return await Promise.race([
+      client.open(path).catch(() => openThreadDirect(path)),
+      fallback,
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+async function openThreadDirect(path: string): Promise<Thread | null> {
+  const direct = defaultCatalog({
+    archivePath: join(homedir(), ".mako", "archive"),
+  })
+  try {
+    return await direct.open(path, false)
+  } finally {
+    direct.stop()
+  }
 }
 
 /**

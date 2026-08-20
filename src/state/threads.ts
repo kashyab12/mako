@@ -106,8 +106,10 @@ interface ThreadsState {
   acpable: string[]
   /** The native run for the viewed thread, if one was started. */
   run: ThreadRunState | null
-  /** Every live native run, by thread path — the rail's working dots. */
+  /** Every live native run owned by Mako, by thread path. */
   running: RunningThreadsByPath
+  /** Threads actively writing in another client, inferred from native-store events. */
+  observed: RunningThreadsByPath
   /** A translation in flight: one conversation becoming another harness's. */
   converting: { from: string; to: string; title?: string; done: boolean } | null
   /** The composer's chosen harness for new conversations. */
@@ -128,6 +130,7 @@ export const threadsStore = createStore<ThreadsState>({
   acpable: [],
   run: null,
   running: {},
+  observed: {},
   converting: null,
   composerHarness: prefsStore.get().composerHarness ?? "claude",
   composerTuning: prefsStore.get().composerTuning,
@@ -239,6 +242,16 @@ let pendingOpen: { harness: string; cwd: string; since: number } | null = null
 /** The composer harness to give back when the viewer closes. */
 let harnessBeforeViewing: string | null = null
 
+function leaveViewerForLive(harness: string) {
+  harnessBeforeViewing = null
+  threadsStore.set({
+    viewing: null,
+    run: null,
+    composerHarness: harness,
+  })
+  if (hasBridge()) void getMako().unfollowThread()
+}
+
 /**
  * Threads already read this run, so switching back is a paint, not a fetch.
  * Stale-while-revalidate: the cached conversation shows instantly and the
@@ -267,10 +280,49 @@ function rememberThread(thread: ViewedThread) {
   }
 }
 let knownPaths = new Set<string>()
+const OBSERVED_IDLE_MS = 60_000
+const observedTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function clearObserved(path: string) {
+  const timer = observedTimers.get(path)
+  if (timer) clearTimeout(timer)
+  observedTimers.delete(path)
+  if (!threadsStore.get().observed[path]) return
+  const observed = { ...threadsStore.get().observed }
+  delete observed[path]
+  threadsStore.set({ observed })
+}
+
+function markObserved(path: string) {
+  if (threadsStore.get().running[path]) return
+  if (!threadsStore.get().observed[path]) {
+    threadsStore.set({
+      observed: { ...threadsStore.get().observed, [path]: true },
+    })
+  }
+  const held = observedTimers.get(path)
+  if (held) clearTimeout(held)
+  observedTimers.set(
+    path,
+    setTimeout(() => clearObserved(path), OBSERVED_IDLE_MS)
+  )
+}
 
 export function applyThreadRef(ref: ThreadRef) {
   const current = threadsStore.get().threads
   const at = current.findIndex((entry) => entry.path === ref.path)
+  const previous = at === -1 ? undefined : current[at]
+  const updatedAt = ref.updatedAt ? Date.parse(ref.updatedAt) : Number.NaN
+  const recentlyAdded =
+    at === -1 &&
+    Number.isFinite(updatedAt) &&
+    Date.now() - updatedAt < OBSERVED_IDLE_MS
+  const advanced = Boolean(
+    previous &&
+      ((ref.bytes ?? 0) > (previous.bytes ?? 0) ||
+        ref.updatedAt !== previous.updatedAt)
+  )
+  if (recentlyAdded || advanced) markObserved(ref.path)
   const next = at === -1 ? [...current, ref] : current.map((entry, index) => (index === at ? ref : entry))
   next.sort((left, right) =>
     (right.updatedAt ?? "").localeCompare(left.updatedAt ?? "")
@@ -279,6 +331,7 @@ export function applyThreadRef(ref: ThreadRef) {
 }
 
 export function applyThreadRemoved(path: string) {
+  clearObserved(path)
   applyThreads(threadsStore.get().threads.filter((entry) => entry.path !== path))
 }
 
@@ -308,6 +361,7 @@ export function applyThreads(list: ThreadRef[]) {
 
 /** A native run started, finished, or failed, on any thread. */
 export function setThreadRunning(path: string, active: boolean) {
+  if (active) clearObserved(path)
   const next = { ...threadsStore.get().running }
   if (active) next[path] = true
   else delete next[path]
@@ -344,6 +398,7 @@ export function applyThreadEntries(
   replace?: boolean,
   replaceFrom?: number
 ) {
+  markObserved(path)
   const { viewing } = threadsStore.get()
   if (!viewing || viewing.ref.path !== path) return
   // The real turn arriving retires its optimistic echo: the reply was
@@ -538,6 +593,13 @@ export const threads = {
    */
   async reply(ref: ThreadRef, prompt: string): Promise<boolean> {
     if (!hasBridge()) return false
+    if (threadsStore.get().observed[ref.path]) {
+      toast("Active in another app", {
+        description:
+          "Wait for this turn to settle, or choose another agent to continue in a new thread.",
+      })
+      return false
+    }
     // A busy thread queues instead of dropping: the message paints now (the
     // echo below) and goes out the moment the current run ends.
     if (threadsStore.get().running[ref.path]) {
@@ -635,13 +697,15 @@ export const threads = {
       } else if (result.kind === "prepared") {
         threadsStore.set({ composerHarness: harness })
         const supportsLive = threadsStore.get().acpable.includes(harness)
-        return supportsLive
-          ? (await import("@/state/acp")).acp.startFresh(
+        const ok = supportsLive
+          ? await (await import("@/state/acp")).acp.startFresh(
               harness,
               result.cwd,
               result.prompt
             )
-          : this.startNew(harness, result.prompt)
+          : await this.startNew(harness, result.prompt)
+        if (ok && supportsLive) leaveViewerForLive(harness)
+        return ok
       }
       return false
     } catch (error) {
@@ -672,6 +736,7 @@ export const threads = {
           ).acp.startFresh(harness, prepared.cwd, prepared.prompt)
         : await this.startNew(harness, prepared.prompt)
       if (ok) {
+        if (supportsLive) leaveViewerForLive(harness)
         toast("Forked", {
           description: `A new ${harnessLabelOf(harness)} conversation starts after that answer.`,
         })
@@ -756,7 +821,10 @@ export const threads = {
             await import("@/state/acp")
           ).acp.startFresh(harness, result.cwd, result.prompt)
         : await this.startNew(harness, result.prompt)
-      if (ok) toast(`${label} picked up the conversation`)
+      if (ok) {
+        if (supportsLive) leaveViewerForLive(harness)
+        toast(`${label} picked up the conversation`)
+      }
       return ok
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
