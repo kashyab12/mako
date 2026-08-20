@@ -43,6 +43,9 @@ export const Exchange = memo(function Exchange({
   exchange: ExchangeData
   streaming?: boolean
 }) {
+  const [workOpen, setWorkOpen] = useState(false)
+  const work = useMemo(() => summarizeWork(exchange), [exchange])
+  const folded = !streaming && work.tools >= 3
   return (
     <article data-exchange={exchange.id} className="contain-turn scroll-mt-6">
       {exchange.prompt ? <Prompt message={exchange.prompt} /> : null}
@@ -53,8 +56,19 @@ export const Exchange = memo(function Exchange({
 
       {exchange.response.length > 0 ? (
         <div className={cn("flex flex-col gap-2.5", exchange.prompt && "mt-3")}>
+          {folded ? (
+            <WorkSummary
+              work={work}
+              open={workOpen}
+              onToggle={() => setWorkOpen((value) => !value)}
+            />
+          ) : null}
           {exchange.response.map((message) => (
-            <Response key={message.id} message={message} />
+            <Response
+              key={message.id}
+              message={message}
+              showWork={!folded || workOpen}
+            />
           ))}
         </div>
       ) : null}
@@ -165,7 +179,78 @@ function Prompt({ message }: { message: ChatMessage }) {
 /* the response                                                        */
 /* ------------------------------------------------------------------ */
 
-function Response({ message }: { message: ChatMessage }) {
+interface WorkSummaryData {
+  tools: number
+  failed: number
+  duration?: number
+}
+
+function summarizeWork(exchange: ExchangeData): WorkSummaryData {
+  let tools = 0
+  let failed = 0
+  for (const message of exchange.response) {
+    const calls = pairTools(message.blocks)
+    tools += calls.length
+    failed += calls.filter((call) => call.isError).length
+  }
+  const started = exchange.prompt?.timestamp
+  const completed = exchange.response.at(-1)?.timestamp
+  return {
+    tools,
+    failed,
+    duration:
+      started !== undefined && completed !== undefined && completed >= started
+        ? completed - started
+        : undefined,
+  }
+}
+
+function WorkSummary({
+  work,
+  open,
+  onToggle,
+}: {
+  work: WorkSummaryData
+  open: boolean
+  onToggle: () => void
+}) {
+  const pieces = [
+    work.duration !== undefined ? `Worked for ${formatDuration(work.duration)}` : "Work log",
+    `${work.tools} tools`,
+    work.failed > 0 ? `${work.failed} failed` : null,
+  ].filter(Boolean)
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      className="pressable flex h-7 w-fit items-center gap-1.5 rounded-md bg-raised px-2 text-label text-faint transition-colors duration-100 hover:text-muted-foreground"
+    >
+      <ChevronRightIcon
+        className={cn("size-3 transition-transform duration-150", open && "rotate-90")}
+      />
+      {pieces.join(" · ")}
+    </button>
+  )
+}
+
+function formatDuration(milliseconds: number): string {
+  const seconds = Math.max(1, Math.round(milliseconds / 1000))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  const remaining = seconds % 60
+  if (minutes < 60) return remaining ? `${minutes}m ${remaining}s` : `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  return `${hours}h ${minutes % 60}m`
+}
+
+function Response({
+  message,
+  showWork,
+}: {
+  message: ChatMessage
+  showWork: boolean
+}) {
   const showThinking = usePrefs((prefs) => prefs.showThinking)
 
   const { thinking, tools, text } = useMemo(() => {
@@ -186,9 +271,11 @@ function Response({ message }: { message: ChatMessage }) {
 
   return (
     <div className="flex flex-col gap-2.5">
-      {thinking && showThinking ? <Thinking text={thinking} live={Boolean(message.streaming && !text)} /> : null}
+      {showWork && thinking && showThinking ? (
+        <Thinking text={thinking} live={Boolean(message.streaming && !text)} />
+      ) : null}
 
-      {tools.length > 0 ? (
+      {showWork && tools.length > 0 ? (
         <div className="flex flex-col gap-1">
           {tools.map((call) => (
             <ToolRow key={call.id} call={call} />

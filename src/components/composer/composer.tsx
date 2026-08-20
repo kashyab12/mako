@@ -35,6 +35,7 @@ import {
 } from "@/state/session"
 import { threads, threadsStore, useThreads } from "@/state/threads"
 import { acp, acpStore, useAcp } from "@/state/acp"
+import { draftText, rememberDraft } from "@/state/drafts"
 import { stage } from "@/state/stage"
 import { getMako } from "@/lib/bridge"
 import { cn } from "@/lib/utils"
@@ -47,10 +48,6 @@ import {
   SquareIcon,
   XIcon,
 } from "lucide-react"
-
-interface StoredDraft {
-  text: string
-}
 
 interface CommandMention {
   sigil: "/"
@@ -97,20 +94,6 @@ function toAcpPromptAttachment(item: Attachment): AcpPromptAttachment {
 
 const isMac = navigator.platform.startsWith("Mac")
 
-/** Drafts survive session switches within a run; nobody should lose a paragraph. */
-const drafts = new Map<string, StoredDraft>()
-const MAX_DRAFTS = 64
-
-function rememberDraft(key: string, text: string) {
-  drafts.delete(key)
-  if (text) drafts.set(key, { text })
-  while (drafts.size > MAX_DRAFTS) {
-    const oldest = drafts.keys().next().value
-    if (!oldest) break
-    drafts.delete(oldest)
-  }
-}
-
 export function Composer() {
   const sessionId = useSession((state) => state.meta?.sessionId)
   const viewingPath = useThreads((state) => state.viewing?.ref.path)
@@ -131,7 +114,7 @@ export function Composer() {
   )
   const meta = useSession((state) => state.meta)
 
-  const [draft, setDraft] = useState(() => drafts.get(draftKey)?.text ?? "")
+  const [draft, setDraft] = useState(() => draftText(draftKey))
   const [focused, setFocused] = useState(false)
   const [mention, setMention] = useState<ComposerMention | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -187,7 +170,7 @@ export function Composer() {
   const [lastDraftKey, setLastDraftKey] = useState(draftKey)
   if (lastDraftKey !== draftKey) {
     setLastDraftKey(draftKey)
-    setDraft(drafts.get(draftKey)?.text ?? "")
+    setDraft(draftText(draftKey))
     setMention(null)
   }
 

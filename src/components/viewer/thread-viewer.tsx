@@ -6,18 +6,22 @@ import { HarnessIcon } from "@/components/ui/provider-icon"
 import { Action, IconAction } from "@/components/ui/kit"
 import {
   setComposerHarness,
-  threadActivity,
+  threadStatus,
   threads,
   useThreads,
+  type ThreadStatus,
 } from "@/state/threads"
 import type { Exchange as ExchangeData } from "@/lib/exchanges"
 import type { Thread } from "@/lib/types"
 import { threadToMessages } from "@/lib/foreign-thread"
 import {
   ArrowRightLeftIcon,
+  CheckIcon,
   Loader2Icon,
   LockKeyholeIcon,
   RadioIcon,
+  ShieldQuestionIcon,
+  TriangleAlertIcon,
   XIcon,
 } from "lucide-react"
 
@@ -199,22 +203,14 @@ export function ThreadViewer() {
 
 function SessionBar() {
   const thread = useThreads((state) => state.viewing)
-  const activity = useThreads((state) =>
-    thread ? threadActivity(thread.ref, state) : "idle"
+  const sessionStatus = useThreads((state) =>
+    thread ? threadStatus(thread.ref, state) : null
   )
-  if (!thread) return null
+  if (!thread || !sessionStatus) return null
   const locked =
-    activity === "external-open" || activity === "external-active"
-  const status =
-    activity === "external-active"
-      ? "Live in another app"
-      : activity === "external-open"
-        ? "Open in another app"
-        : activity === "observed"
-          ? "Live activity"
-          : thread.ref.archived
-            ? "Archived history"
-            : "Ready to resume"
+    sessionStatus.kind === "external-open" ||
+    sessionStatus.kind === "external-active"
+  const status = statusLabel(sessionStatus, thread.ref.archived === true)
   return (
     <div className="flex h-11 shrink-0 items-center gap-2 border-b border-hairline px-3.5">
       <HarnessIcon harness={thread.ref.harness} className="size-3.5" />
@@ -230,11 +226,7 @@ function SessionBar() {
           }
           className="flex items-center gap-1 truncate text-label text-faint"
         >
-          {locked ? (
-            <LockKeyholeIcon className="size-3 shrink-0" />
-          ) : activity === "observed" ? (
-            <RadioIcon className="size-3 shrink-0" />
-          ) : null}
+          <SessionStatusIcon status={sessionStatus} />
           {status}
         </p>
       </div>
@@ -275,6 +267,47 @@ function SessionBar() {
       </IconAction>
     </div>
   )
+}
+
+function statusLabel(status: ThreadStatus, archived: boolean): string {
+  switch (status.kind) {
+    case "working":
+      return status.detail ?? "Working"
+    case "needs-permission":
+      return status.detail ? `Needs input · ${status.detail}` : "Needs input"
+    case "failed":
+      return status.detail ? `Failed · ${status.detail}` : "Failed"
+    case "review":
+      return status.unread ? "Finished · ready for review" : "Ready for review"
+    case "observed":
+      return "Live activity"
+    case "external-open":
+      return "Open in another app"
+    case "external-active":
+      return "Live in another app"
+    case "idle":
+      return archived ? "Archived history" : "Ready to resume"
+  }
+}
+
+function SessionStatusIcon({ status }: { status: ThreadStatus }) {
+  switch (status.kind) {
+    case "working":
+      return <Loader2Icon className="size-3 shrink-0 animate-spin text-ember/80" />
+    case "needs-permission":
+      return <ShieldQuestionIcon className="size-3 shrink-0 text-caution" />
+    case "failed":
+      return <TriangleAlertIcon className="size-3 shrink-0 text-negative" />
+    case "review":
+      return <CheckIcon className="size-3 shrink-0 text-positive" />
+    case "observed":
+      return <RadioIcon className="size-3 shrink-0" />
+    case "external-open":
+    case "external-active":
+      return <LockKeyholeIcon className="size-3 shrink-0" />
+    case "idle":
+      return null
+  }
 }
 
 /**

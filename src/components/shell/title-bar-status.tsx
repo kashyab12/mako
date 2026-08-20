@@ -4,7 +4,12 @@ import { stage } from "@/state/stage"
 import { workspaceName } from "@/lib/format"
 import { HotIndicator } from "@/components/shell/hot-indicator"
 import { updates, useUpdates } from "@/state/updates"
-import { ArrowUpCircleIcon, FolderIcon, GitBranchIcon } from "lucide-react"
+import {
+  ArrowUpCircleIcon,
+  FolderIcon,
+  GitBranchIcon,
+  PlugZapIcon,
+} from "lucide-react"
 
 /**
  * The always-on facts, in the titlebar's right cluster: where we are, what
@@ -17,11 +22,28 @@ import { ArrowUpCircleIcon, FolderIcon, GitBranchIcon } from "lucide-react"
 export function TitleBarStatus() {
   return (
     <div className="mr-1 flex min-w-0 items-center gap-2 text-label text-faint">
+      <ConnectionPill />
       <ProjectContext />
       <HotIndicator />
       <UpdatePill />
       <Slot name="titlebar.status" meta={undefined} />
     </div>
+  )
+}
+
+function ConnectionPill() {
+  const phase = useSession((state) => state.phase)
+  if (phase === "ready") return null
+  return (
+    <button
+      type="button"
+      onClick={() => location.reload()}
+      title="Reconnect the agent host"
+      className="no-drag flex items-center gap-1 rounded px-1.5 text-negative transition-colors duration-100 hover:bg-negative/10"
+    >
+      <PlugZapIcon className="size-3" />
+      {phase === "booting" ? "Connecting" : "Agent disconnected"}
+    </button>
   )
 }
 

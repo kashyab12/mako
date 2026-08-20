@@ -21,6 +21,7 @@ import {
   fitsBeside,
 } from "@/components/stage/stage-width"
 import { cn } from "@/lib/utils"
+import { ArrowLeftIcon } from "lucide-react"
 import type { TabStage } from "@/state/stage"
 
 /** Identity-stable fallback so the selector never allocates per render. */
@@ -167,6 +168,21 @@ export function Stage() {
               companionHidden && "hidden"
             )}
           >
+            {covered ? (
+              <div className="flex h-8 shrink-0 items-center gap-2 border-b border-hairline px-2.5 text-label text-faint">
+                <span className="min-w-0 flex-1 truncate">
+                  {sideSurface.label} · conversation hidden at this width
+                </span>
+                <button
+                  type="button"
+                  onClick={() => stage.close()}
+                  className="pressable flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground hover:bg-fill-hover hover:text-foreground"
+                >
+                  <ArrowLeftIcon className="size-3" />
+                  Conversation
+                </button>
+              </div>
+            ) : null}
             <CompanionBody render={sideSurface.render} />
           </div>
         ) : null}

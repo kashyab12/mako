@@ -2,7 +2,9 @@ import { createHook, createStore } from "@/state/store"
 import { getMako, hasBridge } from "@/lib/bridge"
 import { toast } from "sonner"
 import {
+  setThreadAttention,
   setThreadRunning,
+  setThreadWorkDetail,
   threadsStore,
   withConversion,
 } from "@/state/threads"
@@ -66,8 +68,28 @@ export const useAcp = createHook(acpStore)
 export function applyAcpSession(session: AcpSessionState) {
   const { session: current, queued, threadPath } = acpStore.get()
   if (!current || current.id !== session.id) return
+  const previousStatus = current.status
   acpStore.set({ session })
-  if (threadPath) setThreadRunning(threadPath, session.status === "running")
+  if (threadPath) {
+    setThreadRunning(threadPath, session.status === "running")
+    if (session.status === "running") setThreadAttention(threadPath, null)
+    else if (session.status === "failed")
+      setThreadAttention(threadPath, {
+        kind: "failed",
+        at: Date.now(),
+        detail: session.error,
+      })
+    else if (
+      previousStatus === "running" &&
+      session.status === "ready" &&
+      !queued
+    )
+      setThreadAttention(threadPath, {
+        kind: "review",
+        at: Date.now(),
+        unread: threadsStore.get().viewing?.ref.path !== threadPath,
+      })
+  }
   if (session.status === "failed" && session.error) toast.error(session.error)
   // A message typed mid-turn goes the moment the agent goes quiet — that is
   // what queueing promised.
@@ -82,13 +104,29 @@ export function applyAcpUpdate(id: string, update: AcpUpdate) {
 }
 
 export function applyAcpUpdates(id: string, updates: AcpUpdate[]) {
-  const { session, blocks } = acpStore.get()
+  const { session, blocks, threadPath } = acpStore.get()
   if (!session || session.id !== id) return
   acpStore.set({ blocks: reduceUpdates(blocks, updates) })
+  if (!threadPath) return
+  for (let index = updates.length - 1; index >= 0; index -= 1) {
+    const update = updates[index]
+    if (update.kind === "tool") {
+      setThreadWorkDetail(threadPath, update.title)
+      return
+    }
+    if (update.kind === "text") {
+      setThreadWorkDetail(threadPath, "Writing response")
+      return
+    }
+    if (update.kind === "thinking") {
+      setThreadWorkDetail(threadPath, "Reasoning")
+      return
+    }
+  }
 }
 
 export function applyAcpPermission(request: AcpPermissionRequest) {
-  const { session } = acpStore.get()
+  const { session, threadPath } = acpStore.get()
   if (!session || session.id !== request.sessionId) {
     // Nobody is looking at this session; answering nothing cancels the tool,
     // which is the safe default for an unwatched agent.
@@ -100,6 +138,12 @@ export function applyAcpPermission(request: AcpPermissionRequest) {
     return
   }
   acpStore.set({ permission: request })
+  if (threadPath)
+    setThreadAttention(threadPath, {
+      kind: "needs-permission",
+      since: Date.now(),
+      detail: request.title,
+    })
 }
 
 function reduceUpdates(
@@ -295,7 +339,7 @@ export const acp = {
     optionId: string | null,
     answers?: Record<string, string[]>
   ) {
-    const { session, permission } = acpStore.get()
+    const { session, permission, threadPath } = acpStore.get()
     if (!session || !permission || !hasBridge()) return
     void getMako().acpPermission(
       session.id,
@@ -305,6 +349,7 @@ export const acp = {
         : { kind: "choice", optionId }
     )
     acpStore.set({ permission: null })
+    if (threadPath) setThreadAttention(threadPath, null)
   },
 
   setMode(modeId: string) {

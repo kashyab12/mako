@@ -1,8 +1,12 @@
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { harnessLabel } from "@/components/rail/harness-meta"
-import { formatRelative, workspaceName } from "@/lib/format"
-import { threadActivity, threads, useThreads } from "@/state/threads"
+import { workspaceName } from "@/lib/format"
+import {
+  threadStatus,
+  threads,
+  useThreads,
+} from "@/state/threads"
 import { actions, shallowEqual, useSession } from "@/state/session"
 import {
   prefsStore,
@@ -15,6 +19,8 @@ import { cn } from "@/lib/utils"
 import { useTabs, type TabInfo } from "@/state/tabs"
 import { Blank } from "@/components/ui/kit"
 import { formatChord } from "@/extend/commands"
+import { DraftThreads } from "@/components/rail/draft-threads"
+import { ThreadStatusMark } from "@/components/rail/thread-status"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import {
   CheckIcon,
@@ -24,8 +30,6 @@ import {
   ArchiveIcon,
   FolderPlusIcon,
   ListFilterIcon,
-  Loader2Icon,
-  LockKeyholeIcon,
   MessagesSquareIcon,
   PinIcon,
   SearchIcon,
@@ -85,7 +89,9 @@ function useLiveTime(): number {
 }
 
 export function AgentThreads() {
+  const rail = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState("")
+  const [jumpHints, setJumpHints] = useState(false)
   const [searching, setSearching] = useState(false)
   const [showAllPinned, setShowAllPinned] = useState(false)
   const [showAllProjects, setShowAllProjects] = useState(false)
@@ -95,7 +101,8 @@ export function AgentThreads() {
   const deferred = useDeferredValue(query)
   const all = useThreads((state) => state.threads)
   const loaded = useThreads((state) => state.loaded)
-  const running = useThreads((state) => state.running)
+  const working = useThreads((state) => state.working)
+  const attention = useThreads((state) => state.attention)
   const observed = useThreads((state) => state.observed)
   const filter = usePrefs((prefs) => prefs.agentHarnessFilter)
   const pinned = usePrefs((prefs) => prefs.pinnedThreads)
@@ -104,7 +111,45 @@ export function AgentThreads() {
   const scope = usePrefs((prefs) => prefs.railScope)
   const sortBy = usePrefs((prefs) => prefs.railSortBy)
   const cwd = useSession((state) => state.meta?.cwd)
+  const branch = useSession((state) => state.git?.branch)
   const now = useLiveTime()
+
+  useEffect(() => {
+    const search = () => setSearching(true)
+    window.addEventListener("mako:search-threads", search)
+    return () => window.removeEventListener("mako:search-threads", search)
+  }, [])
+
+  useEffect(() => {
+    const rows = () =>
+      [...(rail.current?.querySelectorAll<HTMLElement>("[data-thread-row]") ?? [])].filter(
+        (row) => row.offsetParent !== null
+      )
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing) return
+      const mod = event.metaKey || event.ctrlKey
+      setJumpHints(mod && event.shiftKey)
+      if (!mod || !event.shiftKey || !event.code.startsWith("Digit")) return
+      const index = Number(event.code.slice(5)) - 1
+      const row = rows()[index]
+      if (!row || index < 0 || index > 8) return
+      event.preventDefault()
+      row.click()
+    }
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || !event.shiftKey)
+        setJumpHints(false)
+    }
+    const onBlur = () => setJumpHints(false)
+    window.addEventListener("keydown", onKeyDown)
+    window.addEventListener("keyup", onKeyUp)
+    window.addEventListener("blur", onBlur)
+    return () => {
+      window.removeEventListener("keydown", onKeyDown)
+      window.removeEventListener("keyup", onKeyUp)
+      window.removeEventListener("blur", onBlur)
+    }
+  }, [])
 
   const counts = useMemo(() => {
     const byHarness = new Map<string, number>()
@@ -117,13 +162,18 @@ export function AgentThreads() {
   const activity = useMemo(() => {
     const byHarness = new Map<string, number>()
     for (const ref of all) {
-      if (!running[ref.path] && !observed[ref.path]) continue
+      if (
+        !working[ref.path] &&
+        !observed[ref.path] &&
+        attention[ref.path]?.kind !== "needs-permission"
+      )
+        continue
       byHarness.set(ref.harness, (byHarness.get(ref.harness) ?? 0) + 1)
     }
     return [...byHarness.entries()].map(
       ([harness, count]): AgentActivity => ({ harness, count })
     )
-  }, [all, observed, running])
+  }, [all, attention, observed, working])
 
   const matched = useMemo(() => {
     const needle = deferred.trim().toLowerCase()
@@ -199,8 +249,36 @@ export function AgentThreads() {
     : projects.slice(0, Math.max(PROJECT_ROWS, priorityProjects))
   const hiddenProjects = projects.length - shownProjects.length
 
+  useEffect(() => {
+    const rows = rail.current?.querySelectorAll<HTMLElement>("[data-thread-row]")
+    rows?.forEach((row, index) => {
+      if (index < 9) row.dataset.jumpIndex = String(index + 1)
+      else delete row.dataset.jumpIndex
+    })
+  }, [folders, held, jumpHints, matched, pages, showAllPinned, showAllProjects])
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div
+      ref={rail}
+      data-jump-hints={jumpHints || undefined}
+      onKeyDown={(event) => {
+        if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
+        const current =
+          event.target instanceof HTMLElement
+            ? event.target.closest<HTMLElement>("[data-thread-row]")
+            : null
+        if (!current) return
+        const rows = [
+          ...(rail.current?.querySelectorAll<HTMLElement>("[data-thread-row]") ?? []),
+        ].filter((row) => row.offsetParent !== null)
+        const at = rows.indexOf(current)
+        const next = rows[at + (event.key === "ArrowDown" ? 1 : -1)]
+        if (!next) return
+        event.preventDefault()
+        next.focus()
+      }}
+      className="thread-jump-scope flex min-h-0 flex-1 flex-col"
+    >
       <RailHeader
         searching={searching}
         query={query}
@@ -251,6 +329,7 @@ export function AgentThreads() {
           </div>
         ) : (
           <>
+            <DraftThreads />
             {held.length > 0 ? (
               <section className="pt-1 pb-2">
                 <p className="flex h-7 items-center gap-1.5 px-1.5 text-label font-medium text-faint">
@@ -275,6 +354,7 @@ export function AgentThreads() {
               <FolderSection
                 key={folder.key}
                 folder={folder}
+                branch={folder.current ? branch : undefined}
                 now={now}
                 collapsed={collapsed.includes(`ws:${folder.key}`)}
                 onToggle={() => {
@@ -632,6 +712,7 @@ function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter
  */
 function FolderSection({
   folder,
+  branch,
   now,
   collapsed,
   onToggle,
@@ -640,6 +721,7 @@ function FolderSection({
   onPages,
 }: {
   folder: Folder
+  branch?: string
   now: number
   collapsed: boolean
   onToggle: () => void
@@ -678,6 +760,14 @@ function FolderSection({
           >
             {folder.name}
           </span>
+          {branch ? (
+            <span
+              title={branch}
+              className="max-w-24 shrink-0 truncate font-mono text-label text-faint/70"
+            >
+              {branch}
+            </span>
+          ) : null}
           <span className="tabular text-label text-faint/60 opacity-0 transition-opacity duration-100 group-hover/folder:opacity-100">
             {folder.refs.length}
           </span>
@@ -751,12 +841,10 @@ const ThreadRow = memo(function ThreadRow({
   const [editing, setEditing] = useState<string | null>(null)
   // A thread whose CLI is being driven from here right now wears a pulse —
   // the same promise a tab's dot makes: something is working behind this row.
-  const activity = useThreads((state) => threadActivity(ref, state))
-  const working = activity === "mako"
-  const lockedElsewhere =
-    activity === "external-open" || activity === "external-active"
+  const status = useThreads((state) => threadStatus(ref, state))
+  const working = status.kind === "working"
   const activeElsewhere =
-    activity === "observed" || activity === "external-active"
+    status.kind === "observed" || status.kind === "external-active"
   const isPinned = usePrefs((prefs) => prefs.pinnedThreads.includes(ref.path))
   const active = useSession((state) => state.meta?.sessionFile === ref.path)
   const viewingPath = useThreads((state) => state.viewing?.ref.path)
@@ -787,6 +875,7 @@ const ThreadRow = memo(function ThreadRow({
         .filter(Boolean)
         .join("\n")}
       data-active={lit || undefined}
+      data-thread-row
       className={cn(
         "group flex h-7 w-full items-center gap-2 rounded-md pr-1.5 text-left",
         indent ? "pl-[26px]" : "pl-1.5",
@@ -874,28 +963,7 @@ const ThreadRow = memo(function ThreadRow({
           aria-label="Archived — the native session is gone; Mako kept the conversation"
         />
       ) : null}
-      {working ? (
-        <Loader2Icon
-          className="size-3 shrink-0 animate-spin text-ember/80"
-          aria-label="Working in Mako"
-        />
-      ) : activeElsewhere ? (
-        <Loader2Icon
-          className="size-3 shrink-0 animate-spin text-foreground/45"
-          aria-label={
-            lockedElsewhere ? "Active in another app" : "Live activity"
-          }
-        />
-      ) : lockedElsewhere ? (
-        <LockKeyholeIcon
-          className="size-3 shrink-0 text-faint/70"
-          aria-label="Open in another app"
-        />
-      ) : ref.updatedAt ? (
-        <span className="tabular shrink-0 text-label text-faint">
-          {formatRelative(ref.updatedAt)}
-        </span>
-      ) : null}
+      <ThreadStatusMark status={status} updatedAt={ref.updatedAt} />
     </button>
   )
 })

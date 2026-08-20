@@ -554,7 +554,11 @@ export const actions = {
     const next = await guard(() => getMako().newSession())
     if (!next) return
     adoptState(next)
+    stage.close()
     void actions.refreshSessions(next.meta.cwd)
+    requestAnimationFrame(() =>
+      window.dispatchEvent(new CustomEvent("mako:focus-composer"))
+    )
   },
 
   /**

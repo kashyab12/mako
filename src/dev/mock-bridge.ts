@@ -1050,6 +1050,18 @@ export function installMockBridge() {
               output: "src/queue/consumer.ts:42",
             },
             {
+              type: "tool",
+              name: "read",
+              input: "src/queue/consumer.ts",
+              output: "const retry = attempt + 1",
+            },
+            {
+              type: "tool",
+              name: "edit",
+              input: "src/queue/consumer.ts",
+              output: "updated retry cap",
+            },
+            {
               type: "text",
               text: "The retry drops the idempotency key on the second attempt. Fixing.",
             },

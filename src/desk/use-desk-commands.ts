@@ -229,6 +229,19 @@ const DESK_COMMANDS: DeskCommand[] = [
     run: () => search.open(),
   },
   {
+    id: "view.search-sessions",
+    title: "Search sessions…",
+    section: "View",
+    keys: "mod+shift+l",
+    run: () => {
+      setPref("railOpen", true)
+      setPref("railMode", "threads")
+      requestAnimationFrame(() =>
+        window.dispatchEvent(new CustomEvent("mako:search-threads"))
+      )
+    },
+  },
+  {
     id: "view.quick-open",
     title: "Open a file…",
     section: "View",

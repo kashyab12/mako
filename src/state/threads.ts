@@ -37,8 +37,25 @@ interface ComposerTuningByHarness {
   [harness: string]: ComposerTuning
 }
 
-interface RunningThreadsByPath {
-  [path: string]: boolean
+export type ThreadStatus =
+  | { kind: "idle" }
+  | { kind: "working"; since: number; detail?: string }
+  | { kind: "needs-permission"; since: number; detail?: string }
+  | { kind: "failed"; at: number; detail?: string }
+  | { kind: "review"; at: number; unread: boolean }
+  | { kind: "observed" }
+  | { kind: "external-open" }
+  | { kind: "external-active" }
+
+interface WorkingThreadsByPath {
+  [path: string]: Extract<ThreadStatus, { kind: "working" }>
+}
+
+interface AttentionByPath {
+  [path: string]: Extract<
+    ThreadStatus,
+    { kind: "needs-permission" | "failed" | "review" }
+  >
 }
 
 interface QueuedReply {
@@ -49,6 +66,8 @@ interface QueuedReply {
 interface QueuedRepliesByPath {
   [path: string]: QueuedReply
 }
+
+const releasingReplies = new Set<string>()
 
 type ViewedUserEntry = Extract<ThreadEntry, { kind: "user" }> & {
   echo?: boolean
@@ -106,10 +125,12 @@ interface ThreadsState {
   acpable: string[]
   /** The native run for the viewed thread, if one was started. */
   run: ThreadRunState | null
-  /** Every live native run owned by Mako, by thread path. */
-  running: RunningThreadsByPath
+  /** Every live run owned by Mako, with its start and current operation. */
+  working: WorkingThreadsByPath
+  /** Persistent outcomes that must remain visible after the process stops. */
+  attention: AttentionByPath
   /** Threads actively writing in another client, inferred from native-store events. */
-  observed: RunningThreadsByPath
+  observed: Record<string, boolean>
   /** A translation in flight: one conversation becoming another harness's. */
   converting: { from: string; to: string; title?: string; done: boolean } | null
   /** The composer's chosen harness for new conversations. */
@@ -120,12 +141,10 @@ interface ThreadsState {
   queuedReplies: QueuedRepliesByPath
 }
 
-export type ThreadActivity =
-  | "idle"
-  | "mako"
-  | "observed"
-  | "external-open"
-  | "external-active"
+const IDLE_STATUS: ThreadStatus = { kind: "idle" }
+const OBSERVED_STATUS: ThreadStatus = { kind: "observed" }
+const EXTERNAL_OPEN_STATUS: ThreadStatus = { kind: "external-open" }
+const EXTERNAL_ACTIVE_STATUS: ThreadStatus = { kind: "external-active" }
 
 export const threadsStore = createStore<ThreadsState>({
   threads: [],
@@ -136,7 +155,8 @@ export const threadsStore = createStore<ThreadsState>({
   targets: [],
   acpable: [],
   run: null,
-  running: {},
+  working: {},
+  attention: {},
   observed: {},
   converting: null,
   composerHarness: prefsStore.get().composerHarness ?? "claude",
@@ -145,14 +165,19 @@ export const threadsStore = createStore<ThreadsState>({
 })
 export const useThreads = createHook(threadsStore)
 
-export function threadActivity(
+export function threadStatus(
   ref: ThreadRef,
   state: ThreadsState = threadsStore.get()
-): ThreadActivity {
-  if (state.running[ref.path]) return "mako"
+): ThreadStatus {
+  const attention = state.attention[ref.path]
+  if (attention) return attention
+  const working = state.working[ref.path]
+  if (working) return working
   if (ref.locked)
-    return state.observed[ref.path] ? "external-active" : "external-open"
-  return state.observed[ref.path] ? "observed" : "idle"
+    return state.observed[ref.path]
+      ? EXTERNAL_ACTIVE_STATUS
+      : EXTERNAL_OPEN_STATUS
+  return state.observed[ref.path] ? OBSERVED_STATUS : IDLE_STATUS
 }
 
 /** The composer's agent, remembered across launches. */
@@ -311,7 +336,7 @@ function clearObserved(path: string) {
 }
 
 function markObserved(path: string) {
-  if (threadsStore.get().running[path]) return
+  if (threadsStore.get().working[path]) return
   if (!threadsStore.get().observed[path]) {
     threadsStore.set({
       observed: { ...threadsStore.get().observed, [path]: true },
@@ -319,6 +344,7 @@ function markObserved(path: string) {
   }
   const held = observedTimers.get(path)
   if (held) clearTimeout(held)
+  observedTimers.delete(path)
   observedTimers.set(
     path,
     setTimeout(() => clearObserved(path), OBSERVED_IDLE_MS)
@@ -355,6 +381,8 @@ export function applyThreadRef(ref: ThreadRef) {
 
 export function applyThreadRemoved(path: string) {
   clearObserved(path)
+  setThreadRunning(path, false)
+  setThreadAttention(path, null)
   applyThreads(threadsStore.get().threads.filter((entry) => entry.path !== path))
 }
 
@@ -385,15 +413,57 @@ export function applyThreads(list: ThreadRef[]) {
 /** A native run started, finished, or failed, on any thread. */
 export function setThreadRunning(path: string, active: boolean) {
   if (active) clearObserved(path)
-  const next = { ...threadsStore.get().running }
-  if (active) next[path] = true
+  const working = { ...threadsStore.get().working }
+  if (active) working[path] ??= { kind: "working", since: Date.now() }
+  else delete working[path]
+  threadsStore.set({ working })
+}
+
+export function setThreadWorkDetail(path: string, detail?: string) {
+  const current = threadsStore.get().working[path]
+  if (!current || current.detail === detail) return
+  threadsStore.set({
+    working: {
+      ...threadsStore.get().working,
+      [path]: { ...current, detail },
+    },
+  })
+}
+
+export function setThreadAttention(
+  path: string,
+  attention: AttentionByPath[string] | null
+) {
+  const next = { ...threadsStore.get().attention }
+  if (attention) next[path] = attention
   else delete next[path]
-  threadsStore.set({ running: next })
+  threadsStore.set({ attention: next })
+}
+
+function markThreadReviewed(path: string) {
+  const current = threadsStore.get().attention[path]
+  if (current?.kind !== "review" || !current.unread) return
+  setThreadAttention(path, { ...current, unread: false })
 }
 
 export function applyThreadRun(run: ThreadRunState) {
-  const { viewing } = threadsStore.get()
+  const { viewing, queuedReplies } = threadsStore.get()
+  const queue = queuedReplies[run.path]
   setThreadRunning(run.path, run.status === "running")
+  if (run.status === "running") setThreadAttention(run.path, null)
+  else if (run.status === "done" && !queue)
+    setThreadAttention(run.path, {
+      kind: "review",
+      at: Date.now(),
+      unread: viewing?.ref.path !== run.path,
+    })
+  else if (run.status === "failed")
+    setThreadAttention(run.path, {
+      kind: "failed",
+      at: Date.now(),
+      detail: run.error,
+    })
+  else setThreadAttention(run.path, null)
   if (viewing && viewing.ref.path === run.path) threadsStore.set({ run })
   if (run.status === "failed" && run.error) toast.error(run.error)
   // A finished run releases its queue: the next waiting prompt goes out
@@ -401,15 +471,24 @@ export function applyThreadRun(run: ThreadRunState) {
   // typed. Interrupt works the same way — abort stops the run, and the
   // queued message rides the release.
   if (run.status !== "running") {
-    const queue = threadsStore.get().queuedReplies[run.path]
     const prompt = queue?.prompts[0]
-    if (queue && prompt !== undefined) {
-      const rest = queue.prompts.slice(1)
-      const all = { ...threadsStore.get().queuedReplies }
-      if (rest.length > 0) all[run.path] = { ...queue, prompts: rest }
-      else delete all[run.path]
-      threadsStore.set({ queuedReplies: all })
-      setTimeout(() => void threads.reply(queue.ref, prompt), 50)
+    if (queue && prompt !== undefined && !releasingReplies.has(run.path)) {
+      releasingReplies.add(run.path)
+      setTimeout(() => {
+        void threads
+          .reply(queue.ref, prompt)
+          .then((sent) => {
+            if (!sent) return
+            const current = threadsStore.get().queuedReplies[run.path]
+            if (current?.prompts[0] !== prompt) return
+            const rest = current.prompts.slice(1)
+            const all = { ...threadsStore.get().queuedReplies }
+            if (rest.length > 0) all[run.path] = { ...current, prompts: rest }
+            else delete all[run.path]
+            threadsStore.set({ queuedReplies: all })
+          })
+          .finally(() => releasingReplies.delete(run.path))
+      }, 50)
     }
   }
 }
@@ -528,6 +607,7 @@ export const threads = {
   /** Open a foreign session read-only, translated to the canonical shape. */
   async view(ref: ThreadRef) {
     if (!hasBridge()) return
+    markThreadReviewed(ref.path)
     const cached = threadCache.get(ref.path)
     if (cached) {
       // Instant: the last read paints now, the fresh one lands underneath.
@@ -616,9 +696,13 @@ export const threads = {
    */
   async reply(ref: ThreadRef, prompt: string): Promise<boolean> {
     if (!hasBridge()) return false
-    const activity = threadActivity(ref)
-    if (activity !== "idle" && activity !== "mako") {
-      const external = activity.startsWith("external-")
+    const status = threadStatus(ref)
+    if (
+      status.kind === "observed" ||
+      status.kind === "external-open" ||
+      status.kind === "external-active"
+    ) {
+      const external = status.kind.startsWith("external-")
       toast(external ? "Open in another app" : "Live activity detected", {
         description: external
           ? "That client owns this native session. Choose another agent to continue in a new thread."
@@ -628,7 +712,7 @@ export const threads = {
     }
     // A busy thread queues instead of dropping: the message paints now (the
     // echo below) and goes out the moment the current run ends.
-    if (threadsStore.get().running[ref.path]) {
+    if (threadsStore.get().working[ref.path]) {
       const all = { ...threadsStore.get().queuedReplies }
       const queue = all[ref.path] ?? { ref, prompts: [] }
       all[ref.path] = { ref, prompts: [...queue.prompts, prompt] }
@@ -788,7 +872,7 @@ export const threads = {
   async interruptAndSend(ref: ThreadRef, prompt: string): Promise<boolean> {
     if (!hasBridge()) return false
     const ok = await this.reply(ref, prompt)
-    if (ok && threadsStore.get().running[ref.path]) {
+    if (ok && threadsStore.get().working[ref.path]) {
       await getMako()
         .abortThreadRun(ref.path)
         .catch(() => {})

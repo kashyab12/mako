@@ -380,6 +380,26 @@
     transform: scale(0.97);
   }
 
+  .thread-jump-scope[data-jump-hints] [data-thread-row][data-jump-index] {
+    position: relative;
+  }
+
+  .thread-jump-scope[data-jump-hints] [data-thread-row][data-jump-index]::after {
+    content: attr(data-jump-index);
+    position: absolute;
+    right: 5px;
+    display: grid;
+    width: 16px;
+    height: 16px;
+    place-items: center;
+    border-radius: 4px;
+    background: var(--raised);
+    color: var(--foreground);
+    box-shadow: inset 0 0 0 0.5px var(--hairline);
+    font-size: var(--text-label);
+    font-weight: 640;
+  }
+
   /*
    * Depth. The chrome (--shell) carries no shadow, ever; content floats on
    * it as cards. Elevation is mostly the baked 0.5px hairline ring — the

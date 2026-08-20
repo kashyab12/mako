@@ -76,7 +76,7 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
       .catch(() => {})
   }, [])
 
-  const choices = ORDER.filter((harness) => profiles[harness]?.available)
+  const choices = ORDER
 
   const modelFor = (harness: string): string | undefined => {
     const profile = profiles[harness]
@@ -88,6 +88,13 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
   }
 
   const pick = (harness: string) => {
+    const profile = profiles[harness]
+    if (!profile) return
+    if (!profile.available) {
+      window.dispatchEvent(new CustomEvent("mako:settings", { detail: "agents" }))
+      onDone()
+      return
+    }
     setComposerHarness(harness)
     onDone()
   }
@@ -95,16 +102,24 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
   return (
     <div className="max-h-[21rem] overflow-y-auto overscroll-contain">
       {choices.map((harness) => {
-        const active = selected === harness
+        const profile = profiles[harness]
+        const available = profile?.available === true
+        const active = available && selected === harness
         const model = modelFor(harness)
+        const status = profile
+          ? available
+            ? model
+            : profile.error || "Set up in Agents"
+          : "Checking…"
         return (
           <button
             key={harness}
             type="button"
+            disabled={!profile}
             onClick={() => pick(harness)}
             className={cn(
-              "group flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors duration-100",
-              active ? "bg-fill-selected" : "hover:bg-fill-hover"
+              "group flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors duration-100 disabled:opacity-50",
+              active ? "bg-fill-selected" : "hover:not-disabled:bg-fill-hover"
             )}
           >
             <span
@@ -125,11 +140,18 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
               >
                 {harnessLabel(harness)}
               </span>
-              <span className="mt-px block truncate font-mono text-label text-faint">
-                {model ?? ""}
+              <span
+                title={status}
+                className="mt-px block truncate font-mono text-label text-faint"
+              >
+                {status}
               </span>
             </span>
-            {active ? <CheckIcon className="size-3.5 shrink-0 text-foreground" /> : null}
+            {active ? (
+              <CheckIcon className="size-3.5 shrink-0 text-foreground" />
+            ) : profile && !available ? (
+              <span className="shrink-0 text-label text-faint">Set up</span>
+            ) : null}
           </button>
         )
       })}
