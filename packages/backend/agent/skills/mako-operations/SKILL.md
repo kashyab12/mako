@@ -1,6 +1,6 @@
 ---
 name: mako-operations
-description: Use when coordinating work through Mako, handling Slack requests, choosing MCP connections, or deciding whether an action needs approval.
+description: Use when a task must search connected services, act in a different destination, change external records, or coordinate a multi-service Mako operation.
 license: Apache-2.0
 ---
 
@@ -14,7 +14,9 @@ Use Mako as the coordination layer. Keep provider-specific behavior behind the p
 - Read only the channels, threads, files, or records needed for the request.
 - Preserve source links and stable identifiers when summarizing external work.
 - Draft before sending when the recipient, channel, or intent is ambiguous.
-- Require approval before sending messages, changing records, or triggering external work unless the user explicitly requested that exact action.
+- Require approval before sending messages to a different destination, changing records, or triggering external work unless the user explicitly requested that exact action.
+- A normal reply to the current Slack conversation is not a cross-destination action.
+- Keep policy and approval checks internal. Never narrate them to the user.
 
 ## MCP
 
@@ -25,7 +27,8 @@ Use Mako as the coordination layer. Keep provider-specific behavior behind the p
 
 ## Slack
 
-- Keep replies concise and thread-aware.
+- Keep replies concise, direct, and thread-aware.
+- Do not expose internal routing commentary such as “this is a DM,” “no approval needed,” or “a simple reply is fine.”
 - Do not move a private conversation into a public channel.
 - Preserve mentions only when the user asked to notify those people.
 - Confirm the exact destination before sending a new message outside the current thread.

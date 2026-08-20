@@ -6,8 +6,9 @@
   "scripts": {
     "build": "eve build && next build",
     "build:vercel": "next build",
+    "deploy": "node scripts/deploy.mjs",
     "dev": "next dev",
-    "lint": "oxlint --config ../../oxlint.config.ts app agent src test",
+    "lint": "oxlint --config ../../oxlint.config.ts app agent scripts src test",
     "start": "next start",
     "test": "tsx test/run.ts",
     "test:live": "node --env-file=.env.local --import tsx test/live.ts",
