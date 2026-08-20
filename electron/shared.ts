@@ -158,13 +158,27 @@ export interface AcpPromptAttachment {
   path?: string
 }
 
+export interface AcpInputQuestion {
+  id: string
+  header: string
+  question: string
+  isSecret: boolean
+  allowOther: boolean
+  options: Array<{ label: string; description: string }>
+}
+
 export interface AcpPermissionRequest {
   id: string
   sessionId: string
   title: string
   kind?: string
   options: Array<{ optionId: string; name: string; kind?: string }>
+  questions?: AcpInputQuestion[]
 }
+
+export type AcpPermissionResponse =
+  | { kind: "choice"; optionId: string | null }
+  | { kind: "answers"; answers: Record<string, string[]> }
 
 /**
  * The wire contract between the Electron host and the renderer.

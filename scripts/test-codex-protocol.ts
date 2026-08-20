@@ -1,6 +1,12 @@
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { StringDecoder } from "node:string_decoder"
+import {
+  handleServerRequest,
+  resolvePermission,
+  type PermissionCallbacks,
+  type PermissionContext,
+} from "../electron/codex-app-permissions.ts"
 import { boundedText, numberValue, type JsonObject } from "../electron/codex-app-json.ts"
 import {
   parseJsonRpcEnvelope,
@@ -11,7 +17,11 @@ import {
   consumeStdout,
   type ProtocolContext,
 } from "../electron/codex-app-protocol.ts"
-import type { AcpSessionState, AcpUpdate } from "../electron/shared.ts"
+import type {
+  AcpSessionState,
+  AcpUpdate,
+  HostEvent,
+} from "../electron/shared.ts"
 
 assert.deepEqual(parseJsonRpcEnvelope("not-json"), { kind: "invalid" })
 assert.deepEqual(parseJsonRpcEnvelope("[]"), { kind: "ignored" })
@@ -33,6 +43,57 @@ assert.deepEqual(
 assert.equal(numberValue(Number.NaN), undefined)
 assert.equal(boundedText("short", 20), "short")
 assert.ok(boundedText("x".repeat(100), 64).includes("output truncated"))
+
+const permissionContext: PermissionContext = {
+  id: "permission-test",
+  serverRequests: new Map(),
+}
+const permissionEvents: HostEvent[] = []
+const permissionResults: unknown[] = []
+const permissionErrors: string[] = []
+const permissionCallbacks = {
+  emit: (_context, event) => permissionEvents.push(event),
+  sendResult: (_context, _id, result) => permissionResults.push(result),
+  sendError: (_context, _id, _code, message) => permissionErrors.push(message),
+} satisfies PermissionCallbacks<PermissionContext>
+handleServerRequest(
+  permissionContext,
+  permissionCallbacks,
+  "question-1",
+  "item/tool/requestUserInput",
+  {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    itemId: "item-1",
+    isBlocking: true,
+    questions: [
+      {
+        id: "environment",
+        header: "Environment",
+        question: "Which environment?",
+        isOther: true,
+        isSecret: false,
+        options: [
+          { label: "Staging", description: "Use the staging deployment" },
+        ],
+      },
+    ],
+  }
+)
+const permissionEvent = permissionEvents.at(-1)
+assert.equal(permissionEvent?.type, "acp-permission")
+if (permissionEvent?.type === "acp-permission") {
+  assert.equal(permissionEvent.request.questions?.[0]?.allowOther, true)
+  assert.equal(permissionEvent.request.questions?.[0]?.options[0]?.label, "Staging")
+}
+resolvePermission(permissionContext, permissionCallbacks, "question-1", {
+  kind: "answers",
+  answers: { environment: ["Production"] },
+})
+assert.deepEqual(permissionResults, [
+  { answers: { environment: { answers: ["Production"] } } },
+])
+assert.deepEqual(permissionErrors, [])
 
 const parsedThread = parseThreadResponse({
   thread: {

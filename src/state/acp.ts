@@ -93,7 +93,10 @@ export function applyAcpPermission(request: AcpPermissionRequest) {
     // Nobody is looking at this session; answering nothing cancels the tool,
     // which is the safe default for an unwatched agent.
     if (hasBridge())
-      void getMako().acpPermission(request.sessionId, request.id, null)
+      void getMako().acpPermission(request.sessionId, request.id, {
+        kind: "choice",
+        optionId: null,
+      })
     return
   }
   acpStore.set({ permission: request })
@@ -288,10 +291,19 @@ export const acp = {
     acpStore.set({ queued: null })
   },
 
-  answerPermission(optionId: string | null) {
+  answerPermission(
+    optionId: string | null,
+    answers?: Record<string, string[]>
+  ) {
     const { session, permission } = acpStore.get()
     if (!session || !permission || !hasBridge()) return
-    void getMako().acpPermission(session.id, permission.id, optionId)
+    void getMako().acpPermission(
+      session.id,
+      permission.id,
+      answers
+        ? { kind: "answers", answers }
+        : { kind: "choice", optionId }
+    )
     acpStore.set({ permission: null })
   },
 

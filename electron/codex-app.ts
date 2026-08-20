@@ -32,6 +32,7 @@ import type {
   Tuning,
 } from "./codex-app-types.js"
 import type {
+  AcpPermissionResponse,
   AcpPromptAttachment,
   AcpSessionState,
   AcpUpdate,
@@ -231,11 +232,11 @@ export async function codexAppPrompt(
 export function codexAppPermission(
   id: string,
   requestId: string,
-  optionId: string | null
+  response: AcpPermissionResponse
 ): void {
   const live = sessions.get(id)
   if (!live) return
-  resolvePermission(live, permissionCallbacks, requestId, optionId)
+  resolvePermission(live, permissionCallbacks, requestId, response)
 }
 
 export async function codexAppCancel(id: string): Promise<void> {

@@ -25,6 +25,7 @@ import type {
   SkillRegistrySnapshot,
   SkillSyncPreview,
   SkillSyncTarget,
+  AcpPermissionResponse,
   AcpPromptAttachment,
   AcpSessionState,
   Thread,
@@ -168,8 +169,11 @@ const api = {
     invokeTrustedHost<AcpSessionState>("mako:acp-start", harness, cwd, options),
   acpPrompt: (id: string, text: string, attachments?: AcpPromptAttachment[]) =>
     invokeTrustedHost<void>("mako:acp-prompt", id, text, attachments),
-  acpPermission: (id: string, requestId: string, optionId: string | null) =>
-    invokeTrustedHost<void>("mako:acp-permission", id, requestId, optionId),
+  acpPermission: (
+    id: string,
+    requestId: string,
+    response: AcpPermissionResponse
+  ) => invokeTrustedHost<void>("mako:acp-permission", id, requestId, response),
   acpSetMode: (id: string, modeId: string) =>
     invokeTrustedHost<void>("mako:acp-mode", id, modeId),
   acpCancel: (id: string) => invokeTrustedHost<void>("mako:acp-cancel", id),

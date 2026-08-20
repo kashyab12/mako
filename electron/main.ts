@@ -137,6 +137,7 @@ import {
   previewSkillSync,
 } from "./skill-sync.js"
 import type {
+  AcpPermissionResponse,
   AcpPromptAttachment,
   BootPayload,
   HostEvent,
@@ -883,10 +884,14 @@ function bindIpc() {
   )
   handle(
     "mako:acp-permission",
-    (_e, id: string, requestId: string, optionId: string | null) =>
+    (_e, id: string, requestId: string, response: AcpPermissionResponse) =>
       id.startsWith("codex-app-")
-        ? codexAppPermission(id, requestId, optionId)
-        : acpRespondPermission(id, requestId, optionId)
+        ? codexAppPermission(id, requestId, response)
+        : acpRespondPermission(
+            id,
+            requestId,
+            response.kind === "choice" ? response.optionId : null
+          )
   )
   handle("mako:acp-mode", (_e, id: string, modeId: string) =>
     acpSetMode(id, modeId)

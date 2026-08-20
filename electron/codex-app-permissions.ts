@@ -7,7 +7,11 @@ import {
   type JsonRpcId,
   type JsonValue,
 } from "./codex-app-json.js"
-import type { AcpPermissionRequest, HostEvent } from "./shared.js"
+import type {
+  AcpPermissionRequest,
+  AcpPermissionResponse,
+  HostEvent,
+} from "./shared.js"
 
 type CommandDecision =
   | "accept"
@@ -103,6 +107,7 @@ export type PendingServerRequest<
   turnId: string | null
   choices: Map<string, ServerRequestResults[M]>
   cancel: ServerRequestResults[M]
+  questionIds?: Set<string>
 }
 
 export interface PermissionContext {
@@ -168,13 +173,30 @@ export function resolvePermission<C extends PermissionContext>(
   context: C,
   callbacks: PermissionCallbacks<C>,
   requestId: string,
-  optionId: string | null
+  response: AcpPermissionResponse
 ): void {
   const pending = context.serverRequests.get(requestId)
   if (!pending) return
   context.serverRequests.delete(requestId)
+  if (
+    pending.method === "item/tool/requestUserInput" &&
+    pending.questionIds &&
+    response.kind === "answers"
+  ) {
+    const answers = validatedAnswers(response.answers, pending.questionIds)
+    if (!answers) {
+      callbacks.sendError(context, pending.rpcId, -32602, "Invalid answers")
+      return
+    }
+    callbacks.sendResult(context, pending.rpcId, { answers })
+    return
+  }
   const result =
-    optionId === null ? pending.cancel : pending.choices.get(optionId)
+    response.kind === "choice"
+      ? response.optionId === null
+        ? pending.cancel
+        : pending.choices.get(response.optionId)
+      : undefined
   if (result === undefined) {
     callbacks.sendError(
       context,
@@ -185,6 +207,24 @@ export function resolvePermission<C extends PermissionContext>(
     return
   }
   callbacks.sendResult(context, pending.rpcId, result)
+}
+
+function validatedAnswers(
+  candidate: Record<string, string[]>,
+  questionIds: Set<string>
+): Record<string, { answers: string[] }> | null {
+  const answers: Record<string, { answers: string[] }> = {}
+  for (const [id, values] of Object.entries(candidate)) {
+    if (
+      !questionIds.has(id) ||
+      !Array.isArray(values) ||
+      values.length === 0 ||
+      values.some((value) => value.length > 10_000)
+    )
+      return null
+    answers[id] = { answers: values }
+  }
+  return Object.keys(answers).length === questionIds.size ? answers : null
 }
 
 export function resolveServerRequest(
@@ -307,21 +347,9 @@ function requestUserInput<C extends PermissionContext>(
   id: JsonRpcId,
   params: ServerRequestParams["item/tool/requestUserInput"]
 ): void {
-  const combinations = answerCombinations(params.questions)
   const choices: Array<
     PermissionChoice<ServerRequestResults["item/tool/requestUserInput"]>
-  > = combinations.map((combination, index) => ({
-    optionId: `answer:${index}`,
-    name: combination.name,
-    kind: "allow_once",
-    result: { answers: combination.answers },
-  }))
-  choices.push({
-    optionId: "cancel",
-    name: "Cancel",
-    kind: "reject_once",
-    result: { answers: {} },
-  })
+  > = []
   const title =
     params.questions.map((question) => question.question).join(" / ") ||
     "Codex needs input"
@@ -334,7 +362,8 @@ function requestUserInput<C extends PermissionContext>(
     title,
     "other",
     choices,
-    { answers: {} }
+    { answers: {} },
+    params.questions
   )
 }
 
@@ -426,7 +455,8 @@ function registerServerRequest<
   title: string,
   kind: string,
   choices: Array<PermissionChoice<ServerRequestResults[M]>>,
-  cancel: ServerRequestResults[M]
+  cancel: ServerRequestResults[M],
+  questions?: UserInputQuestion[]
 ): void {
   const requestId = String(rpcId)
   if (context.serverRequests.has(requestId)) {
@@ -439,6 +469,9 @@ function registerServerRequest<
     turnId,
     choices: new Map(choices.map((choice) => [choice.optionId, choice.result])),
     cancel,
+    questionIds: questions
+      ? new Set(questions.map((question) => question.id))
+      : undefined,
   }
   context.serverRequests.set(requestId, pending)
   const request: AcpPermissionRequest = {
@@ -451,40 +484,16 @@ function registerServerRequest<
       name,
       kind: optionKind,
     })),
+    questions: questions?.map((question) => ({
+      id: question.id,
+      header: question.header,
+      question: question.question,
+      isSecret: question.isSecret,
+      allowOther: question.isOther,
+      options: question.options ?? [],
+    })),
   }
   callbacks.emit(context, { type: "acp-permission", request })
-}
-
-function answerCombinations(
-  questions: ServerRequestParams["item/tool/requestUserInput"]["questions"]
-): Array<{ name: string; answers: Record<string, { answers: string[] }> }> {
-  let combinations: Array<{
-    labels: string[]
-    answers: Record<string, { answers: string[] }>
-  }> = [{ labels: [], answers: {} }]
-  for (const question of questions) {
-    const options = question.options?.slice(0, 20) ?? []
-    if (!options.length) return []
-    const next: typeof combinations = []
-    for (const combination of combinations) {
-      for (const option of options) {
-        next.push({
-          labels: [...combination.labels, option.label],
-          answers: {
-            ...combination.answers,
-            [question.id]: { answers: [option.label] },
-          },
-        })
-        if (next.length >= 100) break
-      }
-      if (next.length >= 100) break
-    }
-    combinations = next
-  }
-  return combinations.map(({ labels, answers }) => ({
-    name: labels.join(" / "),
-    answers,
-  }))
 }
 
 function decisionName(decision: CommandDecision): string {
