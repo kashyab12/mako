@@ -78,6 +78,8 @@ export interface Prefs {
   conversionMode: "native" | "transcript"
   /** Your names for threads, by path — native stores don't take renames. */
   titleOverrides: PreferenceStringMap
+  /** Your names for persistent terminal sessions, by daemon id. */
+  terminalTitles: PreferenceStringMap
   /** Overrides the host's default commit-drafting prompt. */
   commitPrompt?: string
 }
@@ -113,6 +115,7 @@ const defaults: Prefs = {
   keybindings: {},
   terminalOptionAsMeta: "auto",
   titleOverrides: {},
+  terminalTitles: {},
   conversionMode: "transcript",
 }
 
@@ -308,6 +311,7 @@ function parsePrefs(value: JsonValue): Prefs | null {
       defaults.conversionMode
     ),
     titleOverrides: readStringRecord(value.titleOverrides),
+    terminalTitles: readStringRecord(value.terminalTitles),
     commitPrompt: readOptionalString(value.commitPrompt),
   }
 

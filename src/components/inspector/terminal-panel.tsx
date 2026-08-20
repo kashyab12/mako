@@ -1,9 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
+import { SearchAddon } from "@xterm/addon-search"
 import { WebLinksAddon } from "@xterm/addon-web-links"
 import "@xterm/xterm/css/xterm.css"
-import { PlusIcon, RefreshCwIcon, TerminalSquareIcon, XIcon } from "lucide-react"
+import {
+  ChevronDownIcon,
+  ChevronUpIcon,
+  PlusIcon,
+  QuoteIcon,
+  RefreshCwIcon,
+  SearchIcon,
+  TerminalSquareIcon,
+  XIcon,
+} from "lucide-react"
 import { Blank } from "@/components/ui/kit"
 import { cn } from "@/lib/utils"
 import { getMako } from "@/lib/bridge"
@@ -13,7 +23,7 @@ import {
   createTerminalWriter,
   type TerminalWriter,
 } from "@/lib/terminal-writer"
-import { usePrefs } from "@/state/prefs"
+import { prefsStore, setPref, usePrefs } from "@/state/prefs"
 import { useSession } from "@/state/session"
 import { createHook } from "@/state/store"
 import { viewer } from "@/state/viewer"
@@ -34,6 +44,7 @@ export function TerminalPanel() {
   const sessions = useTerminal((state) => state.sessions)
   const activeId = useTerminal((state) => state.activeId)
   const fault = useTerminal((state) => state.fault)
+  const titles = usePrefs((prefs) => prefs.terminalTitles)
   const active = sessions.find((session) => session.id === activeId)
 
   useEffect(() => terminalActions.mount(), [])
@@ -68,6 +79,7 @@ export function TerminalPanel() {
               <SessionTab
                 key={session.id}
                 session={session}
+                title={titles[session.id] ?? session.title}
                 active={session.id === activeId}
                 onSelect={() => terminalActions.activate(session.id)}
                 onClose={() => void terminalActions.kill(session.id)}
@@ -75,6 +87,17 @@ export function TerminalPanel() {
             ))}
           </div>
         </div>
+        {active ? (
+          <button
+            type="button"
+            title="Search terminal"
+            aria-label="Search terminal"
+            onClick={() => window.dispatchEvent(new CustomEvent("mako:terminal-search"))}
+            className="pressable flex size-7 shrink-0 items-center justify-center rounded-md text-faint hover:bg-fill-hover hover:text-foreground"
+          >
+            <SearchIcon className="size-3.5" />
+          </button>
+        ) : null}
         <button
           type="button"
           title="New terminal"
@@ -120,15 +143,27 @@ export function TerminalPanel() {
 
 function SessionTab({
   session,
+  title,
   active,
   onSelect,
   onClose,
 }: {
   session: TerminalSession
+  title: string
   active: boolean
   onSelect: () => void
   onClose: () => void
 }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(title)
+  const save = () => {
+    const next = draft.trim()
+    const titles = { ...prefsStore.get().terminalTitles }
+    if (next && next !== session.title) titles[session.id] = next
+    else delete titles[session.id]
+    setPref("terminalTitles", titles)
+    setEditing(false)
+  }
   return (
     <div
       className={cn(
@@ -136,26 +171,46 @@ function SessionTab({
         active ? "bg-fill-selected text-foreground" : "text-faint hover:text-muted-foreground"
       )}
     >
-      <button
-        type="button"
-        onClick={onSelect}
-        className="flex h-full min-w-0 flex-1 items-center gap-1.5 pl-2"
-      >
-        <span
-          className={cn(
-            "size-1.5 shrink-0 rounded-full",
-            session.status === "running"
-              ? "bg-positive"
-              : session.status === "interrupted"
-                ? "bg-caution"
-                : "bg-faint"
-          )}
+      <span
+        className={cn(
+          "ml-2 size-1.5 shrink-0 rounded-full",
+          session.status === "running"
+            ? "bg-positive"
+            : session.status === "interrupted"
+              ? "bg-caution"
+              : "bg-faint"
+        )}
+      />
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            event.stopPropagation()
+            if (event.key === "Enter") save()
+            if (event.key === "Escape") setEditing(false)
+          }}
+          onBlur={save}
+          className="mx-1 h-5 min-w-20 flex-1 rounded bg-background/40 px-1 text-label text-foreground focus:outline-none"
         />
-        <span className="min-w-0 flex-1 truncate text-left">{session.title}</span>
-      </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onSelect}
+          onDoubleClick={(event) => {
+            event.stopPropagation()
+            setDraft(title)
+            setEditing(true)
+          }}
+          className="h-full min-w-0 flex-1 truncate text-left"
+        >
+          {title}
+        </button>
+      )}
       <button
         type="button"
-        aria-label={`Close ${session.title}`}
+        aria-label={`Close ${title}`}
         onClick={onClose}
         className="pressable mr-1 flex size-4 shrink-0 items-center justify-center rounded opacity-0 hover:bg-background/40 group-hover:opacity-100 focus:opacity-100"
       >
@@ -172,9 +227,14 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
   const terminalRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const writerRef = useRef<TerminalWriter | null>(null)
+  const searchAddonRef = useRef<SearchAddon | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const resizeFrame = useRef<number | undefined>(undefined)
   const receivedSequence = useRef(0)
   const [rendererAttempt, setRendererAttempt] = useState(0)
+  const [searching, setSearching] = useState(false)
+  const [query, setQuery] = useState("")
+  const [selection, setSelection] = useState("")
   const snapshot = useTerminal((state) =>
     state.activeId === session.id ? state.snapshot : undefined
   )
@@ -225,14 +285,13 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
       theme: terminalTheme(style),
     })
     const addon = new FitAddon()
+    const searchAddon = new SearchAddon()
     terminal.loadAddon(addon)
-    terminal.loadAddon(
-      new WebLinksAddon((_event, uri) => void openTerminalLink(sessionCwd, uri))
-    )
+    terminal.loadAddon(searchAddon)
     terminal.loadAddon(
       new WebLinksAddon(
         (_event, uri) => void openTerminalLink(sessionCwd, uri),
-        { urlRegex: /\bfile:\/\/\/[^\s"'<>]+/g }
+        { urlRegex: /\b(?:https?:\/\/|file:\/\/\/)[^\s"'<>]+/g }
       )
     )
     terminal.registerLinkProvider(
@@ -248,6 +307,22 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
     terminal.open(host)
     terminalRef.current = terminal
     fitRef.current = addon
+    searchAddonRef.current = searchAddon
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (
+        !event.isComposing &&
+        event.type === "keydown" &&
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "f"
+      ) {
+        setSearching(true)
+        return false
+      }
+      return true
+    })
+    const selectionChange = terminal.onSelectionChange(() =>
+      setSelection(terminal.getSelection())
+    )
     const writer = createTerminalWriter({
       write: (data, done) => terminal.write(data, done),
       replace: (data, done) => {
@@ -276,10 +351,12 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
       removeClipboard()
       if (resizeFrame.current !== undefined) cancelAnimationFrame(resizeFrame.current)
       input.dispose()
+      selectionChange.dispose()
       writer.dispose()
       terminal.dispose()
       terminalRef.current = null
       fitRef.current = null
+      searchAddonRef.current = null
       writerRef.current = null
     }
   }, [fit, rendererAttempt, sessionCwd, sessionId])
@@ -348,9 +425,93 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
     [writeOutput]
   )
 
+  useEffect(() => {
+    const show = () => {
+      setSearching(true)
+      requestAnimationFrame(() => searchInputRef.current?.focus())
+    }
+    window.addEventListener("mako:terminal-search", show)
+    return () => window.removeEventListener("mako:terminal-search", show)
+  }, [])
+
   return (
     <div className="relative min-h-0 flex-1">
       <div ref={hostRef} className="h-full bg-surface p-2 font-mono" />
+      {searching ? (
+        <div className="overlay-panel absolute top-2 right-3 z-20 flex h-8 items-center gap-0.5 rounded-md p-1">
+          <SearchIcon className="mx-1 size-3.5 text-faint" />
+          <input
+            ref={searchInputRef}
+            autoFocus
+            value={query}
+            placeholder="Search terminal"
+            onChange={(event) => {
+              const next = event.target.value
+              setQuery(next)
+              if (next) searchAddonRef.current?.findNext(next, { incremental: true })
+              else searchAddonRef.current?.clearDecorations()
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault()
+                if (event.shiftKey) searchAddonRef.current?.findPrevious(query)
+                else searchAddonRef.current?.findNext(query)
+              }
+              if (event.key === "Escape") {
+                event.preventDefault()
+                setSearching(false)
+                searchAddonRef.current?.clearDecorations()
+                terminalRef.current?.focus()
+              }
+            }}
+            className="h-6 w-48 rounded px-1 text-ui text-foreground placeholder:text-faint focus:bg-raised focus:outline-none focus:ring-1 focus:ring-hairline"
+          />
+          <button
+            type="button"
+            aria-label="Previous result"
+            onClick={() => searchAddonRef.current?.findPrevious(query)}
+            className="pressable flex size-6 items-center justify-center rounded text-faint hover:bg-fill-hover hover:text-foreground"
+          >
+            <ChevronUpIcon className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label="Next result"
+            onClick={() => searchAddonRef.current?.findNext(query)}
+            className="pressable flex size-6 items-center justify-center rounded text-faint hover:bg-fill-hover hover:text-foreground"
+          >
+            <ChevronDownIcon className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label="Close terminal search"
+            onClick={() => {
+              setSearching(false)
+              searchAddonRef.current?.clearDecorations()
+              terminalRef.current?.focus()
+            }}
+            className="pressable flex size-6 items-center justify-center rounded text-faint hover:bg-fill-hover hover:text-foreground"
+          >
+            <XIcon className="size-3.5" />
+          </button>
+        </div>
+      ) : null}
+      {selection ? (
+        <button
+          type="button"
+          onClick={() =>
+            window.dispatchEvent(
+              new CustomEvent("mako:compose", {
+                detail: `\n\`\`\`text\n${selection}\n\`\`\`\n`,
+              })
+            )
+          }
+          className="pressable overlay-panel absolute right-3 bottom-3 z-10 flex h-7 items-center gap-1.5 rounded-md px-2 text-label text-muted-foreground hover:text-foreground"
+        >
+          <QuoteIcon className="size-3" />
+          Reference selection
+        </button>
+      ) : null}
       {session.status !== "running" ? (
         <div className="absolute inset-x-2 bottom-2 flex items-center justify-between rounded-md border border-hairline bg-raised px-2.5 py-1.5 text-label text-muted-foreground">
           <span>
