@@ -3,11 +3,23 @@ import { Exchange } from "@/components/transcript/exchange"
 import { NAVIGATOR_WIDTH, TurnNavigator } from "@/components/transcript/turn-navigator"
 import { harnessLabel } from "@/components/rail/harness-meta"
 import { HarnessIcon } from "@/components/ui/provider-icon"
-import { threads, useThreads } from "@/state/threads"
+import { Action, IconAction } from "@/components/ui/kit"
+import {
+  setComposerHarness,
+  threadActivity,
+  threads,
+  useThreads,
+} from "@/state/threads"
 import type { Exchange as ExchangeData } from "@/lib/exchanges"
 import type { Thread } from "@/lib/types"
 import { threadToMessages } from "@/lib/foreign-thread"
-import { Loader2Icon } from "lucide-react"
+import {
+  ArrowRightLeftIcon,
+  Loader2Icon,
+  LockKeyholeIcon,
+  RadioIcon,
+  XIcon,
+} from "lucide-react"
 
 /**
  * A conversation from another harness, opened as a conversation.
@@ -17,7 +29,7 @@ import { Loader2Icon } from "lucide-react"
  * tool rows every native conversation uses, because a conversation is a
  * conversation and only the mark in the corner should say where it
  * happened. The one composer below routes to this session's own harness
- * while it is open; the header holds Live and the Move menu. X or Escape
+ * while it is open; the header holds ownership and agent controls. X or Escape
  * gives the native chat back.
  */
 
@@ -158,6 +170,7 @@ export function ThreadViewer() {
   useEffect(() => {
     if (!thread) return
     const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return
       if (event.key === "Escape") {
         event.preventDefault()
         threads.closeViewer()
@@ -178,7 +191,88 @@ export function ThreadViewer() {
 
   return (
     <div className="animate-enter flex min-h-0 flex-1 flex-col bg-surface">
+      <SessionBar />
       <Conversation key={thread.ref.path} />
+    </div>
+  )
+}
+
+function SessionBar() {
+  const thread = useThreads((state) => state.viewing)
+  const activity = useThreads((state) =>
+    thread ? threadActivity(thread.ref, state) : "idle"
+  )
+  if (!thread) return null
+  const locked =
+    activity === "external-open" || activity === "external-active"
+  const status =
+    activity === "external-active"
+      ? "Live in another app"
+      : activity === "external-open"
+        ? "Open in another app"
+        : activity === "observed"
+          ? "Live activity"
+          : thread.ref.archived
+            ? "Archived history"
+            : "Ready to resume"
+  return (
+    <div className="flex h-11 shrink-0 items-center gap-2 border-b border-hairline px-3.5">
+      <HarnessIcon harness={thread.ref.harness} className="size-3.5" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-ui font-medium text-foreground/90">
+          {thread.ref.title ?? "Untitled session"}
+        </p>
+        <p
+          title={
+            locked
+              ? "This session is owned by another client. Its approvals stay there while Mako follows native updates."
+              : undefined
+          }
+          className="flex items-center gap-1 truncate text-label text-faint"
+        >
+          {locked ? (
+            <LockKeyholeIcon className="size-3 shrink-0" />
+          ) : activity === "observed" ? (
+            <RadioIcon className="size-3 shrink-0" />
+          ) : null}
+          {status}
+        </p>
+      </div>
+      <Action
+        size="xs"
+        disabled={locked}
+        aria-label={`Continue with ${harnessLabel(thread.ref.harness)}`}
+        title={
+          locked
+            ? "This native session is owned by another app"
+            : `Resume with ${harnessLabel(thread.ref.harness)}`
+        }
+        onClick={() => {
+          setComposerHarness(thread.ref.harness)
+          window.dispatchEvent(new CustomEvent("mako:focus-composer"))
+        }}
+      >
+        Continue here
+      </Action>
+      <Action
+        size="xs"
+        aria-label="Change the agent for the next message"
+        title="Continue in a new session; this one stays unchanged"
+        onClick={() =>
+          window.dispatchEvent(new CustomEvent("mako:pick-agent"))
+        }
+      >
+        <ArrowRightLeftIcon />
+        Change agent…
+      </Action>
+      <IconAction
+        label="Close session"
+        side="bottom"
+        size="xs"
+        onClick={() => threads.closeViewer()}
+      >
+        <XIcon />
+      </IconAction>
     </div>
   )
 }

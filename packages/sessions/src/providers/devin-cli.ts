@@ -16,7 +16,7 @@
  * exist as a file.
  */
 
-import { stat } from "node:fs/promises"
+import { readFile, readdir, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import type { DatabaseSync, SQLOutputValue } from "node:sqlite"
@@ -140,9 +140,14 @@ export class DevinCliProvider implements SessionProvider {
     return join(this.dir, "sessions.db")
   }
 
+  private lockPath(): string {
+    return join(this.dir, "session_locks")
+  }
+
   async discover(): Promise<NativeFile[]> {
     const info = await stat(this.dbPath()).catch(() => null)
     if (!info) return []
+    const locked = await lockedSessionIds(this.lockPath())
     const db = await openDatabase(this.dbPath())
     if (!db) return []
     try {
@@ -158,10 +163,14 @@ export class DevinCliProvider implements SessionProvider {
         const row = parseDiscoveryRow(fields)
         if (!row) continue
         const at = isoOf(row.activity)
+        const isLocked = locked.has(row.id)
+        // Synthetic sessions share one database; this fractional revision lets
+        // lock-only changes invalidate one cached ref without moving its cursor.
         files.push({
           path: `${this.dbPath()}#${row.id}`,
           bytes: row.top,
-          mtimeMs: at ? Date.parse(at) : info.mtimeMs,
+          mtimeMs: (at ? Date.parse(at) : info.mtimeMs) + (isLocked ? 0.5 : 0),
+          locked: isLocked,
         })
       }
       return files
@@ -196,6 +205,7 @@ export class DevinCliProvider implements SessionProvider {
         startedAt: isoOf(row.createdAt),
         updatedAt: isoOf(row.lastActivityAt),
         bytes: file.bytes,
+        locked: file.locked,
       }
     } catch {
       return null
@@ -209,7 +219,13 @@ export class DevinCliProvider implements SessionProvider {
     if (!id) return null
     const info = await stat(this.dbPath()).catch(() => null)
     if (!info) return null
-    const ref = await this.peek({ path, bytes: 0, mtimeMs: info.mtimeMs })
+    const locked = (await lockedSessionIds(this.lockPath())).has(id)
+    const ref = await this.peek({
+      path,
+      bytes: 0,
+      mtimeMs: info.mtimeMs,
+      locked,
+    })
     if (!ref) return null
     const db = await openDatabase(this.dbPath())
     if (!db) return null
@@ -301,6 +317,26 @@ export class DevinCliProvider implements SessionProvider {
       },
     }
   }
+}
+
+async function lockedSessionIds(path: string): Promise<Set<string>> {
+  const files = await readdir(path).catch((): string[] => [])
+  const locked = await Promise.all(
+    files
+      .filter((file) => file.endsWith(".lock"))
+      .map(async (file) => {
+        const raw = await readFile(join(path, file), "utf8").catch(() => "")
+        const pid = Number(raw.trim())
+        if (!Number.isInteger(pid) || pid <= 0) return null
+        try {
+          process.kill(pid, 0)
+          return file.slice(0, -5)
+        } catch {
+          return null
+        }
+      })
+  )
+  return new Set(locked.filter((id): id is string => id !== null))
 }
 
 function translator(): MessageTranslator {

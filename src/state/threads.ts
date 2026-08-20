@@ -120,6 +120,13 @@ interface ThreadsState {
   queuedReplies: QueuedRepliesByPath
 }
 
+export type ThreadActivity =
+  | "idle"
+  | "mako"
+  | "observed"
+  | "external-open"
+  | "external-active"
+
 export const threadsStore = createStore<ThreadsState>({
   threads: [],
   loaded: false,
@@ -137,6 +144,16 @@ export const threadsStore = createStore<ThreadsState>({
   queuedReplies: {},
 })
 export const useThreads = createHook(threadsStore)
+
+export function threadActivity(
+  ref: ThreadRef,
+  state: ThreadsState = threadsStore.get()
+): ThreadActivity {
+  if (state.running[ref.path]) return "mako"
+  if (ref.locked)
+    return state.observed[ref.path] ? "external-active" : "external-open"
+  return state.observed[ref.path] ? "observed" : "idle"
+}
 
 /** The composer's agent, remembered across launches. */
 export function setComposerHarness(harness: string) {
@@ -328,6 +345,12 @@ export function applyThreadRef(ref: ThreadRef) {
     (right.updatedAt ?? "").localeCompare(left.updatedAt ?? "")
   )
   applyThreads(next)
+  const viewing = threadsStore.get().viewing
+  if (viewing?.ref.path === ref.path) {
+    const updated = { ...viewing, ref }
+    threadsStore.set({ viewing: updated })
+    rememberThread(updated)
+  }
 }
 
 export function applyThreadRemoved(path: string) {
@@ -593,10 +616,13 @@ export const threads = {
    */
   async reply(ref: ThreadRef, prompt: string): Promise<boolean> {
     if (!hasBridge()) return false
-    if (threadsStore.get().observed[ref.path]) {
-      toast("Active in another app", {
-        description:
-          "Wait for this turn to settle, or choose another agent to continue in a new thread.",
+    const activity = threadActivity(ref)
+    if (activity !== "idle" && activity !== "mako") {
+      const external = activity.startsWith("external-")
+      toast(external ? "Open in another app" : "Live activity detected", {
+        description: external
+          ? "That client owns this native session. Choose another agent to continue in a new thread."
+          : "Wait for this turn to settle, or choose another agent to continue in a new thread.",
       })
       return false
     }

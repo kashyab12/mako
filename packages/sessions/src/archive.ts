@@ -66,7 +66,12 @@ export class SessionArchive {
           try {
             const raw = await readFile(join(this.root, dir, "ref.json"), "utf8")
             const ref: ThreadRef = JSON.parse(raw)
-            if (ref?.path) this.index.set(ref.path, { ...ref, archived: true })
+            if (ref?.path)
+              this.index.set(ref.path, {
+                ...ref,
+                locked: false,
+                archived: true,
+              })
             const state = await readFile(join(this.root, dir, "state.json"), "utf8").catch(
               () => null
             )
@@ -185,7 +190,11 @@ export class SessionArchive {
     }
     await this.atomically(join(dir, "state.json"), JSON.stringify(state))
     this.states.set(ref.path, state)
-    this.index.set(ref.path, { ...thread.ref, archived: true })
+    this.index.set(ref.path, {
+      ...thread.ref,
+      locked: false,
+      archived: true,
+    })
     this.lastWrite.set(ref.path, Date.now())
   }
 

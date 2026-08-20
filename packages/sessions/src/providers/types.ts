@@ -16,6 +16,7 @@ export interface NativeFile {
   path: string
   bytes: number
   mtimeMs: number
+  locked?: boolean
 }
 
 export interface SessionUpdate {

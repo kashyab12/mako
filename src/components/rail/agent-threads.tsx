@@ -2,7 +2,7 @@ import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useSta
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { harnessLabel } from "@/components/rail/harness-meta"
 import { formatRelative, workspaceName } from "@/lib/format"
-import { threads, useThreads } from "@/state/threads"
+import { threadActivity, threads, useThreads } from "@/state/threads"
 import { actions, shallowEqual, useSession } from "@/state/session"
 import {
   prefsStore,
@@ -25,6 +25,7 @@ import {
   FolderPlusIcon,
   ListFilterIcon,
   Loader2Icon,
+  LockKeyholeIcon,
   MessagesSquareIcon,
   PinIcon,
   SearchIcon,
@@ -750,9 +751,12 @@ const ThreadRow = memo(function ThreadRow({
   const [editing, setEditing] = useState<string | null>(null)
   // A thread whose CLI is being driven from here right now wears a pulse —
   // the same promise a tab's dot makes: something is working behind this row.
-  const working = useThreads((state) => Boolean(state.running[ref.path]))
-  const observed = useThreads((state) => Boolean(state.observed[ref.path]))
-  const activeElsewhere = !working && observed
+  const activity = useThreads((state) => threadActivity(ref, state))
+  const working = activity === "mako"
+  const lockedElsewhere =
+    activity === "external-open" || activity === "external-active"
+  const activeElsewhere =
+    activity === "observed" || activity === "external-active"
   const isPinned = usePrefs((prefs) => prefs.pinnedThreads.includes(ref.path))
   const active = useSession((state) => state.meta?.sessionFile === ref.path)
   const viewingPath = useThreads((state) => state.viewing?.ref.path)
@@ -878,7 +882,14 @@ const ThreadRow = memo(function ThreadRow({
       ) : activeElsewhere ? (
         <Loader2Icon
           className="size-3 shrink-0 animate-spin text-foreground/45"
-          aria-label="Live activity"
+          aria-label={
+            lockedElsewhere ? "Active in another app" : "Live activity"
+          }
+        />
+      ) : lockedElsewhere ? (
+        <LockKeyholeIcon
+          className="size-3 shrink-0 text-faint/70"
+          aria-label="Open in another app"
         />
       ) : ref.updatedAt ? (
         <span className="tabular shrink-0 text-label text-faint">

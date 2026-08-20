@@ -119,7 +119,7 @@ export class SessionCatalog {
             if (
               cached &&
               cached.bytes === file.bytes &&
-              (provider.rescanRoot || cached.mtimeMs === file.mtimeMs)
+              cached.mtimeMs === file.mtimeMs
             )
               return
             const ref = await provider.peek(file).catch(() => null)
@@ -360,7 +360,7 @@ export class SessionCatalog {
       if (
         cached &&
         cached.bytes === file.bytes &&
-        (provider.rescanRoot || cached.mtimeMs === file.mtimeMs)
+        cached.mtimeMs === file.mtimeMs
       )
         continue
       const ref = await provider.peek(file).catch(() => null)
@@ -665,6 +665,7 @@ function parseCachedThreadRef(value: JsonValue | undefined): ThreadRef | null {
   const startedAt = readString(value, "startedAt")
   const updatedAt = readString(value, "updatedAt")
   const bytes = readNumber(value, "bytes")
+  const locked = readBoolean(value, "locked")
   const lineage = parseArray(value.lineage, parseThreadOrigin)
   const modelProvider = readString(value, "modelProvider")
   const archived = readBoolean(value, "archived")
@@ -674,6 +675,7 @@ function parseCachedThreadRef(value: JsonValue | undefined): ThreadRef | null {
   if (startedAt !== undefined) ref.startedAt = startedAt
   if (updatedAt !== undefined) ref.updatedAt = updatedAt
   if (bytes !== undefined) ref.bytes = bytes
+  if (locked !== undefined) ref.locked = locked
   if (lineage) ref.lineage = lineage
   if (modelProvider !== undefined) ref.modelProvider = modelProvider
   if (archived !== undefined) ref.archived = archived

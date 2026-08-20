@@ -123,7 +123,7 @@ type ParsedDaemonResponse =
  * without it forever. Clients that see an older daemon retire it and let a
  * fresh one take the socket.
  */
-export const PROTOCOL_VERSION = 9
+export const PROTOCOL_VERSION = 10
 
 /** Serve one catalog over the socket. Resolves once listening. */
 export async function serveCatalog(
@@ -586,6 +586,7 @@ function parseThreadRef(value: JsonValue | undefined): ThreadRef | null {
   const startedAt = readString(value, "startedAt")
   const updatedAt = readString(value, "updatedAt")
   const bytes = readNumber(value, "bytes")
+  const locked = readBoolean(value, "locked")
   const lineage = parseArray(value.lineage, parseThreadOrigin)
   const modelProvider = readString(value, "modelProvider")
   const archived = readBoolean(value, "archived")
@@ -595,6 +596,7 @@ function parseThreadRef(value: JsonValue | undefined): ThreadRef | null {
   if (startedAt !== undefined) ref.startedAt = startedAt
   if (updatedAt !== undefined) ref.updatedAt = updatedAt
   if (bytes !== undefined) ref.bytes = bytes
+  if (locked !== undefined) ref.locked = locked
   if (lineage) ref.lineage = lineage
   if (modelProvider !== undefined) ref.modelProvider = modelProvider
   if (archived !== undefined) ref.archived = archived

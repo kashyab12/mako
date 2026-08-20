@@ -1,10 +1,11 @@
 import assert from "node:assert/strict"
-import { mkdir } from "node:fs/promises"
+import { mkdir, writeFile } from "node:fs/promises"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 
+import { SessionCatalog } from "../dist/catalog.js"
 import { DevinCliProvider } from "../dist/providers/devin-cli.js"
 
 const home = mkdtempSync(join(tmpdir(), "mako-devin-cli-"))
@@ -59,14 +60,19 @@ insert.run(
 database.close()
 
 try {
+  const locks = join(dir, "session_locks")
+  await mkdir(locks)
+  await writeFile(join(locks, "session-1.lock"), String(process.pid))
   const provider = new DevinCliProvider(home)
   const [file] = await provider.discover()
   assert.ok(file)
   assert.equal(file.bytes, 2)
+  assert.equal(file.locked, true)
 
   const opened = await provider.read(file.path)
   assert.ok(opened)
   assert.equal(opened.ref.model, "gpt-5-6-sol-high-priority")
+  assert.equal(opened.ref.locked, true)
   assert.equal(opened.entries.length, 2)
   const firstTool = opened.entries
     .filter((entry) => entry.kind === "assistant")
@@ -74,6 +80,10 @@ try {
     .find((block) => block.type === "tool")
   assert.equal(firstTool?.name, "shell")
   assert.equal(firstTool?.output, undefined)
+
+  await writeFile(join(locks, "session-1.lock"), "99999999")
+  const [unlocked] = await provider.discover()
+  assert.equal(unlocked.locked, false)
 
   const follower = provider.createFollower(file.path, file.bytes)
   const writable = new DatabaseSync(join(dir, "sessions.db"))
@@ -116,7 +126,40 @@ try {
     ["user", "assistant"]
   )
   assert.equal(appended.nextByte, 5)
-  console.log("Devin CLI tests clean: streamed rows, tools, thinking, and incremental follow verified.")
+
+  const cachePath = join(home, "catalog-cache.json")
+  await writeFile(
+    cachePath,
+    JSON.stringify({
+      version: 1,
+      entries: {
+        [file.path]: {
+          bytes: file.bytes,
+          mtimeMs: file.mtimeMs,
+          ref: opened.ref,
+        },
+      },
+    })
+  )
+  const cached = new SessionCatalog(
+    [
+      {
+        harness: "devin",
+        displayName: "Devin",
+        roots: () => [dir],
+        discover: async () => [file],
+        peek: async () => {
+          throw new Error("unchanged cached refs must not be re-read")
+        },
+        read: async () => null,
+      },
+    ],
+    { cachePath }
+  )
+  const [cachedRef] = await cached.scan()
+  assert.equal(cachedRef.locked, true)
+  cached.stop()
+  console.log("Devin CLI tests clean: streamed rows, tools, thinking, locks, and incremental follow verified.")
 } finally {
   rmSync(home, { recursive: true, force: true })
 }

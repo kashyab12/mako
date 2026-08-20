@@ -974,6 +974,7 @@ export function installMockBridge() {
           updatedAt: new Date(Date.now() - 2_400_000).toISOString(),
           startedAt: new Date(Date.now() - 6_000_000).toISOString(),
           bytes: 14_000,
+          locked: true,
         },
         {
           harness: "cursor",
@@ -1000,8 +1001,19 @@ export function installMockBridge() {
       ],
     }),
     openThread: async (path: string) => ({
-      ref: path.includes("claude-2")
+      ref: path.includes("devin")
         ? {
+            harness: "devin" as const,
+            nativeId: "dv-1",
+            path,
+            cwd: "/Users/you/api",
+            title: "Wire the payments retry queue",
+            model: "adaptive",
+            updatedAt: new Date().toISOString(),
+            locked: true,
+          }
+        : path.includes("claude-2")
+          ? {
             harness: "claude" as const,
             nativeId: "cl-2",
             path,

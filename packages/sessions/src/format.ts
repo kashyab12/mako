@@ -82,6 +82,8 @@ export interface ThreadRef {
   updatedAt?: string
   /** Bytes of the native store — a cheap staleness check and a size hint. */
   bytes?: number
+  /** The provider reports that another live client holds this native session. */
+  locked?: boolean
   /** Earlier harnesses this conversation lived on, oldest first. */
   lineage?: ThreadOrigin[]
   /** The provider behind the model, when the harness records one. */
