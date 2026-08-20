@@ -54,9 +54,9 @@ export function IntegrationsSection() {
     <div>
       <div className="flex items-start gap-4 pb-5">
         <p className="min-w-0 flex-1 text-ui leading-relaxed text-muted-foreground">
-          Bring work context into every agent. Service sign-in stays with the
-          provider that owns it; local browser and computer control never leave
-          this Mac.
+          Bring work context into every agent. Slack and Google use signed-in
+          local browser sessions; browser and computer control never leave this
+          Mac.
         </p>
         <Action
           tone="outline"
@@ -168,7 +168,9 @@ function IntegrationCard({ record }: { record: IntegrationRecord }) {
           <Action tone="outline" onClick={openMcpSettings}>
             Review
           </Action>
-        ) : configured && record.auth !== "local-permission" ? (
+        ) : configured &&
+          (record.auth === "provider-oauth" ||
+            record.auth === "provider-cli") ? (
           <Action tone="ghost" onClick={openMcpSettings}>
             Manage
           </Action>

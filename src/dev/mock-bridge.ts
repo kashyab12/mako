@@ -420,17 +420,13 @@ const INTEGRATIONS: IntegrationCatalogSnapshot = {
     {
       id: "slack",
       label: "Slack",
-      description: "Search conversations, follow threads, and send messages.",
+      description: "Read and send messages through a signed-in local session.",
       category: "Communication",
       trust: "official",
-      auth: "provider-oauth",
-      capabilities: ["Search", "Messages", "Threads", "Canvases"],
+      auth: "local-browser",
+      capabilities: ["Search", "Messages", "Threads", "Files"],
       events: [],
-      connection: {
-        kind: "connected",
-        detail: "claude, cursor",
-        providers: ["claude", "cursor"],
-      },
+      connection: { kind: "ready", detail: "Isolated and running on this Mac" },
     },
     {
       id: "notion",
@@ -477,16 +473,13 @@ const INTEGRATIONS: IntegrationCatalogSnapshot = {
     {
       id: "google",
       label: "Google Workspace",
-      description: "Use Gmail, Calendar, Drive, Docs, and Sheets.",
+      description: "Use signed-in Google apps through a local browser session.",
       category: "Productivity",
       trust: "official",
-      auth: "provider-oauth",
+      auth: "local-browser",
       capabilities: ["Gmail", "Calendar", "Drive", "Docs", "Sheets"],
       events: [],
-      connection: {
-        kind: "setup",
-        detail: "Connect through an agent’s provider-owned sign-in",
-      },
+      connection: { kind: "ready", detail: "Isolated and running on this Mac" },
     },
     {
       id: "atlassian",

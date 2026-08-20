@@ -588,7 +588,7 @@ function testIntegrationCatalog(): void {
   )
   assert.deepEqual(
     granted.integrations.find((entry) => entry.id === "slack")?.connection,
-    { kind: "connected", detail: "codex", providers: ["codex"] }
+    { kind: "ready", detail: "Isolated and running on this Mac" }
   )
   assert.equal(
     granted.integrations.find((entry) => entry.id === "local-browser")

@@ -883,7 +883,11 @@ export interface IntegrationRecord {
   description: string
   category: IntegrationCategory
   trust: "official" | "mako" | "community"
-  auth: "provider-oauth" | "provider-cli" | "local-permission"
+  auth:
+    | "provider-oauth"
+    | "provider-cli"
+    | "local-browser"
+    | "local-permission"
   capabilities: string[]
   events: string[]
   connection: IntegrationConnection

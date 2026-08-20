@@ -50,14 +50,13 @@ const DEFINITIONS: Definition[] = [
   {
     id: "slack",
     label: "Slack",
-    description: "Search conversations, follow threads, and send messages.",
+    description: "Read and send messages through a signed-in local session.",
     category: "Communication",
     trust: "official",
-    auth: "provider-oauth",
-    capabilities: ["Search", "Messages", "Threads", "Canvases"],
+    auth: "local-browser",
+    capabilities: ["Search", "Messages", "Threads", "Files"],
     events: [],
     patterns: [/slack/i],
-    setupUrl: "https://docs.slack.dev/ai/slack-mcp-server/",
   },
   {
     id: "notion",
@@ -95,15 +94,13 @@ const DEFINITIONS: Definition[] = [
   {
     id: "google",
     label: "Google Workspace",
-    description: "Use Gmail, Calendar, Drive, Docs, and Sheets.",
+    description: "Use signed-in Google apps through a local browser session.",
     category: "Productivity",
     trust: "official",
-    auth: "provider-oauth",
+    auth: "local-browser",
     capabilities: ["Gmail", "Calendar", "Drive", "Docs", "Sheets"],
     events: [],
     patterns: [/gmail|google|gdrive|calendar/i],
-    setupUrl:
-      "https://developers.google.com/workspace/guides/configure-mcp-servers",
   },
   {
     id: "atlassian",
@@ -208,17 +205,16 @@ export function integrationCatalog(
   permissions: MakoComputerPermissions,
   githubConnected: boolean
 ): IntegrationCatalogSnapshot {
-  const services: IntegrationRecord[] = DEFINITIONS.map((definition) => ({
-    ...definition,
-    connection: serviceConnection(
-      definition,
-      snapshot.servers,
-      githubConnected
-    ),
-  }))
   const localControl = snapshot.servers.find(
     (server) => server.name === "mako-local-control"
   )
+  const services: IntegrationRecord[] = DEFINITIONS.map((definition) => ({
+    ...definition,
+    connection:
+      definition.auth === "local-browser"
+        ? localBrowserConnection(localControl)
+        : serviceConnection(definition, snapshot.servers, githubConnected),
+  }))
   const local: IntegrationRecord[] = [
     {
       id: "local-browser",
