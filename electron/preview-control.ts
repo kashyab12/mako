@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto"
+import { randomBytes, timingSafeEqual } from "node:crypto"
 import { createServer, type Server, type Socket } from "node:net"
 import { chmod, mkdir, unlink } from "node:fs/promises"
 import { join } from "node:path"
@@ -197,6 +197,13 @@ type PreviewResponse =
   | { ok: true; result: JsonValue }
   | { ok: false; error: string }
 
+function authorized(candidate: string): boolean {
+  if (!accessToken) return false
+  const left = Buffer.from(candidate)
+  const right = Buffer.from(accessToken)
+  return left.length === right.length && timingSafeEqual(left, right)
+}
+
 function respond(socket: Socket, response: PreviewResponse): void {
   socket.end(`${JSON.stringify(response)}\n`)
 }
@@ -220,7 +227,7 @@ function accept(socket: Socket): void {
     void Promise.resolve()
       .then(() => RequestSchema.parse(JSON.parse(line)))
       .then((envelope) => {
-        if (!accessToken || envelope.token !== accessToken) {
+        if (!authorized(envelope.token)) {
           throw new Error("Mako Preview authorization failed")
         }
         return execute(envelope.request)

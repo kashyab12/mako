@@ -1,3 +1,4 @@
+import type { BackendConnectionStatus } from "./backend-connection.js"
 import type {
   IntegrationCatalogSnapshot,
   IntegrationCategory,
@@ -50,11 +51,11 @@ const DEFINITIONS: Definition[] = [
   {
     id: "slack",
     label: "Slack",
-    description: "Read and send messages through a signed-in local session.",
+    description: "Read and send messages through Mako’s Vercel Connect backend.",
     category: "Communication",
-    trust: "official",
-    auth: "local-browser",
-    capabilities: ["Search", "Messages", "Threads", "Files"],
+    trust: "mako",
+    auth: "mako-backend",
+    capabilities: ["Channels", "Messages", "Threads", "Send"],
     events: [],
     patterns: [/slack/i],
   },
@@ -200,10 +201,26 @@ function localConnection(
   }
 }
 
+function backendConnection(
+  status: BackendConnectionStatus
+): IntegrationConnection {
+  if (status.kind === "connected") {
+    return {
+      kind: "ready",
+      detail: `${status.environment} · ${status.version}`,
+    }
+  }
+  if (status.kind === "missing-token") {
+    return { kind: "setup", detail: "Backend access is not paired" }
+  }
+  return { kind: "unavailable", detail: status.detail }
+}
+
 export function integrationCatalog(
   snapshot: McpRegistrySnapshot,
   permissions: MakoComputerPermissions,
-  githubConnected: boolean
+  githubConnected: boolean,
+  backendStatus: BackendConnectionStatus
 ): IntegrationCatalogSnapshot {
   const localControl = snapshot.servers.find(
     (server) => server.name === "mako-local-control"
@@ -211,11 +228,24 @@ export function integrationCatalog(
   const services: IntegrationRecord[] = DEFINITIONS.map((definition) => ({
     ...definition,
     connection:
-      definition.auth === "local-browser"
-        ? localBrowserConnection(localControl)
-        : serviceConnection(definition, snapshot.servers, githubConnected),
+      definition.auth === "mako-backend"
+        ? backendConnection(backendStatus)
+        : definition.auth === "local-browser"
+          ? localBrowserConnection(localControl)
+          : serviceConnection(definition, snapshot.servers, githubConnected),
   }))
   const local: IntegrationRecord[] = [
+    {
+      id: "mako-backend",
+      label: "Mako Backend",
+      description: "Remote MCP, skills, integrations, and communication channels.",
+      category: "Development",
+      trust: "mako",
+      auth: "mako-backend",
+      capabilities: ["MCP", "Skills", "Slack", "Durable agent"],
+      events: [],
+      connection: backendConnection(backendStatus),
+    },
     {
       id: "local-browser",
       label: "Mako Browser",

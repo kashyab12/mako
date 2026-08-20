@@ -523,6 +523,64 @@ async function testMakoRuntimeProjection(): Promise<void> {
   else delete process.env.MAKO_PREVIEW_TOKEN
 }
 
+async function testMakoBackendProjection(): Promise<void> {
+  const previousUrl = process.env.MAKO_BACKEND_URL
+  const previousToken = process.env.MAKO_BACKEND_TOKEN
+  const url = "https://mako.example/api/mcp"
+  const token = "mako-backend-test-token".padEnd(64, "x")
+  process.env.MAKO_BACKEND_URL = url
+  process.env.MAKO_BACKEND_TOKEN = token
+  try {
+    const definitions = await managedMcpDefinitions("/app", "/electron", {
+      PATH: "",
+      MAKO_BACKEND_URL: url,
+      MAKO_BACKEND_TOKEN: token,
+    })
+    const snapshot: McpRegistrySnapshot = {
+      cwd: tmpdir(),
+      generatedAt: 1,
+      providers: [],
+      servers: mergeMcpDefinitions(definitions).map((server) => ({
+        ...server,
+        managed: true,
+        availability: server.blockReason ? "unavailable" : "available",
+      })),
+    }
+    assert.equal(JSON.stringify(snapshot).includes(token), false)
+    const acp = acpMcpServers(snapshot, "claude", ["http"])
+    assert.deepEqual(acp, [
+      {
+        type: "http",
+        name: "mako-backend",
+        url,
+        headers: [{ name: "Authorization", value: `Bearer ${token}` }],
+      },
+    ])
+    const codex = z
+      .object({ mcp_servers: z.record(z.string(), z.json()) })
+      .parse(codexMcpConfig(snapshot)).mcp_servers
+    assert.deepEqual(codex["mako-backend"], {
+      url,
+      http_headers: { Authorization: `Bearer ${token}` },
+    })
+    const backend = snapshot.servers.find(
+      (server) => server.name === "mako-backend"
+    )
+    assert.ok(backend)
+    const preview = await previewMcpSync(snapshot, backend.id, {
+      provider: "claude",
+      account: "default",
+      scope: "user",
+    })
+    assert.equal(preview.action, "blocked")
+  } finally {
+    if (previousUrl) process.env.MAKO_BACKEND_URL = previousUrl
+    else delete process.env.MAKO_BACKEND_URL
+    if (previousToken) process.env.MAKO_BACKEND_TOKEN = previousToken
+    else delete process.env.MAKO_BACKEND_TOKEN
+  }
+}
+
 async function testEmbeddedCuaHost(): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), "mako-cua-embedded-"))
   const command = join(directory, "cua-driver")
@@ -584,11 +642,17 @@ function testIntegrationCatalog(): void {
       accessibility: true,
       screenRecording: "granted",
     },
-    false
+    false,
+    {
+      kind: "connected",
+      url: "https://mako.example/api/mcp",
+      version: "0.1.0",
+      environment: "test",
+    }
   )
   assert.deepEqual(
     granted.integrations.find((entry) => entry.id === "slack")?.connection,
-    { kind: "ready", detail: "Isolated and running on this Mac" }
+    { kind: "ready", detail: "test · 0.1.0" }
   )
   assert.equal(
     granted.integrations.find((entry) => entry.id === "local-browser")
@@ -602,7 +666,13 @@ function testIntegrationCatalog(): void {
       accessibility: false,
       screenRecording: "denied",
     },
-    false
+    false,
+    {
+      kind: "connected",
+      url: "https://mako.example/api/mcp",
+      version: "0.1.0",
+      environment: "test",
+    }
   )
   assert.equal(
     denied.integrations.find((entry) => entry.id === "computer-use")
@@ -661,6 +731,7 @@ await testGuardedAtomicMerge()
 testAcpProjection()
 await testManagedDefinitions()
 await testMakoRuntimeProjection()
+await testMakoBackendProjection()
 await testEmbeddedCuaHost()
 testIntegrationCatalog()
 testLocalSchemas()

@@ -455,6 +455,8 @@ export async function managedMcpDefinitions(
   const cuaSocket = env.MAKO_CUA_SOCKET
   const cua = cuaPath !== null && Boolean(cuaSocket)
   const preview = Boolean(env.MAKO_PREVIEW_SOCKET && env.MAKO_PREVIEW_TOKEN)
+  const backendUrl = env.MAKO_BACKEND_URL
+  const backend = Boolean(backendUrl && env.MAKO_BACKEND_TOKEN)
   const doctor = await harnessDoctor(harness, env)
   const definitions: Array<
     McpInternalDefinition & { availability: boolean; detail: string }
@@ -505,10 +507,21 @@ export async function managedMcpDefinitions(
           ? "Mako has not started local browser and computer control"
           : "CUA Driver is not installed",
     },
+    {
+      name: "mako-backend",
+      transport: "http",
+      url: backendUrl ?? "https://mako-pearl.vercel.app/api/mcp",
+      envNames: [],
+      headerNames: ["Authorization"],
+      portable: false,
+      availability: backend,
+      detail: backend
+        ? "Authenticated Mako MCP, skills, and integration control plane"
+        : "Mako backend token is not configured",
+    },
   ]
   return definitions.map(({ availability, detail, ...definition }) => {
-    if (!availability)
-      definition.blockReason = "required command is not installed"
+    if (!availability) definition.blockReason = detail
     return {
       definition,
       origin: {
@@ -626,6 +639,7 @@ export function projectPortableDefinitions(
 const MAKO_RUNTIME_SERVERS = new Set([
   "mako-local-tools",
   "mako-local-control",
+  "mako-backend",
 ])
 
 export function projectRuntimeDefinitions(
@@ -650,7 +664,7 @@ export function projectRuntimeDefinitions(
       const managedRuntime =
         MAKO_RUNTIME_SERVERS.has(server.name) && !server.blockReason
       return (
-        server.portable &&
+        (server.portable || managedRuntime) &&
         !server.conflict &&
         server.availability !== "unavailable" &&
         transports.includes(server.transport) &&

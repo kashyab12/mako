@@ -132,6 +132,10 @@ import {
 import { discoverMcpRegistry } from "./mcp-registry.js"
 import { integrationCatalog } from "./integrations.js"
 import {
+  backendConnectionStatus,
+  ensureBackendConnectionEnvironment,
+} from "./backend-connection.js"
+import {
   registerPreview,
   startPreviewControl,
   stopPreviewControl,
@@ -784,14 +788,16 @@ function bindIpc() {
   handle("mako:integrations", () =>
     withHost(async (host) => {
       await ensureMakoLocalControl().catch(() => null)
-      const [snapshot, github] = await Promise.all([
+      const [snapshot, github, backend] = await Promise.all([
         discoverMcpRegistry(host.workspace, app.getAppPath()),
         githubStatus(host.workspace),
+        backendConnectionStatus(),
       ])
       return integrationCatalog(
         snapshot,
         computerPermissions(),
-        github.authenticated
+        github.authenticated,
+        backend
       )
     })
   )
@@ -1108,6 +1114,7 @@ function bindIpc() {
 installCrashReporting()
 
 app.whenReady().then(async () => {
+  await ensureBackendConnectionEnvironment()
   await startPreviewControl(
     join(app.getPath("userData"), "computer-use", "preview")
   ).catch(() => null)

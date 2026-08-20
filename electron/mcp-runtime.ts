@@ -8,6 +8,21 @@ import type {
 } from "./shared.js"
 import type { JsonObject } from "./codex-app-json.js"
 
+function backendHeaders(definition: McpServerDefinition): Array<{
+  name: string
+  value: string
+}> {
+  if (definition.name !== "mako-backend" || !process.env.MAKO_BACKEND_TOKEN) {
+    return []
+  }
+  return [
+    {
+      name: "Authorization",
+      value: `Bearer ${process.env.MAKO_BACKEND_TOKEN}`,
+    },
+  ]
+}
+
 function localEnvironment(definition: McpServerDefinition): Array<{
   name: string
   value: string
@@ -48,15 +63,16 @@ export function acpMcpServers(
       }
       if (
         (definition.transport === "http" || definition.transport === "sse") &&
-        definition.url &&
-        definition.headerNames.length === 0
+        definition.url
       ) {
+        const headers = backendHeaders(definition)
+        if (definition.headerNames.length > 0 && headers.length === 0) return []
         return [
           {
             type: definition.transport,
             name: definition.name,
             url: definition.url,
-            headers: [],
+            headers,
           },
         ]
       }
@@ -79,12 +95,16 @@ function codexDefinition(definition: McpServerDefinition): JsonObject | null {
     }
     return result
   }
-  if (
-    definition.transport === "http" &&
-    definition.url &&
-    definition.headerNames.length === 0
-  ) {
-    return { url: definition.url }
+  if (definition.transport === "http" && definition.url) {
+    const headers = backendHeaders(definition)
+    if (definition.headerNames.length > 0 && headers.length === 0) return null
+    const result: JsonObject = { url: definition.url }
+    if (headers.length > 0) {
+      result.http_headers = Object.fromEntries(
+        headers.map(({ name, value }) => [name, value])
+      )
+    }
+    return result
   }
   return null
 }

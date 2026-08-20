@@ -54,9 +54,9 @@ export function IntegrationsSection() {
     <div>
       <div className="flex items-start gap-4 pb-5">
         <p className="min-w-0 flex-1 text-ui leading-relaxed text-muted-foreground">
-          Bring work context into every agent. Slack and Google use signed-in
-          local browser sessions; browser and computer control never leave this
-          Mac.
+          Bring work context into every agent. Slack runs through Mako’s
+          authenticated backend; Google uses a signed-in local browser session.
+          Browser and computer control never leave this Mac.
         </p>
         <Action
           tone="outline"

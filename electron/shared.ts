@@ -888,6 +888,7 @@ export interface IntegrationRecord {
     | "provider-cli"
     | "local-browser"
     | "local-permission"
+    | "mako-backend"
   capabilities: string[]
   events: string[]
   connection: IntegrationConnection
