@@ -450,14 +450,11 @@ export async function managedMcpDefinitions(
   env: NodeJS.ProcessEnv = process.env
 ): Promise<McpDiscoveredDefinition[]> {
   const harnessPath = await findExecutable("macos-harness", env)
-  const browserPath = await findExecutable("browser-use", env)
-  const uvxPath = await findExecutable("uvx", env)
   const cuaPath = await findExecutable("cua-driver", env)
   const harness = harnessPath !== null
-  const browser = browserPath !== null
-  const uvx = uvxPath !== null
   const cuaSocket = env.MAKO_CUA_SOCKET
   const cua = cuaPath !== null && Boolean(cuaSocket)
+  const preview = Boolean(env.MAKO_PREVIEW_SOCKET && env.MAKO_PREVIEW_TOKEN)
   const doctor = await harnessDoctor(harness, env)
   const definitions: Array<
     McpInternalDefinition & { availability: boolean; detail: string }
@@ -474,38 +471,25 @@ export async function managedMcpDefinitions(
               execPath,
               localServerPath(appPath),
             ],
-      envNames:
-        process.platform === "win32" ? ["ELECTRON_RUN_AS_NODE"] : [],
+      envNames: [
+        ...(process.platform === "win32" ? ["ELECTRON_RUN_AS_NODE"] : []),
+        ...(env.MAKO_PREVIEW_SOCKET && env.MAKO_PREVIEW_TOKEN
+          ? ["MAKO_PREVIEW_SOCKET", "MAKO_PREVIEW_TOKEN"]
+          : []),
+      ],
       headerNames: [],
       portable: true,
-      availability: process.platform === "darwin" && harness,
-      detail:
-        process.platform === "darwin" ? doctor : "Available only on macOS",
+      availability: preview || (process.platform === "darwin" && harness),
+      detail: preview
+        ? process.platform === "darwin" && harness
+          ? "Local app and Preview control are ready"
+          : "Preview control is ready"
+        : process.platform === "darwin"
+          ? doctor
+          : "Local app control is available only on macOS",
     },
     {
-      name: "browser-use",
-      transport: "stdio",
-      command: browserPath ?? uvxPath ?? "uvx",
-      args: browser
-        ? ["--cli-mcp"]
-        : [
-            "--from",
-            "browser-use[cli]==0.13.7",
-            "browser-use",
-            "--cli-mcp",
-          ],
-      envNames: [],
-      headerNames: [],
-      portable: true,
-      availability: browser || uvx,
-      detail: browser
-        ? "Browser Use 0.13.7 is installed"
-        : uvx
-          ? "Browser Use 0.13.7 is available through uvx"
-          : "Browser Use and uvx are not installed",
-    },
-    {
-      name: "mako-cua-fallback",
+      name: "mako-local-control",
       transport: "stdio",
       command: cuaPath ?? "cua-driver",
       args: cuaSocket
@@ -516,9 +500,9 @@ export async function managedMcpDefinitions(
       portable: true,
       availability: cua,
       detail: cua
-        ? "CUA Driver 0.19.3 fallback runs under Mako permissions"
+        ? "Local browser and computer control run under Mako permissions"
         : cuaPath
-          ? "Mako has not started its embedded CUA fallback"
+          ? "Mako has not started local browser and computer control"
           : "CUA Driver is not installed",
     },
   ]
@@ -640,9 +624,8 @@ export function projectPortableDefinitions(
 }
 
 const MAKO_RUNTIME_SERVERS = new Set([
-  "browser-use",
   "mako-local-tools",
-  "mako-cua-fallback",
+  "mako-local-control",
 ])
 
 export function projectRuntimeDefinitions(
@@ -659,23 +642,13 @@ export function projectRuntimeDefinitions(
       )
       .map((server) => server.name)
   )
-  const nativeBrowser = [...nativeNames].some((name) =>
-    /browser|chrome|playwright|node_repl/i.test(name)
-  )
-  const nativeComputer = [...nativeNames].some((name) =>
-    /computer|cua|sky|node_repl/i.test(name)
-  )
   return snapshot.servers
     .filter((server) => {
       const managed = server.origins.some(
         (origin) => origin.provider === "mako"
       )
       const managedRuntime =
-        MAKO_RUNTIME_SERVERS.has(server.name) &&
-        !server.blockReason &&
-        (server.name !== "browser-use" || !nativeBrowser) &&
-        (server.name !== "mako-local-tools" || !nativeComputer) &&
-        (server.name !== "mako-cua-fallback" || !nativeComputer)
+        MAKO_RUNTIME_SERVERS.has(server.name) && !server.blockReason
       return (
         server.portable &&
         !server.conflict &&

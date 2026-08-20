@@ -12,9 +12,21 @@ function localEnvironment(definition: McpServerDefinition): Array<{
   name: string
   value: string
 }> {
-  return definition.name === "mako-local-tools"
-    ? [{ name: "ELECTRON_RUN_AS_NODE", value: "1" }]
-    : []
+  if (definition.name !== "mako-local-tools") return []
+  const environment = [{ name: "ELECTRON_RUN_AS_NODE", value: "1" }]
+  if (process.env.MAKO_PREVIEW_SOCKET && process.env.MAKO_PREVIEW_TOKEN) {
+    environment.push(
+      {
+        name: "MAKO_PREVIEW_SOCKET",
+        value: process.env.MAKO_PREVIEW_SOCKET,
+      },
+      {
+        name: "MAKO_PREVIEW_TOKEN",
+        value: process.env.MAKO_PREVIEW_TOKEN,
+      }
+    )
+  }
+  return environment
 }
 
 export function acpMcpServers(
@@ -59,8 +71,12 @@ function codexDefinition(definition: McpServerDefinition): JsonObject | null {
       command: definition.command,
       args: definition.args ?? [],
     }
-    if (definition.name === "mako-local-tools")
-      result.env = { ELECTRON_RUN_AS_NODE: "1" }
+    const environment = localEnvironment(definition)
+    if (environment.length > 0) {
+      result.env = Object.fromEntries(
+        environment.map(({ name, value }) => [name, value])
+      )
+    }
     return result
   }
   if (

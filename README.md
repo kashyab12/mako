@@ -101,10 +101,10 @@ server. The bundled server uses MCP 2025-11-25 through the current TypeScript
 SDK, including tool safety annotations and Streamable HTTP compatibility.
 
 **Local computer and browser tools** — Mako exposes optional managed MCP
-definitions for macOS Harness, CUA Driver, and Browser Use. macOS Harness is
-wrapped by Mako's local stdio server; Browser Use runs its local CLI MCP through
-`uvx`; CUA uses its signed-driver MCP. They are never started just because the
-app opened—select and sync them in Settings when wanted.
+definitions for macOS Harness and CUA Driver. macOS Harness is wrapped by
+Mako's local stdio server; CUA uses its signed driver and private embedded
+socket for isolated local browser and computer control. These tools attach only
+to sessions launched by Mako and are never synced into provider clients.
 
 ⌘K reaches every command, model, and session. ⌘P opens a file by name. **⌘/**
 shows what every region is for and every key that does something — generated

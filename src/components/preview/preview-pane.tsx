@@ -127,8 +127,23 @@ function Frame({ url }: { url: string }) {
     view.style.width = "100%"
     view.style.height = "100%"
     view.style.display = "flex"
+    let previewId: string | null = null
+    let disposed = false
+    const register = async () => {
+      view.removeEventListener("dom-ready", register)
+      const id = await dev.registerPreview(view.getWebContentsId())
+      if (!id) return
+      if (disposed) dev.unregisterPreview(id)
+      else previewId = id
+    }
+    view.addEventListener("dom-ready", register)
     parent.replaceChildren(view)
-    return () => parent.replaceChildren()
+    return () => {
+      disposed = true
+      view.removeEventListener("dom-ready", register)
+      if (previewId) dev.unregisterPreview(previewId)
+      parent.replaceChildren()
+    }
   }, [reloads, url])
 
   return <div ref={host} className="absolute inset-0" />

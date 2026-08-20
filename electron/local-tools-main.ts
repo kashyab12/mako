@@ -7,6 +7,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
 import type { JsonValue } from "./codex-app-json.js"
+import { PREVIEW_TOOL_INPUTS, registerPreviewTools } from "./preview-tools.js"
 
 const MAX_OUTPUT = 2 * 1024 * 1024
 const DEFAULT_TIMEOUT = 20_000
@@ -41,6 +42,7 @@ export const LOCAL_TOOL_INPUTS = {
     })
     .strict(),
   exec: z.object({ source: z.string().min(1).max(100_000) }).strict(),
+  ...PREVIEW_TOOL_INPUTS,
 } as const
 
 type ProcessResult = { stdout: string; stderr: string; code: number | null }
@@ -332,7 +334,7 @@ export function createLocalToolsServer(): McpServer {
     "mako_macos_exec",
     {
       description:
-        "Run one bounded macOS Harness Python program for a desktop-app decision. The program may use preloaded mac, Path, and subprocess; prefer browser_exec for websites. Bundle reversible actions, then print one verification result.",
+        "Run one bounded macOS Harness Python program for a desktop-app decision. The program may use preloaded mac, Path, and subprocess; prefer the Mako Preview tools for websites under test. Bundle reversible actions, then print one verification result.",
       inputSchema: LOCAL_TOOL_INPUTS.exec,
       annotations: {
         readOnlyHint: false,
@@ -344,6 +346,7 @@ export function createLocalToolsServer(): McpServer {
     ({ source }, extra) =>
       safeResult(() => runHarnessProgram(source, extra.signal))
   )
+  registerPreviewTools(server)
   return server
 }
 

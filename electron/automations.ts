@@ -1,8 +1,14 @@
 import { watch, type FSWatcher } from "node:fs"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join, relative, sep } from "node:path"
+import { z } from "zod"
 import type { JsonObject, JsonValue } from "./codex-app-json.js"
-import type { Automation, AutomationRun, HostEvent } from "./shared.js"
+import {
+  automationTriggerAvailable,
+  type Automation,
+  type AutomationRun,
+  type HostEvent,
+} from "./shared.js"
 
 /**
  * Saved prompts that can fire on their own.
@@ -16,6 +22,8 @@ import type { Automation, AutomationRun, HostEvent } from "./shared.js"
  *     one that composes with an agent that edits files.
  *   * **On commit.** HEAD moving is the clearest "a unit of work finished"
  *     signal a repository has.
+ *   * **External events.** Slack, Gmail, Calendar, and webhook definitions are
+ *     preserved but cannot be enabled before their provider receiver exists.
  *
  * Deliberately **not** on a schedule. A desktop app that is closed cannot fire
  * one, so a scheduled automation is a promise the app cannot keep; and an app
@@ -42,6 +50,7 @@ const MIN_INTERVAL_MS = 60_000
 
 /** Editors write a file several times per save; wait for it to settle. */
 const DEBOUNCE_MS = 1200
+const OptionalTextSchema = z.string().max(500).optional()
 
 interface Runtime {
   cwd: string
@@ -83,7 +92,7 @@ export async function loadAutomations(cwd: string): Promise<Automation[]> {
   return automations
 }
 
-function parseAutomationDocument(text: string): AutomationDocument {
+export function parseAutomationDocument(text: string): AutomationDocument {
   const value: JsonValue = JSON.parse(text)
   if (!isJsonObject(value) || !Array.isArray(value.automations))
     return { automations: [] }
@@ -91,7 +100,7 @@ function parseAutomationDocument(text: string): AutomationDocument {
   const entries: Automation[] = []
   for (const entry of value.automations) {
     if (!isJsonObject(entry)) throw new Error("Invalid automation")
-    entries.push(normalize(entry))
+    entries.push(normalizeAutomation(entry))
   }
   return { automations: entries }
 }
@@ -103,20 +112,87 @@ function parseAutomationDocument(text: string): AutomationDocument {
  * whatever the author set, and honouring that would mean cloning a repo could
  * start running an agent. Enabling is a local decision, held locally.
  */
-function normalize(raw: JsonObject): Automation {
+export function normalizeAutomation(raw: JsonObject): Automation {
   return {
     id:
       String(raw.id ?? "").slice(0, 80) ||
       `a${Math.abs(hash(JSON.stringify(raw)))}`,
     name: String(raw.name ?? "Untitled").slice(0, 120),
     prompt: String(raw.prompt ?? "").slice(0, 8000),
-    trigger:
-      raw.trigger === "files" || raw.trigger === "commit"
-        ? raw.trigger
-        : "manual",
-    paths: Array.isArray(raw.paths) ? raw.paths.slice(0, 40).map(String) : [],
+    trigger: normalizeTrigger(raw),
     enabled: false,
   }
+}
+
+function normalizeTrigger(raw: JsonObject): Automation["trigger"] {
+  const trigger = raw.trigger
+  if (trigger === "files") return { kind: "files", paths: strings(raw.paths) }
+  if (trigger === "commit") return { kind: "commit" }
+  if (trigger === "manual" || !isJsonObject(trigger)) return { kind: "manual" }
+  const kind = trigger.kind
+  if (kind === "files") return { kind, paths: strings(trigger.paths) }
+  if (kind === "commit" || kind === "manual") return { kind }
+  if (kind === "slack") {
+    const event = [
+      "message_in_channel",
+      "reaction_added",
+      "channel_created",
+    ].includes(String(trigger.event))
+      ? trigger.event
+      : "message_in_channel"
+    return {
+      kind,
+      event:
+        event === "reaction_added" || event === "channel_created"
+          ? event
+          : "message_in_channel",
+      channels: strings(trigger.channels),
+      messageFilter: optionalString(trigger.messageFilter),
+    }
+  }
+  if (kind === "gmail") {
+    return {
+      kind,
+      event: "message_received",
+      from: strings(trigger.from),
+      to: strings(trigger.to),
+      subjectFilter: optionalString(trigger.subjectFilter),
+      labels: strings(trigger.labels),
+      hasAttachment: trigger.hasAttachment === true,
+    }
+  }
+  if (kind === "google_calendar") {
+    const event = String(trigger.event)
+    return {
+      kind,
+      event:
+        event === "event_updated" ||
+        event === "event_cancelled" ||
+        event === "event_starting_soon" ||
+        event === "event_ended"
+          ? event
+          : "event_created",
+      calendars: strings(trigger.calendars),
+      titleFilter: optionalString(trigger.titleFilter),
+    }
+  }
+  if (kind === "webhook") {
+    return {
+      kind,
+      path: String(trigger.path ?? "").slice(0, 160),
+    }
+  }
+  return { kind: "manual" }
+}
+
+function strings(value: JsonValue | undefined): string[] {
+  return Array.isArray(value)
+    ? value.slice(0, 40).map((entry) => String(entry).slice(0, 200))
+    : []
+}
+
+function optionalString(value: JsonValue | undefined): string | undefined {
+  return OptionalTextSchema.catch(undefined).parse(value) || undefined
 }
 
 function isJsonObject(value: JsonValue | undefined): value is JsonObject {
@@ -161,7 +237,9 @@ export async function saveAutomations(
 /** Enabling is per-machine and is not written to the shared file. */
 export function setEnabled(id: string, enabled: boolean): Automation[] {
   automations = automations.map((entry) =>
-    entry.id === id ? { ...entry, enabled } : entry
+    entry.id === id && (!enabled || automationTriggerAvailable(entry.trigger))
+      ? { ...entry, enabled }
+      : entry
   )
   publish()
   return automations
@@ -290,8 +368,8 @@ export async function watchWorkspace(cwd: string) {
       if (!path || isIgnored(path)) return
 
       for (const automation of automations) {
-        if (!automation.enabled || automation.trigger !== "files") continue
-        if (!automation.paths.some((pattern) => matchesGlob(pattern, path)))
+        if (!automation.enabled || automation.trigger.kind !== "files") continue
+        if (!automation.trigger.paths.some((pattern) => matchesGlob(pattern, path)))
           continue
         // Debounced per automation: a save that touches four matching files is
         // one event, not four.
@@ -332,7 +410,7 @@ export function noticeHead(head: string | undefined) {
   runtime.head = head
   if (previous === null || previous === head) return
   for (const automation of automations) {
-    if (automation.enabled && automation.trigger === "commit") {
+    if (automation.enabled && automation.trigger.kind === "commit") {
       void fireAutomation(automation.id, "commit")
     }
   }

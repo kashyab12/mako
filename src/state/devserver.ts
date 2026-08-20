@@ -80,4 +80,14 @@ export const dev = {
   reload() {
     devStore.set({ reloads: devStore.get().reloads + 1 })
   },
+
+  async registerPreview(webContentsId: number): Promise<string | null> {
+    if (!hasBridge()) return null
+    return getMako().registerPreview(webContentsId).catch(() => null)
+  },
+
+  unregisterPreview(id: string) {
+    if (!hasBridge()) return
+    void getMako().unregisterPreview(id)
+  },
 }

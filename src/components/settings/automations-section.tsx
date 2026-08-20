@@ -1,6 +1,10 @@
 import { useEffect } from "react"
 import { Action, Toggle } from "@/components/ui/kit"
 import { formatRelative } from "@/lib/format"
+import {
+  automationTriggerAvailable,
+  type AutomationTrigger,
+} from "@/lib/types"
 import { automations, useAutomations } from "@/state/automations"
 
 /**
@@ -45,6 +49,7 @@ export function AutomationsSection() {
               <div className="flex items-center gap-2">
                 <Toggle
                   on={entry.enabled}
+                  disabled={!automationTriggerAvailable(entry.trigger)}
                   onChange={() =>
                     void automations.setEnabled(entry.id, !entry.enabled)
                   }
@@ -60,11 +65,7 @@ export function AutomationsSection() {
                 {entry.prompt}
               </p>
               <p className="mt-1 pl-[42px] text-label text-faint">
-                {entry.trigger === "files"
-                  ? `when ${entry.paths.join(", ") || "nothing"} changes`
-                  : entry.trigger === "commit"
-                    ? "when you commit"
-                    : "only when you ask"}
+                {triggerDescription(entry.trigger)}
               </p>
             </div>
           ))}
@@ -84,11 +85,30 @@ export function AutomationsSection() {
       </div>
 
       <p className="mt-3 text-ui leading-relaxed text-faint">
-        There is no schedule trigger. An app that is closed cannot fire one, and
-        an app that is open quietly running jobs against your repository is a
-        surprise nobody asked for. A file trigger waits a minute between runs,
-        so an agent editing the files it watches cannot loop.
+        Slack, Gmail, Calendar, and webhook definitions are recognized but stay
+        off until their provider-owned event receiver is connected. File
+        triggers wait a minute between runs, so an agent editing watched files
+        cannot loop.
       </p>
     </div>
   )
+}
+
+function triggerDescription(trigger: AutomationTrigger): string {
+  switch (trigger.kind) {
+    case "manual":
+      return "only when you ask"
+    case "files":
+      return `when ${trigger.paths.join(", ") || "nothing"} changes`
+    case "commit":
+      return "when you commit"
+    case "slack":
+      return `Slack ${trigger.event.replaceAll("_", " ")} · receiver not connected`
+    case "gmail":
+      return "Gmail message received · receiver not connected"
+    case "google_calendar":
+      return `Calendar ${trigger.event.replaceAll("_", " ")} · receiver not connected`
+    case "webhook":
+      return `POST ${trigger.path || "webhook"} · receiver not connected`
+  }
 }

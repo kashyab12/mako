@@ -8,6 +8,7 @@ import type {
   GitCommitEntry,
   GitDiff,
   GitHubStatus,
+  IntegrationCatalogSnapshot,
   ListeningPort,
   GitStatus,
   HostEvent,
@@ -213,6 +214,8 @@ const api = {
     ),
 
   /* MCP discovery is read-only; sync is always an explicit settings action. */
+  integrations: () =>
+    invokeTrustedHost<IntegrationCatalogSnapshot>("mako:integrations"),
   discoverMcp: () =>
     invokeTrustedHost<McpRegistrySnapshot>("mako:mcp-discover"),
   previewMcpSync: (serverId: string, target: McpSyncTarget) =>
@@ -404,6 +407,10 @@ const api = {
   devStop: () => invokeTrustedHost<DevServerState>("mako:dev-stop"),
   devAttach: (url: string) =>
     invokeTrustedHost<DevServerState>("mako:dev-attach", url),
+  registerPreview: (webContentsId: number) =>
+    invokeTrustedHost<string>("mako:preview-register", webContentsId),
+  unregisterPreview: (id: string) =>
+    invokeTrustedHost<void>("mako:preview-unregister", id),
 
   terminalList: () =>
     invokeTrustedHost<TerminalSession[]>("mako:terminal-list"),

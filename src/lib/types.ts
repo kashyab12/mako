@@ -17,6 +17,7 @@ export type {
   TurnUsage,
   Automation,
   AutomationRun,
+  AutomationTrigger,
   Block,
   BlockType,
   BootPayload,
@@ -37,6 +38,10 @@ export type {
   PullRequest,
   ReviewSummary,
   HostEvent,
+  IntegrationCatalogSnapshot,
+  IntegrationCategory,
+  IntegrationConnection,
+  IntegrationRecord,
   HarnessModel,
   HarnessModelOption,
   HarnessModelVariant,
@@ -89,7 +94,10 @@ export type {
   WorkspaceFile,
 } from "../../electron/shared.ts"
 
-export { THINKING_LEVELS } from "../../electron/shared.ts"
+export {
+  automationTriggerAvailable,
+  THINKING_LEVELS,
+} from "../../electron/shared.ts"
 
 export function harnessModelByIdentity(
   profile: SharedHarnessProfile | undefined,

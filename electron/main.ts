@@ -10,6 +10,7 @@ import {
   powerMonitor,
   shell,
   systemPreferences,
+  webContents,
   type BrowserWindowConstructorOptions,
 } from "electron"
 import { watch } from "node:fs"
@@ -129,6 +130,13 @@ import {
   writePlugin,
 } from "./plugins.js"
 import { discoverMcpRegistry } from "./mcp-registry.js"
+import { integrationCatalog } from "./integrations.js"
+import {
+  registerPreview,
+  startPreviewControl,
+  stopPreviewControl,
+  unregisterPreview,
+} from "./preview-control.js"
 import { applyMcpSync, previewMcpSync } from "./mcp-sync.js"
 import { discoverSkillRegistry } from "./skill-registry.js"
 import {
@@ -186,7 +194,7 @@ function terminal() {
   return terminalClient
 }
 
-function ensureMakoComputerFallback() {
+function ensureMakoLocalControl() {
   return ensureCuaEmbedded(
     join(app.getPath("userData"), "computer-use", "cua"),
     "dev.mako.app"
@@ -769,8 +777,22 @@ function bindIpc() {
 
   handle("mako:mcp-discover", () =>
     withHost(async (host) => {
-      await ensureMakoComputerFallback().catch(() => null)
+      await ensureMakoLocalControl().catch(() => null)
       return discoverMcpRegistry(host.workspace, app.getAppPath())
+    })
+  )
+  handle("mako:integrations", () =>
+    withHost(async (host) => {
+      await ensureMakoLocalControl().catch(() => null)
+      const [snapshot, github] = await Promise.all([
+        discoverMcpRegistry(host.workspace, app.getAppPath()),
+        githubStatus(host.workspace),
+      ])
+      return integrationCatalog(
+        snapshot,
+        computerPermissions(),
+        github.authenticated
+      )
     })
   )
   handle(
@@ -860,7 +882,7 @@ function bindIpc() {
         }
       }
     ) => {
-      await ensureMakoComputerFallback().catch(() => null)
+      await ensureMakoLocalControl().catch(() => null)
       const profile = await harnessProfile(harness)
       const resolved = {
         ...options,
@@ -1013,6 +1035,16 @@ function bindIpc() {
   )
   handle("mako:dev-stop", () => stopDevServer())
   handle("mako:dev-attach", (_e, url: string) => attachDevServer(url))
+  handle("mako:preview-register", (event, webContentsId: number) => {
+    const guest = webContents.fromId(webContentsId)
+    if (!guest || guest.hostWebContents !== event.sender) {
+      throw new Error("That preview does not belong to this Mako window")
+    }
+    return registerPreview(guest)
+  })
+  handle("mako:preview-unregister", (_event, id: string) =>
+    unregisterPreview(id)
+  )
 
   handle("mako:terminal-list", () => terminal().list())
   handle("mako:terminal-create", (_e, options: TerminalCreateOptions) =>
@@ -1076,6 +1108,9 @@ function bindIpc() {
 installCrashReporting()
 
 app.whenReady().then(async () => {
+  await startPreviewControl(
+    join(app.getPath("userData"), "computer-use", "preview")
+  ).catch(() => null)
   terminalClient = new TerminalDaemonClient(
     join(__dirname, "terminal-daemon.js"),
     join(app.getPath("userData"), "terminal"),
@@ -1112,6 +1147,7 @@ app.on("before-quit", () => {
   powerMonitor.removeListener("unlock-screen", emitTerminalWake)
   terminalClient?.dispose()
   stopCuaEmbedded()
+  stopPreviewControl()
   stopWatching()
   stopThreads()
   stopDrivers()

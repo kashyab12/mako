@@ -589,20 +589,64 @@ export interface UsageSummary {
  * arrives from a checkout with whatever its author set, and honouring that
  * would mean cloning a repository could start running an agent.
  */
+export type AutomationTrigger =
+  | { kind: "manual" }
+  | {
+      kind: "files"
+      /** Globs, for the `files` trigger. `**` crosses directories, `*` does not. */
+      paths: string[]
+    }
+  | { kind: "commit" }
+  | {
+      kind: "slack"
+      event: "message_in_channel" | "reaction_added" | "channel_created"
+      channels: string[]
+      messageFilter?: string
+    }
+  | {
+      kind: "gmail"
+      event: "message_received"
+      from: string[]
+      to: string[]
+      subjectFilter?: string
+      labels: string[]
+      hasAttachment: boolean
+    }
+  | {
+      kind: "google_calendar"
+      event:
+        | "event_created"
+        | "event_updated"
+        | "event_cancelled"
+        | "event_starting_soon"
+        | "event_ended"
+      calendars: string[]
+      titleFilter?: string
+    }
+  | { kind: "webhook"; path: string }
+
+export function automationTriggerAvailable(
+  trigger: AutomationTrigger
+): boolean {
+  return (
+    trigger.kind === "manual" ||
+    trigger.kind === "files" ||
+    trigger.kind === "commit"
+  )
+}
+
 export interface Automation {
   id: string
   name: string
   prompt: string
-  trigger: "manual" | "files" | "commit"
-  /** Globs, for the `files` trigger. `**` crosses directories, `*` does not. */
-  paths: string[]
+  trigger: AutomationTrigger
   enabled: boolean
 }
 
 export interface AutomationRun {
   id: string
   name: string
-  reason: "manual" | "files" | "commit"
+  reason: AutomationTrigger["kind"]
   at: number
 }
 
@@ -816,6 +860,39 @@ export interface MakoComputerPermissions {
   supported: boolean
   accessibility: boolean
   screenRecording: "not-determined" | "denied" | "restricted" | "granted" | "unknown"
+}
+
+export type IntegrationCategory =
+  | "Communication"
+  | "Planning"
+  | "Development"
+  | "Productivity"
+  | "Local"
+
+export type IntegrationConnection =
+  | { kind: "connected"; detail: string; providers: McpProvider[] }
+  | { kind: "ready"; detail: string }
+  | { kind: "needs-permission"; detail: string }
+  | { kind: "setup"; detail: string }
+  | { kind: "unavailable"; detail: string }
+  | { kind: "conflict"; detail: string }
+
+export interface IntegrationRecord {
+  id: string
+  label: string
+  description: string
+  category: IntegrationCategory
+  trust: "official" | "mako" | "community"
+  auth: "provider-oauth" | "provider-cli" | "local-permission"
+  capabilities: string[]
+  events: string[]
+  connection: IntegrationConnection
+  setupUrl?: string
+}
+
+export interface IntegrationCatalogSnapshot {
+  generatedAt: number
+  integrations: IntegrationRecord[]
 }
 
 export interface McpSyncTarget {

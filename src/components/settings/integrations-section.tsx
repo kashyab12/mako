@@ -1,0 +1,233 @@
+import { useEffect, useMemo, useState } from "react"
+import {
+  AlertTriangleIcon,
+  CheckIcon,
+  ExternalLinkIcon,
+  RefreshCwIcon,
+  SearchIcon,
+  ShieldCheckIcon,
+} from "lucide-react"
+import { Action, Eyebrow } from "@/components/ui/kit"
+import { cn } from "@/lib/utils"
+import type {
+  IntegrationCategory,
+  IntegrationRecord,
+} from "@/lib/types"
+import { integrations, useIntegrations } from "@/state/integrations"
+
+const CATEGORIES: IntegrationCategory[] = [
+  "Communication",
+  "Planning",
+  "Development",
+  "Productivity",
+  "Local",
+]
+
+export function IntegrationsSection() {
+  const state = useIntegrations((value) => value)
+  const [query, setQuery] = useState("")
+
+  useEffect(() => {
+    void integrations.load()
+  }, [])
+
+  const groups = useMemo(() => {
+    const term = query.trim().toLowerCase()
+    const records = (state.snapshot?.integrations ?? []).filter((record) =>
+      [
+        record.label,
+        record.description,
+        record.category,
+        ...record.capabilities,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(term)
+    )
+    return CATEGORIES.map((category) => ({
+      category,
+      records: records.filter((record) => record.category === category),
+    })).filter((group) => group.records.length > 0)
+  }, [query, state.snapshot])
+
+  return (
+    <div>
+      <div className="flex items-start gap-4 pb-5">
+        <p className="min-w-0 flex-1 text-ui leading-relaxed text-muted-foreground">
+          Bring work context into every agent. Service sign-in stays with the
+          provider that owns it; local browser and computer control never leave
+          this Mac.
+        </p>
+        <Action
+          tone="outline"
+          disabled={state.status === "loading"}
+          onClick={() => void integrations.load()}
+        >
+          <RefreshCwIcon className="size-3" />
+          Refresh
+        </Action>
+      </div>
+
+      <label className="mb-5 flex h-8 items-center gap-2 rounded-md bg-surface px-2.5 ring-1 ring-hairline focus-within:ring-border">
+        <SearchIcon className="size-3.5 shrink-0 text-faint" />
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search integrations"
+          aria-label="Search integrations"
+          className="min-w-0 flex-1 bg-transparent text-ui text-foreground placeholder:text-faint focus:outline-none"
+        />
+      </label>
+
+      {state.status === "loading" && !state.snapshot ? (
+        <p className="shimmer text-ui text-faint">Checking connections…</p>
+      ) : null}
+
+      {groups.map((group) => (
+        <section key={group.category} className="pb-5 last:pb-0">
+          <Eyebrow className="px-0 pb-1.5">{group.category}</Eyebrow>
+          <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+            {group.records.map((record) => (
+              <IntegrationCard key={record.id} record={record} />
+            ))}
+          </div>
+        </section>
+      ))}
+
+      {state.snapshot && groups.length === 0 ? (
+        <p className="rounded-lg bg-surface px-3 py-8 text-center text-ui text-faint ring-1 ring-hairline">
+          No integrations match “{query.trim()}”.
+        </p>
+      ) : null}
+
+      {state.error ? (
+        <p className="pt-3 text-label text-removed">{state.error}</p>
+      ) : null}
+    </div>
+  )
+}
+
+function IntegrationCard({ record }: { record: IntegrationRecord }) {
+  const state = record.connection
+  const configured = state.kind === "connected" || state.kind === "ready"
+  return (
+    <div className="contain-turn flex min-h-36 flex-col rounded-lg bg-surface p-3 ring-1 ring-hairline">
+      <div className="flex items-start gap-2.5">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-raised font-mono text-label font-semibold text-muted-foreground ring-1 ring-hairline">
+          {monogram(record.label)}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1.5">
+            <span className="truncate text-ui font-medium">{record.label}</span>
+            <TrustMark trust={record.trust} />
+          </span>
+          <span className="mt-0.5 block text-label leading-relaxed text-muted-foreground">
+            {record.description}
+          </span>
+        </span>
+        <StatusMark record={record} />
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-1">
+        {record.capabilities.map((capability) => (
+          <span
+            key={capability}
+            className="rounded bg-raised px-1.5 py-0.5 text-label text-faint"
+          >
+            {capability}
+          </span>
+        ))}
+      </div>
+
+      <div className="mt-auto flex items-end gap-2 pt-3">
+        <span className="min-w-0 flex-1 truncate text-label text-faint">
+          {state.detail}
+        </span>
+        {state.kind === "needs-permission" ? (
+          <Action
+            tone="outline"
+            onClick={() => void integrations.requestComputerPermissions()}
+          >
+            Grant access
+          </Action>
+        ) : state.kind === "setup" ? (
+          <Action
+            tone="outline"
+            onClick={() => {
+              if (record.setupUrl) {
+                void integrations.openSetup(record.setupUrl)
+                return
+              }
+              openMcpSettings()
+            }}
+          >
+            Set up
+            {record.setupUrl ? <ExternalLinkIcon className="size-3" /> : null}
+          </Action>
+        ) : state.kind === "conflict" ? (
+          <Action tone="outline" onClick={openMcpSettings}>
+            Review
+          </Action>
+        ) : configured && record.auth !== "local-permission" ? (
+          <Action tone="ghost" onClick={openMcpSettings}>
+            Manage
+          </Action>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function TrustMark({ trust }: { trust: IntegrationRecord["trust"] }) {
+  return trust === "community" ? (
+    <span className="text-label text-faint">community</span>
+  ) : (
+    <ShieldCheckIcon
+      aria-label={trust === "official" ? "Official integration" : "Mako integration"}
+      className="size-3 text-faint"
+    />
+  )
+}
+
+function StatusMark({ record }: { record: IntegrationRecord }) {
+  const kind = record.connection.kind
+  if (kind === "connected" || kind === "ready") {
+    return (
+      <span className="flex shrink-0 items-center gap-1 text-label text-added">
+        <CheckIcon className="size-3" />
+        {kind === "connected" ? "Connected" : "Ready"}
+      </span>
+    )
+  }
+  if (kind === "conflict" || kind === "needs-permission") {
+    return (
+      <span className="flex shrink-0 items-center gap-1 text-label text-caution">
+        <AlertTriangleIcon className="size-3" />
+        {kind === "conflict" ? "Conflict" : "Permissions"}
+      </span>
+    )
+  }
+  return (
+    <span
+      className={cn(
+        "shrink-0 text-label",
+        kind === "unavailable" ? "text-muted-foreground" : "text-faint"
+      )}
+    >
+      {kind === "unavailable" ? "Unavailable" : "Not connected"}
+    </span>
+  )
+}
+
+function monogram(label: string): string {
+  return label
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase()
+}
+
+function openMcpSettings(): void {
+  window.dispatchEvent(new CustomEvent("mako:settings", { detail: "mcp" }))
+}

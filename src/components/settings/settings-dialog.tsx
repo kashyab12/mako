@@ -13,6 +13,7 @@ import { section as conversation } from "@/components/settings/sections/conversa
 import { section as keyboard } from "@/components/settings/sections/keyboard"
 import { section as commits } from "@/components/settings/sections/commit-prompt"
 import { section as automations } from "@/components/settings/sections/automations"
+import { section as integrations } from "@/components/settings/sections/integrations"
 import { section as mcp } from "@/components/settings/sections/mcp"
 import { section as skills } from "@/components/settings/sections/skills"
 import { section as plugins } from "@/components/settings/sections/plugins"
@@ -27,6 +28,7 @@ const SECTIONS: readonly SettingsSection[] = [
   keyboard,
   commits,
   automations,
+  integrations,
   mcp,
   skills,
   plugins,

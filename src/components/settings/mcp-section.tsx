@@ -33,7 +33,7 @@ export function McpSection() {
     <div>
       <p className="pb-3 text-ui leading-relaxed text-muted-foreground">
         Servers found in each provider&apos;s configuration, deduplicated by
-        connection. Mako-managed Browser Use and computer use attach only to
+        connection. Mako&apos;s local browser and computer control attach only to
         sessions launched here; they are never written into provider clients.
         Environment and header values stay in the host.
       </p>
