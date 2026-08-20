@@ -28,11 +28,19 @@ export function AppShell() {
   useEffect(() => bindTheme(), [])
 
   useEffect(() => {
+    let active = true
     let dispose: (() => void) | undefined
-    void actions.boot().then((off) => {
-      dispose = off
+    queueMicrotask(() => {
+      if (!active) return
+      void actions.boot().then((off) => {
+        if (active) dispose = off
+        else off()
+      })
     })
-    return () => dispose?.()
+    return () => {
+      active = false
+      dispose?.()
+    }
   }, [])
 
   // Sessions and the working tree both change outside our process — a branch

@@ -41,6 +41,7 @@ import {
   applyAcpPermission,
   applyAcpSession,
   applyAcpUpdate,
+  applyAcpUpdates,
 } from "@/state/acp"
 import { watchOnboarding } from "@/state/onboarding"
 import { applyAutomations, noteAutomationRun } from "@/state/automations"
@@ -243,6 +244,9 @@ function applyToActive(event: HostEvent) {
       break
     case "acp-update":
       applyAcpUpdate(event.id, event.update)
+      break
+    case "acp-updates":
+      applyAcpUpdates(event.id, event.updates)
       break
     case "acp-permission":
       applyAcpPermission(event.request)

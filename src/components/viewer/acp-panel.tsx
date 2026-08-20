@@ -153,14 +153,16 @@ function Block({ block }: { block: AcpBlock }) {
   switch (block.type) {
     case "user":
       return (
-        <div className="my-3 rounded-lg bg-surface px-3 py-2">
+        <div className="contain-turn my-3 rounded-lg bg-surface px-3 py-2">
           <p className="pb-0.5 text-label font-medium text-faint">You</p>
           <p className="text-ui leading-relaxed whitespace-pre-wrap text-foreground/95">{block.text}</p>
         </div>
       )
     case "text":
       return (
-        <p className="my-2 text-ui leading-relaxed whitespace-pre-wrap text-foreground/90">{block.text}</p>
+        <p className="contain-turn my-2 text-ui leading-relaxed whitespace-pre-wrap text-foreground/90">
+          {block.text}
+        </p>
       )
     case "thinking":
       return <Thinking text={block.text} />
@@ -168,7 +170,7 @@ function Block({ block }: { block: AcpBlock }) {
       return <Tool block={block} />
     case "plan":
       return (
-        <div className="my-2 rounded-md border border-hairline/60 px-2.5 py-1.5">
+        <div className="contain-turn my-2 rounded-md border border-hairline/60 px-2.5 py-1.5">
           <p className="pb-1 text-label font-medium text-faint">Plan</p>
           {block.entries.map((entry, index) => (
             <p key={index} className="flex items-center gap-1.5 py-px text-ui text-muted-foreground">
@@ -190,7 +192,7 @@ function Block({ block }: { block: AcpBlock }) {
 function Thinking({ text }: { text: string }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="my-1">
+    <div className="contain-turn my-1">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -209,7 +211,7 @@ function Thinking({ text }: { text: string }) {
 function Tool({ block }: { block: AcpBlock & { type: "tool" } }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="my-1 rounded-md border border-hairline/60">
+    <div className="contain-turn my-1 rounded-md border border-hairline/60">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}

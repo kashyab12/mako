@@ -78,9 +78,13 @@ export function applyAcpSession(session: AcpSessionState) {
 }
 
 export function applyAcpUpdate(id: string, update: AcpUpdate) {
+  applyAcpUpdates(id, [update])
+}
+
+export function applyAcpUpdates(id: string, updates: AcpUpdate[]) {
   const { session, blocks } = acpStore.get()
   if (!session || session.id !== id) return
-  acpStore.set({ blocks: reduce(blocks, update) })
+  acpStore.set({ blocks: reduceUpdates(blocks, updates) })
 }
 
 export function applyAcpPermission(request: AcpPermissionRequest) {
@@ -95,58 +99,67 @@ export function applyAcpPermission(request: AcpPermissionRequest) {
   acpStore.set({ permission: request })
 }
 
-function reduce(blocks: AcpBlock[], update: AcpUpdate): AcpBlock[] {
-  const last = blocks[blocks.length - 1]
-  switch (update.kind) {
-    case "user":
-      return [...blocks, { type: "user", text: update.text }]
-    case "text":
-      if (last?.type === "text") {
-        return [
-          ...blocks.slice(0, -1),
-          { type: "text", text: last.text + update.text },
-        ]
-      }
-      return [...blocks, { type: "text", text: update.text }]
-    case "thinking":
-      if (last?.type === "thinking") {
-        return [
-          ...blocks.slice(0, -1),
-          { type: "thinking", text: last.text + update.text },
-        ]
-      }
-      return [...blocks, { type: "thinking", text: update.text }]
-    case "tool":
-      return [
-        ...blocks,
-        {
+function reduceUpdates(
+  blocks: AcpBlock[],
+  updates: AcpUpdate[]
+): AcpBlock[] {
+  const next = [...blocks]
+  for (const update of updates) {
+    const last = next[next.length - 1]
+    switch (update.kind) {
+      case "user":
+        next.push({ type: "user", text: update.text })
+        break
+      case "text":
+        if (last?.type === "text")
+          next[next.length - 1] = {
+            type: "text",
+            text: last.text + update.text,
+          }
+        else next.push({ type: "text", text: update.text })
+        break
+      case "thinking":
+        if (last?.type === "thinking")
+          next[next.length - 1] = {
+            type: "thinking",
+            text: last.text + update.text,
+          }
+        else next.push({ type: "thinking", text: update.text })
+        break
+      case "tool":
+        next.push({
           type: "tool",
           id: update.id,
           title: update.title,
           toolKind: update.toolKind,
           status: update.status,
           input: update.input,
-        },
-      ]
-    case "tool-update":
-      return blocks.map((block) =>
-        block.type === "tool" && block.id === update.id
-          ? {
-              ...block,
-              title: update.title ?? block.title,
-              status: update.status ?? block.status,
-              input: update.input ?? block.input,
-              output: update.output ?? block.output,
-            }
-          : block
-      )
-    case "plan": {
-      const withoutPlan = blocks.filter((block) => block.type !== "plan")
-      return [...withoutPlan, { type: "plan", entries: update.entries }]
+        })
+        break
+      case "tool-update": {
+        const index = next.findIndex(
+          (block) => block.type === "tool" && block.id === update.id
+        )
+        const block = next[index]
+        if (block?.type === "tool")
+          next[index] = {
+            ...block,
+            title: update.title ?? block.title,
+            status: update.status ?? block.status,
+            input: update.input ?? block.input,
+            output: update.output ?? block.output,
+          }
+        break
+      }
+      case "plan": {
+        const index = next.findIndex((block) => block.type === "plan")
+        if (index >= 0) next.splice(index, 1)
+        next.push({ type: "plan", entries: update.entries })
+        break
+      }
     }
-    default:
-      return blocks
   }
+  return next
 }
 
 export const acp = {

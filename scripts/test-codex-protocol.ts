@@ -46,6 +46,7 @@ const parsedThread = parseThreadResponse({
         items: [
           { type: "userMessage", id: "user-1", content: [{ type: "text", text: "hello" }] },
           { type: "agentMessage", id: "agent-1", text: "world" },
+          { type: "contextCompaction", id: "compact-1" },
         ],
       },
     ],
@@ -53,6 +54,13 @@ const parsedThread = parseThreadResponse({
   model: "gpt-5",
 })
 assert.equal(parsedThread.valid, true)
+if (parsedThread.valid) {
+  assert.deepEqual(parsedThread.value.thread.turns?.[0]?.items.at(-1), {
+    type: "unsupported",
+    id: "compact-1",
+    sourceType: "contextCompaction",
+  })
+}
 assert.equal(parseThreadResponse({ thread: { cwd: "/tmp/project" } }).valid, false)
 assert.equal(parseNotification("item/agentMessage/delta", { threadId: "thread-1" }), null)
 

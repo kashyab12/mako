@@ -418,7 +418,7 @@ function parseThreadItem(value: JsonValue | undefined): ThreadItem | null {
       return text === undefined ? null : { type, id, text }
     }
     default:
-      return null
+      return { type: "unsupported", id, sourceType: type }
   }
 }
 

@@ -341,6 +341,7 @@ function handleItem(
         )
       return
     case "plan":
+    case "unsupported":
       return
   }
 }

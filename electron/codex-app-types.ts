@@ -56,6 +56,7 @@ export type ThreadItem =
       success: boolean | null
     }
   | { type: "plan"; id: string; text: string }
+  | { type: "unsupported"; id: string; sourceType: string }
 
 export type Turn = {
   id: string

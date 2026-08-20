@@ -57,6 +57,7 @@ type Live = {
   decoder: StringDecoder
   protocol: ProtocolCallbacks
   startupTimer: ReturnType<typeof setTimeout> | null
+  replayUpdates: AcpUpdate[] | null
   exited: boolean
 }
 
@@ -132,6 +133,7 @@ export async function codexAppStart(
         clearTurnServerRequests(live, turnId),
     },
     startupTimer: null,
+    replayUpdates: null,
     exited: false,
   }
   sessions.set(id, live)
@@ -152,7 +154,15 @@ export async function codexAppStart(
     clearStartupTimer(live)
     live.threadId = response.thread.id
     if (response.thread.cwd !== undefined) live.cwd = response.thread.cwd
-    replayHistory(live, response.thread.turns ?? [])
+    const replayUpdates: AcpUpdate[] = []
+    live.replayUpdates = replayUpdates
+    try {
+      replayHistory(live, response.thread.turns ?? [])
+    } finally {
+      live.replayUpdates = null
+    }
+    if (replayUpdates.length > 0)
+      emit({ type: "acp-updates", id: live.id, updates: replayUpdates })
     updateState(live, {
       status: "ready",
       cwd: live.cwd,
@@ -373,6 +383,10 @@ function emitUpdate(live: Live, update: AcpUpdate): void {
     !update.text
   )
     return
+  if (live.replayUpdates) {
+    live.replayUpdates.push(update)
+    return
+  }
   emit({ type: "acp-update", id: live.id, update })
 }
 

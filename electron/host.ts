@@ -78,7 +78,6 @@ export class AgentHost {
   private pending = { meta: false, messages: false, tree: false, stream: false }
   private flushTimer: NodeJS.Timeout | null = null
   private gitTimer: NodeJS.Timeout | null = null
-  private lastStreamKey = ""
   /**
    * Whether this tab is the one on screen.
    *
@@ -225,15 +224,8 @@ export class AgentHost {
         if (meta || messages || tree || stream) this.emit({ type: "meta", meta: this.meta() })
         return
       }
-      if (stream) {
-        const message = this.streamingMessage()
-        // Skip the emission entirely when nothing about the draft changed.
-        const key = message ? `${message.blocks.length}:${JSON.stringify(message.blocks).length}` : ""
-        if (key !== this.lastStreamKey) {
-          this.lastStreamKey = key
-          this.emit({ type: "stream", message })
-        }
-      }
+      if (stream)
+        this.emit({ type: "stream", message: this.streamingMessage() })
       if (messages) this.emit({ type: "messages", messages: this.messages() })
       if (tree) {
         const leafId = this.session.sessionManager.getLeafId()
@@ -317,7 +309,6 @@ export class AgentHost {
 
   pushState() {
     if (!this.foreground) return
-    this.lastStreamKey = ""
     this.emit({ type: "session", session: this.state() })
     this.emit({ type: "stream", message: this.streamingMessage() })
   }

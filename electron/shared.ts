@@ -482,8 +482,9 @@ export type HostEventBody =
   | { type: "thread-run"; run: ThreadRunState }
   /** An interactive (ACP) session changed state. */
   | { type: "acp-session"; session: AcpSessionState }
-  /** One streamed piece of an interactive turn. */
+  /** One streamed piece, or one replay batch, from an interactive turn. */
   | { type: "acp-update"; id: string; update: AcpUpdate }
+  | { type: "acp-updates"; id: string; updates: AcpUpdate[] }
   /** The interactive agent is asking to use a tool; the user must answer. */
   | { type: "acp-permission"; request: AcpPermissionRequest }
 
