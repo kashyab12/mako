@@ -24,7 +24,13 @@ import {
   SubagentBody,
   WriteBody,
 } from "@/components/transcript/tool-views"
-import { argAt, countLines, editsOf, primaryArgument } from "@/lib/tools"
+import {
+  argAt,
+  countLines,
+  editsOf,
+  primaryArgument,
+  SUBAGENT_TOOLS,
+} from "@/lib/tools"
 import { fileName } from "@/lib/format"
 
 /**
@@ -87,47 +93,128 @@ export function installBuiltins(): () => void {
     registerSlot("identity", "rail.footer", IdentityRow, -10),
     registerSlot("terminal-dock", "composer.trailing", TerminalDockToggle, -10),
 
-    registerToolView("bash", {
-      summary: (call: ToolCall) => argAt(call.arguments, "command") ?? "",
-      body: BashBody,
-    }),
-    registerToolView("edit", {
-      summary: (call: ToolCall) => {
-        const edits = editsOf(call)
-        const path = primaryArgument(call.arguments)
-        return edits.length > 1 ? `${path} · ${edits.length} edits` : path
-      },
-      body: EditBody,
-    }),
-    registerToolView("multiedit", {
-      summary: (call: ToolCall) => primaryArgument(call.arguments),
-      body: EditBody,
-    }),
-    registerToolView("write", {
-      summary: (call: ToolCall) =>
-        `${primaryArgument(call.arguments)} · ${countLines(argAt(call.arguments, "content"))} lines`,
-      body: WriteBody,
-    }),
-    registerToolView("read", {
-      summary: (call: ToolCall) => {
-        const path = primaryArgument(call.arguments)
-        return path ? fileName(path) : ""
-      },
-    }),
+    ...["bash", "Bash", "shell", "Shell", "exec_command"].map((name) =>
+      registerToolView(name, {
+        summary: (call: ToolCall) => argAt(call.arguments, "command") ?? "",
+        body: BashBody,
+      })
+    ),
+    ...["edit", "Edit", "multiedit", "MultiEdit"].map((name) =>
+      registerToolView(name, {
+        summary: (call: ToolCall) => {
+          const edits = editsOf(call)
+          const path = primaryArgument(call.arguments)
+          return edits.length > 1 ? `${path} · ${edits.length} edits` : path
+        },
+        body: EditBody,
+      })
+    ),
+    ...["write", "Write"].map((name) =>
+      registerToolView(name, {
+        summary: (call: ToolCall) =>
+          `${primaryArgument(call.arguments)} · ${countLines(argAt(call.arguments, "content"))} lines`,
+        body: WriteBody,
+      })
+    ),
+    ...["read", "Read", "ReadFile", "read_file"].map((name) =>
+      registerToolView(name, {
+        summary: (call: ToolCall) => {
+          const path = primaryArgument(call.arguments)
+          return path ? fileName(path) : ""
+        },
+      })
+    ),
+    ...["grep", "Grep", "rg", "find", "Glob", "glob"].map((name) =>
+      registerToolView(name, {
+        summary: (call: ToolCall) => {
+          const query =
+            argAt(call.arguments, "pattern") ??
+            argAt(call.arguments, "query") ??
+            argAt(call.arguments, "glob_pattern")
+          const path = primaryArgument(call.arguments)
+          return [query, path].filter(Boolean).join(" · ")
+        },
+      })
+    ),
+    ...["ls", "list_files"].map((name) =>
+      registerToolView(name, {
+        summary: (call: ToolCall) => primaryArgument(call.arguments) || ".",
+      })
+    ),
+    ...["webfetch", "WebFetch", "web_search", "WebSearch"].map((name) =>
+      registerToolView(name, {
+        summary: (call: ToolCall) => primaryArgument(call.arguments),
+      })
+    ),
+    ...["Skill", "skill"].map((name) =>
+      registerToolView(name, {
+        summary: (call: ToolCall) =>
+          argAt(call.arguments, "skill") ??
+          argAt(call.arguments, "name") ??
+          primaryArgument(call.arguments),
+      })
+    ),
     ...[
-      "run_subagent",
-      "read_subagent",
-      "spawn_agent",
-      "send_input",
-      "close_agent",
-      "subagent",
-      "Task",
+      "TaskCreate",
+      "TaskUpdate",
+      "TodoWrite",
+      "CreatePlan",
     ].map((name) =>
       registerToolView(name, {
         summary: (call: ToolCall) =>
+          argAt(call.arguments, "subject") ??
+          argAt(call.arguments, "title") ??
+          argAt(call.arguments, "description") ??
+          "Plan",
+      })
+    ),
+    ...["AskQuestion", "AskUserQuestion"].map((name) =>
+      registerToolView(name, {
+        summary: (call: ToolCall) =>
+          argAt(call.arguments, "question") ??
+          argAt(call.arguments, "prompt") ??
+          "Question",
+      })
+    ),
+    ...["ScheduleWakeup", "AwaitShell", "write_stdin", "ToolSearch"].map(
+      (name) =>
+        registerToolView(name, {
+          summary: (call: ToolCall) => primaryArgument(call.arguments),
+        })
+    ),
+    ...[
+      "mako_macos_apps",
+      "mako_macos_state",
+      "mako_macos_see",
+      "mako_macos_click",
+      "mako_macos_key",
+      "mako_macos_type",
+      "mako_macos_script",
+      "mako_macos_exec",
+      "mako_preview_list",
+      "mako_preview_state",
+      "mako_preview_snapshot",
+      "mako_preview_navigate",
+      "mako_preview_click",
+      "mako_preview_type",
+      "mako_preview_press",
+      "mako_preview_evaluate",
+    ].map((name) =>
+      registerToolView(name, {
+        summary: (call: ToolCall) =>
+          argAt(call.arguments, "app") ?? primaryArgument(call.arguments),
+      })
+    ),
+    ...SUBAGENT_TOOLS.map((name) =>
+      registerToolView(name, {
+        summary: (call: ToolCall) =>
+          argAt(call.arguments, "description") ??
           argAt(call.arguments, "title") ??
           argAt(call.arguments, "role") ??
+          argAt(call.arguments, "subagent_type") ??
           argAt(call.arguments, "agent_id") ??
+          argAt(call.arguments, "target") ??
+          argAt(call.arguments, "cell_id") ??
           "Background agent",
         body: SubagentBody,
         icon: BotIcon,
