@@ -43,6 +43,17 @@ try {
       time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, data TEXT NOT NULL
     );
     CREATE INDEX part_session_idx ON part(session_id);
+    CREATE TABLE session_v2 (
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL, parent_id TEXT,
+      directory TEXT NOT NULL, title TEXT NOT NULL, model TEXT,
+      time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL,
+      time_archived INTEGER
+    );
+    CREATE TABLE session_message (
+      id TEXT PRIMARY KEY, session_id TEXT NOT NULL, type TEXT NOT NULL, seq INTEGER NOT NULL,
+      time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, data TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX session_v2_message_seq_idx ON session_message(session_id, seq);
   `)
   current.exec(`
     CREATE TABLE project (
@@ -251,6 +262,57 @@ try {
     json({ type: "text", text: "subagent protocol" })
   )
 
+  const insertV2Session = legacy.prepare(
+    "INSERT INTO session_v2 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  )
+  insertV2Session.run(
+    "ses_legacy",
+    "legacy-project",
+    null,
+    "/projects/legacy-root/app",
+    "Legacy shadow projection",
+    json({ id: "shadow-model", providerID: "shadow-provider" }),
+    1000,
+    3000,
+    null
+  )
+  insertV2Session.run(
+    "ses_v2",
+    "legacy-project",
+    null,
+    "/projects/v2-root",
+    "OpenCode 2 session",
+    json({ id: "gpt-v2", providerID: "openai" }),
+    6000,
+    7000,
+    null
+  )
+  legacy.prepare("INSERT INTO session_message VALUES (?, ?, ?, ?, ?, ?, ?)").run(
+    "msg_v2_user",
+    "ses_v2",
+    "user",
+    0,
+    6000,
+    6000,
+    json({ text: "v2 prompt", files: [], agents: [], time: { created: 6000 } })
+  )
+  legacy.prepare("INSERT INTO session_message VALUES (?, ?, ?, ?, ?, ?, ?)").run(
+    "msg_v2_assistant",
+    "ses_v2",
+    "assistant",
+    1,
+    6500,
+    7000,
+    json({
+      agent: "build",
+      model: { id: "gpt-v2", providerID: "openai" },
+      content: [{ type: "text", text: "v2 answer" }],
+      finish: "stop",
+      tokens: { input: 12, output: 4, reasoning: 1, cache: { read: 2, write: 0 } },
+      time: { created: 6500, completed: 7000 },
+    })
+  )
+
   current.prepare("INSERT INTO project VALUES (?, ?, ?, ?, ?)").run(
     "current-project",
     "/projects/current-root",
@@ -388,12 +450,13 @@ try {
 
   const provider = new OpenCodeProvider(home)
   const discovered = await provider.discover()
-  assert.equal(discovered.length, 3)
+  assert.equal(discovered.length, 4)
   assert.deepEqual(
     discovered.map((file) => file.path).sort(),
     [
       `${legacyPath}#ses_legacy`,
       `${legacyPath}#ses_other`,
+      `${legacyPath}#v2:ses_v2`,
       `${currentPath}#ses_current`,
     ].sort()
   )
@@ -405,10 +468,13 @@ try {
 
   const legacyFile = discovered.find((file) => file.path.endsWith("#ses_legacy"))
   const currentFile = discovered.find((file) => file.path.endsWith("#ses_current"))
+  const v2File = discovered.find((file) => file.path.endsWith("#v2:ses_v2"))
   assert.ok(legacyFile)
   assert.ok(currentFile)
+  assert.ok(v2File)
   const legacyRef = await provider.peek(legacyFile)
   const currentRef = await provider.peek(currentFile)
+  const v2Ref = await provider.peek(v2File)
   assert.equal(legacyRef.cwd, "/projects/legacy-root/app")
   assert.equal(legacyRef.title, "Legacy root session")
   assert.equal(legacyRef.model, "claude-legacy")
@@ -418,6 +484,22 @@ try {
   assert.equal(currentRef.model, "gpt-current")
   assert.equal(currentRef.modelProvider, "openai")
   assert.equal(currentRef.archived, true)
+  assert.equal(v2Ref.cwd, "/projects/v2-root")
+  assert.equal(v2Ref.title, "OpenCode 2 session")
+  assert.equal(v2Ref.model, "gpt-v2")
+  assert.equal(v2Ref.modelProvider, "openai")
+
+  const v2Thread = await provider.read(v2File.path)
+  assert.deepEqual(v2Thread?.entries, [
+    { kind: "user", at: "1970-01-01T01:40:00.000Z", text: "v2 prompt" },
+    {
+      kind: "assistant",
+      at: "1970-01-01T01:48:20.000Z",
+      model: "gpt-v2",
+      usage: { input: 12, output: 4, cacheRead: 2, cacheWrite: 0 },
+      blocks: [{ type: "text", text: "v2 answer" }],
+    },
+  ])
 
   const legacyThread = await provider.read(legacyFile.path)
   assert.ok(legacyThread)
@@ -659,7 +741,7 @@ try {
     error: true,
   })
 
-  console.log("OpenCode provider tests clean: both schemas, roots, metadata, tools, reasoning, usage, interruption, compaction, isolation, and follower diffs verified.")
+  console.log("OpenCode provider tests clean: V1, V2, projected sessions, roots, metadata, tools, reasoning, usage, interruption, compaction, isolation, and follower diffs verified.")
 } finally {
   legacy.close()
   current.close()
