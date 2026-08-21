@@ -89,6 +89,12 @@ const CLAUDE_AUTH_ENV = [
   "CLAUDE_CODE_OAUTH_TOKEN",
 ]
 const CODEX_AUTH_ENV = ["OPENAI_API_KEY"]
+const MAKO_RUNTIME_ENV = [
+  "MAKO_BACKEND_TOKEN",
+  "MAKO_CUA_SOCKET",
+  "MAKO_PREVIEW_SOCKET",
+  "MAKO_PREVIEW_TOKEN",
+]
 
 /** What stays shared across accounts, per harness. Everything but the keys. */
 const SHARED = {
@@ -722,6 +728,7 @@ export async function accountEnv(
   base: NodeJS.ProcessEnv
 ): Promise<NodeJS.ProcessEnv> {
   const env = { ...base }
+  for (const key of MAKO_RUNTIME_ENV) delete env[key]
   if (harness === "claude" || harness === "codex") {
     for (const key of harness === "claude" ? CLAUDE_AUTH_ENV : CODEX_AUTH_ENV)
       delete env[key]
