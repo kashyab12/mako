@@ -123,7 +123,7 @@ type ParsedDaemonResponse =
  * without it forever. Clients that see an older daemon retire it and let a
  * fresh one take the socket.
  */
-export const PROTOCOL_VERSION = 12
+export const PROTOCOL_VERSION = 13
 
 /** Serve one catalog over the socket. Resolves once listening. */
 export async function serveCatalog(

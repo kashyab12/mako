@@ -37,6 +37,7 @@ export { CodexProvider } from "./providers/codex.js"
 export { CursorProvider } from "./providers/cursor.js"
 export { GrokProvider } from "./providers/grok.js"
 export { ClaudeProvider } from "./providers/claude.js"
+export { OpenCodeProvider } from "./providers/opencode.js"
 import { SessionCatalog } from "./catalog.js"
 import { CodexProvider } from "./providers/codex.js"
 import { CursorProvider } from "./providers/cursor.js"
@@ -44,6 +45,7 @@ import { GrokProvider } from "./providers/grok.js"
 import { DevinLocalProvider } from "./providers/devin-local.js"
 import { DevinCliProvider } from "./providers/devin-cli.js"
 import { ClaudeProvider } from "./providers/claude.js"
+import { OpenCodeProvider } from "./providers/opencode.js"
 
 /** The catalog with every built-in provider, ready to scan. */
 export function defaultCatalog(
@@ -55,6 +57,7 @@ export function defaultCatalog(
       new ClaudeProvider(),
       new CursorProvider(),
       new GrokProvider(),
+      new OpenCodeProvider(),
       new DevinLocalProvider(),
       new DevinCliProvider(),
     ],
