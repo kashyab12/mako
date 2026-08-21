@@ -88,10 +88,10 @@ registerSurface({ id, label, icon, render, minWidth })        // stage companion
 
 The stage's surfaces — Changes, Context, History, Files, Terminal, Preview —
 are all registered through `registerSurface` on exactly the same footing as
-anything a plugin would add. One reading surface opens beside the chat at a
-fixed, draggable width; the independent Terminal dock can remain open below it
-at a fixed, draggable height. Neither uses percentage splits. The chat card stays
-mounted under a covering companion so the transcript keeps its scroll and stream.
+anything a plugin would add. One reading surface opens as the right sidebar at
+a fixed, draggable width; the independent Terminal dock can remain open below it
+at a fixed, draggable height. Neither uses percentage splits. The central workbench
+stays mounted under a covering sidebar so transcripts and file tabs keep their state.
 
 Slots are declared in `SlotMap` (`src/extend/slots.ts`) — that table is the
 contract for what may render where and with which props. Adding a seam means
@@ -171,9 +171,9 @@ deliberate action and never rides along with a commit.
 ## Design rules
 
 - Tokens live in `src/index.css` and nowhere else. No literal colors in
-  components. Chrome (`--shell`) carries no shadow, ever; content floats on
-  it as rounded cards (`.card`, radius 10) whose elevation is a baked 0.5px
-  hairline plus, in dark, a 0.5px top rim light. Real shadows exist only on
+  components. Chrome (`--shell`) carries no shadow, ever. Structural workspace
+  panes tile edge-to-edge with square edges and 1px dividers; rounded `.card`
+  surfaces are reserved for content within a pane. Real shadows exist only on
   floating surfaces (`.overlay-panel`: menus, palette, dialogs).
 - **The ramp is warm ember neutrals — red-shifted near-blacks, warm
   off-white text — and stays that quiet.** Ember (`--ember`) is punctuation,
@@ -207,8 +207,8 @@ Provider sessions, the built-in runtime's session tree, and the current git
 diff. No worktree manager. There is no status bar: the always-on facts live
 in the titlebar's right cluster, and the context/cost readings sit beside
 the composer, next to the send they price. The rail is the vertical thread
-list; horizontal tabs mean surfaces of the current thread, never more
-sessions.
+list; horizontal tabs inside the central workbench hold the agent session,
+files, and diffs for that thread, never more sessions.
 
 ## Working on the UI
 
