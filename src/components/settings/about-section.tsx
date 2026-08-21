@@ -29,7 +29,7 @@ export function AboutSection() {
 
       <p className="text-ui leading-relaxed text-muted-foreground">
         Mako opens sessions from Claude Code, Codex, Cursor, Grok, Devin, and
-        OpenCode. Credentials remain in each provider’s own storage.
+        OpenCode 2 and OpenCode. Credentials remain in each provider’s own storage.
       </p>
 
       <div className="flex items-center gap-2">
