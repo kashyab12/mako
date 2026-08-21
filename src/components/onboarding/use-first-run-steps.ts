@@ -80,7 +80,9 @@ export function useFirstRunSteps(): FirstRunState {
   const openDirs = usePrefs((prefs) => prefs.openDirs.length)
   const diffOpen = usePrefs((prefs) => prefs.autoOpenDiff)
   const latched = usePrefs((prefs) => prefs.onboardedSteps)
-  const viewedFile = useViewer((state) => Boolean(state.path))
+  const viewedFile = useViewer(
+    (state) => Object.keys(state.documents).length > 0
+  )
 
   const now = {
     provider: false,
