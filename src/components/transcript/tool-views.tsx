@@ -2,14 +2,24 @@ import { createElement, type ComponentType } from "react"
 import { Prose } from "@/components/transcript/markdown"
 import { type ToolViewProps } from "@/extend/slots"
 import { Output } from "@/components/transcript/tool-row"
-import { argAt, editsOf } from "@/lib/tools"
+import {
+  argAt,
+  booleanArgAt,
+  editsOf,
+  subagentResultId,
+  subagentResultText,
+} from "@/lib/tools"
 import { cn } from "@/lib/utils"
 import {
+  BookOpenIcon,
+  CircleHelpIcon,
+  ClockIcon,
   FilePenLineIcon,
   FilePlusIcon,
   FileTextIcon,
   FolderTreeIcon,
   GlobeIcon,
+  ListChecksIcon,
   MonitorCogIcon,
   SearchIcon,
   SquareTerminalIcon,
@@ -19,15 +29,35 @@ import {
 /** Icon by tool name, so the transcript is scannable without reading labels. */
 const ICONS = new Map([
   ["bash", SquareTerminalIcon],
+  ["shell", SquareTerminalIcon],
+  ["exec_command", SquareTerminalIcon],
   ["edit", FilePenLineIcon],
   ["multiedit", FilePenLineIcon],
+  ["apply_patch", FilePenLineIcon],
   ["write", FilePlusIcon],
   ["read", FileTextIcon],
+  ["readfile", FileTextIcon],
+  ["read_file", FileTextIcon],
   ["grep", SearchIcon],
+  ["rg", SearchIcon],
   ["find", SearchIcon],
+  ["glob", SearchIcon],
   ["ls", FolderTreeIcon],
+  ["list_files", FolderTreeIcon],
   ["webfetch", GlobeIcon],
   ["websearch", GlobeIcon],
+  ["web_search", GlobeIcon],
+  ["skill", BookOpenIcon],
+  ["taskcreate", ListChecksIcon],
+  ["taskupdate", ListChecksIcon],
+  ["todowrite", ListChecksIcon],
+  ["createplan", ListChecksIcon],
+  ["askquestion", CircleHelpIcon],
+  ["askuserquestion", CircleHelpIcon],
+  ["schedulewakeup", ClockIcon],
+  ["awaitshell", SquareTerminalIcon],
+  ["write_stdin", SquareTerminalIcon],
+  ["toolsearch", SearchIcon],
 ])
 
 /**
@@ -50,7 +80,8 @@ export function ToolGlyph({
     override ??
     (normalized.startsWith("mako_macos_")
       ? MonitorCogIcon
-      : normalized.startsWith("browser_")
+      : normalized.startsWith("browser_") ||
+          normalized.startsWith("mako_preview_")
         ? GlobeIcon
         : ICONS.get(normalized)) ??
     WrenchIcon
@@ -161,24 +192,64 @@ export function SubagentBody({ call }: ToolViewProps) {
     argAt(call.arguments, "task") ??
     argAt(call.arguments, "prompt") ??
     argAt(call.arguments, "message")
+  const role =
+    argAt(call.arguments, "subagent_type") ??
+    argAt(call.arguments, "role") ??
+    argAt(call.arguments, "agent")
+  const agentId =
+    argAt(call.arguments, "agent_id") ??
+    argAt(call.arguments, "agentId") ??
+    argAt(call.arguments, "task_id") ??
+    subagentResultId(call.result)
+  const result = subagentResultText(call.result)
+  const background =
+    booleanArgAt(call.arguments, "background") === true ||
+    booleanArgAt(call.arguments, "run_in_background") === true
+  const stillRunning =
+    call.pending ||
+    (background &&
+      /(?:working|running) in the background|state="running"/i.test(
+        call.result ?? ""
+      ))
+  const status = call.isError ? "Failed" : stillRunning ? "Running" : "Completed"
+
   return (
     <div className="flex flex-col gap-2 px-2.5 py-2">
+      <div className="flex items-center gap-2 text-label">
+        <span
+          className={cn(
+            "size-1.5 rounded-full",
+            call.isError
+              ? "bg-removed"
+              : stillRunning
+                ? "animate-live bg-ember"
+                : "bg-added"
+          )}
+        />
+        <span className="text-muted-foreground">{status}</span>
+        {role ? <span className="text-faint">{role}</span> : null}
+        {agentId ? (
+          <span className="min-w-0 truncate font-mono text-faint" title={agentId}>
+            {agentId}
+          </span>
+        ) : null}
+      </div>
       {task ? (
         <div>
           <p className="pb-1 text-label text-faint">Assignment</p>
           <Prose text={task} />
         </div>
       ) : null}
-      {call.result ? (
+      {result ? (
         <div className="border-t border-hairline pt-2">
           <p className="pb-1 text-label text-faint">
-            {call.isError ? "Failed" : "Transcript and result"}
+            {call.isError ? "Error" : "Transcript and result"}
           </p>
-          <Prose text={call.result} />
+          <Prose text={result} />
         </div>
-      ) : (
-        <p className="shimmer text-ui">working in the background…</p>
-      )}
+      ) : stillRunning ? (
+        <p className="text-ui text-faint">Working in the background…</p>
+      ) : null}
     </div>
   )
 }
