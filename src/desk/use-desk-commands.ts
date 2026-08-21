@@ -15,6 +15,7 @@ import { stage } from "@/state/stage"
 import { surfaces } from "@/extend/surfaces"
 import { tabsStore } from "@/state/tabs"
 import { search } from "@/state/search"
+import { viewer } from "@/state/viewer"
 
 const openPalette = () => {
   window.dispatchEvent(new CustomEvent("mako:palette"))
@@ -271,10 +272,10 @@ const DESK_COMMANDS: DeskCommand[] = [
   },
   {
     id: "view.toggle-companion",
-    title: "Toggle the companion pane",
+    title: "Toggle the right sidebar",
     section: "View",
-    keys: "mod+i",
-    hint: "Hide the open reading surface, or bring back the last one",
+    keys: "mod+alt+b",
+    hint: "Hide the right sidebar, or bring back its last section",
     run: () => stage.toggleCompanion(),
   },
   {
@@ -390,6 +391,7 @@ export function useDeskCommands() {
       if (mod && !event.shiftKey && !event.altKey && digit > 0) {
         event.preventDefault()
         if (digit === 1) {
+          viewer.showAgent()
           stage.showChat()
           stage.close()
         } else {
