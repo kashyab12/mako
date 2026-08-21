@@ -123,7 +123,7 @@ export async function enqueueRelayJob(payload: RelayJobPayload): Promise<{
     }
     throw error
   }
-  await relayClients().queue.sendMessage(jobId)
+  await relayClients().queue.sendMessage(jobId, { messageTimeToLive: -1 })
   return { created: true, jobId }
 }
 
