@@ -123,16 +123,16 @@ try {
 
   const summary = await usageSummary(sessionsRoot, homeRoot)
 
-  assert.equal(summary.total.messages, 10)
-  assert.equal(summary.sessions, 8)
-  assert.equal(summary.total.input, 242)
+  assert.equal(summary.total.messages, 11)
+  assert.equal(summary.sessions, 9)
+  assert.equal(summary.total.input, 243)
   assert.equal(summary.total.output, 97)
   assert.equal(summary.total.cacheRead, 213)
   assert.equal(summary.total.cacheWrite, 49)
   assert.equal(summary.total.reportedCost, 0.393)
   assert.ok(Math.abs((summary.total.estimatedCost ?? 0) - 0.000958875) < 1e-12)
   assert.equal(summary.total.pricedTokens, 585)
-  assert.equal(summary.total.unpricedTokens, 16)
+  assert.equal(summary.total.unpricedTokens, 17)
   assert.deepEqual(
     summary.sources?.map((source) => source.source).sort(),
     ["Claude Code", "Codex", "Mako", "OpenCode"]
@@ -147,15 +147,15 @@ try {
   assert.equal(codex?.cacheRead, 70)
   assert.equal(codex?.cacheWrite, 15)
   const openCode = summary.sources?.find((source) => source.source === "OpenCode")
-  assert.equal(openCode?.messages, 4)
-  assert.equal(openCode?.input, 28)
+  assert.equal(openCode?.messages, 5)
+  assert.equal(openCode?.input, 29)
   assert.equal(openCode?.output, 24)
   assert.equal(openCode?.cacheRead, 13)
   assert.equal(openCode?.cacheWrite, 4)
   assert.equal(openCode?.reportedCost, 0.27)
   assert.ok(Math.abs((openCode?.estimatedCost ?? 0) - 0.000114125) < 1e-12)
   assert.equal(openCode?.pricedTokens, 63)
-  assert.equal(openCode?.unpricedTokens, 6)
+  assert.equal(openCode?.unpricedTokens, 7)
   assert.equal(
     summary.projects?.find((project) => project.cwd === "/work/opencode-current")
       ?.messages,
@@ -163,6 +163,11 @@ try {
   )
   assert.equal(
     summary.projects?.find((project) => project.cwd === "/work/opencode-legacy")
+      ?.messages,
+    1
+  )
+  assert.equal(
+    summary.projects?.find((project) => project.cwd === "/work/opencode-v2")
       ?.messages,
     1
   )
@@ -191,6 +196,23 @@ async function putOpenCodeDatabases(homeRoot: string): Promise<void> {
     CREATE TABLE message (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL,
+      data TEXT NOT NULL
+    );
+    CREATE TABLE session_v2 (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      directory TEXT,
+      model TEXT,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL
+    );
+    CREATE TABLE session_message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      seq INTEGER NOT NULL,
       time_created INTEGER NOT NULL,
       time_updated INTEGER NOT NULL,
       data TEXT NOT NULL
@@ -235,6 +257,44 @@ async function putOpenCodeDatabases(homeRoot: string): Promise<void> {
     created + 1,
     created + 1,
     openCodeLegacyMessage("anthropic", "claude-sonnet-4-6", 5, 2, 1, 2, 1, 0.02)
+  )
+  const v2Session = legacy.prepare(
+    "INSERT INTO session_v2 (id, project_id, directory, model, time_created, time_updated) VALUES (?, ?, ?, ?, ?, ?)"
+  )
+  v2Session.run(
+    "oc-v2",
+    "project-legacy",
+    "/work/opencode-v2",
+    JSON.stringify({ id: "gpt-5", providerID: "openai" }),
+    created,
+    created
+  )
+  v2Session.run(
+    "oc-shared",
+    "project-legacy",
+    "/work/opencode-shadow",
+    null,
+    created,
+    created
+  )
+  const v2Message = legacy.prepare(
+    "INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data) VALUES (?, ?, 'assistant', ?, ?, ?, ?)"
+  )
+  v2Message.run(
+    "msg-v2-only",
+    "oc-v2",
+    1,
+    created + 2,
+    created + 2,
+    openCodeCurrentMessage("gateway", "v2-test", 1, 0, 0, 0, 0)
+  )
+  v2Message.run(
+    "msg-v2-shadow",
+    "oc-shared",
+    1,
+    created + 3,
+    created + 3,
+    openCodeCurrentMessage("private-provider", "private-model", 999, 999, 999, 999, 999)
   )
   legacy.close()
 
