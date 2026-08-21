@@ -39,8 +39,10 @@ export function SkillsSection() {
       <p className="pb-3 text-ui leading-relaxed text-muted-foreground">
         Agent Skills share one portable core: a skill directory with SKILL.md,
         name and description frontmatter, plus optional scripts, references,
-        and assets. Mako discovers universal and provider-specific roots,
-        compares complete package hashes, and never writes before a preview.
+        and assets. Mako discovers universal and provider-specific roots and
+        compares complete package hashes. Sync installs into the selected
+        provider root, so that skill is also available when the provider runs
+        outside Mako; every write requires a preview.
       </p>
 
       {state.status === "loading" && !snapshot ? (
