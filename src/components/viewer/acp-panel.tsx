@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { HarnessIcon } from "@/components/ui/provider-icon"
+import { SearchSelect } from "@/components/ui/search-select"
 import { harnessLabel } from "@/components/rail/harness-meta"
 import { acp, acpStore, useAcp, type AcpBlock } from "@/state/acp"
 import type { AcpPermissionRequest } from "@/lib/types"
@@ -100,17 +101,17 @@ function ModePicker() {
   const session = useAcp((state) => state.session)
   if (!session || session.modes.length === 0) return null
   return (
-    <select
+    <SearchSelect
       value={session.currentMode ?? ""}
-      onChange={(event) => acp.setMode(event.target.value)}
-      className="h-6 shrink-0 rounded border border-hairline bg-surface px-1 text-label text-muted-foreground focus:outline-none"
-    >
-      {session.modes.map((mode) => (
-        <option key={mode.id} value={mode.id}>
-          {mode.name}
-        </option>
-      ))}
-    </select>
+      label="Agent mode"
+      searchPlaceholder="Search modes"
+      className="w-36 shrink-0"
+      options={session.modes.map((mode) => ({
+        value: mode.id,
+        label: mode.name,
+      }))}
+      onChange={(next) => acp.setMode(next)}
+    />
   )
 }
 

@@ -144,6 +144,35 @@ try {
   )
   assert.equal(appended.nextByte, 5)
 
+  const notified = new DatabaseSync(join(dir, "sessions.db"))
+  notified
+    .prepare("INSERT INTO message_nodes VALUES (?, ?, ?, ?, ?, ?)")
+    .run(
+      7,
+      "session-1",
+      6,
+      5,
+      JSON.stringify({
+        role: "system",
+        content:
+          "<subagent_completion_notification>\n[Background subagent with agent_id=agent-1 completed]\n\nFound the root cause.\n</subagent_completion_notification>",
+      }),
+      6
+    )
+  notified
+    .prepare("UPDATE sessions SET last_activity_at = ?, main_chain_id = ? WHERE id = ?")
+    .run(6, 6, "session-1")
+  notified.close()
+
+  const subagent = await follower.next()
+  assert.equal(subagent.replace, false)
+  const subagentBlock = subagent.entries
+    .filter((entry) => entry.kind === "assistant")
+    .flatMap((entry) => entry.blocks)
+    .find((block) => block.type === "tool")
+  assert.equal(subagentBlock?.name, "subagent")
+  assert.equal(subagentBlock?.output, "Found the root cause.")
+
   const cachePath = join(home, "catalog-cache.json")
   await writeFile(
     cachePath,

@@ -1,22 +1,33 @@
 import { useEffect, useRef } from "react"
 import { File, Virtualizer } from "@pierre/diffs/react"
+import { FileIcon } from "lucide-react"
 import { formatBytes } from "@/lib/format"
+import { Prose } from "@/components/transcript/markdown"
+import { TabularPreview } from "@/components/viewer/tabular-preview"
 import { usePrefs } from "@/state/prefs"
 import type { FileContents } from "@/lib/types"
+import type { ViewerRenderMode } from "@/state/viewer"
 
 /**
- * A file, rendered.
+ * A file, rendered according to its current contents and selected mode.
  *
- * The `File` renderer, not the diff one. Passing a file to the diff engine as
- * an addition also works and was the first thing I tried — but it means every
- * line arrives green with a `+298` badge above it, which says "here is a large
- * change" about a file nobody changed. Reading is not a diff.
+ * Text and code use Pierre's file renderer, Markdown can switch between that
+ * source view and prose, and binary files stop at a renderer hook because the
+ * current bridge intentionally exposes metadata rather than media bytes.
  *
- * The header is disabled because this layer already has one, carrying the path
- * and the actions; two stacked filename bars is the sort of thing that makes an
- * interface feel assembled rather than designed.
+ * The header is disabled because the pane already carries the path and the
+ * actions; two stacked filename bars make the workspace feel assembled rather
+ * than designed.
  */
-export function FileView({ file, line }: { file: FileContents; line?: number }) {
+export function FileView({
+  file,
+  line,
+  mode,
+}: {
+  file: FileContents
+  line?: number
+  mode: ViewerRenderMode
+}) {
   const theme = usePrefs((prefs) => prefs.theme)
   const host = useRef<HTMLDivElement>(null)
 
@@ -29,7 +40,7 @@ export function FileView({ file, line }: { file: FileContents; line?: number }) 
    * rather than spinning if the file is shorter than the line asked for.
    */
   useEffect(() => {
-    if (!line) return
+    if (!line || mode !== "source") return
     let frames = 0
     let raf = 0
     const look = () => {
@@ -43,14 +54,22 @@ export function FileView({ file, line }: { file: FileContents; line?: number }) 
     }
     raf = requestAnimationFrame(look)
     return () => cancelAnimationFrame(raf)
-  }, [file, line])
+  }, [file, line, mode])
 
-  if (file.binary) {
+  if (file.binary) return <MediaPreview file={file} />
+
+  if (mode === "preview" && isMarkdownPath(file.path)) {
     return (
-      <p className="p-4 text-ui text-faint">
-        Binary file, {formatBytes(file.size)}. Nothing to show as text.
-      </p>
+      <Prose
+        text={resolveMarkdownMedia(file.contents, file.path)}
+        className="mx-auto max-w-4xl p-5 sm:p-7"
+        urlTransform={workspaceUrlTransform}
+      />
     )
+  }
+
+  if (mode === "preview" && isTabularPath(file.path)) {
+    return <TabularPreview contents={file.contents} path={file.path} />
   }
 
   return (
@@ -65,6 +84,109 @@ export function FileView({ file, line }: { file: FileContents; line?: number }) 
           }}
         />
       </Virtualizer>
+    </div>
+  )
+}
+
+function isMarkdownPath(path: string) {
+  return /\.(?:md|markdown|mdx)$/i.test(path)
+}
+
+function isTabularPath(path: string) {
+  return /\.(?:csv|tsv)$/i.test(path)
+}
+
+function workspaceUrlTransform(url: string): string {
+  if (/^(?:https?:|mailto:|mako-file:|#)/i.test(url)) return url
+  return /^[a-z]+:/i.test(url) ? "" : url
+}
+
+function resolveMarkdownMedia(contents: string, path: string): string {
+  const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/") + 1) : ""
+  return contents.replace(
+    /(!\[[^\]]*\]\()([^\s)]+)(\))/g,
+    (match, before: string, source: string, after: string) => {
+      if (/^(?:[a-z]+:|#|\/)/i.test(source)) return match
+      const joined = `${folder}${source}`
+      const parts: string[] = []
+      for (const part of joined.split("/")) {
+        if (!part || part === ".") continue
+        if (part === "..") parts.pop()
+        else parts.push(part)
+      }
+      const encoded = parts.map((part) => encodeURIComponent(part)).join("/")
+      return `${before}mako-file://workspace/${encoded}${after}`
+    }
+  )
+}
+
+function MediaPreview({ file }: { file: FileContents }) {
+  if (file.previewUrl && file.media === "image") {
+    return (
+      <div className="flex min-h-full items-center justify-center overflow-auto bg-shell/40 p-5">
+        <img
+          src={file.previewUrl}
+          alt={file.path}
+          draggable={false}
+          className="max-h-full max-w-full rounded-md object-contain shadow-[var(--elevation-card)]"
+        />
+      </div>
+    )
+  }
+  if (file.previewUrl && file.media === "pdf") {
+    return (
+      <iframe
+        src={file.previewUrl}
+        title={file.path}
+        className="h-full min-h-[32rem] w-full border-0 bg-surface"
+      />
+    )
+  }
+  if (file.previewUrl && file.media === "audio") {
+    return (
+      <div className="flex min-h-56 items-center justify-center p-6">
+        <audio controls src={file.previewUrl} className="w-full max-w-xl" />
+      </div>
+    )
+  }
+  if (file.previewUrl && file.media === "video") {
+    return (
+      <div className="flex min-h-full items-center justify-center bg-shell/40 p-4">
+        <video
+          controls
+          src={file.previewUrl}
+          className="max-h-full max-w-full rounded-md"
+        />
+      </div>
+    )
+  }
+  if (file.thumbnailUrl && file.media === "spreadsheet") {
+    return (
+      <div className="flex min-h-full items-start justify-center overflow-auto bg-shell/40 p-5">
+        <img
+          src={file.thumbnailUrl}
+          alt={`Preview of ${file.path}`}
+          draggable={false}
+          className="max-w-full rounded-md object-contain shadow-[var(--elevation-card)]"
+        />
+      </div>
+    )
+  }
+  return (
+    <div className="flex min-h-56 flex-col items-center justify-center gap-2 p-6 text-center">
+      <span className="flex size-10 items-center justify-center rounded-lg bg-raised text-faint ring-1 ring-hairline ring-inset">
+        <FileIcon className="size-4" />
+      </span>
+      <p className="text-ui font-medium text-muted-foreground">
+        {file.media === "spreadsheet"
+          ? "Open this workbook in your editor"
+          : "Binary preview unavailable"}
+      </p>
+      <p className="max-w-sm text-label leading-relaxed text-faint">
+        {formatBytes(file.size)} on disk. Mako previews CSV and TSV tables here;
+        packaged workbooks stay in the editor that understands their formulas and
+        formatting.
+      </p>
     </div>
   )
 }

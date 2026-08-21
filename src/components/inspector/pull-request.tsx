@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Action, IconAction } from "@/components/ui/kit"
+import { SearchSelect } from "@/components/ui/search-select"
 import {
   Popover,
   PopoverContent,
@@ -308,18 +309,17 @@ function ComposePull({
         <span className="min-w-0 truncate text-ui text-faint">
           {branch} →
         </span>
-        <select
-          aria-label="Pull request base branch"
+        <SearchSelect
           value={selectedBase ?? ""}
-          onChange={(event) => setSelectedBase(event.target.value)}
-          className="h-6 min-w-0 flex-1 rounded bg-raised px-1.5 text-label text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-border"
-        >
-          {branches.map((branchName) => (
-            <option key={branchName} value={branchName}>
-              {branchName}
-            </option>
-          ))}
-        </select>
+          label="Pull request base branch"
+          searchPlaceholder="Search branches"
+          className="min-w-0 flex-1"
+          options={branches.map((branchName) => ({
+            value: branchName,
+            label: branchName,
+          }))}
+          onChange={setSelectedBase}
+        />
         <IconAction label="Draft it from the diff" size="xs" onClick={() => void compose()}>
           <SparklesIcon className={drafting ? "animate-spin" : undefined} />
         </IconAction>

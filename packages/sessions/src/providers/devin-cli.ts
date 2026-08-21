@@ -369,6 +369,27 @@ function translator(): MessageTranslator {
       const message = parseChatMessage(row.chatMessage)
       if (!message) return
       const at = isoOf(row.createdAt)
+      if (message.role === "system") {
+        const completion = parseSubagentCompletion(contentText(message.content))
+        if (!completion) return
+        sink.push({
+          kind: "assistant",
+          at,
+          blocks: [
+            {
+              type: "tool",
+              name: "subagent",
+              input: JSON.stringify({
+                agent_id: completion.id,
+                status: completion.status,
+              }),
+              output: clip(completion.output),
+              error: completion.status !== "completed",
+            },
+          ],
+        })
+        return
+      }
       if (message.role === "user") {
         const text = contentText(message.content)
         if (text.trim()) sink.push({ kind: "user", at, text })
@@ -406,6 +427,23 @@ function translator(): MessageTranslator {
     snapshot() {
       return sink.snapshot()
     },
+  }
+}
+
+function parseSubagentCompletion(text: string): {
+  id: string
+  status: string
+  output: string
+} | null {
+  const match =
+    /^<subagent_completion_notification>\s*\n\[Background subagent with agent_id=([^\s\]]+) ([^\]]+)\]\s*\n([\s\S]*?)\s*<\/subagent_completion_notification>\s*$/.exec(
+      text
+    )
+  if (!match) return null
+  return {
+    id: match[1]!,
+    status: match[2]!,
+    output: match[3]?.trim() ?? "",
   }
 }
 

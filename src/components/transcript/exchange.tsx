@@ -179,24 +179,34 @@ function Prompt({ message }: { message: ChatMessage }) {
 /* the response                                                        */
 /* ------------------------------------------------------------------ */
 
+const SUBAGENT_TOOLS = new Set([
+  "run_subagent",
+  "spawn_agent",
+  "Task",
+])
+
 interface WorkSummaryData {
   tools: number
+  agents: number
   failed: number
   duration?: number
 }
 
 function summarizeWork(exchange: ExchangeData): WorkSummaryData {
   let tools = 0
+  let agents = 0
   let failed = 0
   for (const message of exchange.response) {
     const calls = pairTools(message.blocks)
     tools += calls.length
+    agents += calls.filter((call) => SUBAGENT_TOOLS.has(call.name)).length
     failed += calls.filter((call) => call.isError).length
   }
   const started = exchange.prompt?.timestamp
   const completed = exchange.response.at(-1)?.timestamp
   return {
     tools,
+    agents,
     failed,
     duration:
       started !== undefined && completed !== undefined && completed >= started
@@ -216,6 +226,9 @@ function WorkSummary({
 }) {
   const pieces = [
     work.duration !== undefined ? `Worked for ${formatDuration(work.duration)}` : "Work log",
+    work.agents > 0
+      ? `${work.agents} background agent${work.agents === 1 ? "" : "s"}`
+      : null,
     `${work.tools} tools`,
     work.failed > 0 ? `${work.failed} failed` : null,
   ].filter(Boolean)

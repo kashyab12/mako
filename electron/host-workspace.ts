@@ -1,5 +1,5 @@
 import { copyFile, mkdir, open, readFile, readdir, stat, writeFile } from "node:fs/promises"
-import { isAbsolute, join, relative } from "node:path"
+import { extname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { getAgentDir } from "@earendil-works/pi-coding-agent"
 import type { FileContents, StagedFile, WorkspaceFile } from "./shared.js"
 import type { WorkspaceGit } from "./host-git.js"
@@ -11,6 +11,38 @@ import type { WorkspaceGit } from "./host-git.js"
  * renderer. Above it the head is shown and the viewer says the rest was cut.
  */
 const FILE_VIEW_LIMIT = 2_000_000
+
+interface MediaType {
+  media: NonNullable<FileContents["media"]>
+  mimeType: string
+}
+
+const MEDIA_TYPES = {
+  ".avif": { media: "image", mimeType: "image/avif" },
+  ".gif": { media: "image", mimeType: "image/gif" },
+  ".jpeg": { media: "image", mimeType: "image/jpeg" },
+  ".jpg": { media: "image", mimeType: "image/jpeg" },
+  ".png": { media: "image", mimeType: "image/png" },
+  ".svg": { media: "image", mimeType: "image/svg+xml" },
+  ".webp": { media: "image", mimeType: "image/webp" },
+  ".pdf": { media: "pdf", mimeType: "application/pdf" },
+  ".mp3": { media: "audio", mimeType: "audio/mpeg" },
+  ".wav": { media: "audio", mimeType: "audio/wav" },
+  ".m4a": { media: "audio", mimeType: "audio/mp4" },
+  ".mp4": { media: "video", mimeType: "video/mp4" },
+  ".mov": { media: "video", mimeType: "video/quicktime" },
+  ".webm": { media: "video", mimeType: "video/webm" },
+  ".xlsx": {
+    media: "spreadsheet",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  },
+  ".xls": { media: "spreadsheet", mimeType: "application/vnd.ms-excel" },
+  ".numbers": {
+    media: "spreadsheet",
+    mimeType: "application/vnd.apple.numbers",
+  },
+} satisfies Record<string, MediaType>
 
 /** The `@` picker re-queries per keystroke; the file set does not move that fast. */
 const FILE_CACHE_MS = 5_000
@@ -124,6 +156,26 @@ export class WorkspaceFiles {
     const absolute = await this.resolvePath(path)
     const info = await stat(absolute)
     if (info.isDirectory()) throw new Error(`${path} is a directory`)
+    const extension = extname(path).toLowerCase()
+    const media = Object.entries(MEDIA_TYPES).find(
+      ([candidate]) => candidate === extension
+    )?.[1]
+    if (media) {
+      const encoded = path
+        .split(/[\\/]/)
+        .map((part) => encodeURIComponent(part))
+        .join("/")
+      return {
+        path,
+        contents: "",
+        size: info.size,
+        binary: true,
+        truncated: false,
+        media: media.media,
+        mimeType: media.mimeType,
+        previewUrl: `mako-file://workspace/${encoded}`,
+      }
+    }
 
     const handle = await open(absolute, "r")
     try {
@@ -149,9 +201,17 @@ export class WorkspaceFiles {
 
   /** Absolute path for a workspace-relative one, for reveal/open. */
   async resolvePath(path: string): Promise<string> {
-    if (isAbsolute(path)) return path
-    const root = await this.git.root()
-    return join(root ?? this.cwdValue, path)
+    const root = resolve((await this.git.root()) ?? this.cwdValue)
+    const absolute = resolve(root, path)
+    const fromRoot = relative(root, absolute)
+    if (
+      fromRoot === ".." ||
+      fromRoot.startsWith(`..${sep}`) ||
+      isAbsolute(fromRoot)
+    ) {
+      throw new Error("That path is outside this workspace")
+    }
+    return absolute
   }
 }
 

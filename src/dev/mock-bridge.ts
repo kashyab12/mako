@@ -431,7 +431,7 @@ const INTEGRATIONS: IntegrationCatalogSnapshot = {
     {
       id: "slack",
       label: "Slack",
-      description: "Read and send messages through Mako’s Vercel Connect backend.",
+      description: "Read and send messages through your authenticated Mako backend.",
       category: "Communication",
       trust: "mako",
       auth: "mako-backend",
@@ -1650,6 +1650,12 @@ export function installMockBridge() {
     clearCrashes: async () => {},
     reportCrash: async () => {},
     pickFolder: async () => null,
+    externalEditors: async () => [
+      { id: "zed", label: "Zed", available: true },
+      { id: "cursor", label: "Cursor", available: true },
+      { id: "vscode", label: "Visual Studio Code", available: true },
+    ],
+    openInEditor: async () => {},
     revealPath: async () => {},
     copy: async () => {},
     onEvent: (listener) => {

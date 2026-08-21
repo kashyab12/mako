@@ -7,7 +7,9 @@ import {
   ipcMain,
   nativeImage,
   nativeTheme,
+  net,
   powerMonitor,
+  protocol,
   shell,
   systemPreferences,
   webContents,
@@ -16,7 +18,7 @@ import {
 import { watch } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { COMMIT_PROMPT, type AgentHost } from "./host.js"
 import {
   breadcrumb,
@@ -63,6 +65,8 @@ import {
   type CreatePullOptions,
 } from "./github.js"
 import { HostPool } from "./pool.js"
+import { listExternalEditors, openInExternalEditor } from "./editors.js"
+import { workspacePreviewPath } from "./workspace-preview.js"
 import {
   daemonStatus,
   emitThreadAs,
@@ -163,6 +167,18 @@ import type {
   ThinkingLevel,
   ThreadContextOptions,
 } from "./shared.js"
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "mako-file",
+    privileges: {
+      secure: true,
+      standard: true,
+      supportFetchAPI: true,
+      stream: true,
+    },
+  },
+])
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const isDev = !app.isPackaged && !process.env.MAKO_PROD
@@ -537,7 +553,21 @@ function bindIpc() {
 
   handle("mako:list-files", () => withHost((h) => h.listFiles()))
   handle("mako:read-file", (_e, path: string) =>
-    withHost((h) => h.readWorkspaceFile(path))
+    withHost(async (host) => {
+      const file = await host.readWorkspaceFile(path)
+      if (file.media !== "spreadsheet") return file
+      const absolute = await host.resolvePath(path)
+      try {
+        const thumbnail = await nativeImage.createThumbnailFromPath(absolute, {
+          width: 1200,
+          height: 900,
+        })
+        if (!thumbnail.isEmpty()) file.thumbnailUrl = thumbnail.toDataURL()
+      } catch {
+        return file
+      }
+      return file
+    })
   )
   /**
    * Watch the one file the viewer has open. An agent mid-edit rewrites it
@@ -622,6 +652,13 @@ function bindIpc() {
     })
     return result.canceled ? null : result.filePaths[0]
   })
+  handle("mako:external-editors", () => listExternalEditors())
+  handle("mako:open-in-editor", (_e, path: string, editor?: string) =>
+    withHost(async (h) => {
+      const absolute = await h.resolvePath(path)
+      await openInExternalEditor(absolute, editor)
+    })
+  )
   handle("mako:reveal", (_e, path: string) =>
     withHost(async (h) => {
       // Paths from the UI are workspace-relative; open with the user's default
@@ -1121,7 +1158,31 @@ function bindIpc() {
 installCrashReporting()
 
 app.whenReady().then(async () => {
+  app.setAboutPanelOptions({
+    applicationName: "Mako",
+    applicationVersion: app.getVersion(),
+    version: app.getVersion(),
+    copyright: "© 2026 Mako contributors",
+    credits:
+      "A local-first desktop meta-harness for Claude Code, Codex, Cursor, Grok, and Devin.",
+  })
   await ensureBackendConnectionEnvironment()
+  protocol.handle("mako-file", async (request) => {
+    if (request.method !== "GET")
+      return new Response("Method not allowed", { status: 405 })
+    const path = workspacePreviewPath(request.url)
+    if (!path) return new Response("Not found", { status: 404 })
+    try {
+      return await withHost(async (host) => {
+        const absolute = await host.resolvePath(path)
+        return net.fetch(pathToFileURL(absolute).toString(), {
+          headers: request.headers,
+        })
+      })
+    } catch {
+      return new Response("Not found", { status: 404 })
+    }
+  })
   await startPreviewControl(
     join(app.getPath("userData"), "computer-use", "preview")
   ).catch(() => null)

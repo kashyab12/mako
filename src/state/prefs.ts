@@ -84,6 +84,7 @@ export interface Prefs {
   /** Overrides the host's default commit-drafting prompt. */
   commitPrompt?: string
   commitModel?: string
+  externalEditor?: string
 }
 
 const KEY = "mako.prefs.v1"
@@ -318,6 +319,7 @@ function parsePrefs(value: JsonValue): Prefs | null {
     terminalTitles: readStringRecord(value.terminalTitles),
     commitPrompt: readOptionalString(value.commitPrompt),
     commitModel: readOptionalString(value.commitModel),
+    externalEditor: readOptionalString(value.externalEditor),
   }
 
   // The rail redesigned around showing every folder; a "workspace" scope

@@ -789,11 +789,21 @@ export interface SearchResults {
   error?: string
 }
 
+export interface ExternalEditor {
+  id: string
+  label: string
+  available: boolean
+}
+
 /** One workspace file, opened for reading. */
 export interface FileContents {
   /** Workspace-relative, as it was asked for. */
   path: string
   contents: string
+  media?: "image" | "pdf" | "audio" | "video" | "spreadsheet"
+  mimeType?: string
+  previewUrl?: string
+  thumbnailUrl?: string
   /** Bytes on disk, not of `contents` — they differ when truncated. */
   size: number
   /** Not text. `contents` is empty; the viewer says so rather than rendering noise. */

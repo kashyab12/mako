@@ -1,4 +1,5 @@
 import { createElement, type ComponentType } from "react"
+import { Prose } from "@/components/transcript/markdown"
 import { type ToolViewProps } from "@/extend/slots"
 import { Output } from "@/components/transcript/tool-row"
 import { argAt, editsOf } from "@/lib/tools"
@@ -151,6 +152,33 @@ export function WriteBody({ call }: ToolViewProps) {
       <DiffBlock
         lines={content.split("\n").map((text) => ({ kind: "add" as const, text }))}
       />
+    </div>
+  )
+}
+
+export function SubagentBody({ call }: ToolViewProps) {
+  const task =
+    argAt(call.arguments, "task") ??
+    argAt(call.arguments, "prompt") ??
+    argAt(call.arguments, "message")
+  return (
+    <div className="flex flex-col gap-2 px-2.5 py-2">
+      {task ? (
+        <div>
+          <p className="pb-1 text-label text-faint">Assignment</p>
+          <Prose text={task} />
+        </div>
+      ) : null}
+      {call.result ? (
+        <div className="border-t border-hairline pt-2">
+          <p className="pb-1 text-label text-faint">
+            {call.isError ? "Failed" : "Transcript and result"}
+          </p>
+          <Prose text={call.result} />
+        </div>
+      ) : (
+        <p className="shimmer text-ui">working in the background…</p>
+      )}
     </div>
   )
 }

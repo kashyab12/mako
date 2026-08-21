@@ -4,14 +4,35 @@ import { stage } from "@/state/stage"
 import type { FileContents, GitDiff } from "@/lib/types"
 
 /**
- * The file open for reading, if any.
+ * Files open for reading in the renderer workbench.
  *
- * Deliberately one file, not a stack of them. Tabs in this app are
- * conversations; a file is something you glance at and dismiss, so it gets the
- * transcript's space for as long as it is open and Escape gives it back. A
- * second tab bar for files would be a second thing to manage for a job that
- * ends the moment you have read the line you came for.
+ * Documents and pane layout deliberately live only for this launch. Callers
+ * still see the active document through the original path/file/diff fields,
+ * while the workbench can retain pinned tabs and two independent panes.
  */
+
+export type ViewerSplit = "right" | "down"
+export type ViewerRenderMode = "source" | "preview"
+
+export interface ViewerDocument {
+  id: string
+  kind: "file" | "diff"
+  path: string
+  title: string
+  file?: FileContents
+  diff?: { title: string; diffs: GitDiff[]; note?: string }
+  loading: boolean
+  error?: string
+  line?: number
+  pinned: boolean
+  renderMode: ViewerRenderMode
+}
+
+export interface ViewerPane {
+  id: string
+  tabIds: string[]
+  activeId?: string
+}
 
 export interface ViewerState {
   /** Workspace-relative path, or undefined when nothing is open. */
@@ -28,100 +49,354 @@ export interface ViewerState {
   line?: number
   /** Diffs on the center stage instead of a file, when set. */
   diff?: { title: string; diffs: GitDiff[]; note?: string }
+  documents: Record<string, ViewerDocument>
+  panes: ViewerPane[]
+  focusedPaneId: string
+  split: ViewerSplit
 }
 
-export const viewerStore = createStore<ViewerState>({ loading: false })
+const PRIMARY_PANE = "primary"
+const initialState: ViewerState = {
+  loading: false,
+  documents: {},
+  panes: [{ id: PRIMARY_PANE, tabIds: [] }],
+  focusedPaneId: PRIMARY_PANE,
+  split: "right",
+}
+
+export const viewerStore = createStore<ViewerState>(initialState)
 export const useViewer = createHook(viewerStore)
 
-/** Bumped per open so a slow read for a file you already closed cannot land. */
+/** Bumped per document read so a slow result for a closed tab cannot land. */
 let generation = 0
+let documentSequence = 0
+let watchGeneration = 0
+const requests = new Map<string, number>()
+
+function activeDocument(
+  documents: Record<string, ViewerDocument>,
+  panes: ViewerPane[],
+  focusedPaneId: string
+): ViewerDocument | undefined {
+  const pane = panes.find((candidate) => candidate.id === focusedPaneId) ?? panes[0]
+  return pane?.activeId ? documents[pane.activeId] : undefined
+}
+
+function commit(
+  documents: Record<string, ViewerDocument>,
+  panes: ViewerPane[],
+  focusedPaneId: string,
+  split = viewerStore.get().split
+) {
+  const active = activeDocument(documents, panes, focusedPaneId)
+  viewerStore.set({
+    documents,
+    panes,
+    focusedPaneId,
+    split,
+    path: active?.path,
+    file: active?.kind === "file" ? active.file : undefined,
+    loading: active?.loading ?? false,
+    error: active?.error,
+    line: active?.line,
+    diff: active?.kind === "diff" ? active.diff : undefined,
+  })
+}
+
+function beginRequest(id: string) {
+  const mine = ++generation
+  requests.set(id, mine)
+  return mine
+}
+
+function requestIsCurrent(id: string, mine: number) {
+  return requests.get(id) === mine && Boolean(viewerStore.get().documents[id])
+}
+
+function updateDocument(id: string, update: Partial<ViewerDocument>) {
+  const state = viewerStore.get()
+  const current = state.documents[id]
+  if (!current) return
+  commit(
+    { ...state.documents, [id]: { ...current, ...update } },
+    state.panes,
+    state.focusedPaneId
+  )
+}
+
+function removeUnreferenced(
+  documents: Record<string, ViewerDocument>,
+  panes: ViewerPane[]
+) {
+  const referenced = new Set(panes.flatMap((pane) => pane.tabIds))
+  const next = { ...documents }
+  for (const id of Object.keys(next)) {
+    if (referenced.has(id)) continue
+    requests.delete(id)
+    delete next[id]
+  }
+  return next
+}
+
+function placeDocument(
+  create: (id: string, previous?: ViewerDocument) => ViewerDocument,
+  match: (document: ViewerDocument) => boolean
+): ViewerDocument {
+  const state = viewerStore.get()
+  const existing = Object.values(state.documents).find(match)
+  if (existing) {
+    const pane =
+      state.panes.find(
+        (candidate) =>
+          candidate.id === state.focusedPaneId && candidate.tabIds.includes(existing.id)
+      ) ?? state.panes.find((candidate) => candidate.tabIds.includes(existing.id))
+    const next = create(existing.id, existing)
+    const panes = state.panes.map((candidate) =>
+      candidate.id === pane?.id ? { ...candidate, activeId: existing.id } : candidate
+    )
+    commit(
+      { ...state.documents, [existing.id]: next },
+      panes,
+      pane?.id ?? state.focusedPaneId
+    )
+    return next
+  }
+
+  const id = `viewer-${++documentSequence}`
+  const next = create(id)
+  const focused =
+    state.panes.find((candidate) => candidate.id === state.focusedPaneId) ?? state.panes[0]
+  const previewId = focused.tabIds.find((tabId) => !state.documents[tabId]?.pinned)
+  const tabIds = previewId
+    ? focused.tabIds.map((tabId) => (tabId === previewId ? id : tabId))
+    : [...focused.tabIds, id]
+  const panes = state.panes.map((pane) =>
+    pane.id === focused.id ? { ...pane, tabIds, activeId: id } : pane
+  )
+  const documents = removeUnreferenced({ ...state.documents, [id]: next }, panes)
+  commit(documents, panes, focused.id)
+  return next
+}
+
+async function watchActiveFile() {
+  if (!hasBridge()) return
+  const mine = ++watchGeneration
+  const state = viewerStore.get()
+  const active = activeDocument(state.documents, state.panes, state.focusedPaneId)
+  if (mine !== watchGeneration || active?.kind !== "file") return
+  await getMako().watchFile(active.path)
+}
 
 export const viewer = {
   async open(path: string, line?: number) {
     if (!hasBridge()) return
-    // The viewer rides on the chat card; a companion covering the stage must
-    // step aside or the file would open somewhere the reader cannot see.
+    // Opening a file always restores the conversation side of a covering stage.
     stage.showChat()
-    const mine = ++generation
-    // Reopening the same file keeps the old text on screen while the fresh
-    // read races in — no white flash, no skeleton for a file already read.
-    const current = viewerStore.get()
-    const sameFile = current.path === path
-    viewerStore.set({
-      path,
-      line,
-      loading: !sameFile,
-      error: undefined,
-      file: sameFile ? current.file : undefined,
-      diff: undefined,
-    })
+    const document = placeDocument(
+      (id, previous) => ({
+        id,
+        kind: "file",
+        path,
+        title: path.split("/").at(-1) ?? path,
+        file: previous?.kind === "file" ? previous.file : undefined,
+        loading: previous?.kind === "file" && previous.file !== undefined ? false : true,
+        error: undefined,
+        line,
+        pinned: previous?.pinned ?? false,
+        renderMode: previous?.renderMode ?? (hasRichPreview(path) ? "preview" : "source"),
+      }),
+      (candidate) => candidate.kind === "file" && candidate.path === path
+    )
+    const mine = beginRequest(document.id)
+    // Live from here: the active writer lands without a manual reopen.
+    void watchActiveFile()
     try {
       const file = await getMako().readFile(path)
-      if (mine !== generation) return
-      viewerStore.set({ file, loading: false })
-      // Live from here: any writer — an agent mid-edit, a formatter, a
-      // terminal — lands on screen without a manual reopen.
-      void getMako().watchFile(path)
+      if (!requestIsCurrent(document.id, mine)) return
+      updateDocument(document.id, { file, loading: false })
     } catch (error) {
-      if (mine !== generation) return
-      viewerStore.set({
+      if (!requestIsCurrent(document.id, mine)) return
+      updateDocument(document.id, {
         loading: false,
         error: error instanceof Error ? error.message : String(error),
       })
     }
   },
 
-  /** Re-read what is open — in place, no flash. Used by the disk watcher
-   * and by anything that knows the agent just wrote the file. */
+  /** Re-read an open file in place, without flashing its existing contents. */
   async refresh(path?: string) {
     if (!hasBridge()) return
-    const current = viewerStore.get().path
-    if (!current || (path && current !== path)) return
-    path = current
-    const mine = generation
+    const state = viewerStore.get()
+    const active = activeDocument(state.documents, state.panes, state.focusedPaneId)
+    const targetPath = path ?? (active?.kind === "file" ? active.path : undefined)
+    if (!targetPath) return
+    const targets = Object.values(state.documents).filter(
+      (document) => document.kind === "file" && document.path === targetPath
+    )
+    if (targets.length === 0) return
+    const tokens = new Map(targets.map((document) => [document.id, beginRequest(document.id)]))
     try {
-      const file = await getMako().readFile(path)
-      if (mine !== generation || viewerStore.get().path !== path) return
-      viewerStore.set({ file })
+      const file = await getMako().readFile(targetPath)
+      const latest = viewerStore.get()
+      let documents = latest.documents
+      let changed = false
+      for (const target of targets) {
+        const token = tokens.get(target.id)
+        const current = documents[target.id]
+        if (!token || !current || !requestIsCurrent(target.id, token)) continue
+        documents = { ...documents, [target.id]: { ...current, file, error: undefined } }
+        changed = true
+      }
+      if (changed) commit(documents, latest.panes, latest.focusedPaneId)
     } catch {
       // A transient read failure mid-write resolves on the next event.
     }
   },
 
   /**
-   * A diff, center stage. The inspector's pane is a few hundred pixels wide
-   * — fine for glancing, wrong for reading a commit — so a diff opened from
-   * history takes the transcript's space the way a file does, split view
-   * and all, and Escape gives it back.
+   * A diff opens in the same tab model as a file, so history can remain beside
+   * the conversation and can be pinned or split without a second viewer path.
    */
   async openDiff(title: string, load: () => Promise<{ diffs: GitDiff[]; note?: string }>) {
     if (!hasBridge()) return
-    const mine = ++generation
-    viewerStore.set({ path: title, loading: true, error: undefined, file: undefined, diff: undefined })
+    stage.showChat()
+    const document = placeDocument(
+      (id, previous) => ({
+        id,
+        kind: "diff",
+        path: title,
+        title,
+        diff: previous?.kind === "diff" ? previous.diff : undefined,
+        loading: true,
+        error: undefined,
+        pinned: previous?.pinned ?? false,
+        renderMode: "source",
+      }),
+      (candidate) => candidate.kind === "diff" && candidate.path === title
+    )
+    const mine = beginRequest(document.id)
+    void watchActiveFile()
     try {
       const { diffs, note } = await load()
-      if (mine !== generation) return
-      viewerStore.set({ diff: { title, diffs, note }, loading: false })
+      if (!requestIsCurrent(document.id, mine)) return
+      updateDocument(document.id, { diff: { title, diffs, note }, loading: false })
     } catch (error) {
-      if (mine !== generation) return
-      viewerStore.set({
+      if (!requestIsCurrent(document.id, mine)) return
+      updateDocument(document.id, {
         loading: false,
         error: error instanceof Error ? error.message : String(error),
       })
     }
   },
 
-  close() {
-    if (hasBridge()) void getMako().unwatchFile()
-    generation += 1
-    viewerStore.set({
-      path: undefined,
-      file: undefined,
-      loading: false,
-      error: undefined,
-      line: undefined,
-      diff: undefined,
-    })
+  activate(paneId: string, id: string) {
+    const state = viewerStore.get()
+    const pane = state.panes.find((candidate) => candidate.id === paneId)
+    if (!pane?.tabIds.includes(id)) return
+    commit(
+      state.documents,
+      state.panes.map((candidate) =>
+        candidate.id === paneId ? { ...candidate, activeId: id } : candidate
+      ),
+      paneId
+    )
+    void watchActiveFile()
+    const document = state.documents[id]
+    if (document?.kind === "file") void viewer.refresh(document.path)
   },
 
+  focusPane(paneId: string) {
+    const state = viewerStore.get()
+    if (state.focusedPaneId === paneId || !state.panes.some((pane) => pane.id === paneId)) return
+    commit(state.documents, state.panes, paneId)
+    void watchActiveFile()
+    const pane = state.panes.find((candidate) => candidate.id === paneId)
+    const document = pane?.activeId ? state.documents[pane.activeId] : undefined
+    if (document?.kind === "file") void viewer.refresh(document.path)
+  },
+
+  pin(id: string) {
+    const state = viewerStore.get()
+    const document = state.documents[id]
+    if (!document || document.pinned) return
+    commit(
+      { ...state.documents, [id]: { ...document, pinned: true } },
+      state.panes,
+      state.focusedPaneId
+    )
+  },
+
+  setRenderMode(id: string, renderMode: ViewerRenderMode) {
+    updateDocument(id, { renderMode })
+  },
+
+  splitPane(split: ViewerSplit) {
+    const state = viewerStore.get()
+    if (state.panes.length === 2) {
+      commit(state.documents, state.panes, state.focusedPaneId, split)
+      return
+    }
+    const source =
+      state.panes.find((pane) => pane.id === state.focusedPaneId) ?? state.panes[0]
+    if (!source.activeId) return
+    const secondary: ViewerPane = {
+      id: "secondary",
+      tabIds: [source.activeId],
+      activeId: source.activeId,
+    }
+    commit(state.documents, [...state.panes, secondary], secondary.id, split)
+    void watchActiveFile()
+  },
+
+  closeTab(paneId: string, id: string) {
+    const state = viewerStore.get()
+    const pane = state.panes.find((candidate) => candidate.id === paneId)
+    const index = pane?.tabIds.indexOf(id) ?? -1
+    if (!pane || index < 0) return
+    const tabIds = pane.tabIds.filter((tabId) => tabId !== id)
+    let panes = state.panes.map((candidate) =>
+      candidate.id === paneId
+        ? {
+            ...candidate,
+            tabIds,
+            activeId:
+              candidate.activeId === id
+                ? tabIds[Math.min(index, tabIds.length - 1)]
+                : candidate.activeId,
+          }
+        : candidate
+    )
+    let focusedPaneId = state.focusedPaneId
+    if (tabIds.length === 0 && panes.length === 2) {
+      panes = panes.filter((candidate) => candidate.id !== paneId)
+      focusedPaneId = panes[0].id
+    } else if (focusedPaneId === paneId && tabIds.length === 0) {
+      focusedPaneId = paneId
+    }
+    const documents = removeUnreferenced(state.documents, panes)
+    commit(documents, panes, focusedPaneId)
+    void watchActiveFile()
+  },
+
+  closePane(paneId: string) {
+    const state = viewerStore.get()
+    if (state.panes.length === 1) return
+    const panes = state.panes.filter((pane) => pane.id !== paneId)
+    if (panes.length === state.panes.length) return
+    const documents = removeUnreferenced(state.documents, panes)
+    commit(documents, panes, panes[0].id)
+    void watchActiveFile()
+  },
+
+  close() {
+    if (hasBridge()) void getMako().unwatchFile()
+    watchGeneration += 1
+    generation += 1
+    requests.clear()
+    commit({}, [{ id: PRIMARY_PANE, tabIds: [] }], PRIMARY_PANE, "right")
+  },
+}
+
+function hasRichPreview(path: string) {
+  return /\.(?:csv|md|markdown|mdx|tsv)$/i.test(path)
 }

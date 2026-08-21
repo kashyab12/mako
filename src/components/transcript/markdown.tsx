@@ -36,17 +36,23 @@ export const Prose = memo(function Prose({
   text,
   streaming,
   className,
+  urlTransform,
 }: {
   text: string
   className?: string
   /** While true the parse is rate-limited rather than run per token. */
   streaming?: boolean
+  urlTransform?: (url: string) => string
 }) {
   const source = useThrottled(text, Boolean(streaming))
 
   return (
     <div className={cn("mako-prose", className)}>
-      <Markdown remarkPlugins={[remarkGfm]} components={components}>
+      <Markdown
+        remarkPlugins={[remarkGfm]}
+        components={components}
+        urlTransform={urlTransform}
+      >
         {source}
       </Markdown>
     </div>

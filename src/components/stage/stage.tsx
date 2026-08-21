@@ -84,6 +84,9 @@ export function Stage() {
 
   const companionRef = useRef<HTMLDivElement>(null)
   const dockRef = useRef<HTMLDivElement>(null)
+  const workbenchRef = useRef<HTMLDivElement>(null)
+  const [workbenchWidth, setWorkbenchWidth] = useState(640)
+  const [workbenchHeight, setWorkbenchHeight] = useState(360)
   const sideSurface = tabStage.companion
     ? surfaces.find((entry) => entry.id === tabStage.companion)
     : undefined
@@ -117,23 +120,65 @@ export function Stage() {
     sideSurface &&
       (tabStage.presentation === "over" || !fitsBeside(available?.width, min))
   )
-  // The file viewer and search ride on the chat card; while either is up,
-  // the chat must win even when the width degraded the split — otherwise
-  // "open a file" renders into a hidden card and nothing appears. The
-  // companion steps aside (hidden, not closed) until the overlay leaves.
+  // Files take a stable workspace beside the mounted chat. At narrow widths
+  // that pair stacks vertically, while a companion steps aside without being
+  // closed so it can return when the workbench leaves.
   const viewerUp = useViewer((state) => Boolean(state.path))
   const searchUp = useSearch((state) => state.open)
-  const overlayUp = viewerUp || searchUp
-  const covered = wantsCover && !overlayUp
-  const companionHidden = wantsCover && overlayUp
+  const covered = wantsCover && !viewerUp && !searchUp
+  const companionHidden = viewerUp || (wantsCover && searchUp)
+  const viewerBelow = viewerUp && Boolean(available && available.width < 940)
+  const availableBodyHeight = Math.max(
+    360,
+    (available?.height ?? 800) - (dockSurface ? dockHeight + 9 : 0)
+  )
+  const workbenchMax = viewerBelow
+    ? Math.max(180, availableBodyHeight - 220)
+    : Math.max(280, (available?.width ?? 1200) - 380)
+  const workbenchMin = Math.min(viewerBelow ? 240 : 420, workbenchMax)
+  const workbenchSize = Math.min(
+    workbenchMax,
+    Math.max(workbenchMin, viewerBelow ? workbenchHeight : workbenchWidth)
+  )
 
   return (
     <div
       ref={stageRef}
       className="relative flex min-h-0 min-w-0 flex-1 flex-col"
     >
-      <div className="relative flex min-h-0 min-w-0 flex-1">
+      <div
+        className={cn(
+          "relative flex min-h-0 min-w-0 flex-1",
+          viewerBelow && "flex-col"
+        )}
+      >
         <ChatCard hidden={covered} />
+
+        {viewerUp ? (
+          <>
+            <Divider
+              side={viewerBelow ? "bottom" : "right"}
+              size={workbenchSize}
+              min={workbenchMin}
+              max={workbenchMax}
+              className={viewerBelow ? "mx-2 w-auto" : undefined}
+              onResize={(next) => {
+                if (!workbenchRef.current) return
+                if (viewerBelow) workbenchRef.current.style.height = `${next}px`
+                else workbenchRef.current.style.width = `${next}px`
+              }}
+              onCommit={(next) => {
+                if (viewerBelow) setWorkbenchHeight(next)
+                else setWorkbenchWidth(next)
+              }}
+            />
+            <FileViewer
+              workspaceRef={workbenchRef}
+              style={viewerBelow ? { height: workbenchSize } : { width: workbenchSize }}
+              className={viewerBelow ? "mx-2 mb-2 shrink-0" : "m-2 ml-0 shrink-0"}
+            />
+          </>
+        ) : null}
 
         {sideSurface && !covered && !companionHidden ? (
           <Divider
@@ -234,9 +279,6 @@ const ChatCard = memo(function ChatCard({ hidden }: { hidden: boolean }) {
     >
       <ConversationSurface />
       <Composer />
-      {/* Over the conversation column only. The rail stays reachable, so you
-          can walk the tree with a file already open. */}
-      <FileViewer />
       <SearchView />
     </main>
   )

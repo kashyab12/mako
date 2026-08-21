@@ -4,6 +4,7 @@ import type {
   BootPayload,
   Capabilities,
   DevServerState,
+  ExternalEditor,
   FileContents,
   GitCommitEntry,
   GitDiff,
@@ -459,6 +460,10 @@ const api = {
   ) => invokeTrustedHost<void>("mako:report-crash", kind, payload),
 
   pickFolder: () => invokeTrustedHost<string | null>("mako:pick-folder"),
+  externalEditors: () =>
+    invokeTrustedHost<ExternalEditor[]>("mako:external-editors"),
+  openInEditor: (path: string, editor?: string) =>
+    invokeTrustedHost<void>("mako:open-in-editor", path, editor),
   revealPath: (path: string) => invokeTrustedHost<void>("mako:reveal", path),
   openUrl: (url: string) => invokeTrustedHost<void>("mako:open-url", url),
   copy: (text: string) => invokeTrustedHost<void>("mako:copy", text),

@@ -10,6 +10,7 @@ import { section as agents } from "@/components/settings/sections/agents"
 import { section as usage } from "@/components/settings/sections/usage"
 import { section as appearance } from "@/components/settings/sections/appearance"
 import { section as conversation } from "@/components/settings/sections/conversation"
+import { section as editor } from "@/components/settings/sections/editor"
 import { section as keyboard } from "@/components/settings/sections/keyboard"
 import { section as commits } from "@/components/settings/sections/commit-prompt"
 import { section as automations } from "@/components/settings/sections/automations"
@@ -19,12 +20,14 @@ import { section as skills } from "@/components/settings/sections/skills"
 import { section as plugins } from "@/components/settings/sections/plugins"
 import { section as updates } from "@/components/settings/sections/updates"
 import { section as diagnostics } from "@/components/settings/sections/diagnostics"
+import { section as about } from "@/components/settings/sections/about"
 
 const SECTIONS: readonly SettingsSection[] = [
   agents,
   usage,
   appearance,
   conversation,
+  editor,
   keyboard,
   commits,
   automations,
@@ -34,6 +37,7 @@ const SECTIONS: readonly SettingsSection[] = [
   plugins,
   updates,
   diagnostics,
+  about,
 ]
 
 function matches(entry: SettingsSection, term: string): boolean {

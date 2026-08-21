@@ -7,6 +7,7 @@ import { promisify } from "node:util"
 import { WorkspaceGit } from "../electron/host-git.ts"
 import { searchWorkspace } from "../electron/host-search.ts"
 import { WorkspaceFiles } from "../electron/host-workspace.ts"
+import { workspacePreviewPath } from "../electron/workspace-preview.ts"
 
 const execFileAsync = promisify(execFile)
 const directory = await mkdtemp(join(tmpdir(), "mako-host-domains-"))
@@ -25,6 +26,16 @@ async function initializeRepo(path: string) {
   await git(path, "config", "user.name", "Mako Test")
   await git(path, "config", "user.email", "mako@example.test")
 }
+
+assert.equal(
+  workspacePreviewPath("mako-file://workspace/docs/My%20File.md"),
+  "docs/My File.md"
+)
+assert.equal(
+  workspacePreviewPath("mako-file://workspace/%2e%2e%2foutside.txt"),
+  null
+)
+assert.equal(workspacePreviewPath("mako-file://other/docs/file.md"), null)
 
 try {
   await initializeRepo(firstRepo)
@@ -65,6 +76,16 @@ try {
   assert.equal(listed.some((file) => file.path === "renamed.txt"), true)
   assert.equal(listed.some((file) => file.path === "notes.txt"), true)
   assert.equal((await workspaceFiles.read("notes.txt")).contents, "untracked needle\n")
+  await writeFile(join(firstRepo, "preview.png"), Buffer.from([137, 80, 78, 71]))
+  const image = await workspaceFiles.read("preview.png")
+  assert.equal(image.media, "image")
+  assert.equal(image.mimeType, "image/png")
+  assert.equal(image.previewUrl, "mako-file://workspace/preview.png")
+  await writeFile(join(directory, "outside.txt"), "outside\n")
+  await assert.rejects(
+    workspaceFiles.read("../outside.txt"),
+    /outside this workspace/
+  )
 
   const searched = await searchWorkspace(
     firstRepo,

@@ -1,4 +1,5 @@
 import {
+  BotIcon,
   FilesIcon,
   GitCompareIcon,
   HistoryIcon,
@@ -17,7 +18,12 @@ import { HistoryPanel } from "@/components/inspector/history-panel"
 import { TerminalPanel } from "@/components/inspector/terminal-lazy"
 import { PreviewPane } from "@/components/preview/preview-pane"
 import { TerminalDockToggle } from "@/components/stage/terminal-dock-toggle"
-import { BashBody, EditBody, WriteBody } from "@/components/transcript/tool-views"
+import {
+  BashBody,
+  EditBody,
+  SubagentBody,
+  WriteBody,
+} from "@/components/transcript/tool-views"
 import { argAt, countLines, editsOf, primaryArgument } from "@/lib/tools"
 import { fileName } from "@/lib/format"
 
@@ -108,6 +114,25 @@ export function installBuiltins(): () => void {
         return path ? fileName(path) : ""
       },
     }),
+    ...[
+      "run_subagent",
+      "read_subagent",
+      "spawn_agent",
+      "send_input",
+      "close_agent",
+      "subagent",
+      "Task",
+    ].map((name) =>
+      registerToolView(name, {
+        summary: (call: ToolCall) =>
+          argAt(call.arguments, "title") ??
+          argAt(call.arguments, "role") ??
+          argAt(call.arguments, "agent_id") ??
+          "Background agent",
+        body: SubagentBody,
+        icon: BotIcon,
+      })
+    ),
   ]
   return () => disposers.forEach((dispose) => dispose())
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { Action, Keys } from "@/components/ui/kit"
+import { SearchSelect } from "@/components/ui/search-select"
 import { formatChord } from "@/extend/commands"
 import { getMako, hasBridge } from "@/lib/bridge"
 import { setPref, usePrefs } from "@/state/prefs"
@@ -36,34 +37,43 @@ export function CommitPromptSection() {
         the house style.
       </p>
 
-      <label className="mb-2 flex items-center gap-3 rounded-lg bg-surface px-2.5 py-2 ring-1 ring-hairline">
+      <div className="mb-2 flex items-center gap-3 rounded-lg bg-surface px-2.5 py-2 ring-1 ring-hairline">
         <span className="min-w-0 flex-1">
           <span className="block text-ui font-medium text-foreground">
             Drafting model
           </span>
           <span className="block text-label text-faint">
-            Automatic prefers a small capable model and does not spend conversation context.
+            Automatic uses the lowest-priced available model outside the conversation.
           </span>
         </span>
-        <select
+        <SearchSelect
           value={commitModel ?? "auto"}
-          onChange={(event) =>
-            setPref(
-              "commitModel",
-              event.target.value === "auto" ? undefined : event.target.value
-            )
+          label="Commit drafting model"
+          searchPlaceholder="Search drafting models"
+          className="w-56"
+          options={[
+            {
+              value: "auto",
+              label: "Automatic · cheap",
+              detail: "Lowest-priced available model",
+            },
+            {
+              value: "current",
+              label: "Current conversation",
+              detail: "Use the model selected in this tab",
+            },
+            ...models.map((model) => ({
+              value: `${model.provider}/${model.id}`,
+              label: model.name,
+              detail: `${model.provider} · ${model.id}`,
+              keywords: `${model.provider} ${model.id}`,
+            })),
+          ]}
+          onChange={(next) =>
+            setPref("commitModel", next === "auto" ? undefined : next)
           }
-          className="h-7 max-w-56 rounded-md bg-raised px-2 text-ui text-foreground ring-1 ring-hairline focus:outline-none focus-visible:ring-border"
-        >
-          <option value="auto">Automatic · cheap</option>
-          <option value="current">Current conversation</option>
-          {models.map((model) => (
-            <option key={`${model.provider}/${model.id}`} value={`${model.provider}/${model.id}`}>
-              {model.name} · {model.provider}
-            </option>
-          ))}
-        </select>
-      </label>
+        />
+      </div>
 
       <textarea
         value={value}

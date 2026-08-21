@@ -26,6 +26,7 @@ export type {
   CommandSummary,
   ContextUsage,
   DevServerState,
+  ExternalEditor,
   FileContents,
   GitCommitEntry,
   GitDiff,
