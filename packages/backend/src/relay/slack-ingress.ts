@@ -176,9 +176,19 @@ async function processEvent(
   })
 }
 
+async function requestVerified(request: Request, body: string): Promise<boolean> {
+  try {
+    return Boolean(await verifier(request, body))
+  } catch {
+    return false
+  }
+}
+
 export async function handleSlackRelayWebhook(request: Request): Promise<Response> {
   const body = await request.text()
-  if (!(await verifier(request, body))) return new Response("Unauthorized", { status: 401 })
+  if (!(await requestVerified(request, body))) {
+    return new Response("Unauthorized", { status: 401 })
+  }
   const value = z.json().parse(JSON.parse(body))
   const challenge = SlackChallengeSchema.safeParse(value)
   if (challenge.success) return Response.json({ challenge: challenge.data.challenge })
