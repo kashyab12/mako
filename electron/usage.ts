@@ -292,30 +292,34 @@ function selectOpenCodeRows(
   databaseName: string
 ): OpenCodeRow[] {
   if (!databaseName.endsWith("opencode-next.db")) {
-    const legacy = openCodeTableRows(db, "message")
-    if (legacy.length > 0) return legacy
+    return [
+      ...openCodeTableRows(db, "message"),
+      ...openCodeTableRows(db, "session_message", "session_v2", true),
+    ]
   }
   return openCodeTableRows(db, "session_message")
 }
 
 function openCodeTableRows(
   db: DatabaseSync,
-  table: "message" | "session_message"
+  table: "message" | "session_message",
+  sessionTable = "session",
+  excludeShadowed = false
 ): OpenCodeRow[] {
-  if (!tableExists(db, "session") || !tableExists(db, table)) return []
+  if (!tableExists(db, sessionTable) || !tableExists(db, table)) return []
   const alias = table === "message" ? "m" : "sm"
   const hasProject =
     tableExists(db, "project") &&
-    columnExists(db, "session", "project_id") &&
+    columnExists(db, sessionTable, "project_id") &&
     columnExists(db, "project", "worktree")
   const projectJoin = hasProject
     ? "LEFT JOIN project p ON p.id = s.project_id"
     : ""
   const worktree = hasProject ? "p.worktree" : "NULL"
-  const directory = columnExists(db, "session", "directory")
+  const directory = columnExists(db, sessionTable, "directory")
     ? "s.directory"
     : "NULL"
-  const sessionModel = columnExists(db, "session", "model")
+  const sessionModel = columnExists(db, sessionTable, "model")
     ? "s.model"
     : "NULL"
   const updated = columnExists(db, table, "time_updated")
@@ -325,6 +329,10 @@ function openCodeTableRows(
     table === "session_message" && columnExists(db, table, "type")
       ? `${alias}.type = 'assistant'`
       : `json_valid(${alias}.data) AND json_extract(${alias}.data, '$.role') = 'assistant'`
+  const shadow =
+    excludeShadowed && tableExists(db, "session")
+      ? ` AND NOT EXISTS (SELECT 1 FROM session legacy WHERE legacy.id = ${alias}.session_id)`
+      : ""
   return db
     .prepare(
       `SELECT ${alias}.id, ${alias}.session_id, ${alias}.time_created,
@@ -332,9 +340,9 @@ function openCodeTableRows(
               ${directory} AS directory, ${worktree} AS worktree,
               ${sessionModel} AS session_model
        FROM ${table} ${alias}
-       JOIN session s ON s.id = ${alias}.session_id
+       JOIN ${sessionTable} s ON s.id = ${alias}.session_id
        ${projectJoin}
-       WHERE ${assistant}
+       WHERE ${assistant}${shadow}
        ORDER BY ${alias}.time_created DESC, ${alias}.id DESC
        LIMIT ?`
     )
