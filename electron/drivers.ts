@@ -26,7 +26,7 @@ import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import type { ThreadRef } from "@mako/sessions"
 import { accountEnv, switchSuggestion } from "./accounts.js"
-import { devinExecutable, openCodeExecutable } from "./harnesses.js"
+import { devinExecutable, openCodeInstallation } from "./harnesses.js"
 import type { HostEvent, ThreadRunState } from "./shared.js"
 
 interface ResumeCommand {
@@ -46,6 +46,7 @@ export interface FreshOptions {
   effort?: string
   fast?: boolean
   options?: Record<string, string | boolean>
+  nativePath?: string
 }
 
 interface CommandTuning {
@@ -283,20 +284,43 @@ function buildDevinFresh(prompt: string, options: FreshOptions): ResumeCommand {
   }
 }
 
+function openCodeTuningArgs(tuning: CommandTuning, generation: "v1" | "v2") {
+  if (!tuning.model) return []
+  if (generation === "v2") {
+    return [
+      "--model",
+      tuning.cliEffort ? `${tuning.model}#${tuning.cliEffort}` : tuning.model,
+    ]
+  }
+  return [
+    "--model",
+    tuning.model,
+    ...(tuning.cliEffort ? ["--variant", tuning.cliEffort] : []),
+  ]
+}
+
 function buildOpenCodeResume(
   id: string,
   prompt: string,
   options?: FreshOptions
 ): ResumeCommand {
   const tuning = commandTuning(options)
+  const preferred =
+    options?.nativePath?.includes("#v2:") ||
+    options?.nativePath?.includes("opencode-next.db#")
+      ? "v2"
+      : "v1"
+  const installation =
+    openCodeInstallation(preferred) ?? openCodeInstallation()
+  const generation = installation?.generation ?? preferred
   return {
-    command: openCodeExecutable() ?? "opencode",
+    command: installation?.command ?? "opencode",
     args: [
       "run",
+      ...(generation === "v2" ? ["--auto"] : []),
       "--session",
       id,
-      ...(tuning.model ? ["--model", tuning.model] : []),
-      ...(tuning.cliEffort ? ["--variant", tuning.cliEffort] : []),
+      ...openCodeTuningArgs(tuning, generation),
       prompt,
     ],
   }
@@ -307,12 +331,14 @@ function buildOpenCodeFresh(
   options: FreshOptions
 ): ResumeCommand {
   const tuning = commandTuning(options)
+  const installation = openCodeInstallation()
+  const generation = installation?.generation ?? "v1"
   return {
-    command: openCodeExecutable() ?? "opencode",
+    command: installation?.command ?? "opencode",
     args: [
       "run",
-      ...(tuning.model ? ["--model", tuning.model] : []),
-      ...(tuning.cliEffort ? ["--variant", tuning.cliEffort] : []),
+      ...(generation === "v2" ? ["--auto"] : []),
+      ...openCodeTuningArgs(tuning, generation),
       prompt,
     ],
   }
@@ -423,11 +449,13 @@ export async function resumeNative(
   )?.[1]
   if (!make)
     throw new Error(`Sessions from ${ref.harness} cannot be resumed here`)
+  const options =
+    ref.harness === "opencode" ? { ...tuning, nativePath: ref.path } : tuning
   return launch(
     ref.path,
     ref.harness,
     ref.cwd,
-    make(ref.nativeId, prompt, tuning),
+    make(ref.nativeId, prompt, options),
     tuning?.captureOutput ?? false
   )
 }
