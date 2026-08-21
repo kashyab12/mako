@@ -39,13 +39,18 @@ import {
 export const Exchange = memo(function Exchange({
   exchange,
   streaming,
+  interrupted,
+  failed,
 }: {
   exchange: ExchangeData
   streaming?: boolean
+  interrupted?: boolean
+  failed?: boolean
 }) {
   const [workOpen, setWorkOpen] = useState(false)
   const work = useMemo(() => summarizeWork(exchange), [exchange])
-  const folded = !streaming && work.tools >= 3
+  const folded = work.tools >= 3
+  const showWork = Boolean(streaming) || workOpen
   return (
     <article data-exchange={exchange.id} className="contain-turn scroll-mt-6">
       {exchange.prompt ? <Prompt message={exchange.prompt} /> : null}
@@ -59,15 +64,20 @@ export const Exchange = memo(function Exchange({
           {folded ? (
             <WorkSummary
               work={work}
-              open={workOpen}
-              onToggle={() => setWorkOpen((value) => !value)}
+              live={Boolean(streaming)}
+              interrupted={Boolean(interrupted)}
+              failed={Boolean(failed)}
+              open={showWork}
+              onToggle={() => {
+                if (!streaming) setWorkOpen((value) => !value)
+              }}
             />
           ) : null}
           {exchange.response.map((message) => (
             <Response
               key={message.id}
               message={message}
-              showWork={!folded || workOpen}
+              showWork={!folded || showWork}
             />
           ))}
         </div>
@@ -217,15 +227,34 @@ function summarizeWork(exchange: ExchangeData): WorkSummaryData {
 
 function WorkSummary({
   work,
+  live,
+  interrupted,
+  failed,
   open,
   onToggle,
 }: {
   work: WorkSummaryData
+  live: boolean
+  interrupted: boolean
+  failed: boolean
   open: boolean
   onToggle: () => void
 }) {
+  const elapsed = work.duration !== undefined ? formatDuration(work.duration) : undefined
   const pieces = [
-    work.duration !== undefined ? `Worked for ${formatDuration(work.duration)}` : "Work log",
+    live
+      ? "Working"
+      : interrupted
+        ? elapsed
+          ? `Interrupted after ${elapsed}`
+          : "Interrupted"
+        : failed
+          ? elapsed
+            ? `Failed after ${elapsed}`
+            : "Failed"
+          : elapsed
+            ? `Worked for ${elapsed}`
+            : "Work log",
     work.agents > 0
       ? `${work.agents} background agent${work.agents === 1 ? "" : "s"}`
       : null,
@@ -237,8 +266,22 @@ function WorkSummary({
       type="button"
       onClick={onToggle}
       aria-expanded={open}
-      className="pressable flex h-7 w-fit items-center gap-1.5 rounded-md bg-raised px-2 text-label text-faint transition-colors duration-100 hover:text-muted-foreground"
+      className={cn(
+        "pressable flex h-7 w-fit items-center gap-1.5 rounded-md bg-raised px-2 text-label transition-colors duration-100 hover:text-muted-foreground",
+        interrupted
+          ? "text-caution"
+          : failed
+            ? "text-negative"
+            : live
+              ? "text-muted-foreground"
+              : "text-faint"
+      )}
     >
+      {live ? (
+        <span className="size-1.5 animate-live rounded-full bg-ember" />
+      ) : interrupted || failed ? (
+        <TriangleAlertIcon className="size-3" />
+      ) : null}
       <ChevronRightIcon
         className={cn("size-3 transition-transform duration-150", open && "rotate-90")}
       />

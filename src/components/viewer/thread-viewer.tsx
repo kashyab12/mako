@@ -318,9 +318,21 @@ function SessionStatusIcon({ status }: { status: ThreadStatus }) {
  * conversation here. Sticks to the bottom while the live tail appends, and
  * stops sticking the moment the reader scrolls up.
  */
+function exchangeInterrupted(exchange: ExchangeData): boolean {
+  return exchange.system.some((message) =>
+    message.blocks.some((block) => {
+      const text = block.type === "text" ? block.text : undefined
+      return text ? /^Interrupted(?:\s|$)/i.test(text.trim()) : false
+    })
+  )
+}
+
 function Conversation() {
   const thread = useThreads((state) => state.viewing)
   const run = useThreads((state) => state.run)
+  const status = useThreads((state) =>
+    state.viewing ? threadStatus(state.viewing.ref, state) : null
+  )
   const scroller = useRef<HTMLDivElement | null>(null)
   const pane = useRef<HTMLDivElement | null>(null)
   const stick = useRef(true)
@@ -339,6 +351,14 @@ function Conversation() {
   const exchanges = useMemo(() => buildExchanges(thread), [buildExchanges, thread])
 
   const renderedExchanges = showEarlier ? exchanges : exchanges.slice(-30)
+  const live =
+    run?.status === "running" ||
+    status?.kind === "working" ||
+    status?.kind === "observed" ||
+    status?.kind === "external-active"
+  const interrupted = run?.status === "stopped"
+  const failed = run?.status === "failed" || status?.kind === "failed"
+  const lastExchangeId = renderedExchanges.at(-1)?.id
 
   // Which turn is in view — the navigator's cursor. Same observer the
   // native transcript uses: costs nothing while entries stream in.
@@ -420,9 +440,18 @@ function Conversation() {
               </button>
             ) : null}
             {renderedExchanges.map((exchange) => (
-              <Exchange key={exchange.id} exchange={exchange} />
+              <Exchange
+                key={exchange.id}
+                exchange={exchange}
+                streaming={live && exchange.id === lastExchangeId}
+                interrupted={
+                  exchangeInterrupted(exchange) ||
+                  (interrupted && exchange.id === lastExchangeId)
+                }
+                failed={failed && exchange.id === lastExchangeId}
+              />
             ))}
-            {run?.status === "running" && thread ? (
+            {live && thread ? (
               <div className="animate-enter flex items-center gap-2 px-0.5 text-ui">
                 <HarnessIcon
                   harness={thread.ref.harness}
