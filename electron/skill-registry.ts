@@ -13,6 +13,7 @@ import {
 import { parse } from "yaml"
 import { z } from "zod"
 import { selectedAccount } from "./accounts.js"
+import { openCodeExecutable } from "./harnesses.js"
 import type {
   SkillOrigin,
   SkillProvider,
@@ -23,7 +24,14 @@ import type {
   SkillSyncTarget,
 } from "./shared.js"
 
-const PROVIDERS = ["claude", "codex", "cursor", "grok", "devin"] as const
+const PROVIDERS = [
+  "claude",
+  "codex",
+  "cursor",
+  "grok",
+  "devin",
+  "opencode",
+] as const
 const MAX_SKILL_FILES = 1024
 const MAX_SKILL_BYTES = 64 * 1024 * 1024
 const MAX_SKILL_FILE_BYTES = 16 * 1024 * 1024
@@ -251,6 +259,18 @@ export async function skillRoots(cwd: string): Promise<SkillRoot[]> {
       scope: "user",
       root: join(home, ".devin", "skills"),
     },
+    {
+      provider: "opencode",
+      account: "default",
+      scope: "user",
+      root: join(home, ".config", "opencode", "skills"),
+    },
+    {
+      provider: "opencode",
+      account: "default",
+      scope: "user",
+      root: join(home, ".opencode", "skills"),
+    },
   ]
   for (const base of workspaceBases(cwd)) {
     for (const [provider, folder] of [
@@ -260,6 +280,7 @@ export async function skillRoots(cwd: string): Promise<SkillRoot[]> {
       ["cursor", ".cursor"],
       ["grok", ".grok"],
       ["devin", ".devin"],
+      ["opencode", ".opencode"],
     ] as const) {
       roots.push({
         provider,
@@ -290,6 +311,8 @@ export async function skillTargetRoot(
     return join(account.dir ?? join(homedir(), ".codex"), "skills")
   if (target.provider === "cursor") return join(homedir(), ".cursor", "skills")
   if (target.provider === "grok") return join(homedir(), ".grok", "skills")
+  if (target.provider === "opencode")
+    return join(homedir(), ".config", "opencode", "skills")
   return join(homedir(), ".config", "devin", "skills")
 }
 
@@ -336,7 +359,9 @@ async function providerStatuses(): Promise<SkillProviderStatus[]> {
           ? "cursor-agent"
           : provider === "grok"
             ? join(homedir(), ".grok", "bin", "grok")
-            : provider
+            : provider === "opencode"
+              ? (openCodeExecutable() ?? "opencode")
+              : provider
       let available = false
       const candidates = command.includes("/")
         ? [command]
@@ -355,7 +380,12 @@ async function providerStatuses(): Promise<SkillProviderStatus[]> {
       }
       return {
         id: provider,
-        label: provider === "claude" ? "Claude Code" : provider[0].toUpperCase() + provider.slice(1),
+        label:
+          provider === "claude"
+            ? "Claude Code"
+            : provider === "opencode"
+              ? "OpenCode"
+              : provider[0].toUpperCase() + provider.slice(1),
         account: account.name,
         available,
       }

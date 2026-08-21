@@ -42,7 +42,11 @@ import {
   type SessionUpdate,
 } from "@agentclientprotocol/sdk"
 import { accountEnv } from "./accounts.js"
-import { devinExecutable, normalizeAcpOptions } from "./harnesses.js"
+import {
+  devinExecutable,
+  normalizeAcpOptions,
+  openCodeExecutable,
+} from "./harnesses.js"
 import { discoverMcpRegistry } from "./mcp-registry.js"
 import { acpMcpServers } from "./mcp-runtime.js"
 import type { McpProvider, McpTransport } from "./shared.js"
@@ -64,6 +68,11 @@ interface AcpTuning {
   effort?: string
   fast?: boolean
   options?: Record<string, string | boolean>
+}
+
+interface OpenCodeAcpConfig {
+  model?: string
+  agent?: { build: { variant: string } }
 }
 
 interface ClaudeCodeOptions {
@@ -124,6 +133,8 @@ function specFor(harness: string, tuning?: AcpTuning): AgentSpec | null {
     }
     case "devin":
       return { command: devinExecutable() ?? "devin", args: ["acp"] }
+    case "opencode":
+      return { command: openCodeExecutable() ?? "opencode", args: ["acp"] }
     default:
       return null
   }
@@ -135,12 +146,13 @@ function isMcpProvider(value: string): value is McpProvider {
     value === "codex" ||
     value === "cursor" ||
     value === "grok" ||
-    value === "devin"
+    value === "devin" ||
+    value === "opencode"
   )
 }
 
 export function acpHarnesses(): string[] {
-  return ["claude", "cursor", "grok", "devin"].filter((harness) => {
+  return ["claude", "cursor", "grok", "devin", "opencode"].filter((harness) => {
     const spec = specFor(harness)
     return Boolean(
       spec &&
@@ -222,6 +234,16 @@ export async function acpStart(
     }
   }
   if (harness === "grok") env.GROK_DISABLE_AUTOUPDATER = "1"
+  if (harness === "opencode" && options.tuning) {
+    const config: OpenCodeAcpConfig = {}
+    if (options.tuning.model) config.model = options.tuning.model
+    if (options.tuning.effort) {
+      config.agent = { build: { variant: options.tuning.effort } }
+    }
+    if (Object.keys(config).length > 0) {
+      env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config)
+    }
+  }
 
   const child = spawn(spec.command, spec.args, {
     cwd: workingDir,

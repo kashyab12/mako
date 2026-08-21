@@ -49,7 +49,11 @@ import type {
 } from "./shared.js"
 
 import type { CrashReport } from "./crash.js"
-import type { AccountUsage, HarnessAccount } from "./accounts.js"
+import type {
+  AccountProvider,
+  AccountUsage,
+  HarnessAccount,
+} from "./accounts.js"
 
 /**
  * Trusted IPC boundary: every exposed call below has a matching `bindIpc`
@@ -189,7 +193,7 @@ const api = {
     invokeTrustedHost<void>("mako:account-select", harness, name),
   removeAccount: (harness: "claude" | "codex", name: string) =>
     invokeTrustedHost<void>("mako:account-remove", harness, name),
-  accountUsage: (harness: "claude" | "codex", name: string) =>
+  accountUsage: (harness: AccountProvider, name: string) =>
     invokeTrustedHost<AccountUsage>("mako:account-usage", harness, name),
 
   /* The Agents settings section. */
@@ -428,18 +432,16 @@ const api = {
   terminalWrite: (sessionId: string, data: string) =>
     invokeTrustedHost<void>("mako:terminal-write", sessionId, data),
   terminalAcknowledge: (sessionId: string, sequence: number) =>
-    invokeTrustedHost<void>(
-      "mako:terminal-acknowledge",
-      sessionId,
-      sequence
-    ),
+    invokeTrustedHost<void>("mako:terminal-acknowledge", sessionId, sequence),
   terminalResize: (sessionId: string, cols: number, rows: number) =>
     invokeTrustedHost<void>("mako:terminal-resize", sessionId, cols, rows),
   terminalKill: (sessionId: string) =>
     invokeTrustedHost<void>("mako:terminal-kill", sessionId),
   onTerminalEvent: (listener: (event: TerminalEvent) => void): (() => void) => {
-    const wrapped = (_event: Electron.IpcRendererEvent, payload: TerminalEvent) =>
-      listener(payload)
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      payload: TerminalEvent
+    ) => listener(payload)
     ipcRenderer.on("mako:terminal-event", wrapped)
     return () => {
       ipcRenderer.removeListener("mako:terminal-event", wrapped)

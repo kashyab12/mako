@@ -21,6 +21,7 @@ const HarnessSchema = z.enum([
   "cursor",
   "grok",
   "devin",
+  "opencode",
 ])
 
 const SelectionSchema = z.object({

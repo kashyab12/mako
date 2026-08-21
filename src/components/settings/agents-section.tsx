@@ -26,6 +26,7 @@ const HOW = new Map([
   ["cursor", "cursor-agent CLI"],
   ["grok", "grok CLI"],
   ["devin", "devin CLI / Zed / IDE"],
+  ["opencode", "opencode CLI / ACP"],
 ])
 
 const HARNESSES = Object.entries(HARNESS_LABEL).map(([id, name]) => ({
@@ -157,6 +158,9 @@ function HarnessAccounts() {
   const accounts = useAccounts((state) => state.accounts)
   const usage = useAccounts((state) => state.usage)
   const busyAccount = useAccounts((state) => state.busy)
+  const openCodeAccounts = accounts.filter(
+    (account) => account.source === "opencode"
+  )
   const [capturing, setCapturing] = useState<"claude" | "codex" | null>(null)
   const [captureName, setCaptureName] = useState("")
 
@@ -266,7 +270,8 @@ function HarnessAccounts() {
                             ? (stats.detail ?? "Sign in again to refresh usage")
                             : stats.status === "missing-credentials"
                               ? "Sign in with the CLI to use this account"
-                              : (stats.detail ?? "Usage is temporarily unavailable")}
+                              : (stats.detail ??
+                                "Usage is temporarily unavailable")}
                         </span>
                       ) : (
                         <span className="shimmer text-label text-faint">
@@ -280,18 +285,19 @@ function HarnessAccounts() {
                         Active
                       </span>
                     ) : busyAccount === key ? (
-                      <span className="shimmer shrink-0 text-label text-faint">
+                      <span className="shrink-0 shimmer text-label text-faint">
                         Switching…
                       </span>
                     ) : null}
                   </button>
-                  {account.name !== "default" && account.source !== "subrouter" ? (
+                  {account.name !== "default" &&
+                  account.source !== "subrouter" ? (
                     <button
                       type="button"
                       aria-label={`Remove ${account.name}`}
                       disabled={Boolean(busyAccount)}
                       onClick={() => void remove(harness, account.name)}
-                      className="pressable mr-1.5 rounded p-1 text-faint opacity-0 transition-opacity duration-100 group-hover/account:opacity-100 focus-visible:opacity-100 hover:text-foreground"
+                      className="pressable mr-1.5 rounded p-1 text-faint opacity-0 transition-opacity duration-100 group-hover/account:opacity-100 hover:text-foreground focus-visible:opacity-100"
                     >
                       <XIcon className="size-3.5" />
                     </button>
@@ -302,7 +308,11 @@ function HarnessAccounts() {
             {capturing === harness ? (
               <div className="mt-2 rounded-lg bg-surface p-2.5 ring-1 ring-hairline">
                 <p className="pb-2 text-ui text-muted-foreground">
-                  First run <code className="font-mono text-foreground">{harness === "claude" ? "claude /login" : "codex login"}</code> in a terminal. Then name that login in Mako.
+                  First run{" "}
+                  <code className="font-mono text-foreground">
+                    {harness === "claude" ? "claude /login" : "codex login"}
+                  </code>{" "}
+                  in a terminal. Then name that login in Mako.
                 </p>
                 <div className="flex items-center gap-2">
                   <input
@@ -321,7 +331,9 @@ function HarnessAccounts() {
                   >
                     Save current login
                   </Action>
-                  <Action tone="ghost" onClick={() => setCapturing(null)}>Cancel</Action>
+                  <Action tone="ghost" onClick={() => setCapturing(null)}>
+                    Cancel
+                  </Action>
                 </div>
               </div>
             ) : (
@@ -336,8 +348,91 @@ function HarnessAccounts() {
           </div>
         )
       })}
+      <div>
+        <Eyebrow className="pt-6 pb-2">OpenCode credentials</Eyebrow>
+        <p className="pb-2 text-ui leading-relaxed text-faint">
+          Read-only from ~/.local/share/opencode/auth.json. OpenCode can use all
+          of these credentials concurrently; Mako never switches, captures,
+          edits, or removes them.
+        </p>
+        {openCodeAccounts.length === 0 ? (
+          <p className="rounded-lg bg-surface px-2.5 py-2 text-ui text-faint">
+            No OpenCode credentials found.
+          </p>
+        ) : (
+          openCodeAccounts.map((account) => {
+            const stats = usage[`opencode:${account.name}`]
+            const identity =
+              account.email ?? account.accountId ?? "JWT identity unavailable"
+            return (
+              <div
+                key={account.name}
+                className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2"
+              >
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-raised text-label font-semibold text-faint">
+                  {(account.providerId ?? account.name)
+                    .slice(0, 1)
+                    .toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-none basis-56">
+                  <span className="block truncate text-ui text-foreground/85">
+                    {identity}
+                  </span>
+                  <span className="block truncate text-label text-faint">
+                    {account.providerId ?? account.name} ·{" "}
+                    {authTypeLabel(account.authType)}
+                  </span>
+                </span>
+                <span className="min-w-0 flex-1">
+                  {account.email && account.accountId ? (
+                    <span
+                      className="block truncate text-label text-faint"
+                      title={account.accountId}
+                    >
+                      Account {account.accountId}
+                    </span>
+                  ) : null}
+                  {stats?.status === "ok" ? (
+                    <span className="flex items-center gap-2">
+                      <UsageBar window={stats.session} />
+                      <UsageBar window={stats.weekly} />
+                      {stats.plan ? (
+                        <span className="text-label text-faint">
+                          {stats.plan}
+                        </span>
+                      ) : null}
+                    </span>
+                  ) : stats ? (
+                    <span className="text-label text-faint">
+                      {stats.status === "stale-token"
+                        ? (stats.detail ?? "OpenCode must refresh this login")
+                        : stats.status === "missing-credentials"
+                          ? "Credential details are unavailable"
+                          : (stats.detail ?? "Usage is unavailable")}
+                    </span>
+                  ) : (
+                    <span className="shimmer text-label text-faint">
+                      Loading usage…
+                    </span>
+                  )}
+                </span>
+                <span className="shrink-0 text-label text-faint">
+                  Read-only
+                </span>
+              </div>
+            )
+          })
+        )}
+      </div>
     </>
   )
+}
+
+function authTypeLabel(type: "oauth" | "api" | "wellknown" | undefined) {
+  if (type === "oauth") return "OAuth"
+  if (type === "api") return "API key"
+  if (type === "wellknown") return "Well-known"
+  return "Unknown auth"
 }
 
 /** One window as a small bar: full is the signal, exact digits on hover. */
@@ -363,18 +458,12 @@ function UsageBar({
         <span
           className={cn(
             "block h-full rounded-full",
-            used >= 90
-              ? "bg-removed"
-              : used >= 70
-                ? "bg-caution"
-                : "bg-added"
+            used >= 90 ? "bg-removed" : used >= 70 ? "bg-caution" : "bg-added"
           )}
           style={{ width: `${used}%` }}
         />
       </span>
-      <span className="tabular text-label text-faint">
-        {Math.round(used)}%
-      </span>
+      <span className="tabular text-label text-faint">{Math.round(used)}%</span>
     </span>
   )
 }

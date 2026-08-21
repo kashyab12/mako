@@ -141,10 +141,11 @@ export function estimateUsageCost(
 
 function pricingKey(model: string | undefined): string | null {
   if (!model) return null
-  const value = model
-    .toLowerCase()
-    .trim()
-    .replace(/^anthropic[/:]/, "")
+  const normalized = model.toLowerCase().trim()
+  const separator = normalized.search(/[/:]/)
+  const provider = separator >= 0 ? normalized.slice(0, separator) : undefined
+  if (provider && provider !== "anthropic" && provider !== "openai") return null
+  const value = (separator >= 0 ? normalized.slice(separator + 1) : normalized)
     .replace(/\./g, "-")
     .replace(/\((minimal|low|medium|high|xhigh|auto|none)\)$/, "")
     .replace(/-(minimal|low|medium|high|xhigh|auto|none)$/, "")

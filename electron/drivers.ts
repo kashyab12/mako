@@ -26,7 +26,7 @@ import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import type { ThreadRef } from "@mako/sessions"
 import { accountEnv, switchSuggestion } from "./accounts.js"
-import { devinExecutable } from "./harnesses.js"
+import { devinExecutable, openCodeExecutable } from "./harnesses.js"
 import type { HostEvent, ThreadRunState } from "./shared.js"
 
 interface ResumeCommand {
@@ -283,6 +283,41 @@ function buildDevinFresh(prompt: string, options: FreshOptions): ResumeCommand {
   }
 }
 
+function buildOpenCodeResume(
+  id: string,
+  prompt: string,
+  options?: FreshOptions
+): ResumeCommand {
+  const tuning = commandTuning(options)
+  return {
+    command: openCodeExecutable() ?? "opencode",
+    args: [
+      "run",
+      "--session",
+      id,
+      ...(tuning.model ? ["--model", tuning.model] : []),
+      ...(tuning.cliEffort ? ["--variant", tuning.cliEffort] : []),
+      prompt,
+    ],
+  }
+}
+
+function buildOpenCodeFresh(
+  prompt: string,
+  options: FreshOptions
+): ResumeCommand {
+  const tuning = commandTuning(options)
+  return {
+    command: openCodeExecutable() ?? "opencode",
+    args: [
+      "run",
+      ...(tuning.model ? ["--model", tuning.model] : []),
+      ...(tuning.cliEffort ? ["--variant", tuning.cliEffort] : []),
+      prompt,
+    ],
+  }
+}
+
 /** How each harness resumes a session headlessly with one new message. */
 const RESUME = {
   codex: buildCodexResume,
@@ -292,6 +327,7 @@ const RESUME = {
   cursor: buildCursorResume,
   grok: buildGrokResume,
   devin: buildDevinResume,
+  opencode: buildOpenCodeResume,
 }
 
 const FRESH = {
@@ -300,6 +336,7 @@ const FRESH = {
   cursor: buildCursorFresh,
   grok: buildGrokFresh,
   devin: buildDevinFresh,
+  opencode: buildOpenCodeFresh,
 }
 
 export function resumableHarnesses(): string[] {

@@ -348,6 +348,13 @@ const MCP: McpRegistrySnapshot = {
       available: true,
       source: "grok mcp list --json",
     },
+    {
+      id: "opencode",
+      label: "OpenCode",
+      account: "default",
+      available: true,
+      source: "~/.opencode/config.json",
+    },
   ],
   servers: [
     {
@@ -403,13 +410,18 @@ const INTEGRATIONS: IntegrationCatalogSnapshot = {
       auth: "provider-oauth",
       capabilities: ["Issues", "Projects", "Comments"],
       events: [],
-      connection: { kind: "connected", detail: "claude", providers: ["claude"] },
+      connection: {
+        kind: "connected",
+        detail: "claude",
+        providers: ["claude"],
+      },
       setupUrl: "https://linear.app/docs/mcp",
     },
     {
       id: "github",
       label: "GitHub",
-      description: "Work with repositories, issues, pull requests, and actions.",
+      description:
+        "Work with repositories, issues, pull requests, and actions.",
       category: "Development",
       trust: "official",
       auth: "provider-cli",
@@ -420,7 +432,8 @@ const INTEGRATIONS: IntegrationCatalogSnapshot = {
     {
       id: "mako-backend",
       label: "Mako Backend",
-      description: "Remote MCP, skills, integrations, and communication channels.",
+      description:
+        "Remote MCP, skills, integrations, and communication channels.",
       category: "Development",
       trust: "mako",
       auth: "mako-backend",
@@ -431,7 +444,8 @@ const INTEGRATIONS: IntegrationCatalogSnapshot = {
     {
       id: "slack",
       label: "Slack",
-      description: "Read and send messages through your authenticated Mako backend.",
+      description:
+        "Read and send messages through your authenticated Mako backend.",
       category: "Communication",
       trust: "mako",
       auth: "mako-backend",
@@ -550,7 +564,8 @@ const SKILLS: SkillRegistrySnapshot = {
     {
       id: "mock-review",
       name: "code-review",
-      description: "Review a change for correctness, regressions, and missing tests.",
+      description:
+        "Review a change for correctness, regressions, and missing tests.",
       hash: "a".repeat(64),
       bytes: 2_480,
       files: 3,
@@ -1052,7 +1067,8 @@ export function installMockBridge() {
           },
           newFile: {
             name: "src/state/session.ts",
-            contents: "const sessions = useSession((state) => state.sessions)\n",
+            contents:
+              "const sessions = useSession((state) => state.sessions)\n",
           },
         },
       ],
@@ -1179,26 +1195,29 @@ export function installMockBridge() {
           }
         : path.includes("claude-2")
           ? {
-            harness: "claude" as const,
-            nativeId: "cl-2",
-            path,
-            cwd: "/Users/you/api",
-            title: "Ship the billing webhooks",
-            model: "claude-opus-5",
-            updatedAt: new Date().toISOString(),
-            lineage: [
-              { harness: "devin" as const, title: "Ship the billing webhooks" },
-            ],
-          }
-        : {
-            harness: "codex" as const,
-            nativeId: "cx-1",
-            path,
-            cwd: "/Users/you/api",
-            title: "Trace the flaky webhook retry",
-            model: "gpt-5.2-codex",
-            updatedAt: new Date().toISOString(),
-          },
+              harness: "claude" as const,
+              nativeId: "cl-2",
+              path,
+              cwd: "/Users/you/api",
+              title: "Ship the billing webhooks",
+              model: "claude-opus-5",
+              updatedAt: new Date().toISOString(),
+              lineage: [
+                {
+                  harness: "devin" as const,
+                  title: "Ship the billing webhooks",
+                },
+              ],
+            }
+          : {
+              harness: "codex" as const,
+              nativeId: "cx-1",
+              path,
+              cwd: "/Users/you/api",
+              title: "Trace the flaky webhook retry",
+              model: "gpt-5.2-codex",
+              updatedAt: new Date().toISOString(),
+            },
       entries: [
         {
           kind: "user",
@@ -1291,44 +1310,84 @@ export function installMockBridge() {
         dir: "~/.mako/accounts/codex/personal",
         active: true,
       },
+      {
+        harness: "opencode" as const,
+        name: "openai",
+        providerId: "openai",
+        authType: "oauth" as const,
+        email: "developer@example.com",
+        accountId: "account-example",
+        dir: "~/.local/share/opencode/auth.json",
+        active: true,
+        source: "opencode" as const,
+      },
+      {
+        harness: "opencode" as const,
+        name: "anthropic",
+        providerId: "anthropic",
+        authType: "api" as const,
+        dir: "~/.local/share/opencode/auth.json",
+        active: true,
+        source: "opencode" as const,
+      },
     ],
     captureAccount: async () => {},
     selectAccount: async () => {},
     removeAccount: async () => {},
     accountUsage: async (harness: string, name: string) =>
-      harness === "codex"
-        ? {
-            status: "ok" as const,
-            plan: "pro",
-            session: {
-              usedPercent: 34,
-              windowMinutes: 300,
-              resetsAt: Date.now() + 3_600_000,
-            },
-            weekly: {
-              usedPercent: 92,
-              windowMinutes: 10_080,
-              resetsAt: Date.now() + 4 * 86_400_000,
-            },
-          }
-        : name === "default"
+      harness === "opencode"
+        ? name === "openai"
           ? {
-              status: "stale-token" as const,
-              detail: "Refreshes the next time Claude Code runs",
-            }
-          : {
               status: "ok" as const,
+              plan: "plus",
               session: {
-                usedPercent: 12,
+                usedPercent: 28,
                 windowMinutes: 300,
-                resetsAt: Date.now() + 9_000_000,
+                resetsAt: Date.now() + 2_400_000,
               },
               weekly: {
-                usedPercent: 55,
+                usedPercent: 61,
                 windowMinutes: 10_080,
-                resetsAt: Date.now() + 2 * 86_400_000,
+                resetsAt: Date.now() + 3 * 86_400_000,
               },
-            },
+            }
+          : {
+              status: "unavailable" as const,
+              detail: "Usage is unavailable for API-key credentials",
+            }
+        : harness === "codex"
+          ? {
+              status: "ok" as const,
+              plan: "pro",
+              session: {
+                usedPercent: 34,
+                windowMinutes: 300,
+                resetsAt: Date.now() + 3_600_000,
+              },
+              weekly: {
+                usedPercent: 92,
+                windowMinutes: 10_080,
+                resetsAt: Date.now() + 4 * 86_400_000,
+              },
+            }
+          : name === "default"
+            ? {
+                status: "stale-token" as const,
+                detail: "Refreshes the next time Claude Code runs",
+              }
+            : {
+                status: "ok" as const,
+                session: {
+                  usedPercent: 12,
+                  windowMinutes: 300,
+                  resetsAt: Date.now() + 9_000_000,
+                },
+                weekly: {
+                  usedPercent: 55,
+                  windowMinutes: 10_080,
+                  resetsAt: Date.now() + 2 * 86_400_000,
+                },
+              },
     harnessProfiles: async () => [
       {
         id: "claude",
@@ -1415,6 +1474,32 @@ export function installMockBridge() {
         capabilities: ["stream"],
         models: [{ id: "adaptive", label: "Adaptive", options: [] }],
       },
+      {
+        id: "opencode",
+        label: "OpenCode",
+        available: true,
+        transport: "acp" as const,
+        defaultModel: "openai/gpt-5.4",
+        capabilities: ["stream", "resume", "models"],
+        models: [
+          {
+            id: "openai/gpt-5.4",
+            label: "GPT-5.4",
+            options: [
+              {
+                kind: "select" as const,
+                id: "effort",
+                label: "Reasoning",
+                current: "medium",
+                values: ["low", "medium", "high"].map((value) => ({
+                  value,
+                  label: value,
+                })),
+              },
+            ],
+          },
+        ],
+      },
     ],
     harnessAvailability: async () => ({
       codex: true,
@@ -1422,6 +1507,7 @@ export function installMockBridge() {
       cursor: true,
       grok: false,
       devin: true,
+      opencode: true,
     }),
     daemonStatus: async () => ({
       pid: 4242,
@@ -1609,13 +1695,18 @@ export function installMockBridge() {
       if (!session) throw new Error("Terminal session was not found")
       return {
         session,
-        data: sessionId === "mock-terminal-1" ? "printf 'Mako terminal mock ready\\n'\r\nMako terminal mock ready\r\n$ " : "$ ",
+        data:
+          sessionId === "mock-terminal-1"
+            ? "printf 'Mako terminal mock ready\\n'\r\nMako terminal mock ready\r\n$ "
+            : "$ ",
         sequence: session.sequence,
       }
     },
     terminalDetach: async () => {},
     terminalWrite: async (sessionId: string, data: string) => {
-      const current = terminalSessions.find((session) => session.id === sessionId)
+      const current = terminalSessions.find(
+        (session) => session.id === sessionId
+      )
       if (!current) throw new Error("Terminal session was not found")
       const sequence = current.sequence + 1
       terminalSessions = terminalSessions.map((session) =>
@@ -1628,7 +1719,9 @@ export function installMockBridge() {
     terminalAcknowledge: async () => {},
     terminalResize: async () => {},
     terminalKill: async (sessionId: string) => {
-      terminalSessions = terminalSessions.filter((session) => session.id !== sessionId)
+      terminalSessions = terminalSessions.filter(
+        (session) => session.id !== sessionId
+      )
       emitTerminal({ type: "removed", sessionId })
     },
     onTerminalEvent: (listener) => {

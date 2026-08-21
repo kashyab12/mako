@@ -3,6 +3,7 @@ import { existsSync, readdirSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { z } from "zod"
 import { accountEnv } from "./accounts.js"
 import {
   availableHarnessProfile,
@@ -11,6 +12,7 @@ import {
   normalizeCursorModels,
   normalizeDevinModels,
   normalizeGrokModels,
+  normalizeOpenCodeModels,
   unavailableHarnessProfile,
   type ClaudeModelRow,
   type CodexModelListResponse,
@@ -18,6 +20,7 @@ import {
   type CursorModelListResponse,
   type DevinModelListResponse,
   type GrokModelCache,
+  type OpenCodeModelRow,
 } from "./harness-models.js"
 import type { HarnessProfile } from "./shared.js"
 
@@ -49,6 +52,35 @@ interface RpcInbound<TResult> {
   error?: { message?: string }
 }
 
+const OpenCodeModelIdentitySchema = z.object({
+  providerID: z.string(),
+  modelID: z.string(),
+})
+const OpenCodeModelSchema = z.object({
+  id: z.string(),
+  providerID: z.string(),
+  name: z.string().optional(),
+  family: z.string().optional(),
+  status: z.string().optional(),
+  variants: z
+    .record(
+      z.string(),
+      z.object({ reasoningEffort: z.string().optional() }).passthrough()
+    )
+    .optional(),
+  limit: z
+    .object({ context: z.number().optional(), output: z.number().optional() })
+    .optional(),
+  capabilities: z
+    .object({
+      reasoning: z.boolean().optional(),
+      input: z
+        .object({ text: z.boolean().optional(), image: z.boolean().optional() })
+        .optional(),
+    })
+    .optional(),
+})
+
 const cache = new Map<string, { at: number; profile: HarnessProfile }>()
 
 export async function harnessProfile(harness: string): Promise<HarnessProfile> {
@@ -73,7 +105,9 @@ export async function harnessProfile(harness: string): Promise<HarnessProfile> {
               ? await grokProfile(env)
               : harness === "devin"
                 ? await devinProfile(env)
-                : unavailableHarnessProfile(harness, "Unknown provider")
+                : harness === "opencode"
+                  ? await openCodeProfile(env)
+                  : unavailableHarnessProfile(harness, "Unknown provider")
   } catch (error) {
     profile = unavailableHarnessProfile(harness, error instanceof Error ? error.message : String(error))
   }
@@ -83,8 +117,18 @@ export async function harnessProfile(harness: string): Promise<HarnessProfile> {
 
 export async function harnessProfiles(): Promise<HarnessProfile[]> {
   return Promise.all(
-    ["claude", "codex", "cursor", "grok", "devin"].map(harnessProfile)
+    ["claude", "codex", "cursor", "grok", "devin", "opencode"].map(
+      harnessProfile
+    )
   )
+}
+
+export function openCodeExecutable(): string | null {
+  const configured = process.env["OPENCODE_BIN_PATH"]
+  if (configured && existsSync(configured)) return configured
+  const bundled = join(homedir(), ".opencode", "bin", "opencode")
+  if (existsSync(bundled)) return bundled
+  return null
 }
 
 export function devinExecutable(): string | null {
@@ -152,6 +196,119 @@ async function devinProfile(
     await run(executable, ["models", "list", "--format", "json"], env)
   )
   return availableHarnessProfile("devin", normalizeDevinModels(parsed))
+}
+
+async function openCodeProfile(env: NodeJS.ProcessEnv): Promise<HarnessProfile> {
+  const executable = openCodeExecutable()
+  if (!executable) throw new Error("OpenCode is not installed")
+  const output = await run(executable, ["models", "--verbose"], env)
+  const catalog = normalizeOpenCodeModels(parseOpenCodeModels(output))
+  const configured = await latestOpenCodeModel()
+  if (configured && catalog.models.some((model) => model.id === configured)) {
+    catalog.configuredModel = configured
+    catalog.defaultModel = configured
+  } else {
+    catalog.defaultModel = catalog.models[0]?.id
+  }
+  return availableHarnessProfile("opencode", catalog)
+}
+
+function parseOpenCodeModels(output: string): OpenCodeModelRow[] {
+  const rows: OpenCodeModelRow[] = []
+  let start = output.indexOf("{")
+  while (start >= 0) {
+    let depth = 0
+    let quoted = false
+    let escaped = false
+    let end = start
+    for (; end < output.length; end += 1) {
+      const character = output[end]!
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (character === "\\" && quoted) {
+        escaped = true
+        continue
+      }
+      if (character === '"') quoted = !quoted
+      if (quoted) continue
+      if (character === "{") depth += 1
+      if (character === "}") depth -= 1
+      if (depth === 0) {
+        end += 1
+        break
+      }
+    }
+    try {
+      const parsed = OpenCodeModelSchema.safeParse(
+        JSON.parse(output.slice(start, end))
+      )
+      if (parsed.success) rows.push(parsed.data)
+    } catch {
+      return rows
+    }
+    start = output.indexOf("{", end)
+  }
+  return rows
+}
+
+async function latestOpenCodeModel(): Promise<string | undefined> {
+  const sqlite = await import("node:sqlite").catch(() => null)
+  if (!sqlite) return undefined
+  for (const databaseName of ["opencode-next.db", "opencode.db"]) {
+    const path = join(
+      homedir(),
+      ".local",
+      "share",
+      "opencode",
+      databaseName
+    )
+    if (!existsSync(path)) continue
+    let database: import("node:sqlite").DatabaseSync | undefined
+    try {
+      database = new sqlite.DatabaseSync(path, { readOnly: true })
+      const columns = new Set(
+        database.prepare("PRAGMA table_info(session)").all().map((row) => row.name)
+      )
+      if (columns.has("model")) {
+        const current = database
+          .prepare(
+            "SELECT model FROM session WHERE model IS NOT NULL ORDER BY time_updated DESC LIMIT 1"
+          )
+          .get()
+        const currentModel = OpenCodeModelIdentitySchema.safeParse(
+          current?.model ? JSON.parse(String(current.model)) : null
+        )
+        if (currentModel.success) {
+          return `${currentModel.data.providerID}/${currentModel.data.modelID}`
+        }
+      }
+      const tables = new Set(
+        database
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+          .all()
+          .map((row) => row.name)
+      )
+      if (tables.has("message")) {
+        const legacy = database
+          .prepare(
+            "SELECT data FROM message WHERE json_extract(data, '$.role') = 'assistant' ORDER BY time_created DESC LIMIT 1"
+          )
+          .get()
+        const parsed = OpenCodeModelIdentitySchema.safeParse(
+          legacy?.data ? JSON.parse(String(legacy.data)) : null
+        )
+        if (parsed.success)
+          return `${parsed.data.providerID}/${parsed.data.modelID}`
+      }
+    } catch {
+      continue
+    } finally {
+      database?.close()
+    }
+  }
+  return undefined
 }
 
 async function readJson<TResult>(path: string): Promise<TResult | null> {

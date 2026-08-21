@@ -84,8 +84,24 @@ function testProviderFixtures(): void {
       },
     ])
   )
+  const [opencode] = parseProviderJson(
+    "opencode",
+    JSON.stringify({
+      mcp: {
+        local: {
+          type: "local",
+          command: ["node", "server.js"],
+          environment: { API_KEY: "secret" },
+        },
+      },
+    })
+  )
   assert.equal(codex?.transport, "http")
   assert.equal(grok?.transport, "sse")
+  assert.equal(opencode?.transport, "stdio")
+  assert.equal(opencode?.command, "node")
+  assert.deepEqual(opencode?.args, ["server.js"])
+  assert.deepEqual(opencode?.envNames, ["API_KEY"])
 }
 
 function testAxiomPreview(): void {
@@ -121,6 +137,18 @@ function testAxiomPreview(): void {
     .parse(JSON.parse(mergeJsonMcpConfig("", definition, "claude")))
   assert.deepEqual(claude.mcpServers.axiom, {
     type: "http",
+    url: "https://mcp.axiom.co/mcp",
+  })
+  const opencode = z
+    .object({
+      mcp: z.record(
+        z.string(),
+        z.object({ type: z.string(), url: z.string() })
+      ),
+    })
+    .parse(JSON.parse(mergeJsonMcpConfig("", definition, "opencode")))
+  assert.deepEqual(opencode.mcp.axiom, {
+    type: "remote",
     url: "https://mcp.axiom.co/mcp",
   })
 }

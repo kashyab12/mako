@@ -16,6 +16,7 @@ const HARNESS_NAMES = new Map([
   ["cursor", "Cursor"],
   ["grok", "Grok"],
   ["devin", "Devin"],
+  ["opencode", "OpenCode"],
 ])
 
 function harnessLabelOf(harness: string): string {

@@ -1,7 +1,7 @@
 # Mako
 
-Mako is a meta-harness. Claude Code, Codex, Cursor, Grok, and Devin are peer
-providers with provider-native control and observation transports. No provider
+Mako is a meta-harness. Claude Code, Codex, Cursor, Grok, Devin, and OpenCode
+are peer providers with provider-owned control and observation transports. No provider
 is privileged in public types, bridge names, UI language, continuation, or
 session handling.
 

@@ -3,6 +3,8 @@ import { readdir, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
 import { createInterface } from "node:readline"
+import { DatabaseSync } from "node:sqlite"
+import { z } from "zod"
 import type { JsonObject, JsonValue } from "./codex-app-json.js"
 import type { UsageSummary, UsageTotals } from "./shared.js"
 import {
@@ -15,6 +17,7 @@ const MAX_FILES_PER_SOURCE = 1_000
 const MAX_BYTES_PER_FILE = 32 * 1024 * 1024
 const MAX_BYTES_PER_SOURCE = 128 * 1024 * 1024
 const MAX_DISCOVERY_ENTRIES = 25_000
+const MAX_OPENCODE_ROWS = 100_000
 
 interface FileCandidate {
   path: string
@@ -72,6 +75,18 @@ interface BuiltInMetadata {
   session?: string
 }
 
+const OpenCodeRowSchema = z.object({
+  id: z.string(),
+  session_id: z.string(),
+  time_created: z.number(),
+  time_updated: z.number().nullable(),
+  data: z.string(),
+  directory: z.string().nullable(),
+  worktree: z.string().nullable(),
+  session_model: z.string().nullable(),
+})
+type OpenCodeRow = z.infer<typeof OpenCodeRowSchema>
+
 export async function usageSummary(
   sessionsRoot: string,
   homeRoot = homedir()
@@ -90,11 +105,12 @@ export async function usageSummary(
   await scanBuiltIn(builtIn.files, events, sessions)
   await scanClaude(claude.files, events, sessions)
   await scanCodex(codex.files, events, sessions)
+  const openCodeTruncated = await scanOpenCode(homeRoot, events, sessions)
 
   return aggregate(
     events.values(),
     sessions.size,
-    builtIn.truncated || claude.truncated || codex.truncated
+    builtIn.truncated || claude.truncated || codex.truncated || openCodeTruncated
   )
 }
 
@@ -239,6 +255,191 @@ async function scanCodex(
     if (read) sessions.add(`Codex:${context.session}`)
     if ((index + 1) % 8 === 0) await yieldToMain()
   }
+}
+
+async function scanOpenCode(
+  homeRoot: string,
+  events: Map<string, UsageEvent>,
+  sessions: Set<string>
+): Promise<boolean> {
+  const root = join(homeRoot, ".local", "share", "opencode")
+  let truncated = false
+  for (const name of ["opencode-next.db", "opencode.db"]) {
+    let db: DatabaseSync | undefined
+    try {
+      db = new DatabaseSync(join(root, name), { readOnly: true })
+      db.exec("PRAGMA query_only = ON")
+      const rows = selectOpenCodeRows(db, name)
+      if (rows.length >= MAX_OPENCODE_ROWS) truncated = true
+      for (const row of rows) {
+        const event = parseOpenCodeEvent(row)
+        if (!event) continue
+        sessions.add(`OpenCode:${event.session}`)
+        mergeEvent(events, event)
+      }
+    } catch {
+      continue
+    } finally {
+      db?.close()
+    }
+    await yieldToMain()
+  }
+  return truncated
+}
+
+function selectOpenCodeRows(
+  db: DatabaseSync,
+  databaseName: string
+): OpenCodeRow[] {
+  if (!databaseName.endsWith("opencode-next.db")) {
+    const legacy = openCodeTableRows(db, "message")
+    if (legacy.length > 0) return legacy
+  }
+  return openCodeTableRows(db, "session_message")
+}
+
+function openCodeTableRows(
+  db: DatabaseSync,
+  table: "message" | "session_message"
+): OpenCodeRow[] {
+  if (!tableExists(db, "session") || !tableExists(db, table)) return []
+  const alias = table === "message" ? "m" : "sm"
+  const hasProject =
+    tableExists(db, "project") &&
+    columnExists(db, "session", "project_id") &&
+    columnExists(db, "project", "worktree")
+  const projectJoin = hasProject
+    ? "LEFT JOIN project p ON p.id = s.project_id"
+    : ""
+  const worktree = hasProject ? "p.worktree" : "NULL"
+  const directory = columnExists(db, "session", "directory")
+    ? "s.directory"
+    : "NULL"
+  const sessionModel = columnExists(db, "session", "model")
+    ? "s.model"
+    : "NULL"
+  const updated = columnExists(db, table, "time_updated")
+    ? `${alias}.time_updated`
+    : "NULL"
+  const assistant =
+    table === "session_message" && columnExists(db, table, "type")
+      ? `${alias}.type = 'assistant'`
+      : `json_valid(${alias}.data) AND json_extract(${alias}.data, '$.role') = 'assistant'`
+  return db
+    .prepare(
+      `SELECT ${alias}.id, ${alias}.session_id, ${alias}.time_created,
+              ${updated} AS time_updated, ${alias}.data,
+              ${directory} AS directory, ${worktree} AS worktree,
+              ${sessionModel} AS session_model
+       FROM ${table} ${alias}
+       JOIN session s ON s.id = ${alias}.session_id
+       ${projectJoin}
+       WHERE ${assistant}
+       ORDER BY ${alias}.time_created DESC, ${alias}.id DESC
+       LIMIT ?`
+    )
+    .all(MAX_OPENCODE_ROWS)
+    .flatMap((row) => {
+      const parsed = OpenCodeRowSchema.safeParse(row)
+      return parsed.success ? [parsed.data] : []
+    })
+}
+
+function tableExists(db: DatabaseSync, table: string): boolean {
+  return Boolean(
+    db
+      .prepare(
+        "SELECT 1 AS found FROM sqlite_schema WHERE type = 'table' AND name = ? LIMIT 1"
+      )
+      .get(table)
+  )
+}
+
+function columnExists(db: DatabaseSync, table: string, column: string): boolean {
+  return db
+    .prepare("SELECT name FROM pragma_table_info(?)")
+    .all(table)
+    .some((row) => row.name === column)
+}
+
+function parseOpenCodeEvent(row: OpenCodeRow): UsageEvent | null {
+  const data = parseObject(row.data)
+  if (!data) return null
+  const assistant = objectValue(objectValue(data.metadata)?.assistant)
+  const tokens = objectValue(data.tokens) ?? objectValue(assistant?.tokens)
+  if (!tokens) return null
+  const cache = objectValue(tokens.cache)
+  const counts: UsageTokenCounts = {
+    input: tokenValue(tokens.input),
+    output: tokenValue(tokens.output) + tokenValue(tokens.reasoning),
+    cacheRead: tokenValue(cache?.read),
+    cacheWrite: tokenValue(cache?.write),
+  }
+  const cost = numberValue(data.cost) ?? numberValue(assistant?.cost)
+  if (tokenTotal(counts) === 0 && (cost === undefined || cost < 0)) return null
+  const timestamp = openCodeTimestamp(
+    objectValue(data.time) ?? objectValue(assistant?.time),
+    row.time_updated ?? row.time_created
+  )
+  const event: UsageEvent = {
+    ...counts,
+    key: `OpenCode:${row.id}`,
+    source: "OpenCode",
+    session: row.session_id,
+    timestamp,
+    model: openCodeModel(data, assistant, row.session_model),
+    cwd:
+      stringValue(objectValue(data.path)?.cwd) ??
+      stringValue(objectValue(assistant?.path)?.cwd) ??
+      row.directory ??
+      row.worktree ??
+      "unknown",
+  }
+  if (cost !== undefined && Number.isFinite(cost) && cost >= 0)
+    event.reportedCost = cost
+  return event
+}
+
+function openCodeModel(
+  data: JsonObject,
+  assistant: JsonObject | undefined,
+  storedModel: string | null
+): string {
+  const model =
+    objectValue(data.model) ??
+    objectValue(assistant?.model) ??
+    (storedModel ? parseObject(storedModel) : undefined)
+  const id =
+    stringValue(data.modelID) ??
+    stringValue(data.modelId) ??
+    stringValue(assistant?.modelID) ??
+    stringValue(assistant?.modelId) ??
+    stringValue(model?.id) ??
+    stringValue(model?.modelID) ??
+    stringValue(data.model)
+  const provider =
+    stringValue(data.providerID) ??
+    stringValue(data.providerId) ??
+    stringValue(assistant?.providerID) ??
+    stringValue(assistant?.providerId) ??
+    stringValue(model?.providerID) ??
+    stringValue(model?.providerId)
+  return id ? (provider ? `${provider}/${id}` : id) : "unknown"
+}
+
+function openCodeTimestamp(time: JsonObject | undefined, fallback: number): string {
+  for (const value of [time?.completed, time?.created]) {
+    const numeric = numberValue(value)
+    if (numeric !== undefined && numeric > 0) {
+      const millis = numeric < 10_000_000_000 ? numeric * 1000 : numeric
+      if (!Number.isNaN(new Date(millis).getTime())) return new Date(millis).toISOString()
+    }
+    const timestamp = stringValue(value)
+    if (timestamp && !Number.isNaN(Date.parse(timestamp)))
+      return new Date(timestamp).toISOString()
+  }
+  const millis = fallback < 10_000_000_000 ? fallback * 1000 : fallback
+  return new Date(millis).toISOString()
 }
 
 async function readLines(

@@ -6,6 +6,7 @@ export const HARNESS_LABEL = Object.fromEntries([
   ["cursor", "Cursor"],
   ["grok", "Grok"],
   ["devin", "Devin"],
+  ["opencode", "OpenCode"],
 ])
 
 export function harnessLabel(harness: Harness): string {

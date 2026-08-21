@@ -22,6 +22,7 @@ const RelayHarnessSchema = z.enum([
   "cursor",
   "grok",
   "devin",
+  "opencode",
 ])
 const ThreadMessageSchema = z.object({
   event: z.object({

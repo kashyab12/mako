@@ -101,6 +101,7 @@ import {
   listAccounts,
   removeAccount,
   selectAccount,
+  type AccountProvider,
 } from "./accounts.js"
 import { daemonLoginEnabled, setDaemonLogin } from "./daemon-login.js"
 import { TerminalDaemonClient } from "./terminal-client.js"
@@ -799,8 +800,7 @@ function bindIpc() {
   )
   handle(
     "mako:account-usage",
-    (_e, harness: "claude" | "codex", name: string) =>
-      accountUsage(harness, name)
+    (_e, harness: AccountProvider, name: string) => accountUsage(harness, name)
   )
 
   handle("mako:harness-profiles", () => harnessProfiles())
@@ -1162,9 +1162,9 @@ app.whenReady().then(async () => {
     applicationName: "Mako",
     applicationVersion: app.getVersion(),
     version: app.getVersion(),
-    copyright: "© 2026 Mako contributors",
+    copyright: "© 2026 Verbiflow",
     credits:
-      "A local-first desktop meta-harness for Claude Code, Codex, Cursor, Grok, and Devin.",
+      "Desktop app for Claude Code, Codex, Cursor, Grok, Devin, and OpenCode.",
   })
   await ensureBackendConnectionEnvironment()
   protocol.handle("mako-file", async (request) => {

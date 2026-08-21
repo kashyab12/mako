@@ -19,6 +19,7 @@ export const section = {
     "cursor",
     "grok",
     "devin",
+    "opencode",
     "daemon",
     "sync",
     "conversion",

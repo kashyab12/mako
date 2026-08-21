@@ -31,7 +31,7 @@ const STEPS: Array<Omit<FirstRunStep, "done" | "run"> & { command?: string }> = 
   {
     id: "provider",
     title: "Connect an agent",
-    hint: "Mako uses your existing Claude Code, Codex, Cursor, Grok, or Devin login.",
+    hint: "Mako uses your existing agent logins.",
   },
   {
     id: "workspace",

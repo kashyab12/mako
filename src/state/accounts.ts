@@ -18,17 +18,21 @@ import { toast } from "sonner"
  */
 
 export type AccountHarness = "claude" | "codex"
+export type AccountProvider = AccountHarness | "opencode"
 
 export interface ProviderAccount {
-  harness: AccountHarness
+  harness: AccountProvider
   name: string
   email?: string
+  accountId?: string
+  providerId?: string
+  authType?: "oauth" | "api" | "wellknown"
   active: boolean
-  source?: "mako" | "subrouter"
+  source?: "mako" | "subrouter" | "opencode"
 }
 
 export interface AccountUsage {
-  status: string
+  status: "ok" | "stale-token" | "missing-credentials" | "unavailable" | "error"
   plan?: string
   detail?: string
   session?: {
@@ -53,10 +57,13 @@ interface AccountsState {
 
 const STALE_MS = 60_000
 
-export const accountsStore = createStore<AccountsState>({ accounts: [], usage: {} })
+export const accountsStore = createStore<AccountsState>({
+  accounts: [],
+  usage: {},
+})
 export const useAccounts = createHook(accountsStore)
 
-export function usageKey(harness: AccountHarness, name: string): string {
+export function usageKey(harness: AccountProvider, name: string): string {
   return `${harness}:${name}`
 }
 
@@ -76,7 +83,10 @@ export const accounts = {
             .accountUsage(account.harness, account.name)
             .then((value) =>
               accountsStore.set((state) => ({
-                usage: { ...state.usage, [usageKey(account.harness, account.name)]: value },
+                usage: {
+                  ...state.usage,
+                  [usageKey(account.harness, account.name)]: value,
+                },
               }))
             )
             .catch(() => {})
@@ -103,7 +113,10 @@ export const accounts = {
     } catch (error) {
       toast.error("Account was not switched", {
         description: error instanceof Error ? error.message : String(error),
-        action: { label: "Retry", onClick: () => void accounts.select(harness, name) },
+        action: {
+          label: "Retry",
+          onClick: () => void accounts.select(harness, name),
+        },
       })
     } finally {
       accountsStore.set({ busy: undefined })
@@ -125,7 +138,10 @@ export const accounts = {
     } catch (error) {
       toast.error("Account was not removed", {
         description: error instanceof Error ? error.message : String(error),
-        action: { label: "Retry", onClick: () => void accounts.remove(harness, name) },
+        action: {
+          label: "Retry",
+          onClick: () => void accounts.remove(harness, name),
+        },
       })
     } finally {
       accountsStore.set({ busy: undefined })

@@ -18,12 +18,12 @@ import type { HarnessProfile } from "@/lib/types"
  *
  * Each agent is a full row: its mark in a tile, its name, and the model it
  * would use right now — the user's saved choice, or Mako's own sensible
- * default. Five hands, one bar: Claude Code, Codex, Cursor, Grok, Devin.
+ * default. Each installed agent gets the same row and controls.
  * No filler prose — the rows are the information, and every row earns the
  * same treatment.
  */
 
-const ORDER = ["claude", "codex", "cursor", "grok", "devin"]
+const ORDER = ["claude", "codex", "cursor", "grok", "devin", "opencode"]
 
 export function AgentPicker() {
   const [open, setOpen] = useState(false)

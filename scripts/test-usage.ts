@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { usageSummary } from "../electron/usage.js"
 
 const root = await mkdtemp(join(tmpdir(), "mako-usage-"))
@@ -118,22 +119,23 @@ try {
       ),
     ]
   )
+  await putOpenCodeDatabases(homeRoot)
 
   const summary = await usageSummary(sessionsRoot, homeRoot)
 
-  assert.equal(summary.total.messages, 6)
-  assert.equal(summary.sessions, 5)
-  assert.equal(summary.total.input, 214)
-  assert.equal(summary.total.output, 73)
-  assert.equal(summary.total.cacheRead, 200)
-  assert.equal(summary.total.cacheWrite, 45)
-  assert.equal(summary.total.reportedCost, 0.123)
-  assert.ok(Math.abs((summary.total.estimatedCost ?? 0) - 0.00084475) < 1e-12)
-  assert.equal(summary.total.pricedTokens, 522)
-  assert.equal(summary.total.unpricedTokens, 10)
+  assert.equal(summary.total.messages, 10)
+  assert.equal(summary.sessions, 8)
+  assert.equal(summary.total.input, 242)
+  assert.equal(summary.total.output, 97)
+  assert.equal(summary.total.cacheRead, 213)
+  assert.equal(summary.total.cacheWrite, 49)
+  assert.equal(summary.total.reportedCost, 0.393)
+  assert.ok(Math.abs((summary.total.estimatedCost ?? 0) - 0.000958875) < 1e-12)
+  assert.equal(summary.total.pricedTokens, 585)
+  assert.equal(summary.total.unpricedTokens, 16)
   assert.deepEqual(
     summary.sources?.map((source) => source.source).sort(),
-    ["Claude Code", "Codex", "Mako"]
+    ["Claude Code", "Codex", "Mako", "OpenCode"]
   )
 
   const claude = summary.sources?.find((source) => source.source === "Claude Code")
@@ -144,10 +146,221 @@ try {
   assert.equal(codex?.input, 105)
   assert.equal(codex?.cacheRead, 70)
   assert.equal(codex?.cacheWrite, 15)
+  const openCode = summary.sources?.find((source) => source.source === "OpenCode")
+  assert.equal(openCode?.messages, 4)
+  assert.equal(openCode?.input, 28)
+  assert.equal(openCode?.output, 24)
+  assert.equal(openCode?.cacheRead, 13)
+  assert.equal(openCode?.cacheWrite, 4)
+  assert.equal(openCode?.reportedCost, 0.27)
+  assert.ok(Math.abs((openCode?.estimatedCost ?? 0) - 0.000114125) < 1e-12)
+  assert.equal(openCode?.pricedTokens, 63)
+  assert.equal(openCode?.unpricedTokens, 6)
+  assert.equal(
+    summary.projects?.find((project) => project.cwd === "/work/opencode-current")
+      ?.messages,
+    3
+  )
+  assert.equal(
+    summary.projects?.find((project) => project.cwd === "/work/opencode-legacy")
+      ?.messages,
+    1
+  )
 
   console.log("Local usage scanner fixtures passed")
 } finally {
   await rm(root, { recursive: true, force: true })
+}
+
+async function putOpenCodeDatabases(homeRoot: string): Promise<void> {
+  const root = join(homeRoot, ".local", "share", "opencode")
+  await mkdir(root, { recursive: true })
+  const created = Date.parse("2026-08-20T13:00:00.000Z")
+
+  const legacy = new DatabaseSync(join(root, "opencode.db"))
+  legacy.exec(`
+    CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT NOT NULL);
+    CREATE TABLE session (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      directory TEXT,
+      model TEXT,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL
+    );
+    CREATE TABLE message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL,
+      data TEXT NOT NULL
+    );
+  `)
+  legacy.prepare("INSERT INTO project (id, worktree) VALUES (?, ?)").run(
+    "project-legacy",
+    "/work/opencode-legacy"
+  )
+  const legacySession = legacy.prepare(
+    "INSERT INTO session (id, project_id, directory, model, time_created, time_updated) VALUES (?, ?, ?, ?, ?, ?)"
+  )
+  legacySession.run(
+    "oc-shared",
+    "project-legacy",
+    "/work/opencode-legacy",
+    null,
+    created,
+    created
+  )
+  legacySession.run(
+    "oc-legacy",
+    "project-legacy",
+    "/work/opencode-legacy",
+    null,
+    created,
+    created
+  )
+  const legacyMessage = legacy.prepare(
+    "INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)"
+  )
+  legacyMessage.run(
+    "msg-duplicate",
+    "oc-shared",
+    created,
+    created,
+    openCodeLegacyMessage("private-provider", "private-model", 11, 5, 3, 7, 2, 0.25)
+  )
+  legacyMessage.run(
+    "msg-legacy-only",
+    "oc-legacy",
+    created + 1,
+    created + 1,
+    openCodeLegacyMessage("anthropic", "claude-sonnet-4-6", 5, 2, 1, 2, 1, 0.02)
+  )
+  legacy.close()
+
+  const current = new DatabaseSync(join(root, "opencode-next.db"))
+  current.exec(`
+    CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT NOT NULL);
+    CREATE TABLE session (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      directory TEXT NOT NULL,
+      model TEXT,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL
+    );
+    CREATE TABLE session_message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL,
+      data TEXT NOT NULL
+    );
+  `)
+  current.prepare("INSERT INTO project (id, worktree) VALUES (?, ?)").run(
+    "project-current",
+    "/work/opencode-current"
+  )
+  const currentSession = current.prepare(
+    "INSERT INTO session (id, project_id, directory, model, time_created, time_updated) VALUES (?, ?, ?, ?, ?, ?)"
+  )
+  currentSession.run(
+    "oc-shared",
+    "project-current",
+    "/work/opencode-current",
+    null,
+    created,
+    created
+  )
+  currentSession.run(
+    "oc-next",
+    "project-current",
+    "/work/opencode-current",
+    JSON.stringify({ id: "gpt-5", providerID: "openai" }),
+    created,
+    created
+  )
+  const currentMessage = current.prepare(
+    "INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data) VALUES (?, ?, 'assistant', ?, ?, ?, ?)"
+  )
+  currentMessage.run(
+    "msg-duplicate",
+    "oc-shared",
+    1,
+    created,
+    created,
+    openCodeCurrentMessage("private-provider", "private-model", 11, 5, 3, 7, 2, 0.25)
+  )
+  currentMessage.run(
+    "msg-next-priced",
+    "oc-next",
+    1,
+    created + 1,
+    created + 1,
+    openCodeCurrentMessage("openai", "gpt-5", 10, 4, 6, 3, 1)
+  )
+  currentMessage.run(
+    "msg-next-unpriced",
+    "oc-next",
+    2,
+    created + 2,
+    created + 2,
+    openCodeCurrentMessage("gateway", "gpt-5", 2, 1, 2, 1, 0)
+  )
+  current.close()
+}
+
+function openCodeLegacyMessage(
+  providerID: string,
+  modelID: string,
+  input: number,
+  output: number,
+  reasoning: number,
+  cacheRead: number,
+  cacheWrite: number,
+  cost: number
+): string {
+  return JSON.stringify({
+    role: "assistant",
+    providerID,
+    modelID,
+    path: { cwd: "/work/opencode-legacy" },
+    time: { created: Date.parse("2026-08-20T13:00:00.000Z") },
+    cost,
+    tokens: {
+      input,
+      output,
+      reasoning,
+      cache: { read: cacheRead, write: cacheWrite },
+    },
+  })
+}
+
+function openCodeCurrentMessage(
+  providerID: string,
+  id: string,
+  input: number,
+  output: number,
+  reasoning: number,
+  cacheRead: number,
+  cacheWrite: number,
+  cost?: number
+): string {
+  return JSON.stringify({
+    agent: "build",
+    model: { providerID, id },
+    content: [],
+    time: { created: Date.parse("2026-08-20T13:00:00.000Z") },
+    cost,
+    tokens: {
+      input,
+      output,
+      reasoning,
+      cache: { read: cacheRead, write: cacheWrite },
+    },
+  })
 }
 
 async function putJsonl(path: string, rows: string[]): Promise<void> {

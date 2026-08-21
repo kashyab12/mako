@@ -66,16 +66,25 @@ function managedEnvironment(
 
 function serializableDefinition(
   definition: McpServerDefinition,
-  provider: "claude" | "cursor" = "cursor"
+  provider: "claude" | "cursor" | "opencode" = "cursor"
 ): JsonObject {
   if (definition.transport === "stdio") {
+    const env = managedEnvironment(definition)
+    if (provider === "opencode") {
+      const result: JsonObject = {
+        type: "local",
+        command: [definition.command ?? "", ...(definition.args ?? [])],
+      }
+      if (Object.keys(env).length > 0) result.environment = env
+      return result
+    }
     const result: JsonObject = { command: definition.command ?? "" }
     if (definition.args?.length) result.args = definition.args
-    const env = managedEnvironment(definition)
     if (Object.keys(env).length > 0) result.env = env
     return result
   }
   const result: JsonObject = { url: definition.url ?? "" }
+  if (provider === "opencode") result.type = "remote"
   if (provider === "claude") {
     result.type = definition.transport === "sse" ? "sse" : "http"
   }
@@ -86,27 +95,36 @@ function parseConfig(contents: string): JsonObject {
   return contents.trim() ? JsonObjectSchema.parse(JSON.parse(contents)) : {}
 }
 
-function serverMap(config: JsonObject): JsonObject {
-  const parsed = JsonObjectSchema.safeParse(config.mcpServers)
+function serverMap(
+  config: JsonObject,
+  provider: "claude" | "cursor" | "opencode"
+): JsonObject {
+  const parsed = JsonObjectSchema.safeParse(
+    provider === "opencode" ? config.mcp : config.mcpServers
+  )
   return parsed.success ? { ...parsed.data } : {}
 }
 
 export function mergeJsonMcpConfig(
   contents: string,
   definition: McpServerDefinition,
-  provider: "claude" | "cursor" = "cursor"
+  provider: "claude" | "cursor" | "opencode" = "cursor"
 ): string {
   const config = parseConfig(contents)
-  const servers = serverMap(config)
+  const servers = serverMap(config, provider)
   servers[definition.name] = serializableDefinition(definition, provider)
-  return `${JSON.stringify({ ...config, mcpServers: servers }, null, 2)}\n`
+  const next =
+    provider === "opencode"
+      ? { ...config, mcp: servers }
+      : { ...config, mcpServers: servers }
+  return `${JSON.stringify(next, null, 2)}\n`
 }
 
 export async function atomicJsonMcpMerge(
   path: string,
   expectedHash: string,
   definition: McpServerDefinition,
-  provider: "claude" | "cursor" = "cursor"
+  provider: "claude" | "cursor" | "opencode" = "cursor"
 ): Promise<void> {
   const previous = writes.get(path) ?? Promise.resolve()
   const operation = previous
@@ -323,7 +341,11 @@ export async function applyMcpSync(
         cached.path,
         cached.hash,
         definition,
-        target.provider === "claude" ? "claude" : "cursor"
+        target.provider === "claude"
+          ? "claude"
+          : target.provider === "opencode"
+            ? "opencode"
+            : "cursor"
       )
     } finally {
       previews.delete(key)

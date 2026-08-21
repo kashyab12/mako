@@ -7,8 +7,8 @@ import { delimiter, isAbsolute, join } from "node:path"
 import { promisify } from "node:util"
 import { z } from "zod"
 import { accountEnv, selectedAccount } from "./accounts.js"
-import { devinExecutable } from "./harnesses.js"
-import type { JsonValue } from "./codex-app-json.js"
+import { devinExecutable, openCodeExecutable } from "./harnesses.js"
+import type { JsonObject, JsonValue } from "./codex-app-json.js"
 import type {
   McpRegistryProviderStatus,
   McpRegistrySnapshot,
@@ -19,7 +19,14 @@ import type {
 } from "./shared.js"
 
 const run = promisify(execFile)
-const PROVIDERS = ["claude", "codex", "cursor", "grok", "devin"] as const
+const PROVIDERS = [
+  "claude",
+  "codex",
+  "cursor",
+  "grok",
+  "devin",
+  "opencode",
+] as const
 const SECRET_KEY =
   /(?:authorization|api[-_]?key|access[-_]?token|bearer|credential|oauth|password|secret|token)/i
 const MAX_CLI_OUTPUT = 4 * 1024 * 1024
@@ -55,9 +62,27 @@ const NamedRootSchema = z
   .object({
     mcpServers: JsonMapSchema.optional(),
     mcp_servers: JsonMapSchema.optional(),
+    mcp: JsonMapSchema.optional(),
     servers: JsonMapSchema.optional(),
   })
   .catchall(z.json())
+const OpenCodeRootSchema = z.object({
+  mcp: z
+    .record(
+      z.string(),
+      z
+        .object({
+          type: OptionalStringSchema,
+          command: z.array(z.string()).optional(),
+          url: OptionalStringSchema,
+          env: StringMapSchema.optional(),
+          environment: StringMapSchema.optional(),
+          headers: StringMapSchema.optional(),
+        })
+        .passthrough()
+    )
+    .optional(),
+})
 
 interface CleanUrlResult {
   url: string
@@ -188,7 +213,8 @@ function parseNamedMap(value: JsonValue): McpInternalDefinition[] {
   const parsedRoot = NamedRootSchema.safeParse(value)
   if (!parsedRoot.success) return []
   const root = parsedRoot.data
-  const servers = root.mcpServers ?? root.mcp_servers ?? root.servers ?? root
+  const servers =
+    root.mcpServers ?? root.mcp_servers ?? root.mcp ?? root.servers ?? root
   const parsed: McpInternalDefinition[] = []
   for (const [name, definition] of Object.entries(servers)) {
     const item = parseDefinition(name, definition)
@@ -202,6 +228,23 @@ export function parseProviderJson(
   contents: string
 ): McpInternalDefinition[] {
   const value = z.json().parse(JSON.parse(contents))
+  if (provider === "opencode") {
+    const parsed = OpenCodeRootSchema.safeParse(value)
+    if (!parsed.success) return []
+    return Object.entries(parsed.data.mcp ?? {}).flatMap(([name, definition]) => {
+      const normalized: JsonObject = {
+        args: definition.command?.slice(1) ?? [],
+        env: definition.environment ?? definition.env ?? {},
+      }
+      const command = definition.command?.[0]
+      if (command) normalized.command = command
+      if (definition.type) normalized.type = definition.type
+      if (definition.url) normalized.url = definition.url
+      if (definition.headers) normalized.headers = definition.headers
+      const item = parseDefinition(name, normalized)
+      return item ? [item] : []
+    })
+  }
   if ((provider === "codex" || provider === "grok") && Array.isArray(value)) {
     return value.flatMap((entry) => {
       const parsed = RawDefinitionSchema.safeParse(entry)
@@ -347,6 +390,12 @@ export async function mcpDiscoveryRoute(
       join(cwd, ".devin", "mcp_config.local.json"),
       join(cwd, ".devin", "mcp_config.json")
     )
+  } else if (provider === "opencode") {
+    userFiles.push(
+      join(homedir(), ".config", "opencode", "opencode.json"),
+      join(homedir(), ".opencode", "config.json")
+    )
+    workspaceFiles.push(join(cwd, "opencode.json"), join(cwd, ".opencode", "config.json"))
   }
   return {
     provider,
@@ -546,7 +595,9 @@ function providerStatus(
     label:
       provider === "claude"
         ? "Claude Code"
-        : provider[0].toUpperCase() + provider.slice(1),
+        : provider === "opencode"
+          ? "OpenCode"
+          : provider[0].toUpperCase() + provider.slice(1),
     account: route.account,
     available,
     source: route.userFiles[0] ?? `${provider} mcp list --json`,
@@ -563,6 +614,7 @@ export async function discoverMcpRegistry(
   const available = await Promise.all(
     routes.map((route) => {
       if (route.provider === "devin") return Boolean(devinExecutable())
+      if (route.provider === "opencode") return Boolean(openCodeExecutable())
       return canExecute(
         route.provider === "cursor" ? "cursor-agent" : route.provider,
         route.env

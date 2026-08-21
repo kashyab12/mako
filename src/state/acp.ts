@@ -215,9 +215,14 @@ export const acp = {
     if (!hasBridge()) return
     acpStore.set({ starting: true, blocks: [], permission: null })
     try {
-      const canResume = ["claude", "codex", "cursor", "grok", "devin"].includes(
-        ref.harness
-      )
+      const canResume = [
+        "claude",
+        "codex",
+        "cursor",
+        "grok",
+        "devin",
+        "opencode",
+      ].includes(ref.harness)
       const harness = canResume
         ? ref.harness
         : threadsStore.get().composerHarness
@@ -285,9 +290,8 @@ export const acp = {
   /**
    * A brand-new live conversation: the agent starts in the workspace and the
    * first prompt goes the moment the session is ready. This is what makes
-   * Claude Code and Cursor feel native here — streaming, interruptible,
-   * asking before they act — because they are actually running, not being
-   * shelled out to.
+   * ACP sessions stream, interrupt, and request permissions in place instead
+   * of running as blind one-shot shell commands.
    */
   async startFresh(
     harness: string,

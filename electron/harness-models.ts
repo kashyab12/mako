@@ -120,6 +120,26 @@ export interface GrokModelCache {
   models?: GrokModelMap
 }
 
+export interface OpenCodeModelRow {
+  id?: string
+  providerID?: string
+  name?: string
+  family?: string
+  status?: string
+  variants?: Record<string, { reasoningEffort?: string }>
+  limit?: {
+    context?: number
+    output?: number
+  }
+  capabilities?: {
+    reasoning?: boolean
+    input?: {
+      text?: boolean
+      image?: boolean
+    }
+  }
+}
+
 export interface DevinVariantRow {
   model_uid?: string
   label?: string
@@ -436,6 +456,49 @@ export function normalizeGrokModels(
   return catalog
 }
 
+export function normalizeOpenCodeModels(
+  rows: OpenCodeModelRow[]
+): HarnessModelCatalog {
+  const models = rows.flatMap((row): HarnessModel[] => {
+    const id = presentString(row.id)
+    const provider = presentString(row.providerID)
+    if (!id || !provider || row.status === "deprecated") return []
+    const launchId = `${provider}/${id}`
+    const variants = Object.keys(row.variants ?? {})
+    const options: HarnessModelOption[] = []
+    if (variants.length > 0) {
+      options.push({
+        kind: "select",
+        id: "effort",
+        label: "Reasoning",
+        values: variants.map((value) => ({
+          value,
+          label: effortLabel(value),
+          default: value === "medium",
+        })),
+      })
+    }
+    const model: HarnessModel = {
+      id: launchId,
+      launchId,
+      label: presentString(row.name) ?? launchId,
+      options,
+    }
+    const contextWindow = positiveNumber(row.limit?.context)
+    if (contextWindow) model.contextWindow = contextWindow
+    const maxOutputTokens = positiveNumber(row.limit?.output)
+    if (maxOutputTokens) model.maxOutputTokens = maxOutputTokens
+    const details = [
+      presentString(row.family),
+      row.capabilities?.reasoning ? "reasoning" : null,
+      row.capabilities?.input?.image ? "images" : null,
+    ].filter(Boolean)
+    if (details.length > 0) model.description = details.join(" · ")
+    return [model]
+  })
+  return { models }
+}
+
 export function normalizeDevinModels(parsed: DevinModelListResponse): HarnessModelCatalog {
   const byId = new Map<string, HarnessModel>()
   let reportedDefault = presentString(parsed.default_model) ?? presentString(parsed.defaultModel)
@@ -611,6 +674,13 @@ function harnessMetadata(harness: string): HarnessMetadata {
       label: "Devin",
       transport: "acp",
       capabilities: ["start", "resume", "stream", "interrupt", "permissions", "images", "commands", "mcp", "models"],
+    }
+  }
+  if (harness === "opencode") {
+    return {
+      label: "OpenCode",
+      transport: "acp",
+      capabilities: ["start", "resume", "fork", "stream", "steer", "interrupt", "permissions", "images", "commands", "mcp", "models", "agents"],
     }
   }
   return { label: harness, transport: "remote", capabilities: [] }

@@ -10,6 +10,7 @@ export const RelayHarnessSchema = z.enum([
   "cursor",
   "grok",
   "devin",
+  "opencode",
 ])
 export type RelayHarness = z.infer<typeof RelayHarnessSchema>
 

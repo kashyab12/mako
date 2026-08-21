@@ -824,7 +824,13 @@ export interface StagedFile {
   size: number
 }
 
-export type McpProvider = "claude" | "cursor" | "devin" | "codex" | "grok"
+export type McpProvider =
+  | "claude"
+  | "cursor"
+  | "devin"
+  | "codex"
+  | "grok"
+  | "opencode"
 export type McpTransport = "stdio" | "http" | "sse"
 export type McpScope = "user" | "workspace" | "effective" | "managed"
 

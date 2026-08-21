@@ -49,17 +49,22 @@ import type { JsonValue } from "./codex-app-json.js"
 const run = promisify(execFile)
 
 export type AccountHarness = "claude" | "codex"
+export type AccountProvider = AccountHarness | "opencode"
+export type OpenCodeAuthType = "oauth" | "api" | "wellknown"
 
 export interface HarnessAccount {
-  harness: AccountHarness
+  harness: AccountProvider
   name: string
   /** The login's actual identity — the email a human recognizes. */
   email?: string
+  accountId?: string
+  providerId?: string
+  authType?: OpenCodeAuthType
   /** The isolated config home this account materializes as. */
   dir: string
   active: boolean
   /** Where the login came from: captured here, or found in a router's config. */
-  source?: "mako" | "subrouter"
+  source?: "mako" | "subrouter" | "opencode"
 }
 
 export interface UsageWindow {
@@ -70,7 +75,7 @@ export interface UsageWindow {
 }
 
 export interface AccountUsage {
-  status: "ok" | "stale-token" | "missing-credentials" | "error"
+  status: "ok" | "stale-token" | "missing-credentials" | "unavailable" | "error"
   plan?: string
   session?: UsageWindow | null
   weekly?: UsageWindow | null
@@ -141,6 +146,13 @@ interface CodexAuth {
 
 interface JwtClaims {
   email?: string
+  accountId?: string
+}
+
+interface OpenCodeCredential {
+  type: OpenCodeAuthType
+  access?: string
+  accountId?: string
 }
 
 interface RouterClaudeProfile {
@@ -234,8 +246,84 @@ function parseCodexAuth(contents: string): CodexAuth {
 }
 
 function parseJwtClaims(contents: string): JwtClaims {
-  const email = stringValue(jsonFields(contents).get("email"))
-  return email === undefined ? {} : { email }
+  const fields = jsonFields(contents)
+  const nested = valueFields(fields.get("https://api.openai.com/auth"))
+  const profile = valueFields(fields.get("https://api.openai.com/profile"))
+  const organizations = fields.get("organizations")
+  const firstOrganization = Array.isArray(organizations)
+    ? valueFields(organizations[0])
+    : null
+  const email =
+    stringValue(fields.get("email")) ?? stringValue(profile?.get("email"))
+  const accountId =
+    stringValue(fields.get("chatgpt_account_id")) ??
+    stringValue(nested?.get("chatgpt_account_id")) ??
+    stringValue(firstOrganization?.get("id"))
+  const claims: JwtClaims = {}
+  if (email !== undefined) claims.email = email
+  if (accountId !== undefined) claims.accountId = accountId
+  return claims
+}
+
+function jwtClaims(token: string | undefined): JwtClaims {
+  if (!token) return {}
+  const payload = token.split(".")[1]
+  if (!payload) return {}
+  try {
+    return parseJwtClaims(Buffer.from(payload, "base64url").toString("utf8"))
+  } catch {
+    return {}
+  }
+}
+
+function parseOpenCodeCredential(
+  value: JsonValue | undefined
+): OpenCodeCredential | null {
+  const fields = valueFields(value)
+  const type = stringValue(fields?.get("type"))
+  if (type !== "oauth" && type !== "api" && type !== "wellknown") return null
+  if (type !== "oauth") return { type }
+  const access = stringValue(fields?.get("access"))
+  const accountId = stringValue(fields?.get("accountId"))
+  const credential: OpenCodeCredential = { type }
+  if (access !== undefined) credential.access = access
+  if (accountId !== undefined) credential.accountId = accountId
+  return credential
+}
+
+function parseOpenCodeCredentials(
+  contents: string
+): Map<string, OpenCodeCredential> {
+  const credentials = new Map<string, OpenCodeCredential>()
+  for (const [providerId, value] of jsonFields(contents)) {
+    const credential = parseOpenCodeCredential(value)
+    if (credential) credentials.set(providerId, credential)
+  }
+  return credentials
+}
+
+export function parseOpenCodeAccounts(
+  contents: string,
+  authFile = join(homedir(), ".local", "share", "opencode", "auth.json")
+): HarnessAccount[] {
+  return [...parseOpenCodeCredentials(contents)].map(
+    ([providerId, credential]) => {
+      const claims = jwtClaims(credential.access)
+      const accountId = claims.accountId ?? credential.accountId
+      const account: HarnessAccount = {
+        harness: "opencode",
+        name: providerId,
+        providerId,
+        authType: credential.type,
+        dir: authFile,
+        active: true,
+        source: "opencode",
+      }
+      if (claims.email !== undefined) account.email = claims.email
+      if (accountId !== undefined) account.accountId = accountId
+      return account
+    }
+  )
 }
 
 function parseRouterClaudeConfig(contents: string): RouterClaudeConfig {
@@ -337,11 +425,11 @@ export interface ClassifiedUsageWindows {
 export function classifyCodexWindows(
   windows: UsageWindow[]
 ): ClassifiedUsageWindows {
-  const session = windows.find((window) => window.windowMinutes <= 24 * 60) ?? null
+  const session =
+    windows.find((window) => window.windowMinutes <= 24 * 60) ?? null
   const weekly =
-    [...windows]
-      .reverse()
-      .find((window) => window.windowMinutes > 24 * 60) ?? null
+    [...windows].reverse().find((window) => window.windowMinutes > 24 * 60) ??
+    null
   return { session, weekly }
 }
 
@@ -373,13 +461,7 @@ async function accountEmail(
       return config.email
     }
     const auth = parseCodexAuth(await readFile(join(dir, "auth.json"), "utf8"))
-    if (!auth.idToken) return undefined
-    const payload = auth.idToken.split(".")[1]
-    if (!payload) return undefined
-    const claims = parseJwtClaims(
-      Buffer.from(payload, "base64url").toString("utf8")
-    )
-    return claims.email
+    return jwtClaims(auth.idToken).email
   } catch {
     return undefined
   }
@@ -489,6 +571,17 @@ export async function listAccounts(): Promise<HarnessAccount[]> {
       continue
     accounts.push(account)
   }
+  const openCodeAuth = join(
+    homedir(),
+    ".local",
+    "share",
+    "opencode",
+    "auth.json"
+  )
+  const openCodeAccounts = await readFile(openCodeAuth, "utf8")
+    .then((contents) => parseOpenCodeAccounts(contents, openCodeAuth))
+    .catch(() => [])
+  accounts.push(...openCodeAccounts)
   return accounts
 }
 
@@ -678,12 +771,17 @@ const usageCache = new Map<string, { at: number; usage: AccountUsage }>()
 const USAGE_CACHE_MS = 60_000
 
 export async function accountUsage(
-  harness: AccountHarness,
+  harness: AccountProvider,
   name: string
 ): Promise<AccountUsage> {
   const key = `${harness}:${name}`
   const cached = usageCache.get(key)
   if (cached && Date.now() - cached.at < USAGE_CACHE_MS) return cached.usage
+  if (harness === "opencode") {
+    const usage = await openCodeUsage(name)
+    usageCache.set(key, { at: Date.now(), usage })
+    return usage
+  }
   // Router-managed accounts resolve by identity, not by a Mako-owned dir.
   const routed = (await subrouterAccounts()).find(
     (account) => account.harness === harness && account.name === name
@@ -768,9 +866,55 @@ async function codexUsage(dir: string): Promise<AccountUsage> {
     return { status: "missing-credentials" }
   }
   if (!auth.accessToken) return { status: "missing-credentials" }
+  return chatGptUsage(
+    auth.accessToken,
+    auth.accountId,
+    "Refreshes the next time Codex runs"
+  )
+}
+
+async function openCodeUsage(providerId: string): Promise<AccountUsage> {
+  const authFile = join(homedir(), ".local", "share", "opencode", "auth.json")
+  let credential: OpenCodeCredential | undefined
   try {
-    const headers = new Headers({ Authorization: `Bearer ${auth.accessToken}` })
-    if (auth.accountId) headers.set("ChatGPT-Account-Id", auth.accountId)
+    credential = parseOpenCodeCredentials(await readFile(authFile, "utf8")).get(
+      providerId
+    )
+  } catch {
+    return { status: "missing-credentials" }
+  }
+  if (!credential) return { status: "missing-credentials" }
+  if (providerId !== "openai") {
+    return {
+      status: "unavailable",
+      detail: `Native usage is unavailable for ${providerId}`,
+    }
+  }
+  if (credential.type !== "oauth") {
+    return {
+      status: "unavailable",
+      detail:
+        credential.type === "api"
+          ? "Usage is unavailable for API-key credentials"
+          : "Usage is unavailable for well-known credentials",
+    }
+  }
+  if (!credential.access) return { status: "missing-credentials" }
+  return chatGptUsage(
+    credential.access,
+    credential.accountId ?? jwtClaims(credential.access).accountId,
+    "Refreshes the next time OpenCode runs"
+  )
+}
+
+async function chatGptUsage(
+  accessToken: string,
+  accountId: string | undefined,
+  staleDetail: string
+): Promise<AccountUsage> {
+  try {
+    const headers = new Headers({ Authorization: `Bearer ${accessToken}` })
+    if (accountId) headers.set("ChatGPT-Account-Id", accountId)
     const response = await fetch("https://chatgpt.com/backend-api/wham/usage", {
       headers,
       signal: AbortSignal.timeout(10_000),
@@ -778,7 +922,7 @@ async function codexUsage(dir: string): Promise<AccountUsage> {
     if (response.status === 401) {
       return {
         status: "stale-token",
-        detail: "Refreshes the next time Codex runs",
+        detail: staleDetail,
       }
     }
     if (!response.ok)

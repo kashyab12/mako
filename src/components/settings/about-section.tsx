@@ -19,7 +19,7 @@ export function AboutSection() {
         <span className="min-w-0">
           <span className="block text-title font-semibold">Mako</span>
           <span className="block text-ui text-muted-foreground">
-            Local-first control for every coding agent on your Mac.
+            Run coding agents on your Mac.
           </span>
           <span className="mt-0.5 block text-label text-faint">
             Version {version || "development"} · Apple silicon
@@ -28,9 +28,8 @@ export function AboutSection() {
       </div>
 
       <p className="text-ui leading-relaxed text-muted-foreground">
-        Mako is open source. It reads provider-owned sessions in place, keeps
-        credentials local, and lets Claude Code, Codex, Cursor, Grok, and Devin
-        remain peers instead of hiding them behind another agent.
+        Mako opens sessions from Claude Code, Codex, Cursor, Grok, Devin, and
+        OpenCode. Credentials remain in each provider’s own storage.
       </p>
 
       <div className="flex items-center gap-2">
@@ -56,7 +55,8 @@ export function AboutSection() {
         >
           MIT License
         </button>
-        . Provider names and marks belong to their respective owners.
+        . © 2026 Verbiflow. Provider names and marks belong to their respective
+        owners.
       </p>
     </div>
   )

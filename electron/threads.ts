@@ -344,6 +344,7 @@ const HARNESS_NAMES = {
   cursor: "Cursor",
   grok: "Grok",
   devin: "Devin",
+  opencode: "OpenCode",
 } satisfies Partial<Record<ThreadRef["harness"], string>>
 
 function transcriptOptions(

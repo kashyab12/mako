@@ -775,6 +775,8 @@ function harnessTitle(harness: Harness): string {
       return "Grok"
     case "devin":
       return "Devin"
+    case "opencode":
+      return "OpenCode"
     default:
       return harness
   }
