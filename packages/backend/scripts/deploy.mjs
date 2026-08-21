@@ -43,18 +43,21 @@ if (author !== allowedAuthor) {
 preservePrebuiltOutput(join(repositoryRoot, ".vercel", "output"))
 preservePrebuiltOutput(join(backendRoot, ".vercel", "output"))
 
+const deploymentArgs = [
+  "--yes",
+  "vercel@59.1.3",
+  "deploy",
+  "--prod",
+  "--yes",
+  "--archive=tgz",
+  ...(process.env.VERCEL_FORCE_DEPLOY === "1" ? ["--force"] : []),
+  "--cwd",
+  repositoryRoot,
+]
+
 const deployment = spawnSync(
   "npx",
-  [
-    "--yes",
-    "vercel@59.1.3",
-    "deploy",
-    "--prod",
-    "--yes",
-    "--archive=tgz",
-    "--cwd",
-    repositoryRoot,
-  ],
+  deploymentArgs,
   {
     cwd: repositoryRoot,
     env: process.env,
