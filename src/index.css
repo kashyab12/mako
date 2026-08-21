@@ -8,8 +8,8 @@
 /* ------------------------------------------------------------------ *
  * Tokens
  *
- * Deep neutral greys on a two-level architecture: a shadowless chrome
- * shell, and content floating on it as elevated cards. Hue appears where
+ * Deep neutral greys on a tiled workspace: shadowless structural panes,
+ * with elevation reserved for controls and floating content. Hue appears where
  * it carries meaning (diff, error, warning) plus one ember accent used
  * strictly as punctuation.
  * ------------------------------------------------------------------ */
@@ -136,13 +136,12 @@
    * continuous ramp:
    *
    *   shell    the window itself: titlebar, rail, chrome. Shadowless.
-   *   surface  a content card floating on the shell (radius 10, elevated).
-   *   raised   layer two *within* a card: inputs, code, chips, keycaps.
+   *   surface  an edge-to-edge workspace pane or content card.
+   *   raised   layer two within a pane: inputs, code, chips, keycaps.
    *   popover  floating surfaces — menus, palette, dialogs — always paired
    *            with --elevation-overlay.
    *
-   * The shell sits well below the card — that gap, not decoration, is what
-   * makes the cards read as floating.
+   * Structural panes use borders for separation; overlays carry elevation.
    */
   --shell: oklch(0.14 0.002 40);
   --surface: oklch(0.222 0.002 45);
