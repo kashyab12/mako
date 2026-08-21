@@ -2,6 +2,12 @@ import { useEffect, useRef, useState } from "react"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { SearchSelect } from "@/components/ui/search-select"
 import { harnessLabel } from "@/components/rail/harness-meta"
+import { ToolGlyph } from "@/components/transcript/tool-views"
+import {
+  isSubagentTool,
+  subagentResultText,
+  toolLabel,
+} from "@/lib/tools"
 import { acp, acpStore, useAcp, type AcpBlock } from "@/state/acp"
 import type { AcpPermissionRequest } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -214,6 +220,10 @@ function Thinking({ text }: { text: string }) {
 
 function Tool({ block }: { block: AcpBlock & { type: "tool" } }) {
   const [open, setOpen] = useState(false)
+  const identity = block.toolKind ?? block.title
+  const output = isSubagentTool(identity)
+    ? subagentResultText(block.output)
+    : block.output
   return (
     <div className="contain-turn my-1 rounded-md border border-hairline/60">
       <button
@@ -221,6 +231,23 @@ function Tool({ block }: { block: AcpBlock & { type: "tool" } }) {
         onClick={() => setOpen((value) => !value)}
         className="flex w-full items-center gap-1.5 px-2 py-1 text-left"
       >
+        <ChevronRightIcon
+          className={cn(
+            "size-3 shrink-0 text-faint transition-transform duration-150",
+            open && "rotate-90"
+          )}
+        />
+        <ToolGlyph name={identity} className="size-3.5 shrink-0 text-faint" />
+        <span className="shrink-0 text-ui font-medium text-foreground/90">
+          {toolLabel(identity)}
+        </span>
+        {block.title !== identity ? (
+          <span className="min-w-0 flex-1 truncate text-ui text-faint">
+            {block.title}
+          </span>
+        ) : (
+          <span className="min-w-0 flex-1" />
+        )}
         {block.status === "completed" ? (
           <CheckIcon className="size-3 shrink-0 text-positive/70" />
         ) : block.status === "failed" ? (
@@ -228,18 +255,17 @@ function Tool({ block }: { block: AcpBlock & { type: "tool" } }) {
         ) : (
           <Loader2Icon className="size-3 shrink-0 animate-spin text-faint" />
         )}
-        <span className="min-w-0 flex-1 truncate font-mono text-label text-muted-foreground">{block.title}</span>
       </button>
-      {open && (block.input || block.output) ? (
+      {open && (block.input || output) ? (
         <div className="max-h-72 overflow-y-auto border-t border-hairline/60">
           {block.input ? (
             <pre className="px-2 py-1.5 font-mono text-label leading-relaxed break-words whitespace-pre-wrap text-faint">
               {block.input}
             </pre>
           ) : null}
-          {block.output ? (
+          {output ? (
             <pre className="border-t border-hairline/60 px-2 py-1.5 font-mono text-label leading-relaxed break-words whitespace-pre-wrap text-faint">
-              {block.output}
+              {output}
             </pre>
           ) : null}
         </div>
