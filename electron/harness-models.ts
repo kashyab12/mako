@@ -456,6 +456,15 @@ export function normalizeGrokModels(
   return catalog
 }
 
+export function preferredOpenCodeDefault(
+  models: HarnessModel[]
+): string | undefined {
+  return (
+    models.find((model) => /^Ox Alpha Free\b/i.test(model.label))?.id ??
+    models[0]?.id
+  )
+}
+
 export function normalizeOpenCodeModels(
   rows: OpenCodeModelRow[]
 ): HarnessModelCatalog {
