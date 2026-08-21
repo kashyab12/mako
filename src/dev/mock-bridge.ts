@@ -1479,9 +1479,14 @@ export function installMockBridge() {
         label: "OpenCode",
         available: true,
         transport: "acp" as const,
-        defaultModel: "openai/gpt-5.4",
+        defaultModel: "opencode/x-preview-f-free",
         capabilities: ["stream", "resume", "models"],
         models: [
+          {
+            id: "opencode/x-preview-f-free",
+            label: "Ox Alpha Free (Unlimited)",
+            options: [],
+          },
           {
             id: "openai/gpt-5.4",
             label: "GPT-5.4",
