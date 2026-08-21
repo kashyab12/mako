@@ -141,7 +141,10 @@ export function ChangesPanel() {
           [root]: filePath,
         })
       }
-      if (!prefsStore.get().autoOpenDiff) setPref("autoOpenDiff", true)
+      if (prefsStore.get().autoOpenDiff) setPref("autoOpenDiff", false)
+      void viewer.openDiff(filePath, async () => ({
+        diffs: [await getMako().gitDiff(filePath)],
+      }))
     },
     [git?.root]
   )
@@ -281,7 +284,7 @@ export function ChangesPanel() {
             <FileRow
               key={row.key}
               row={row}
-              active={active?.path === row.file.path}
+              active={selected === row.file.path}
               onSelect={selectFile}
               onToggleStage={toggleStage}
             />
