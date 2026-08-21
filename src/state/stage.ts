@@ -3,16 +3,15 @@ import { prefsStore, setPref } from "@/state/prefs"
 import { tabsStore } from "@/state/tabs"
 
 /**
- * What the stage is showing beside the chat, per open tab.
+ * What the stage is showing in the right sidebar, per open tab.
  *
- * One companion at a time: every real workflow here is "talk, and watch one
+ * One companion at a time: every real workflow here is "work, and watch one
  * thing" — the diff, the preview, a shell. Holding it as a single id keeps
  * persistence, focus, and resizing trivial, and upgrading to several later
  * is a data change, not an architecture change.
  *
- * "beside" splits the stage into two cards; "over" lets the companion cover
- * it, with the chat card kept mounted underneath so the transcript's scroll
- * position and stream survive.
+ * "beside" splits the stage into two cards; "over" lets the sidebar cover
+ * the workbench, which stays mounted so transcript scroll and open tabs survive.
  */
 export interface TabStage {
   companion: string | null
@@ -88,7 +87,7 @@ export const stage = {
   },
 
   /**
-   * The ⌘I gesture: hide whatever is open, or bring back the last companion.
+   * Hide the right sidebar, or bring back its last section.
    * Rebooting starts every tab closed, so the pref is the only memory this
    * needs across launches — tab ids themselves do not survive a restart.
    */
