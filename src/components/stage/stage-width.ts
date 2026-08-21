@@ -9,8 +9,8 @@
 export const CHAT_MIN = 450
 export const CHAT_HEIGHT_MIN = 260
 export const COMPANION_MIN_DEFAULT = 380
-/** The card gutters between and around the two cards. */
-export const STAGE_GUTTERS = 24
+/** The visible divider between tiled workbench panes. */
+export const STAGE_GUTTERS = 1
 
 export function clampCompanionWidth(input: {
   width: number
