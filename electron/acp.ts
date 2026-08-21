@@ -45,7 +45,9 @@ import { accountEnv } from "./accounts.js"
 import {
   devinExecutable,
   normalizeAcpOptions,
-  openCodeExecutable,
+  openCodeInstallation,
+  openCodeSessionGeneration,
+  type OpenCodeInstallation,
 } from "./harnesses.js"
 import { discoverMcpRegistry } from "./mcp-registry.js"
 import { acpMcpServers } from "./mcp-runtime.js"
@@ -103,7 +105,11 @@ interface AcpToolOutputBoundary {
  * How each harness is spawned as an ACP agent. The Claude adapter is bundled
  * with the app (it is an npm dependency); Cursor's is the CLI itself.
  */
-function specFor(harness: string, tuning?: AcpTuning): AgentSpec | null {
+function specFor(
+  harness: string,
+  tuning?: AcpTuning,
+  openCodeGeneration?: OpenCodeInstallation["generation"]
+): AgentSpec | null {
   switch (harness) {
     case "claude": {
       // The adapter is a bin script; run it with our own Node (Electron).
@@ -133,8 +139,14 @@ function specFor(harness: string, tuning?: AcpTuning): AgentSpec | null {
     }
     case "devin":
       return { command: devinExecutable() ?? "devin", args: ["acp"] }
-    case "opencode":
-      return { command: openCodeExecutable() ?? "opencode", args: ["acp"] }
+    case "opencode": {
+      const installation =
+        openCodeInstallation(openCodeGeneration) ?? openCodeInstallation()
+      return {
+        command: installation?.command ?? "opencode",
+        args: ["acp"],
+      }
+    }
     default:
       return null
   }
@@ -209,7 +221,11 @@ export async function acpStart(
     tuning?: AcpTuning
   } = {}
 ): Promise<AcpSessionState> {
-  const spec = specFor(harness, options.tuning)
+  const openCodeGeneration =
+    harness === "opencode" && options.resume
+      ? await openCodeSessionGeneration(options.resume)
+      : undefined
+  const spec = specFor(harness, options.tuning, openCodeGeneration)
   if (!spec) throw new Error(`${harness} does not speak ACP here yet`)
 
   const id = `acp-${++counter}`
@@ -234,7 +250,11 @@ export async function acpStart(
     }
   }
   if (harness === "grok") env.GROK_DISABLE_AUTOUPDATER = "1"
-  if (harness === "opencode" && options.tuning) {
+  if (
+    harness === "opencode" &&
+    (openCodeGeneration ?? openCodeInstallation()?.generation) !== "v2" &&
+    options.tuning
+  ) {
     const config: OpenCodeAcpConfig = {}
     if (options.tuning.model) config.model = options.tuning.model
     if (options.tuning.effort) {
