@@ -1,6 +1,5 @@
 import { createHook, createStore } from "@/state/store"
 import { getMako, hasBridge } from "@/lib/bridge"
-import { stage } from "@/state/stage"
 import type { FileContents, GitDiff } from "@/lib/types"
 
 /**
@@ -55,11 +54,14 @@ export interface ViewerState {
   split: ViewerSplit
 }
 
+export const AGENT_TAB_ID = "agent"
 const PRIMARY_PANE = "primary"
 const initialState: ViewerState = {
   loading: false,
   documents: {},
-  panes: [{ id: PRIMARY_PANE, tabIds: [] }],
+  panes: [
+    { id: PRIMARY_PANE, tabIds: [AGENT_TAB_ID], activeId: AGENT_TAB_ID },
+  ],
   focusedPaneId: PRIMARY_PANE,
   split: "right",
 }
@@ -166,7 +168,9 @@ function placeDocument(
   const next = create(id)
   const focused =
     state.panes.find((candidate) => candidate.id === state.focusedPaneId) ?? state.panes[0]
-  const previewId = focused.tabIds.find((tabId) => !state.documents[tabId]?.pinned)
+  const previewId = focused.tabIds.find(
+    (tabId) => state.documents[tabId] && !state.documents[tabId].pinned
+  )
   const tabIds = previewId
     ? focused.tabIds.map((tabId) => (tabId === previewId ? id : tabId))
     : [...focused.tabIds, id]
@@ -183,15 +187,17 @@ async function watchActiveFile() {
   const mine = ++watchGeneration
   const state = viewerStore.get()
   const active = activeDocument(state.documents, state.panes, state.focusedPaneId)
-  if (mine !== watchGeneration || active?.kind !== "file") return
+  if (mine !== watchGeneration) return
+  if (active?.kind !== "file") {
+    await getMako().unwatchFile()
+    return
+  }
   await getMako().watchFile(active.path)
 }
 
 export const viewer = {
   async open(path: string, line?: number) {
     if (!hasBridge()) return
-    // Opening a file always restores the conversation side of a covering stage.
-    stage.showChat()
     const document = placeDocument(
       (id, previous) => ({
         id,
@@ -259,7 +265,6 @@ export const viewer = {
    */
   async openDiff(title: string, load: () => Promise<{ diffs: GitDiff[]; note?: string }>) {
     if (!hasBridge()) return
-    stage.showChat()
     const document = placeDocument(
       (id, previous) => ({
         id,
@@ -289,7 +294,29 @@ export const viewer = {
     }
   },
 
+  showAgent() {
+    const state = viewerStore.get()
+    const pane = state.panes.find((candidate) =>
+      candidate.tabIds.includes(AGENT_TAB_ID)
+    )
+    if (!pane) return
+    commit(
+      state.documents,
+      state.panes.map((candidate) =>
+        candidate.id === pane.id
+          ? { ...candidate, activeId: AGENT_TAB_ID }
+          : candidate
+      ),
+      pane.id
+    )
+    if (hasBridge()) void getMako().unwatchFile()
+  },
+
   activate(paneId: string, id: string) {
+    if (id === AGENT_TAB_ID) {
+      viewer.showAgent()
+      return
+    }
     const state = viewerStore.get()
     const pane = state.panes.find((candidate) => candidate.id === paneId)
     if (!pane?.tabIds.includes(id)) return
@@ -338,7 +365,7 @@ export const viewer = {
     }
     const source =
       state.panes.find((pane) => pane.id === state.focusedPaneId) ?? state.panes[0]
-    if (!source.activeId) return
+    if (!source.activeId || source.activeId === AGENT_TAB_ID) return
     const secondary: ViewerPane = {
       id: "secondary",
       tabIds: [source.activeId],
@@ -349,6 +376,7 @@ export const viewer = {
   },
 
   closeTab(paneId: string, id: string) {
+    if (id === AGENT_TAB_ID) return
     const state = viewerStore.get()
     const pane = state.panes.find((candidate) => candidate.id === paneId)
     const index = pane?.tabIds.indexOf(id) ?? -1
@@ -393,7 +421,12 @@ export const viewer = {
     watchGeneration += 1
     generation += 1
     requests.clear()
-    commit({}, [{ id: PRIMARY_PANE, tabIds: [] }], PRIMARY_PANE, "right")
+    commit(
+      {},
+      [{ id: PRIMARY_PANE, tabIds: [AGENT_TAB_ID], activeId: AGENT_TAB_ID }],
+      PRIMARY_PANE,
+      "right"
+    )
   },
 }
 
