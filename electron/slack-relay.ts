@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises"
 import { hostname } from "node:os"
 import { dirname } from "node:path"
 import { z } from "zod"
@@ -102,7 +102,9 @@ let stopped = true
 
 async function deviceId(path: string): Promise<string> {
   try {
-    return z.uuid().parse((await readFile(path, "utf8")).trim())
+    const id = z.uuid().parse((await readFile(path, "utf8")).trim())
+    await chmod(path, 0o600)
+    return id
   } catch {
     const id = randomUUID()
     await mkdir(dirname(path), { recursive: true, mode: 0o700 })

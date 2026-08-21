@@ -1,7 +1,10 @@
 import assert from "node:assert/strict"
+import { createHmac } from "node:crypto"
 import { parseSlackWebhookBody } from "@chat-adapter/slack/webhook"
 import { z } from "zod"
+import { readOptionalServerEnv } from "../src/config/env"
 import { integrationCatalog } from "../src/integrations/catalog"
+import { slackIdentity } from "../src/integrations/slack/client"
 import { formatHarnessReplies } from "../src/relay/delivery"
 import { parseSlackRelayCommand } from "../src/relay/commands"
 import {
@@ -15,6 +18,8 @@ import { backendStatus } from "../src/status"
 const token = "mako-test-token-".padEnd(64, "x")
 process.env.MAKO_MCP_TOKEN = token
 process.env.VERCEL_ENV = "development"
+delete process.env.SLACK_BOT_TOKEN
+delete process.env.SLACK_SIGNING_SECRET
 
 const { makoMcpHandler } = await import("../src/mcp/server")
 
@@ -61,6 +66,22 @@ async function jsonRpc(response: Response) {
   assert.equal(response.status, 200)
   assert.equal(body.error, undefined)
   return body.result
+}
+
+function signedSlackRequest(body: string, signingSecret: string): Request {
+  const timestamp = Math.floor(Date.now() / 1_000).toString()
+  const signature = createHmac("sha256", signingSecret)
+    .update(`v0:${timestamp}:${body}`)
+    .digest("hex")
+  return new Request("http://localhost:3000/api/slack/events", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Slack-Request-Timestamp": timestamp,
+      "X-Slack-Signature": `v0=${signature}`,
+    },
+    body,
+  })
 }
 
 const unauthorized = await makoMcpHandler(
@@ -170,6 +191,113 @@ assert.equal(
   parseSlackRelayCommand({ mapping: null, slack, text: "threads auth" }).kind,
   "enqueue"
 )
+
+const directBotToken = "xoxb-test-direct-bot-token"
+const directSigningSecret = "0123456789abcdef0123456789abcdef"
+assert.throws(
+  () =>
+    readOptionalServerEnv({
+      MAKO_MCP_TOKEN: token,
+      NODE_ENV: "test",
+      SLACK_BOT_TOKEN: directBotToken,
+    }),
+  /must be configured together/
+)
+process.env.SLACK_BOT_TOKEN = directBotToken
+process.env.SLACK_SIGNING_SECRET = directSigningSecret
+
+const challengeBody = JSON.stringify({
+  challenge: "self-hosted-challenge",
+  token: "legacy-verification-token",
+  type: "url_verification",
+})
+const directWebhook = await prepareSlackRelayWebhook(
+  signedSlackRequest(challengeBody, directSigningSecret)
+)
+assert.equal(directWebhook.response.status, 200)
+assert.deepEqual(await directWebhook.response.json(), {
+  challenge: "self-hosted-challenge",
+})
+const invalidDirectWebhook = await prepareSlackRelayWebhook(
+  signedSlackRequest(challengeBody, "fedcba9876543210fedcba9876543210")
+)
+assert.equal(invalidDirectWebhook.response.status, 401)
+
+const originalFetch = globalThis.fetch
+let directSlackApiCalled = false
+globalThis.fetch = async (input, init) => {
+  directSlackApiCalled = String(input) === "https://slack.com/api/auth.test"
+  assert.equal(
+    new Headers(init?.headers).get("authorization") === `Bearer ${directBotToken}`,
+    true
+  )
+  return Response.json({
+    ok: true,
+    team: "Test Team",
+    team_id: "TTEST",
+    user: "mako-test",
+    user_id: "UTESTBOT",
+    bot_id: "BTEST",
+  })
+}
+try {
+  const identity = await slackIdentity()
+  assert.equal(identity.team_id, "TTEST")
+  assert.equal(directSlackApiCalled, true)
+} finally {
+  globalThis.fetch = originalFetch
+}
+
+delete process.env.SLACK_BOT_TOKEN
+delete process.env.SLACK_SIGNING_SECRET
+process.env.SLACK_CONNECTOR = "slack/mako-test-fallback"
+const previousOidcToken = process.env.VERCEL_OIDC_TOKEN
+const oidcPayload = Buffer.from(
+  JSON.stringify({ exp: Math.floor(Date.now() / 1_000) + 3_600 })
+).toString("base64url")
+process.env.VERCEL_OIDC_TOKEN = `e30.${oidcPayload}.test-signature`
+const connectorBotToken = "xoxb-test-connector-bot-token"
+let connectorTokenRequested = false
+let connectorSlackApiCalled = false
+globalThis.fetch = async (input, init) => {
+  const url = String(input)
+  const headers = new Headers(init?.headers)
+  if (
+    url ===
+    "https://api.vercel.com/v1/connect/token/slack%2Fmako-test-fallback"
+  ) {
+    connectorTokenRequested = true
+    assert.equal(headers.get("authorization")?.startsWith("Bearer "), true)
+    return Response.json({
+      expiresAt: Date.now() + 60_000,
+      token: connectorBotToken,
+    })
+  }
+  connectorSlackApiCalled = url === "https://slack.com/api/auth.test"
+  assert.equal(
+    headers.get("authorization") === `Bearer ${connectorBotToken}`,
+    true
+  )
+  return Response.json({
+    ok: true,
+    team: "Connector Team",
+    team_id: "TCONNECT",
+    user: "mako-connect-test",
+    user_id: "UCONNECT",
+    bot_id: "BCONNECT",
+  })
+}
+try {
+  const identity = await slackIdentity()
+  assert.equal(identity.team_id, "TCONNECT")
+  assert.equal(connectorTokenRequested, true)
+  assert.equal(connectorSlackApiCalled, true)
+} finally {
+  globalThis.fetch = originalFetch
+  if (previousOidcToken === undefined) delete process.env.VERCEL_OIDC_TOKEN
+  else process.env.VERCEL_OIDC_TOKEN = previousOidcToken
+}
+
 const unsignedSlack = await prepareSlackRelayWebhook(
   new Request("http://localhost:3000/api/slack/events", {
     method: "POST",

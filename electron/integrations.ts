@@ -51,7 +51,7 @@ const DEFINITIONS: Definition[] = [
   {
     id: "slack",
     label: "Slack",
-    description: "Read and send messages through Mako’s Vercel Connect backend.",
+    description: "Read and send messages through your authenticated Mako backend.",
     category: "Communication",
     trust: "mako",
     auth: "mako-backend",

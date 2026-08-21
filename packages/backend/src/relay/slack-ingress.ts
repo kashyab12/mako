@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto"
-import { readSlackWebhook, type SlackWebhookPayload } from "@chat-adapter/slack/webhook"
+import {
+  readSlackWebhook,
+  type SlackReadOptions,
+  type SlackWebhookPayload,
+} from "@chat-adapter/slack/webhook"
 import { connectSlackAdapter } from "@vercel/connect/chat"
 import { z } from "zod"
 import { readServerEnv } from "../config/env"
@@ -35,7 +39,16 @@ const ThreadMessageSchema = z.object({
   type: z.literal("event_callback"),
 })
 
-const verifier = connectSlackAdapter("slack/mako").webhookVerifier
+function slackWebhookOptions(): SlackReadOptions {
+  const environment = readServerEnv()
+  if (environment.SLACK_SIGNING_SECRET) {
+    return { signingSecret: environment.SLACK_SIGNING_SECRET }
+  }
+  return {
+    webhookVerifier: connectSlackAdapter(environment.SLACK_CONNECTOR ?? "slack/mako")
+      .webhookVerifier,
+  }
+}
 
 export interface PreparedSlackRelay {
   response: Response
@@ -247,7 +260,7 @@ async function processUnsupported(payload: SlackWebhookPayload): Promise<void> {
 export async function prepareSlackRelayWebhook(request: Request): Promise<PreparedSlackRelay> {
   let payload: SlackWebhookPayload
   try {
-    payload = await readSlackWebhook(request, { webhookVerifier: verifier })
+    payload = await readSlackWebhook(request, slackWebhookOptions())
   } catch {
     return { response: new Response("Unauthorized", { status: 401 }) }
   }

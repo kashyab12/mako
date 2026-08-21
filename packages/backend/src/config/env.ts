@@ -15,14 +15,30 @@ const OptionalStorageAccountSchema = z
   ])
   .optional()
 
-const ServerEnvSchema = z.object({
+const OptionalSlackBotTokenSchema = z
+  .union([
+    z.literal("").transform(() => undefined),
+    z.string().min(10).max(512).regex(/^xoxb-\S+$/),
+  ])
+  .optional()
+
+const OptionalSlackSigningSecretSchema = z
+  .union([
+    z.literal("").transform(() => undefined),
+    z.string().regex(/^[a-f\d]{32}$/i),
+  ])
+  .optional()
+
+const ServerEnvBaseSchema = z.object({
   AZURE_CLIENT_ID: OptionalUuidSchema,
   AZURE_CLIENT_SECRET: OptionalStringSchema,
   AZURE_STORAGE_ACCOUNT_NAME: OptionalStorageAccountSchema,
   AZURE_TENANT_ID: OptionalUuidSchema,
   MAKO_MCP_TOKEN: z.string().min(32),
   SLACK_ALLOWED_USER_IDS: OptionalStringSchema,
+  SLACK_BOT_TOKEN: OptionalSlackBotTokenSchema,
   SLACK_CONNECTOR: OptionalStringSchema,
+  SLACK_SIGNING_SECRET: OptionalSlackSigningSecretSchema,
   SLACK_TEAM_ID: OptionalStringSchema,
   VERCEL_ENV: z
     .union([
@@ -33,11 +49,30 @@ const ServerEnvSchema = z.object({
   VERCEL_GIT_COMMIT_SHA: OptionalStringSchema,
 })
 
-const OptionalServerEnvSchema = ServerEnvSchema.extend({
+function requireSlackCredentialPair(
+  environment: {
+    SLACK_BOT_TOKEN?: string
+    SLACK_SIGNING_SECRET?: string
+  },
+  context: z.RefinementCtx
+): void {
+  if (Boolean(environment.SLACK_BOT_TOKEN) === Boolean(environment.SLACK_SIGNING_SECRET)) {
+    return
+  }
+  context.addIssue({
+    code: "custom",
+    message: "SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET must be configured together",
+    path: ["SLACK_BOT_TOKEN"],
+  })
+}
+
+const ServerEnvSchema = ServerEnvBaseSchema.superRefine(requireSlackCredentialPair)
+
+const OptionalServerEnvSchema = ServerEnvBaseSchema.extend({
   MAKO_MCP_TOKEN: z
     .union([z.literal("").transform(() => undefined), z.string().min(32)])
     .optional(),
-})
+}).superRefine(requireSlackCredentialPair)
 
 const RelayEnvSchema = z.object({
   AZURE_CLIENT_ID: z.uuid(),

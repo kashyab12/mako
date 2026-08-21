@@ -72,12 +72,27 @@ export type SlackChannels = z.infer<typeof SlackChannelsSchema>
 export type SlackMessages = z.infer<typeof SlackMessagesSchema>
 export type SlackPostMessage = z.infer<typeof SlackPostMessageSchema>
 
-function connectorUid(): string {
-  return readOptionalServerEnv().SLACK_CONNECTOR ?? "slack/mako"
+type SlackCredential =
+  | { kind: "direct"; token: string }
+  | { connector: string; kind: "connector"; token: string }
+
+async function slackCredential(): Promise<SlackCredential> {
+  const environment = readOptionalServerEnv()
+  if (environment.SLACK_BOT_TOKEN) {
+    return { kind: "direct", token: environment.SLACK_BOT_TOKEN }
+  }
+  const connector = environment.SLACK_CONNECTOR ?? "slack/mako"
+  return {
+    connector,
+    kind: "connector",
+    token: await getToken(connector, TokenParams),
+  }
 }
 
-async function slackToken(): Promise<string> {
-  return getToken(connectorUid(), TokenParams)
+function invalidateConnectorToken(credential: SlackCredential): boolean {
+  if (credential.kind !== "connector") return false
+  deleteTokenCacheEntry(credential.connector, TokenParams)
+  return true
 }
 
 interface SlackAttempt {
@@ -100,13 +115,13 @@ async function slackFetch(
   input: Record<string, string | number | boolean | undefined>,
   state: SlackAttempt = InitialAttempt
 ): Promise<z.output<typeof z.json>> {
-  const token = await slackToken()
+  const credential = await slackCredential()
   let response: Response
   try {
     response = await fetch(`https://slack.com/api/${method}`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${credential.token}`,
         "Content-Type": "application/json; charset=utf-8",
       },
       body: JSON.stringify(input),
@@ -145,8 +160,11 @@ async function slackFetch(
   }
   const payload = z.json().parse(await response.json())
   if (!response.ok) {
-    if (!state.refreshedToken && response.status === 401) {
-      deleteTokenCacheEntry(connectorUid(), TokenParams)
+    if (
+      !state.refreshedToken &&
+      response.status === 401 &&
+      invalidateConnectorToken(credential)
+    ) {
       return slackFetch(method, input, {
         attempt: state.attempt + 1,
         refreshedToken: true,
@@ -160,9 +178,9 @@ async function slackFetch(
       !state.refreshedToken &&
       ["invalid_auth", "token_expired", "token_revoked"].includes(
         failure.data.error
-      )
+      ) &&
+      invalidateConnectorToken(credential)
     ) {
-      deleteTokenCacheEntry(connectorUid(), TokenParams)
       return slackFetch(method, input, {
         attempt: state.attempt + 1,
         refreshedToken: true,
