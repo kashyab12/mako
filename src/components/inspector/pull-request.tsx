@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/popover"
 import { getMako } from "@/lib/bridge"
 import { github, useGitHub } from "@/state/github"
+import { prefsStore } from "@/state/prefs"
 import { actions, useSession } from "@/state/session"
 import { cn } from "@/lib/utils"
 import type { CheckSummary, GitHubStatus, PullRequest as Pull } from "@/lib/types"
@@ -261,7 +262,10 @@ function ComposePull({
     try {
       // The utility model reads the same bounded diff as the commit drafter,
       // but uses a PR-specific structure with a summary and test plan.
-      const text = await getMako().generateCommitMessage(PULL_REQUEST_PROMPT)
+      const text = await getMako().generateCommitMessage({
+        prompt: PULL_REQUEST_PROMPT,
+        model: prefsStore.get().commitModel,
+      })
       const [first, ...rest] = text.split("\n")
       setTitle((current) => current || (first ?? "").trim())
       setBody((current) => current || rest.join("\n").trim())

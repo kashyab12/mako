@@ -14,6 +14,7 @@ import {
   type BrowserWindowConstructorOptions,
 } from "electron"
 import { watch } from "node:fs"
+import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { COMMIT_PROMPT, type AgentHost } from "./host.js"
@@ -591,8 +592,10 @@ function bindIpc() {
   handle("mako:git-commit-diff-all", (_e, hash: string) =>
     withHost((h) => h.gitCommitDiffAll(hash))
   )
-  handle("mako:git-generate-message", (_e, prompt?: string) =>
-    withHost((h) => h.generateCommitMessage(prompt))
+  handle(
+    "mako:git-generate-message",
+    (_e, options?: { prompt?: string; model?: string }) =>
+      withHost((h) => h.generateCommitMessage(options))
   )
   handle("mako:stage-file", (_e, name: string, base64: string) =>
     withHost((h) => h.stageFile(name, base64))
@@ -650,7 +653,9 @@ function bindIpc() {
   )
   handle("mako:user-avatar", () => withHost((h) => userAvatar(h.workspace)))
 
-  handle("mako:usage", () => usageSummary(join(getAgentDir(), "sessions")))
+  handle("mako:usage", () =>
+    usageSummary(join(getAgentDir(), "sessions"), homedir())
+  )
 
   /* Cross-harness threads: every agent's sessions on this machine. */
   handle("mako:threads", (_e, filter?: { cwd?: string; harness?: string }) => ({

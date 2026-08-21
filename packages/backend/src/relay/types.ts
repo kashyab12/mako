@@ -4,7 +4,13 @@ import {
   SlackTimestampSchema,
 } from "../integrations/slack/client"
 
-export const RelayHarnessSchema = z.enum(["claude", "codex", "cursor", "grok"])
+export const RelayHarnessSchema = z.enum([
+  "claude",
+  "codex",
+  "cursor",
+  "grok",
+  "devin",
+])
 export type RelayHarness = z.infer<typeof RelayHarnessSchema>
 
 const SlackContextSchema = z.object({

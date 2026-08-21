@@ -27,7 +27,11 @@ import {
 import { viewer, viewerStore } from "@/state/viewer"
 import { stage } from "@/state/stage"
 import { applyUpdate, updates } from "@/state/updates"
-import { automations } from "@/state/automations"
+import {
+  applyAutomations,
+  automations,
+  noteAutomationRun,
+} from "@/state/automations"
 import { applyDevServer } from "@/state/devserver"
 import {
   applyThreadEntries,
@@ -44,7 +48,6 @@ import {
   applyAcpUpdates,
 } from "@/state/acp"
 import { watchOnboarding } from "@/state/onboarding"
-import { applyAutomations, noteAutomationRun } from "@/state/automations"
 import { toast } from "sonner"
 
 export type Phase = "booting" | "ready" | "detached"
@@ -253,14 +256,19 @@ function applyToActive(event: HostEvent) {
       break
     case "automation-run":
       noteAutomationRun(event.run)
-      toast(`${event.run.name} started`, {
-        description:
-          event.run.reason === "files"
-            ? "a watched file changed"
-            : event.run.reason === "commit"
-              ? "you committed"
-              : "run by hand",
-      })
+      if (event.run.status === "started" && event.run.reason === "manual") {
+        toast(`${event.run.name} started`, {
+          description: "run by hand",
+        })
+      } else if (event.run.status === "failed") {
+        toast.error(`${event.run.name} failed`, {
+          description: event.run.error,
+          action: {
+            label: "Run again",
+            onClick: () => automations.run(event.run.id),
+          },
+        })
+      }
       break
     case "notice":
       if (event.level === "error") report(event.message)

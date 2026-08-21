@@ -1,172 +1,500 @@
-import { readdir, readFile, stat } from "node:fs/promises"
-import { join } from "node:path"
+import { createReadStream } from "node:fs"
+import { readdir, stat } from "node:fs/promises"
+import { homedir } from "node:os"
+import { basename, join } from "node:path"
+import { createInterface } from "node:readline"
 import type { JsonObject, JsonValue } from "./codex-app-json.js"
 import type { UsageSummary, UsageTotals } from "./shared.js"
+import {
+  estimateUsageCost,
+  type UsageTokenCounts,
+} from "./usage-pricing.js"
 
-/**
- * What this has cost.
- *
- * Read from the session files rather than from a service, because that is
- * where the truth already is: every priced message carries the model and what
- * it cost, and no account, no backend and no network is needed to add them up.
- *
- * This is spend, not billing. Billing means a payment method and an account
- * model, which is a product decision and a server; it is not something to
- * imply by putting a currency symbol on a page. What is here is the question
- * people actually ask — *where did the money go* — answered exactly.
- */
-
-/** Sessions read per scan. Enough for months of use, bounded for a first run. */
-const MAX_FILES = 1500
-
-/** Files bigger than this are read anyway but are the reason for the cap. */
 const DAYS = 30
+const MAX_FILES_PER_SOURCE = 1_000
+const MAX_BYTES_PER_FILE = 32 * 1024 * 1024
+const MAX_BYTES_PER_SOURCE = 128 * 1024 * 1024
+const MAX_DISCOVERY_ENTRIES = 25_000
+
+interface FileCandidate {
+  path: string
+  mtimeMs: number
+  size: number
+}
+
+interface DiscoveryState {
+  entries: number
+  truncated: boolean
+  files: FileCandidate[]
+  aliases: Set<string>
+}
+
+interface UsageEvent extends UsageTokenCounts {
+  key: string
+  source: string
+  session: string
+  timestamp: string
+  model: string
+  cwd: string
+  reportedCost?: number
+}
 
 interface Bucket extends UsageTotals {
   key: string
+  reportedCost: number
+  estimatedCost: number
+  pricedTokens: number
+  unpricedTokens: number
 }
 
-function empty(key: string): Bucket {
-  return {
-    key,
-    cost: 0,
-    input: 0,
-    output: 0,
-    cacheRead: 0,
-    cacheWrite: 0,
-    messages: 0,
-  }
+interface RawCodexUsage {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
 }
 
-function add(bucket: Bucket, usage: RawUsage) {
-  bucket.cost += usage.cost?.total ?? 0
-  bucket.input += usage.input ?? 0
-  bucket.output += usage.output ?? 0
-  bucket.cacheRead += usage.cacheRead ?? 0
-  bucket.cacheWrite += usage.cacheWrite ?? 0
-  bucket.messages += 1
+interface CodexContext {
+  session: string
+  cwd: string
+  model: string
+  previous: RawCodexUsage | null
+  partial: boolean
 }
 
-interface RawUsage {
-  input?: number
-  output?: number
-  cacheRead?: number
-  cacheWrite?: number
-  cost?: { total?: number }
+interface ScanResult {
+  files: FileCandidate[]
+  truncated: boolean
 }
 
-interface UsageEntry {
-  timestamp?: string
-  messageTimestamp?: number
-  model?: string
-  usage: RawUsage
+interface BuiltInMetadata {
+  cwd?: string
+  session?: string
 }
 
-function totalsOf(bucket: Bucket): UsageTotals {
-  return {
-    cost: bucket.cost,
-    input: bucket.input,
-    output: bucket.output,
-    cacheRead: bucket.cacheRead,
-    cacheWrite: bucket.cacheWrite,
-    messages: bucket.messages,
-  }
-}
-
-/**
- * Aggregate every session on disk.
- *
- * The cheap test comes first — a line without `"usage"` in it cannot carry
- * one — so most of a session file is a substring search rather than a JSON
- * parse. That is what makes scanning a thousand sessions take a moment rather
- * than a minute.
- */
 export async function usageSummary(
-  sessionsRoot: string
+  sessionsRoot: string,
+  homeRoot = homedir()
 ): Promise<UsageSummary> {
-  const files: string[] = []
+  const [builtIn, claude, codex] = await Promise.all([
+    discover([sessionsRoot]),
+    discover([
+      join(homeRoot, ".claude", "projects"),
+      join(homeRoot, ".claude", "transcripts"),
+    ]),
+    discover([join(homeRoot, ".codex", "sessions")]),
+  ])
+  const events = new Map<string, UsageEvent>()
+  const sessions = new Set<string>()
+
+  await scanBuiltIn(builtIn.files, events, sessions)
+  await scanClaude(claude.files, events, sessions)
+  await scanCodex(codex.files, events, sessions)
+
+  return aggregate(
+    events.values(),
+    sessions.size,
+    builtIn.truncated || claude.truncated || codex.truncated
+  )
+}
+
+async function discover(roots: string[]): Promise<ScanResult> {
+  const state: DiscoveryState = {
+    entries: 0,
+    truncated: false,
+    files: [],
+    aliases: new Set(),
+  }
+  for (const root of roots) await walkJsonl(root, state)
+  state.files.sort(
+    (left, right) => right.mtimeMs - left.mtimeMs || right.path.localeCompare(left.path)
+  )
+
+  const files: FileCandidate[] = []
+  let bytes = 0
+  for (const file of state.files) {
+    const readBytes = Math.min(file.size, MAX_BYTES_PER_FILE)
+    if (
+      files.length >= MAX_FILES_PER_SOURCE ||
+      (files.length > 0 && bytes + readBytes > MAX_BYTES_PER_SOURCE)
+    ) {
+      state.truncated = true
+      break
+    }
+    files.push(file)
+    bytes += readBytes
+    if (file.size > MAX_BYTES_PER_FILE) state.truncated = true
+  }
+  if (files.length < state.files.length) state.truncated = true
+  return { files, truncated: state.truncated }
+}
+
+async function walkJsonl(root: string, state: DiscoveryState): Promise<void> {
+  if (state.entries >= MAX_DISCOVERY_ENTRIES) {
+    state.truncated = true
+    return
+  }
+  let entries
   try {
-    for (const dir of await readdir(sessionsRoot)) {
-      const path = join(sessionsRoot, dir)
-      if (!(await stat(path)).isDirectory()) continue
-      for (const name of await readdir(path)) {
-        if (name.endsWith(".jsonl")) files.push(join(path, name))
+    entries = await readdir(root, { withFileTypes: true })
+  } catch {
+    return
+  }
+  entries.sort((left, right) => right.name.localeCompare(left.name))
+  for (const entry of entries) {
+    if (state.entries >= MAX_DISCOVERY_ENTRIES) {
+      state.truncated = true
+      return
+    }
+    state.entries += 1
+    const path = join(root, entry.name)
+    if (entry.isDirectory()) {
+      await walkJsonl(path, state)
+      continue
+    }
+    if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue
+    try {
+      const info = await stat(path)
+      const alias = info.ino === 0 ? `path:${path}` : `${info.dev}:${info.ino}`
+      if (state.aliases.has(alias)) continue
+      state.aliases.add(alias)
+      state.files.push({ path, mtimeMs: info.mtimeMs, size: info.size })
+    } catch {
+      // One unreadable transcript must not hide the rest of local history.
+    }
+  }
+}
+
+async function scanBuiltIn(
+  files: FileCandidate[],
+  events: Map<string, UsageEvent>,
+  sessions: Set<string>
+): Promise<void> {
+  for (const [index, file] of files.entries()) {
+    let cwd = "unknown"
+    let session = basename(file.path, ".jsonl")
+    const partial = file.size > MAX_BYTES_PER_FILE
+    if (partial) {
+      const header = await firstLine(file.path)
+      if (header) {
+        const metadata = parseBuiltInMetadata(header)
+        cwd = metadata.cwd ?? cwd
+        session = metadata.session ?? session
       }
     }
-  } catch {
-    return blank()
+    const read = await readLines(file, (line) => {
+      const metadata = parseBuiltInMetadata(line)
+      cwd = metadata.cwd ?? cwd
+      session = metadata.session ?? session
+      if (!line.includes('"usage"')) return
+      const event = parseBuiltInEvent(line, cwd, session, file.mtimeMs)
+      if (event) mergeEvent(events, event)
+    })
+    if (read) sessions.add(`Mako:${session}`)
+    if ((index + 1) % 8 === 0) await yieldToMain()
   }
+}
 
-  // Newest first, so a cap cuts the oldest history rather than the useful part.
-  files.sort().reverse()
-  const truncated = files.length > MAX_FILES
-  const chosen = files.slice(0, MAX_FILES)
+async function scanClaude(
+  files: FileCandidate[],
+  events: Map<string, UsageEvent>,
+  sessions: Set<string>
+): Promise<void> {
+  for (const [index, file] of files.entries()) {
+    const fallbackSession = basename(file.path, ".jsonl")
+    await readLines(file, (line) => {
+      if (!line.includes('"usage"') || !line.includes('"assistant"')) return
+      const event = parseClaudeEvent(line, fallbackSession, file.mtimeMs)
+      if (!event) return
+      sessions.add(`Claude Code:${event.session}`)
+      mergeEvent(events, event)
+    })
+    if ((index + 1) % 8 === 0) await yieldToMain()
+  }
+}
 
+async function scanCodex(
+  files: FileCandidate[],
+  events: Map<string, UsageEvent>,
+  sessions: Set<string>
+): Promise<void> {
+  for (const [index, file] of files.entries()) {
+    const context: CodexContext = {
+      session: basename(file.path, ".jsonl"),
+      cwd: "unknown",
+      model: "unknown",
+      previous: null,
+      partial: file.size > MAX_BYTES_PER_FILE,
+    }
+    const read = await readLines(file, (line) => {
+      if (
+        !line.includes('"session_meta"') &&
+        !line.includes('"turn_context"') &&
+        !line.includes('"token_count"')
+      )
+        return
+      const event = parseCodexRecord(line, context, file.mtimeMs)
+      if (event) mergeEvent(events, event)
+    })
+    if (read) sessions.add(`Codex:${context.session}`)
+    if ((index + 1) % 8 === 0) await yieldToMain()
+  }
+}
+
+async function readLines(
+  file: FileCandidate,
+  visit: (line: string) => void
+): Promise<boolean> {
+  const start = Math.max(0, file.size - MAX_BYTES_PER_FILE)
+  const input = createReadStream(file.path, {
+    encoding: "utf8",
+    start,
+    end: Math.max(file.size - 1, 0),
+  })
+  const lines = createInterface({ input, crlfDelay: Infinity })
+  let first = true
+  try {
+    for await (const line of lines) {
+      if (first && start > 0) {
+        first = false
+        continue
+      }
+      first = false
+      visit(line)
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function firstLine(path: string): Promise<string | undefined> {
+  const input = createReadStream(path, { encoding: "utf8", start: 0, end: 65_535 })
+  const lines = createInterface({ input, crlfDelay: Infinity })
+  try {
+    for await (const line of lines) {
+      lines.close()
+      input.destroy()
+      return line
+    }
+  } catch {
+    return undefined
+  }
+  return undefined
+}
+
+function parseBuiltInMetadata(line: string): BuiltInMetadata {
+  const root = parseObject(line)
+  if (!root) return {}
+  const type = stringValue(root.type)
+  if (type !== "session") return {}
+  return {
+    cwd: stringValue(root.cwd),
+    session: stringValue(root.id),
+  }
+}
+
+function parseBuiltInEvent(
+  line: string,
+  cwd: string,
+  session: string,
+  fallbackTime: number
+): UsageEvent | null {
+  const root = parseObject(line)
+  const message = objectValue(root?.message)
+  const usage = objectValue(message?.usage)
+  if (!root || !message || !usage) return null
+  const counts = tokenCounts(usage, "input", "output", "cacheRead", "cacheWrite")
+  const cost = numberValue(objectValue(usage.cost)?.total)
+  if (tokenTotal(counts) === 0 && (!cost || cost <= 0)) return null
+  const id = stringValue(root.id)
+  const timestamp = validTimestamp(root.timestamp, fallbackTime)
+  const event: UsageEvent = {
+    ...counts,
+    key: `Mako:${id ?? fingerprint(timestamp, stringValue(message.model), counts)}`,
+    source: "Mako",
+    session,
+    timestamp,
+    model: stringValue(message.model) ?? "unknown",
+    cwd,
+  }
+  if (cost !== undefined) event.reportedCost = cost
+  return event
+}
+
+function parseClaudeEvent(
+  line: string,
+  fallbackSession: string,
+  fallbackTime: number
+): UsageEvent | null {
+  const root = parseObject(line)
+  const message = objectValue(root?.message)
+  const usage = objectValue(message?.usage)
+  if (!root || stringValue(root.type) !== "assistant" || !message || !usage)
+    return null
+  const counts = tokenCounts(
+    usage,
+    "input_tokens",
+    "output_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens"
+  )
+  if (tokenTotal(counts) === 0) return null
+  const timestamp = validTimestamp(root.timestamp, fallbackTime)
+  const messageId = stringValue(message.id)
+  const requestId = stringValue(root.requestId)
+  const uuid = stringValue(root.uuid)
+  const stableId =
+    messageId && requestId
+      ? `${messageId}:${requestId}`
+      : messageId
+        ? `message:${messageId}`
+        : uuid
+          ? `row:${uuid}`
+          : fingerprint(timestamp, stringValue(message.model), counts)
+  return {
+    ...counts,
+    key: `Claude Code:${stableId}`,
+    source: "Claude Code",
+    session:
+      stringValue(root.sessionId) ?? stringValue(root.session_id) ?? fallbackSession,
+    timestamp,
+    model: stringValue(message.model) ?? "unknown",
+    cwd: stringValue(root.cwd) ?? "unknown",
+  }
+}
+
+function parseCodexRecord(
+  line: string,
+  context: CodexContext,
+  fallbackTime: number
+): UsageEvent | null {
+  const root = parseObject(line)
+  const payload = objectValue(root?.payload)
+  if (!root || !payload) return null
+  const type = stringValue(root.type)
+  if (type === "session_meta") {
+    context.session = stringValue(payload.id) ?? context.session
+    context.cwd = stringValue(payload.cwd) ?? context.cwd
+    return null
+  }
+  if (type === "turn_context") {
+    context.cwd = stringValue(payload.cwd) ?? context.cwd
+    context.model = codexModel(payload) ?? context.model
+    return null
+  }
+  if (type !== "event_msg" || stringValue(payload.type) !== "token_count")
+    return null
+  const info = objectValue(payload.info)
+  if (!info) return null
+  const total = rawCodexUsage(info.total_token_usage)
+  const last = rawCodexUsage(info.last_token_usage)
+  const delta = codexDelta(total, last, context)
+  if (!delta || rawCodexTotal(delta) === 0) return null
+
+  const timestamp = validTimestamp(root.timestamp, fallbackTime)
+  const model = codexModel(payload) ?? context.model
+  const cacheRead = Math.min(delta.cacheRead, delta.input)
+  const cacheWrite = Math.min(delta.cacheWrite, Math.max(delta.input - cacheRead, 0))
+  const counts: UsageTokenCounts = {
+    input: Math.max(delta.input - cacheRead - cacheWrite, 0),
+    output: delta.output,
+    cacheRead,
+    cacheWrite,
+  }
+  return {
+    ...counts,
+    key: `Codex:${timestamp}:${rawCodexTuple(total)}:${rawCodexTuple(last)}`,
+    source: "Codex",
+    session: context.session,
+    timestamp,
+    model,
+    cwd: context.cwd,
+  }
+}
+
+function codexDelta(
+  total: RawCodexUsage | null,
+  last: RawCodexUsage | null,
+  context: CodexContext
+): RawCodexUsage | null {
+  const previous = context.previous
+  if (context.partial) {
+    context.partial = false
+    if (total && !last && !previous) {
+      context.previous = total
+      return null
+    }
+  }
+  if (total && previous && rawCodexEqual(total, previous)) return null
+  if (total && last && previous && !rawCodexMonotonic(total, previous)) {
+    const previousSize = rawCodexTotal(previous)
+    const currentSize = rawCodexTotal(total)
+    const lastSize = rawCodexTotal(last)
+    if (
+      previousSize > 0 &&
+      currentSize > 0 &&
+      (currentSize * 100 >= previousSize * 98 ||
+        currentSize + lastSize * 2 >= previousSize)
+    )
+      return null
+  }
+  if (total && last) {
+    context.previous = total
+    return last
+  }
+  if (total && previous) {
+    context.previous = total
+    if (!rawCodexMonotonic(total, previous)) return null
+    return subtractCodex(total, previous)
+  }
+  if (total) {
+    context.previous = total
+    return total
+  }
+  if (last) {
+    context.previous = previous ? addCodex(previous, last) : null
+    return last
+  }
+  return null
+}
+
+function mergeEvent(events: Map<string, UsageEvent>, event: UsageEvent): void {
+  const existing = events.get(event.key)
+  if (!existing) {
+    events.set(event.key, event)
+    return
+  }
+  existing.input = Math.max(existing.input, event.input)
+  existing.output = Math.max(existing.output, event.output)
+  existing.cacheRead = Math.max(existing.cacheRead, event.cacheRead)
+  existing.cacheWrite = Math.max(existing.cacheWrite, event.cacheWrite)
+  if (event.reportedCost !== undefined)
+    existing.reportedCost = Math.max(existing.reportedCost ?? 0, event.reportedCost)
+}
+
+function aggregate(
+  events: Iterable<UsageEvent>,
+  sessions: number,
+  truncated: boolean
+): UsageSummary {
   const total = empty("total")
   const days = new Map<string, Bucket>()
   const models = new Map<string, Bucket>()
   const projects = new Map<string, Bucket>()
-  let sessions = 0
+  const sources = new Map<string, Bucket>()
 
-  for (const file of chosen) {
-    let text: string
-    try {
-      text = await readFile(file, "utf8")
-    } catch {
-      continue
-    }
-    sessions += 1
-
-    // The header line carries the project; it is always first.
-    let cwd = "unknown"
-    const firstBreak = text.indexOf("\n")
-    if (firstBreak > 0) {
-      try {
-        cwd = parseSessionCwd(text.slice(0, firstBreak)) ?? cwd
-      } catch {
-        // A session without a readable header still has priced messages.
-      }
-    }
-
-    for (const line of text.split("\n")) {
-      if (!line || !line.includes('"usage"')) continue
-      let entry: UsageEntry | null
-      try {
-        entry = parseUsageEntry(line)
-      } catch {
-        continue
-      }
-      if (!entry) continue
-
-      add(total, entry.usage)
-
-      const model = entry.model ?? "unknown"
-      const modelBucket = models.get(model) ?? empty(model)
-      add(modelBucket, entry.usage)
-      models.set(model, modelBucket)
-
-      const projectBucket = projects.get(cwd) ?? empty(cwd)
-      add(projectBucket, entry.usage)
-      projects.set(cwd, projectBucket)
-
-      // The *entry* carries an ISO timestamp and the message carries an epoch
-      // one; the entry's is the reliable one. Reading only the message's put
-      // every priced turn in history on today's date, which made the daily
-      // chart a single bar and looked like there was no history at all.
-      const date = dayOf(entry.timestamp, entry.messageTimestamp)
-      const dayBucket = days.get(date) ?? empty(date)
-      add(dayBucket, entry.usage)
-      days.set(date, dayBucket)
-    }
+  for (const event of events) {
+    add(total, event)
+    addTo(days, dayOf(event.timestamp), event)
+    addTo(models, event.model, event)
+    addTo(projects, event.cwd, event)
+    addTo(sources, event.source, event)
   }
-
-  const recent = [...days.values()]
-    .sort((a, b) => a.key.localeCompare(b.key))
-    .slice(-DAYS)
 
   return {
     total: totalsOf(total),
-    days: recent.map((bucket) => ({ date: bucket.key, ...totalsOf(bucket) })),
+    days: recentDays(days),
     models: rank(models).map((bucket) => ({
       model: bucket.key,
       ...totalsOf(bucket),
@@ -175,51 +503,225 @@ export async function usageSummary(
       cwd: bucket.key,
       ...totalsOf(bucket),
     })),
+    sources: rank(sources).map((bucket) => ({
+      source: bucket.key,
+      ...totalsOf(bucket),
+    })),
     sessions,
     truncated,
   }
 }
 
-function parseSessionCwd(line: string): string | undefined {
-  const value: JsonValue = JSON.parse(line)
-  if (!isJsonObject(value)) return undefined
-  return stringValue(value.cwd) || undefined
+function empty(key: string): Bucket {
+  return {
+    key,
+    cost: 0,
+    reportedCost: 0,
+    estimatedCost: 0,
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    messages: 0,
+    pricedTokens: 0,
+    unpricedTokens: 0,
+  }
 }
 
-function parseUsageEntry(line: string): UsageEntry | null {
-  const value: JsonValue = JSON.parse(line)
-  const root = objectValue(value)
-  const message = objectValue(root?.message)
-  const usageValue = objectValue(message?.usage)
-  if (!root || !message || !usageValue) return null
-
-  const usage: RawUsage = {}
-  assignNumber(usage, "input", usageValue.input)
-  assignNumber(usage, "output", usageValue.output)
-  assignNumber(usage, "cacheRead", usageValue.cacheRead)
-  assignNumber(usage, "cacheWrite", usageValue.cacheWrite)
-
-  const costValue = objectValue(usageValue.cost)
-  const total = numberValue(costValue?.total)
-  if (total !== undefined) usage.cost = { total }
-
-  const entry: UsageEntry = { usage }
-  const timestamp = stringValue(root.timestamp)
-  if (timestamp !== undefined) entry.timestamp = timestamp
-  const messageTimestamp = numberValue(message.timestamp)
-  if (messageTimestamp !== undefined) entry.messageTimestamp = messageTimestamp
-  const model = stringValue(message.model)
-  if (model !== undefined) entry.model = model
-  return entry
+function add(bucket: Bucket, event: UsageEvent): void {
+  const tokens = tokenTotal(event)
+  const estimate =
+    event.reportedCost === undefined ? estimateUsageCost(event.model, event) : null
+  if (event.reportedCost !== undefined) {
+    bucket.reportedCost += event.reportedCost
+    bucket.cost += event.reportedCost
+    bucket.pricedTokens += tokens
+  } else if (estimate !== null) {
+    bucket.estimatedCost += estimate
+    bucket.cost += estimate
+    bucket.pricedTokens += tokens
+  } else {
+    bucket.unpricedTokens += tokens
+  }
+  bucket.input += event.input
+  bucket.output += event.output
+  bucket.cacheRead += event.cacheRead
+  bucket.cacheWrite += event.cacheWrite
+  bucket.messages += 1
 }
 
-function assignNumber(
-  target: RawUsage,
-  key: "input" | "output" | "cacheRead" | "cacheWrite",
-  value: JsonValue | undefined
-): void {
+function addTo(buckets: Map<string, Bucket>, key: string, event: UsageEvent): void {
+  const bucket = buckets.get(key) ?? empty(key)
+  add(bucket, event)
+  buckets.set(key, bucket)
+}
+
+function totalsOf(bucket: Bucket): UsageTotals {
+  return {
+    cost: bucket.cost,
+    reportedCost: bucket.reportedCost,
+    estimatedCost: bucket.estimatedCost,
+    input: bucket.input,
+    output: bucket.output,
+    cacheRead: bucket.cacheRead,
+    cacheWrite: bucket.cacheWrite,
+    messages: bucket.messages,
+    pricedTokens: bucket.pricedTokens,
+    unpricedTokens: bucket.unpricedTokens,
+  }
+}
+
+function recentDays(days: Map<string, Bucket>): UsageSummary["days"] {
+  const result: UsageSummary["days"] = []
+  const today = new Date()
+  today.setUTCHours(0, 0, 0, 0)
+  for (let offset = DAYS - 1; offset >= 0; offset -= 1) {
+    const date = new Date(today)
+    date.setUTCDate(date.getUTCDate() - offset)
+    const key = date.toISOString().slice(0, 10)
+    result.push({ date: key, ...totalsOf(days.get(key) ?? empty(key)) })
+  }
+  return result
+}
+
+function rank(buckets: Map<string, Bucket>): Bucket[] {
+  return [...buckets.values()]
+    .sort(
+      (left, right) =>
+        right.cost - left.cost ||
+        right.pricedTokens + right.unpricedTokens -
+          (left.pricedTokens + left.unpricedTokens)
+    )
+    .slice(0, 12)
+}
+
+function parseObject(line: string): JsonObject | undefined {
+  try {
+    const value: JsonValue = JSON.parse(line)
+    return objectValue(value)
+  } catch {
+    return undefined
+  }
+}
+
+function tokenCounts(
+  usage: JsonObject,
+  inputKey: string,
+  outputKey: string,
+  cacheReadKey: string,
+  cacheWriteKey: string
+): UsageTokenCounts {
+  return {
+    input: tokenValue(usage[inputKey]),
+    output: tokenValue(usage[outputKey]),
+    cacheRead: tokenValue(usage[cacheReadKey]),
+    cacheWrite: tokenValue(usage[cacheWriteKey]),
+  }
+}
+
+function rawCodexUsage(value: JsonValue | undefined): RawCodexUsage | null {
+  const usage = objectValue(value)
+  if (!usage) return null
+  return {
+    input: tokenValue(usage.input_tokens),
+    output: tokenValue(usage.output_tokens),
+    cacheRead: tokenValue(
+      usage.cached_input_tokens ?? usage.cache_read_input_tokens
+    ),
+    cacheWrite: tokenValue(usage.cache_write_input_tokens),
+  }
+}
+
+function codexModel(payload: JsonObject): string | undefined {
+  const direct = stringValue(payload.model) ?? stringValue(payload.model_name)
+  if (direct) return direct
+  const info = objectValue(payload.info)
+  const metadata = objectValue(info?.metadata) ?? objectValue(payload.metadata)
+  return (
+    stringValue(info?.model) ??
+    stringValue(info?.model_name) ??
+    stringValue(metadata?.model)
+  )
+}
+
+function rawCodexEqual(left: RawCodexUsage, right: RawCodexUsage): boolean {
+  return (
+    left.input === right.input &&
+    left.output === right.output &&
+    left.cacheRead === right.cacheRead &&
+    left.cacheWrite === right.cacheWrite
+  )
+}
+
+function rawCodexMonotonic(left: RawCodexUsage, right: RawCodexUsage): boolean {
+  return (
+    left.input >= right.input &&
+    left.output >= right.output &&
+    left.cacheRead >= right.cacheRead &&
+    left.cacheWrite >= right.cacheWrite
+  )
+}
+
+function subtractCodex(
+  left: RawCodexUsage,
+  right: RawCodexUsage
+): RawCodexUsage {
+  return {
+    input: Math.max(left.input - right.input, 0),
+    output: Math.max(left.output - right.output, 0),
+    cacheRead: Math.max(left.cacheRead - right.cacheRead, 0),
+    cacheWrite: Math.max(left.cacheWrite - right.cacheWrite, 0),
+  }
+}
+
+function addCodex(left: RawCodexUsage, right: RawCodexUsage): RawCodexUsage {
+  return {
+    input: left.input + right.input,
+    output: left.output + right.output,
+    cacheRead: left.cacheRead + right.cacheRead,
+    cacheWrite: left.cacheWrite + right.cacheWrite,
+  }
+}
+
+function rawCodexTotal(usage: RawCodexUsage): number {
+  return usage.input + usage.output
+}
+
+function rawCodexTuple(usage: RawCodexUsage | null): string {
+  return usage
+    ? `${usage.input},${usage.output},${usage.cacheRead},${usage.cacheWrite}`
+    : ""
+}
+
+function fingerprint(
+  timestamp: string,
+  model: string | undefined,
+  usage: UsageTokenCounts
+): string {
+  return `${timestamp}:${model ?? "unknown"}:${usage.input},${usage.output},${usage.cacheRead},${usage.cacheWrite}`
+}
+
+function tokenTotal(usage: UsageTokenCounts): number {
+  return usage.input + usage.output + usage.cacheRead + usage.cacheWrite
+}
+
+function validTimestamp(
+  value: JsonValue | undefined,
+  fallbackTime: number
+): string {
+  const timestamp = stringValue(value)
+  if (timestamp && !Number.isNaN(Date.parse(timestamp)))
+    return new Date(timestamp).toISOString()
+  return new Date(fallbackTime).toISOString()
+}
+
+function dayOf(timestamp: string): string {
+  return timestamp.slice(0, 10)
+}
+
+function tokenValue(value: JsonValue | undefined): number {
   const parsed = numberValue(value)
-  if (parsed !== undefined) target[key] = parsed
+  return parsed !== undefined && Number.isFinite(parsed) && parsed > 0 ? parsed : 0
 }
 
 function objectValue(value: JsonValue | undefined): JsonObject | undefined {
@@ -234,6 +736,14 @@ function numberValue(value: JsonValue | undefined): number | undefined {
   return isNumber(value) ? value : undefined
 }
 
+function isString(value: JsonValue | undefined): value is string {
+  return Object.prototype.toString.call(value) === "[object String]"
+}
+
+function isNumber(value: JsonValue | undefined): value is number {
+  return Object.prototype.toString.call(value) === "[object Number]"
+}
+
 function isJsonObject(value: JsonValue | undefined): value is JsonObject {
   return (
     value !== undefined &&
@@ -243,45 +753,6 @@ function isJsonObject(value: JsonValue | undefined): value is JsonObject {
   )
 }
 
-function isString(value: JsonValue | undefined): value is string {
-  return Object.prototype.toString.call(value) === "[object String]"
-}
-
-function isNumber(value: JsonValue | undefined): value is number {
-  return Object.prototype.toString.call(value) === "[object Number]"
-}
-
-/** The day a turn happened, from whichever stamp the entry actually has. */
-function dayOf(iso: string | undefined, epoch: number | undefined): string {
-  if (iso !== undefined && iso.length >= 10) {
-    const parsed = Date.parse(iso)
-    if (!Number.isNaN(parsed))
-      return new Date(parsed).toISOString().slice(0, 10)
-  }
-  if (epoch !== undefined && epoch > 0)
-    return new Date(epoch).toISOString().slice(0, 10)
-  return new Date().toISOString().slice(0, 10)
-}
-
-/** Most expensive first: that is the order the question is asked in. */
-function rank(buckets: Map<string, Bucket>): Bucket[] {
-  return [...buckets.values()].sort((a, b) => b.cost - a.cost).slice(0, 12)
-}
-
-function blank(): UsageSummary {
-  return {
-    total: {
-      cost: 0,
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      messages: 0,
-    },
-    days: [],
-    models: [],
-    projects: [],
-    sessions: 0,
-    truncated: false,
-  }
+async function yieldToMain(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve))
 }

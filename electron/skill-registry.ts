@@ -297,12 +297,22 @@ function mergeSkills(skills: DiscoveredSkill[]): SkillRecord[] {
   const records = new Map<string, SkillRecord>()
   const hashesByName = new Map<string, Set<string>>()
   for (const skill of skills) {
-    const key = `${skill.record.name}\0${skill.record.hash}`
-    const existing = records.get(key)
+    const existing = records.get(skill.record.name)
     if (existing) {
-      existing.origins.push(...skill.record.origins)
+      for (const origin of skill.record.origins) {
+        if (
+          !existing.origins.some(
+            (candidate) => candidate.provenance === origin.provenance
+          )
+        ) {
+          existing.origins.push(origin)
+        }
+      }
     } else {
-      records.set(key, { ...skill.record, origins: [...skill.record.origins] })
+      records.set(skill.record.name, {
+        ...skill.record,
+        origins: [...skill.record.origins],
+      })
     }
     const hashes = hashesByName.get(skill.record.name) ?? new Set<string>()
     hashes.add(skill.record.hash)

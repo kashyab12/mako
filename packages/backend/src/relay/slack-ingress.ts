@@ -12,7 +12,13 @@ import { SlackRelayHelp, parseSlackRelayCommand } from "./commands"
 import { postSlackControls } from "./slack-ui"
 import { activeWorker, enqueueRelayJob, readThreadMapping } from "./storage"
 
-const RelayHarnessSchema = z.enum(["claude", "codex", "cursor", "grok"])
+const RelayHarnessSchema = z.enum([
+  "claude",
+  "codex",
+  "cursor",
+  "grok",
+  "devin",
+])
 const ThreadMessageSchema = z.object({
   event: z.object({
     bot_id: z.string().optional(),

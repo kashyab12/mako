@@ -40,7 +40,11 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
     if (drafting) return
     setDrafting(true)
     try {
-      const next = await getMako().generateCommitMessage(prefsStore.get().commitPrompt)
+      const prefs = prefsStore.get()
+      const next = await getMako().generateCommitMessage({
+        prompt: prefs.commitPrompt,
+        model: prefs.commitModel,
+      })
       setMessage(next)
       requestAnimationFrame(() => field.current?.focus())
     } catch (error) {

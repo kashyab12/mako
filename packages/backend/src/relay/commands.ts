@@ -18,7 +18,8 @@ function harness(value: string | undefined): RelayHarness | undefined {
     value === "claude" ||
     value === "codex" ||
     value === "cursor" ||
-    value === "grok"
+    value === "grok" ||
+    value === "devin"
   ) {
     return value
   }
@@ -191,10 +192,10 @@ export function parseSlackRelayCommand({
 
 export const SlackRelayHelp = [
   "*Mako commands*",
-  "`new [claude|codex|cursor|grok] <message>` — start a local thread",
+  "`new [claude|codex|cursor|grok|devin] <message>` — start a local thread",
   "`threads [search]` — find local threads and their resume IDs",
   "`resume <thread-id-or-path> <message>` — resume an existing local thread",
-  "`harness <claude|codex|cursor|grok>` — switch this Slack thread’s harness",
+  "`harness <claude|codex|cursor|grok|devin>` — switch this Slack thread’s harness",
   "`models [harness]` — list live models and controls",
   "`model <model-id>` — choose the model for this Slack thread",
   "`reasoning <level>` — set provider-native reasoning effort",

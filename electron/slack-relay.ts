@@ -15,7 +15,13 @@ import { harnessProfile, resolveHarnessTuning } from "./harnesses.js"
 import type { HarnessModelOption } from "./shared.js"
 import { listThreads, transcriptInlineFor } from "./threads.js"
 
-const HarnessSchema = z.enum(["claude", "codex", "cursor", "grok"])
+const HarnessSchema = z.enum([
+  "claude",
+  "codex",
+  "cursor",
+  "grok",
+  "devin",
+])
 
 const SelectionSchema = z.object({
   effort: z.string().min(1).max(80).optional(),

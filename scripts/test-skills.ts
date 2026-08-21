@@ -92,9 +92,9 @@ try {
   ]
   const records = await discoverSkillRecords(roots)
   const reviews = records.filter((skill) => skill.name === "code-review")
-  assert.equal(reviews.length, 2)
-  assert.equal(reviews.every((skill) => skill.conflict === "drift"), true)
-  assert.equal(reviews.some((skill) => skill.origins.length === 2), true)
+  assert.equal(reviews.length, 1)
+  assert.equal(reviews[0]?.conflict, "drift")
+  assert.equal(reviews[0]?.origins.length, 3)
   assert.equal(
     records.find((skill) => skill.name === "unsafe-link")?.portable,
     false
@@ -131,8 +131,9 @@ try {
     /Preview this skill change/
   )
 
-  const alternative = reviews.find((skill) => skill.id !== selected.id)
+  const [alternative] = await discoverSkillRecords([roots[2]!])
   assert.ok(alternative)
+  snapshot.skills.push(alternative)
   const replace = await previewSkillSync(snapshot, alternative.id, target)
   assert.equal(replace.action, "replace")
   await writeFile(join(installed, "SKILL.md"), "changed after preview")

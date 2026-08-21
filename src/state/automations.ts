@@ -21,9 +21,10 @@ export function applyAutomations(list: Automation[]) {
 }
 
 export function noteAutomationRun(run: AutomationRun) {
-  // Newest first, and only a handful: this is a reassurance that something
-  // fired, not a log.
-  automationsStore.set({ recent: [run, ...automationsStore.get().recent].slice(0, 8) })
+  const recent = automationsStore
+    .get()
+    .recent.filter((entry) => entry.runId !== run.runId)
+  automationsStore.set({ recent: [run, ...recent].slice(0, 8) })
 }
 
 export const automations = {

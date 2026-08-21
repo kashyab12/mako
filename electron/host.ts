@@ -629,17 +629,39 @@ export class AgentHost {
    * place — and the diff is truncated per-file so a large change degrades to
    * a partial patch rather than a failed request.
    */
-  async generateCommitMessage(promptOverride?: string): Promise<string> {
+  async generateCommitMessage(options?: {
+    prompt?: string
+    model?: string
+  }): Promise<string> {
     const session = this.session
-    const model = session.model
-    if (!model) throw new Error("No model is selected")
+    const available = await session.modelRuntime.getAvailable()
+    const selected = options?.model
+    const explicit = selected?.includes("/")
+      ? session.modelRuntime.getModel(
+          selected.slice(0, selected.indexOf("/")),
+          selected.slice(selected.indexOf("/") + 1)
+        )
+      : undefined
+    if (selected?.includes("/") && !explicit) {
+      throw new Error(`Commit model ${selected} is no longer available`)
+    }
+    const cheapest = [...available].sort(
+      (left, right) =>
+        left.cost.input + left.cost.output -
+        (right.cost.input + right.cost.output)
+    )[0]
+    const model =
+      explicit ??
+      (selected === "current" ? session.model : undefined) ??
+      cheapest
+    if (!model) throw new Error("No model is available for commit drafting")
 
     const staged = await this.workspaceGit.hasStagedChanges()
     const patch = await this.gitPatch(staged)
     if (!patch.trim()) throw new Error("There are no changes to describe")
 
     const result = await session.modelRuntime.completeSimple(model, {
-      systemPrompt: promptOverride?.trim() || COMMIT_PROMPT,
+      systemPrompt: options?.prompt?.trim() || COMMIT_PROMPT,
       messages: [
         {
           role: "user",

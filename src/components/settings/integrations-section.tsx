@@ -1,12 +1,28 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ComponentType } from "react"
 import {
   AlertTriangleIcon,
+  BotIcon,
   CheckIcon,
   ExternalLinkIcon,
+  MailIcon,
+  MessageCircleIcon,
+  MonitorIcon,
   RefreshCwIcon,
   SearchIcon,
   ShieldCheckIcon,
 } from "lucide-react"
+import {
+  FaGithub,
+  FaGoogle,
+  FaMicrosoft,
+  FaSlack,
+} from "react-icons/fa"
+import {
+  SiAtlassian,
+  SiLinear,
+  SiNotion,
+  SiSentry,
+} from "react-icons/si"
 import { Action, Eyebrow } from "@/components/ui/kit"
 import { cn } from "@/lib/utils"
 import type {
@@ -22,6 +38,25 @@ const CATEGORIES: IntegrationCategory[] = [
   "Productivity",
   "Local",
 ]
+
+const LOGOS = {
+  linear: SiLinear,
+  github: FaGithub,
+  slack: FaSlack,
+  notion: SiNotion,
+  teams: FaMicrosoft,
+  sentry: SiSentry,
+  google: FaGoogle,
+  atlassian: SiAtlassian,
+  "mako-backend": BotIcon,
+  "local-browser": MonitorIcon,
+  "computer-use": MonitorIcon,
+  "apple-mail": MailIcon,
+  "apple-messages": MessageCircleIcon,
+} satisfies Record<
+  string,
+  ComponentType<{ "aria-label"?: string; className?: string }>
+>
 
 export function IntegrationsSection() {
   const state = useIntegrations((value) => value)
@@ -113,9 +148,7 @@ function IntegrationCard({ record }: { record: IntegrationRecord }) {
   return (
     <div className="contain-turn flex min-h-36 flex-col rounded-lg bg-surface p-3 ring-1 ring-hairline">
       <div className="flex items-start gap-2.5">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-raised font-mono text-label font-semibold text-muted-foreground ring-1 ring-hairline">
-          {monogram(record.label)}
-        </span>
+        <IntegrationLogo record={record} />
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5">
             <span className="truncate text-ui font-medium">{record.label}</span>
@@ -177,6 +210,21 @@ function IntegrationCard({ record }: { record: IntegrationRecord }) {
         ) : null}
       </div>
     </div>
+  )
+}
+
+function IntegrationLogo({ record }: { record: IntegrationRecord }) {
+  const Logo = Object.entries(LOGOS).find(([id]) => id === record.id)?.[1]
+  return (
+    <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-raised text-muted-foreground ring-1 ring-hairline">
+      {Logo ? (
+        <Logo aria-label={`${record.label} logo`} className="size-4.5" />
+      ) : (
+        <span className="font-mono text-label font-semibold">
+          {monogram(record.label)}
+        </span>
+      )}
+    </span>
   )
 }
 

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { watch, type FSWatcher } from "node:fs"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join, relative, sep } from "node:path"
@@ -328,13 +329,46 @@ export async function fireAutomation(
   if (reason !== "manual" && Date.now() - last < MIN_INTERVAL_MS) return
 
   state.inFlight.add(id)
-  state.lastRun.set(id, Date.now())
+  const runId = randomUUID()
+  const startedAt = Date.now()
+  state.lastRun.set(id, startedAt)
   emit({
     type: "automation-run",
-    run: { id, name: automation.name, reason, at: Date.now() },
+    run: {
+      runId,
+      id,
+      name: automation.name,
+      reason,
+      at: startedAt,
+      status: "started",
+    },
   })
   try {
     await launch(state.cwd, automation.prompt, automation.name)
+    emit({
+      type: "automation-run",
+      run: {
+        runId,
+        id,
+        name: automation.name,
+        reason,
+        at: Date.now(),
+        status: "completed",
+      },
+    })
+  } catch (error) {
+    emit({
+      type: "automation-run",
+      run: {
+        runId,
+        id,
+        name: automation.name,
+        reason,
+        at: Date.now(),
+        status: "failed",
+        error: error instanceof Error ? error.message : String(error),
+      },
+    })
   } finally {
     state.inFlight.delete(id)
   }

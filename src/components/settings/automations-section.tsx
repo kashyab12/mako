@@ -78,7 +78,7 @@ export function AutomationsSection() {
         </Action>
         {recent.length > 0 ? (
           <span className="text-label text-faint">
-            last run: {recent[0]?.name} ·{" "}
+            last run: {recent[0]?.name} · {recent[0]?.status} ·{" "}
             {formatRelative(new Date(recent[0]?.at ?? 0).toISOString())}
           </span>
         ) : null}

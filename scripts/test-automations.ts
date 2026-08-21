@@ -3,12 +3,17 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
+  bindAutomations,
+  fireAutomation,
   loadAutomations,
   normalizeAutomation,
   parseAutomationDocument,
   saveAutomations,
   setEnabled,
+  stopWatching,
+  watchWorkspace,
 } from "../electron/automations.js"
+import type { HostEvent } from "../electron/shared.js"
 
 const legacy = normalizeAutomation({
   id: "legacy",
@@ -90,7 +95,27 @@ try {
   )
   assert.equal(saved.includes('"enabled"'), false)
   assert.equal(saved.includes('"kind": "files"'), true)
+
+  const events: HostEvent[] = []
+  bindAutomations(
+    (event) => events.push(event),
+    async () => {
+      throw new Error("deliberate automation failure")
+    }
+  )
+  await watchWorkspace(directory)
+  await fireAutomation("legacy", "manual")
+  const runs = events
+    .filter((event) => event.type === "automation-run")
+    .map((event) => event.run)
+  assert.deepEqual(
+    runs.map((run) => run.status),
+    ["started", "failed"]
+  )
+  assert.equal(runs[0]?.runId, runs[1]?.runId)
+  assert.equal(runs[1]?.error, "deliberate automation failure")
 } finally {
+  stopWatching()
   await rm(directory, { recursive: true, force: true })
 }
 

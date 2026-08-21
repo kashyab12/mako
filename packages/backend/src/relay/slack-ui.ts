@@ -34,6 +34,7 @@ const card: SlackCardElement = {
             { label: "Claude Code", value: "claude" },
             { label: "Cursor", value: "cursor" },
             { label: "Grok", value: "grok" },
+            { label: "Devin", value: "devin" },
           ],
         },
         {

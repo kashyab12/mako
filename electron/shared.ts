@@ -554,31 +554,34 @@ export interface UpdateState {
   error?: string
 }
 
-/** Tokens and money, for one slice of history. */
+/** Tokens and API-equivalent cost for one slice of local history. */
 export interface UsageTotals {
+  /** Reported plus estimated cost. */
   cost: number
+  /** Cost recorded by the runtime that made the request. */
+  reportedCost?: number
+  /** API-equivalent cost calculated from model list prices. */
+  estimatedCost?: number
   input: number
   output: number
   cacheRead: number
   cacheWrite: number
   messages: number
+  /** Tokens covered by either reported cost or known model pricing. */
+  pricedTokens?: number
+  /** Tokens whose model has no matching price. */
+  unpricedTokens?: number
 }
 
-/**
- * Where the money went.
- *
- * Spend, not billing: read from the session files, which already hold every
- * priced message. Billing means a payment method and an account model — a
- * server and a product decision, not something to imply with a currency
- * symbol.
- */
+/** Local usage from every supported session format on this machine. */
 export interface UsageSummary {
   total: UsageTotals
   days: Array<{ date: string } & UsageTotals>
   models: Array<{ model: string } & UsageTotals>
   projects: Array<{ cwd: string } & UsageTotals>
+  sources?: Array<{ source: string } & UsageTotals>
   sessions: number
-  /** True when older sessions were left unread to keep the scan quick. */
+  /** True when older files or oversized file prefixes were left unread. */
   truncated: boolean
 }
 
@@ -644,10 +647,13 @@ export interface Automation {
 }
 
 export interface AutomationRun {
+  runId: string
   id: string
   name: string
   reason: AutomationTrigger["kind"]
   at: number
+  status: "started" | "completed" | "failed"
+  error?: string
 }
 
 /** A process listening on a TCP port, as far as `lsof` can see. */

@@ -345,8 +345,8 @@ const api = {
       "mako:git-commit-diff-all",
       hash
     ),
-  generateCommitMessage: (prompt?: string) =>
-    invokeTrustedHost<string>("mako:git-generate-message", prompt),
+  generateCommitMessage: (options?: { prompt?: string; model?: string }) =>
+    invokeTrustedHost<string>("mako:git-generate-message", options),
   stageFile: (name: string, base64: string) =>
     invokeTrustedHost<StagedFile>("mako:stage-file", name, base64),
   stageFilePath: (sourcePath: string) =>
