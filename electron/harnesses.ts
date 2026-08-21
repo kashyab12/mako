@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process"
-import { existsSync, readdirSync } from "node:fs"
+import { existsSync, readdirSync, statSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import { z } from "zod"
 import { accountEnv } from "./accounts.js"
 import {
@@ -13,6 +13,7 @@ import {
   normalizeDevinModels,
   normalizeGrokModels,
   normalizeOpenCodeModels,
+  preferredOpenCodeDefault,
   unavailableHarnessProfile,
   type ClaudeModelRow,
   type CodexModelListResponse,
@@ -52,10 +53,6 @@ interface RpcInbound<TResult> {
   error?: { message?: string }
 }
 
-const OpenCodeModelIdentitySchema = z.object({
-  providerID: z.string(),
-  modelID: z.string(),
-})
 const OpenCodeModelSchema = z.object({
   id: z.string(),
   providerID: z.string(),
@@ -81,11 +78,58 @@ const OpenCodeModelSchema = z.object({
     .optional(),
 })
 
+const OpenCodeCacheModelSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string().optional(),
+    family: z.string().optional(),
+    status: z.string().optional(),
+    reasoning: z.boolean().optional(),
+    reasoning_options: z
+      .union([
+        z.record(z.string(), z.unknown()),
+        z.array(
+          z.object({
+            type: z.string(),
+            values: z.array(z.string()),
+          })
+        ),
+      ])
+      .optional(),
+    attachment: z.boolean().optional(),
+    limit: z
+      .object({
+        context: z.number().optional(),
+        output: z.number().optional(),
+      })
+      .optional(),
+  })
+  .passthrough()
+
+const OpenCodeCacheProviderSchema = z
+  .object({ models: z.record(z.string(), z.unknown()) })
+  .passthrough()
+const OpenCodeCacheSchema = z.record(z.string(), z.unknown())
+
+const OpenCodeConfigSchema = z.object({ model: z.string().optional() }).passthrough()
+
 const cache = new Map<string, { at: number; profile: HarnessProfile }>()
 
 export async function harnessProfile(harness: string): Promise<HarnessProfile> {
   const env = await accountEnv(harness, process.env)
-  const key = `${harness}:${env.CLAUDE_CONFIG_DIR ?? ""}:${env.CODEX_HOME ?? ""}`
+  let openCodeAuth = ""
+  if (harness === "opencode") {
+    try {
+      const info = statSync(
+        join(homedir(), ".local", "share", "opencode", "auth.json")
+      )
+      openCodeAuth = `${info.mtimeMs}:${info.size}`
+    } catch {
+      openCodeAuth = "missing"
+    }
+  }
+  const key = `${harness}:${env.CLAUDE_CONFIG_DIR ?? ""}:${env.CODEX_HOME ?? ""}:${openCodeAuth}`
   const now = Date.now()
   for (const [cachedKey, cached] of cache) {
     if (now - cached.at >= 30_000) cache.delete(cachedKey)
@@ -123,12 +167,84 @@ export async function harnessProfiles(): Promise<HarnessProfile[]> {
   )
 }
 
-export function openCodeExecutable(): string | null {
+export interface OpenCodeInstallation {
+  command: string
+  generation: "v1" | "v2"
+}
+
+export function openCodeInstallation(
+  preferred?: OpenCodeInstallation["generation"]
+): OpenCodeInstallation | null {
   const configured = process.env["OPENCODE_BIN_PATH"]
-  if (configured && existsSync(configured)) return configured
-  const bundled = join(homedir(), ".opencode", "bin", "opencode")
-  if (existsSync(bundled)) return bundled
-  return null
+  if (configured && existsSync(configured)) {
+    const installation: OpenCodeInstallation = {
+      command: configured,
+      generation: basename(configured).toLowerCase().startsWith("opencode2")
+        ? "v2"
+        : "v1",
+    }
+    if (!preferred || installation.generation === preferred) return installation
+  }
+  const configuredV2 = process.env["OPENCODE2_BIN_PATH"]
+  const v2 =
+    configuredV2 && existsSync(configuredV2)
+      ? configuredV2
+      : join(homedir(), ".opencode", "bin", "opencode2")
+  const configuredV1 = process.env["OPENCODE1_BIN_PATH"]
+  const v1 =
+    configuredV1 && existsSync(configuredV1)
+      ? configuredV1
+      : join(homedir(), ".opencode", "bin", "opencode")
+  if (preferred === "v1") {
+    return existsSync(v1) ? { command: v1, generation: "v1" } : null
+  }
+  if (preferred === "v2") {
+    return existsSync(v2) ? { command: v2, generation: "v2" } : null
+  }
+  if (existsSync(v2)) return { command: v2, generation: "v2" }
+  return existsSync(v1) ? { command: v1, generation: "v1" } : null
+}
+
+export function openCodeExecutable(): string | null {
+  return openCodeInstallation()?.command ?? null
+}
+
+export async function openCodeSessionGeneration(
+  sessionId: string
+): Promise<OpenCodeInstallation["generation"]> {
+  const sqlite = await import("node:sqlite").catch(() => null)
+  if (!sqlite) return openCodeInstallation()?.generation ?? "v1"
+  for (const name of ["opencode.db", "opencode-next.db"]) {
+    const path = join(homedir(), ".local", "share", "opencode", name)
+    if (!existsSync(path)) continue
+    let database: import("node:sqlite").DatabaseSync | undefined
+    try {
+      database = new sqlite.DatabaseSync(path, { readOnly: true })
+      const tables = new Set(
+        database
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+          .all()
+          .map((row) => row.name)
+      )
+      if (
+        tables.has("session_v2") &&
+        database.prepare("SELECT 1 FROM session_v2 WHERE id = ?").get(sessionId)
+      ) {
+        return "v2"
+      }
+      if (
+        tables.has("session") &&
+        database.prepare("SELECT 1 FROM session WHERE id = ?").get(sessionId)
+      ) {
+        return name === "opencode-next.db" ? "v2" : "v1"
+      }
+    } catch {
+      continue
+    } finally {
+      database?.close()
+    }
+  }
+  return openCodeInstallation()?.generation ?? "v1"
 }
 
 export function devinExecutable(): string | null {
@@ -199,18 +315,86 @@ async function devinProfile(
 }
 
 async function openCodeProfile(env: NodeJS.ProcessEnv): Promise<HarnessProfile> {
-  const executable = openCodeExecutable()
-  if (!executable) throw new Error("OpenCode is not installed")
-  const output = await run(executable, ["models", "--verbose"], env)
-  const catalog = normalizeOpenCodeModels(parseOpenCodeModels(output))
-  const configured = await latestOpenCodeModel()
+  const installation = openCodeInstallation()
+  if (!installation) throw new Error("OpenCode is not installed")
+  const output = await run(
+    installation.command,
+    installation.generation === "v2" ? ["models"] : ["models", "--verbose"],
+    env
+  )
+  const rows =
+    installation.generation === "v2"
+      ? await openCodeV2Models(output)
+      : parseOpenCodeModels(output)
+  const catalog = normalizeOpenCodeModels(rows)
+  const configured = await configuredOpenCodeModel()
   if (configured && catalog.models.some((model) => model.id === configured)) {
     catalog.configuredModel = configured
     catalog.defaultModel = configured
   } else {
-    catalog.defaultModel = catalog.models[0]?.id
+    catalog.defaultModel = preferredOpenCodeDefault(catalog.models)
   }
   return availableHarnessProfile("opencode", catalog)
+}
+
+async function openCodeV2Models(output: string): Promise<OpenCodeModelRow[]> {
+  let cached: z.infer<typeof OpenCodeCacheSchema> = {}
+  try {
+    const parsed = OpenCodeCacheSchema.safeParse(
+      JSON.parse(
+        await readFile(join(homedir(), ".cache", "opencode", "models.json"), "utf8")
+      )
+    )
+    if (parsed.success) cached = parsed.data
+  } catch {
+    cached = {}
+  }
+
+  return output.split(/\r?\n/).flatMap((line): OpenCodeModelRow[] => {
+    const identity = line.trim()
+    const separator = identity.indexOf("/")
+    if (separator <= 0) return []
+    const providerID = identity.slice(0, separator)
+    const id = identity.slice(separator + 1)
+    const cachedProvider = OpenCodeCacheProviderSchema.safeParse(
+      cached[providerID]
+    )
+    const cachedModel = OpenCodeCacheModelSchema.safeParse(
+      cachedProvider.success ? cachedProvider.data.models[id] : undefined
+    )
+    const baseId = id.endsWith("-fast") ? id.slice(0, -5) : id
+    const cachedBase = OpenCodeCacheModelSchema.safeParse(
+      cachedProvider.success ? cachedProvider.data.models[baseId] : undefined
+    )
+    const model = cachedModel.success
+      ? cachedModel.data
+      : cachedBase.success
+        ? cachedBase.data
+        : undefined
+    const name =
+      model && baseId !== id ? `${model.name} Fast` : model?.name
+    const reasoning = Array.isArray(model?.reasoning_options)
+      ? model.reasoning_options.flatMap((option) => option.values)
+      : Object.keys(model?.reasoning_options ?? {})
+    return [
+      {
+        providerID,
+        id,
+        name,
+        family: model?.family,
+        status: model?.status,
+        variants:
+          reasoning.length > 0
+            ? Object.fromEntries(reasoning.map((value) => [value, {}]))
+            : undefined,
+        limit: model?.limit,
+        capabilities: {
+          reasoning: model?.reasoning,
+          input: { text: true, image: model?.attachment },
+        },
+      },
+    ]
+  })
 }
 
 function parseOpenCodeModels(output: string): OpenCodeModelRow[] {
@@ -253,59 +437,18 @@ function parseOpenCodeModels(output: string): OpenCodeModelRow[] {
   return rows
 }
 
-async function latestOpenCodeModel(): Promise<string | undefined> {
-  const sqlite = await import("node:sqlite").catch(() => null)
-  if (!sqlite) return undefined
-  for (const databaseName of ["opencode-next.db", "opencode.db"]) {
-    const path = join(
-      homedir(),
-      ".local",
-      "share",
-      "opencode",
-      databaseName
-    )
-    if (!existsSync(path)) continue
-    let database: import("node:sqlite").DatabaseSync | undefined
+async function configuredOpenCodeModel(): Promise<string | undefined> {
+  for (const path of [
+    join(homedir(), ".config", "opencode", "opencode.json"),
+    join(homedir(), ".opencode", "config.json"),
+  ]) {
     try {
-      database = new sqlite.DatabaseSync(path, { readOnly: true })
-      const columns = new Set(
-        database.prepare("PRAGMA table_info(session)").all().map((row) => row.name)
+      const parsed = OpenCodeConfigSchema.safeParse(
+        JSON.parse(await readFile(path, "utf8"))
       )
-      if (columns.has("model")) {
-        const current = database
-          .prepare(
-            "SELECT model FROM session WHERE model IS NOT NULL ORDER BY time_updated DESC LIMIT 1"
-          )
-          .get()
-        const currentModel = OpenCodeModelIdentitySchema.safeParse(
-          current?.model ? JSON.parse(String(current.model)) : null
-        )
-        if (currentModel.success) {
-          return `${currentModel.data.providerID}/${currentModel.data.modelID}`
-        }
-      }
-      const tables = new Set(
-        database
-          .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
-          .all()
-          .map((row) => row.name)
-      )
-      if (tables.has("message")) {
-        const legacy = database
-          .prepare(
-            "SELECT data FROM message WHERE json_extract(data, '$.role') = 'assistant' ORDER BY time_created DESC LIMIT 1"
-          )
-          .get()
-        const parsed = OpenCodeModelIdentitySchema.safeParse(
-          legacy?.data ? JSON.parse(String(legacy.data)) : null
-        )
-        if (parsed.success)
-          return `${parsed.data.providerID}/${parsed.data.modelID}`
-      }
+      if (parsed.success && parsed.data.model) return parsed.data.model
     } catch {
       continue
-    } finally {
-      database?.close()
     }
   }
   return undefined
