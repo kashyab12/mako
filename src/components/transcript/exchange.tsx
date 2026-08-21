@@ -4,7 +4,11 @@ import { ToolRow } from "@/components/transcript/tool-row"
 import { FileChip, SkillChip, ThreadChip } from "@/components/composer/reference-chip"
 import { Slot } from "@/extend/slot"
 import { tokenize } from "@/lib/mentions"
-import { pairTools } from "@/lib/tools"
+import {
+  isSubagentLaunch,
+  pairTools,
+  reportedSubagentCount,
+} from "@/lib/tools"
 import { formatTime, textOf } from "@/lib/format"
 import { parseAttachmentAppendix } from "@/lib/attachments"
 import { stripThreadReferenceAppendix } from "@/lib/thread-references"
@@ -189,12 +193,6 @@ function Prompt({ message }: { message: ChatMessage }) {
 /* the response                                                        */
 /* ------------------------------------------------------------------ */
 
-const SUBAGENT_TOOLS = new Set([
-  "run_subagent",
-  "spawn_agent",
-  "Task",
-])
-
 interface WorkSummaryData {
   tools: number
   agents: number
@@ -209,7 +207,8 @@ function summarizeWork(exchange: ExchangeData): WorkSummaryData {
   for (const message of exchange.response) {
     const calls = pairTools(message.blocks)
     tools += calls.length
-    agents += calls.filter((call) => SUBAGENT_TOOLS.has(call.name)).length
+    agents += calls.filter(isSubagentLaunch).length
+    agents = Math.max(agents, ...calls.map(reportedSubagentCount))
     failed += calls.filter((call) => call.isError).length
   }
   const started = exchange.prompt?.timestamp
