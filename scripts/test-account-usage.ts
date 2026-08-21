@@ -1,9 +1,14 @@
 import assert from "node:assert/strict"
 import {
+  accountEnv,
   classifyCodexWindows,
   parseOpenCodeAccounts,
   type UsageWindow,
 } from "../electron/accounts"
+import {
+  normalizeOpenCodeModels,
+  preferredOpenCodeDefault,
+} from "../electron/harness-models"
 
 const fiveHour: UsageWindow = {
   usedPercent: 40,
@@ -85,4 +90,30 @@ for (const secretField of ["access", "refresh", "key", "token", "expires"]) {
 }
 assert.equal(serialized.includes("stored-account-fallback"), false)
 
-console.log("Account discovery and usage classification passed")
+const openCodeCatalog = normalizeOpenCodeModels([
+  { providerID: "openai", id: "gpt-5.4", name: "GPT-5.4" },
+  {
+    providerID: "opencode",
+    id: "x-preview-f-free",
+    name: "Ox Alpha Free (Unlimited)",
+  },
+])
+assert.equal(
+  preferredOpenCodeDefault(openCodeCatalog.models),
+  "opencode/x-preview-f-free"
+)
+
+const childEnv = await accountEnv("opencode", {
+  PATH: "/fixture/bin",
+  MAKO_BACKEND_TOKEN: "backend-secret",
+  MAKO_CUA_SOCKET: "/fixture/cua.sock",
+  MAKO_PREVIEW_SOCKET: "/fixture/preview.sock",
+  MAKO_PREVIEW_TOKEN: "preview-secret",
+})
+assert.equal(childEnv.PATH, "/fixture/bin")
+assert.equal(childEnv.MAKO_BACKEND_TOKEN, undefined)
+assert.equal(childEnv.MAKO_CUA_SOCKET, undefined)
+assert.equal(childEnv.MAKO_PREVIEW_SOCKET, undefined)
+assert.equal(childEnv.MAKO_PREVIEW_TOKEN, undefined)
+
+console.log("Account discovery, usage classification, and child environment isolation passed")
