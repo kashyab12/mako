@@ -30,7 +30,7 @@ export interface Prefs {
   /** Dragged companion-card widths, per surface id — a spatial habit. */
   surfaceWidths: SurfaceWidthMap
   surfaceHeights: SurfaceWidthMap
-  /** What ⌘I reopens, and what boot restores. Tab ids don't survive a relaunch. */
+  /** What the right-sidebar toggle reopens. Tab ids don't survive a relaunch. */
   lastCompanion: string | null
   /** `provider/id` keys, most recent first. */
   favoriteModels: string[]
@@ -328,6 +328,14 @@ function parsePrefs(value: JsonValue): Prefs | null {
   if (value.transcriptReplayDefaultMigrated !== true) {
     prefs.conversionMode = "transcript"
   }
+  if (value.openCodeProviderDefaultMigrated !== true) {
+    const composerTuning = { ...prefs.composerTuning }
+    delete composerTuning.opencode
+    prefs.composerTuning = composerTuning
+    prefs.providerTuningImported = prefs.providerTuningImported.filter(
+      (provider) => provider !== "opencode"
+    )
+  }
   return prefs
 }
 
@@ -356,6 +364,7 @@ prefsStore.subscribe(() => {
         ...prefsStore.get(),
         railScopeMigrated: true,
         transcriptReplayDefaultMigrated: true,
+        openCodeProviderDefaultMigrated: true,
       }
       localStorage.setItem(KEY, JSON.stringify(stored))
     } catch {
