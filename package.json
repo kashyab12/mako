@@ -21,6 +21,7 @@
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc -b --force",
     "typecheck:all": "npm run typecheck && npm run backend:typecheck",
+    "test:accounts": "tsx scripts/test-account-usage.ts",
     "test:automations": "tsx scripts/test-automations.ts",
     "test:codex-protocol": "tsx scripts/test-codex-protocol.ts",
     "test:host": "tsx scripts/test-host-domains.ts",

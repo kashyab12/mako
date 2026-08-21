@@ -31,8 +31,16 @@ export interface AccountUsage {
   status: string
   plan?: string
   detail?: string
-  session?: { usedPercent: number; resetsAt: number | null } | null
-  weekly?: { usedPercent: number; resetsAt: number | null } | null
+  session?: {
+    usedPercent: number
+    windowMinutes: number
+    resetsAt: number | null
+  } | null
+  weekly?: {
+    usedPercent: number
+    windowMinutes: number
+    resetsAt: number | null
+  } | null
 }
 
 interface AccountsState {

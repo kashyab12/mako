@@ -329,6 +329,22 @@ function parseCodexUsageResponse(contents: string): CodexUsageResponse {
   return plan === undefined ? { windows } : { plan, windows }
 }
 
+export interface ClassifiedUsageWindows {
+  session: UsageWindow | null
+  weekly: UsageWindow | null
+}
+
+export function classifyCodexWindows(
+  windows: UsageWindow[]
+): ClassifiedUsageWindows {
+  const session = windows.find((window) => window.windowMinutes <= 24 * 60) ?? null
+  const weekly =
+    [...windows]
+      .reverse()
+      .find((window) => window.windowMinutes > 24 * 60) ?? null
+  return { session, weekly }
+}
+
 async function readSelection(): Promise<SelectionState> {
   try {
     return parseSelectionState(await readFile(statePath(), "utf8"))
@@ -771,11 +787,12 @@ async function codexUsage(dir: string): Promise<AccountUsage> {
     // Codex names its windows by position, not duration; sort by length so
     // "session" is always the shorter one whatever the backend calls it.
     const usage = parseCodexUsageResponse(payload)
+    const windows = classifyCodexWindows(usage.windows)
     return {
       status: "ok",
       plan: usage.plan,
-      session: usage.windows[0] ?? null,
-      weekly: usage.windows[1] ?? usage.windows[0] ?? null,
+      session: windows.session,
+      weekly: windows.weekly,
     }
   } catch (error) {
     return {

@@ -14,6 +14,7 @@ import { getMako, hasBridge } from "@/lib/bridge"
 import { setPref, usePrefs } from "@/state/prefs"
 import { cn } from "@/lib/utils"
 import { formatRelative } from "@/lib/format"
+import { usageWindowLabel } from "@/lib/usage-window"
 import { CheckIcon, XIcon } from "lucide-react"
 import { toast } from "sonner"
 
@@ -251,8 +252,8 @@ function HarnessAccounts() {
                     <span className="min-w-0 flex-1">
                       {stats?.status === "ok" ? (
                         <span className="flex items-center gap-2">
-                          <UsageBar label="5h" window={stats.session} />
-                          <UsageBar label="week" window={stats.weekly} />
+                          <UsageBar window={stats.session} />
+                          <UsageBar window={stats.weekly} />
                           {stats.plan ? (
                             <span className="text-label text-faint">
                               {stats.plan}
@@ -341,14 +342,17 @@ function HarnessAccounts() {
 
 /** One window as a small bar: full is the signal, exact digits on hover. */
 function UsageBar({
-  label,
   window: win,
 }: {
-  label: string
-  window?: { usedPercent: number; resetsAt: number | null } | null
+  window?: {
+    usedPercent: number
+    windowMinutes: number
+    resetsAt: number | null
+  } | null
 }) {
   if (!win) return null
   const used = Math.max(0, Math.min(100, win.usedPercent))
+  const label = usageWindowLabel(win.windowMinutes)
   return (
     <span
       className="flex items-center gap-1"

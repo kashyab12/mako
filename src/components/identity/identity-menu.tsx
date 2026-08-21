@@ -5,6 +5,7 @@ import { formatChord } from "@/extend/commands"
 import { github, useGitHub } from "@/state/github"
 import { accounts, useAccounts, usageKey } from "@/state/accounts"
 import { cn } from "@/lib/utils"
+import { usageWindowLabel } from "@/lib/usage-window"
 import { CheckIcon, CopyIcon, SettingsIcon } from "lucide-react"
 
 /**
@@ -86,7 +87,7 @@ export function IdentityMenu() {
                       <>
                         {stats.session ? (
                           <span className="flex items-center gap-1">
-                            5h
+                            {usageWindowLabel(stats.session.windowMinutes)}
                             <Meter
                               value={stats.session.usedPercent / 100}
                               tone={stats.session.usedPercent > 90 ? "negative" : stats.session.usedPercent > 72 ? "caution" : "neutral"}
@@ -96,7 +97,7 @@ export function IdentityMenu() {
                         ) : null}
                         {stats.weekly ? (
                           <span className="flex items-center gap-1">
-                            wk
+                            {usageWindowLabel(stats.weekly.windowMinutes)}
                             <Meter
                               value={stats.weekly.usedPercent / 100}
                               tone={stats.weekly.usedPercent > 90 ? "negative" : stats.weekly.usedPercent > 72 ? "caution" : "neutral"}
