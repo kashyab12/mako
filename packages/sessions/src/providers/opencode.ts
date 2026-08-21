@@ -103,14 +103,34 @@ export class OpenCodeProvider implements SessionProvider {
         const database = await openDatabase(path)
         if (!database) return []
         try {
+          const files: NativeFile[] = []
           const kind = storeKind(database, path)
-          if (!kind) return []
-          return sessionRows(database, kind, MAX_SESSIONS).map((row) => ({
-            path: sessionPath(path, row.id),
-            bytes: row.revision,
-            mtimeMs: row.updatedAt ?? info.mtimeMs,
-            locked: row.active,
-          }))
+          if (kind) {
+            files.push(
+              ...sessionRows(database, kind, MAX_SESSIONS).map((row) => ({
+                path: sessionPath(path, row.id),
+                bytes: row.revision,
+                mtimeMs: row.updatedAt ?? info.mtimeMs,
+                locked: row.active,
+              }))
+            )
+          }
+          if (hasTable(database, "session_v2") && hasTable(database, "session_message")) {
+            files.push(
+              ...sessionRows(
+                database,
+                "current",
+                MAX_SESSIONS,
+                "session_v2"
+              ).map((row) => ({
+                path: sessionPath(path, row.id, true),
+                bytes: row.revision,
+                mtimeMs: row.updatedAt ?? info.mtimeMs,
+                locked: row.active,
+              }))
+            )
+          }
+          return files
         } catch {
           return []
         } finally {
@@ -127,9 +147,14 @@ export class OpenCodeProvider implements SessionProvider {
     const database = await openDatabase(target.database)
     if (!database) return null
     try {
-      const kind = storeKind(database, target.database)
+      const kind = target.v2 ? "current" : storeKind(database, target.database)
       if (!kind) return null
-      const row = sessionRow(database, kind, target.id)
+      const row = sessionRow(
+        database,
+        kind,
+        target.id,
+        target.v2 ? "session_v2" : "session"
+      )
       if (!row) return null
       const model = modelFromSession(row) ?? latestModel(database, kind, row.id)
       return refFrom(row, file.path, file.bytes, model)
@@ -146,10 +171,15 @@ export class OpenCodeProvider implements SessionProvider {
     const database = await openDatabase(target.database)
     if (!database) return null
     try {
-      const kind = storeKind(database, target.database)
+      const kind = target.v2 ? "current" : storeKind(database, target.database)
       if (!kind) return null
       database.exec("BEGIN")
-      const row = sessionRow(database, kind, target.id)
+      const row = sessionRow(
+        database,
+        kind,
+        target.id,
+        target.v2 ? "session_v2" : "session"
+      )
       if (!row) {
         database.exec("COMMIT")
         return null
@@ -249,14 +279,29 @@ export class OpenCodeProvider implements SessionProvider {
     const database = await openDatabase(target.database)
     if (!database) return null
     try {
-      const kind = storeKind(database, target.database)
-      return kind ? (sessionRow(database, kind, target.id)?.revision ?? null) : null
+      const kind = target.v2 ? "current" : storeKind(database, target.database)
+      return kind
+        ? (sessionRow(
+            database,
+            kind,
+            target.id,
+            target.v2 ? "session_v2" : "session"
+          )?.revision ?? null)
+        : null
     } catch {
       return null
     } finally {
       database.close()
     }
   }
+}
+
+function hasTable(database: DatabaseSync, table: string): boolean {
+  return Boolean(
+    database
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get(table)
+  )
 }
 
 function storeKind(database: DatabaseSync, path: string): StoreKind | null {
@@ -277,22 +322,32 @@ function storeKind(database: DatabaseSync, path: string): StoreKind | null {
 function sessionRows(
   database: DatabaseSync,
   kind: StoreKind,
-  limit: number
+  limit: number,
+  sessionTable = "session"
 ): SessionRow[] {
-  const rows = database.prepare(sessionQuery(kind, false)).all(limit)
+  const rows = database
+    .prepare(sessionQuery(kind, false, sessionTable))
+    .all(limit)
   return rows.map(parseSessionRow).filter((row): row is SessionRow => row !== null)
 }
 
 function sessionRow(
   database: DatabaseSync,
   kind: StoreKind,
-  id: string
+  id: string,
+  sessionTable = "session"
 ): SessionRow | null {
-  const stored = database.prepare(sessionQuery(kind, true)).get(id)
+  const stored = database
+    .prepare(sessionQuery(kind, true, sessionTable))
+    .get(id)
   return stored ? parseSessionRow(stored) : null
 }
 
-function sessionQuery(kind: StoreKind, one: boolean): string {
+function sessionQuery(
+  kind: StoreKind,
+  one: boolean,
+  sessionTable = "session"
+): string {
   const source = kind === "current" ? "session_message" : "message"
   const partRevision = kind === "legacy"
     ? ", COALESCE((SELECT MAX(p2.time_updated) FROM part p2 WHERE p2.session_id = s.id), 0)"
@@ -316,7 +371,11 @@ function sessionQuery(kind: StoreKind, one: boolean): string {
                   THEN 1 ELSE 0 END
            FROM message m3 WHERE m3.session_id = s.id
            ORDER BY m3.time_created DESC, m3.id DESC LIMIT 1)`
-  const where = one ? "s.id = ?" : "s.parent_id IS NULL"
+  const where = one
+    ? "s.id = ?"
+    : sessionTable === "session_v2"
+      ? "s.parent_id IS NULL AND NOT EXISTS (SELECT 1 FROM session legacy WHERE legacy.id = s.id)"
+      : "s.parent_id IS NULL"
   const suffix = one ? "LIMIT 1" : "ORDER BY s.time_updated DESC, s.id DESC LIMIT ?"
   return `SELECT s.id AS id, s.directory AS directory, s.title AS title,
                  s.time_created AS time_created, s.time_updated AS time_updated,
@@ -327,7 +386,7 @@ function sessionQuery(kind: StoreKind, one: boolean): string {
                      COALESCE((SELECT MAX(m.time_updated) FROM ${source} m WHERE m.session_id = s.id), 0)
                      ${partRevision}) AS revision_time,
                  ((SELECT COUNT(*) FROM ${source} m2 WHERE m2.session_id = s.id)${partCount}) AS revision_count
-          FROM session s LEFT JOIN project p ON p.id = s.project_id
+          FROM ${sessionTable} s LEFT JOIN project p ON p.id = s.project_id
           WHERE ${where} ${suffix}`
 }
 
@@ -620,14 +679,17 @@ function toolBlock(data: JsonObject, kind: StoreKind): ToolBlock {
 function usageFrom(data: JsonObject): TurnUsage | undefined {
   const tokens = jsonObject(data.tokens)
   const cache = tokens ? jsonObject(tokens.cache) : undefined
-  const usage: TurnUsage = {
+  const values = {
     input: tokens ? jsonNumber(tokens.input) : undefined,
     output: tokens ? jsonNumber(tokens.output) : undefined,
     cacheRead: cache ? jsonNumber(cache.read) : undefined,
     cacheWrite: cache ? jsonNumber(cache.write) : undefined,
     costUsd: jsonNumber(data.cost),
   }
-  return Object.values(usage).some((value) => value !== undefined) ? usage : undefined
+  const usage = Object.fromEntries(
+    Object.entries(values).filter((entry): entry is [string, number] => entry[1] !== undefined)
+  ) satisfies TurnUsage
+  return Object.keys(usage).length > 0 ? usage : undefined
 }
 
 function modelFromSession(row: SessionRow): { id?: string; provider?: string } | null {
@@ -730,21 +792,23 @@ function isoOf(value: number | undefined): string | undefined {
   return new Date(value > 1e12 ? value : value * 1000).toISOString()
 }
 
-function sessionPath(database: string, id: string): string {
-  return `${database}#${encodeURIComponent(id)}`
+function sessionPath(database: string, id: string, v2 = false): string {
+  return `${database}#${v2 ? "v2:" : ""}${encodeURIComponent(id)}`
 }
 
 function parseSessionPath(
   path: string,
   databases: string[]
-): { database: string; id: string } | null {
+): { database: string; id: string; v2: boolean } | null {
   const at = path.lastIndexOf("#")
   if (at === -1) return null
   const database = path.slice(0, at)
   if (!databases.includes(database)) return null
   try {
-    const id = decodeURIComponent(path.slice(at + 1))
-    return id ? { database, id } : null
+    const fragment = path.slice(at + 1)
+    const v2 = fragment.startsWith("v2:")
+    const id = decodeURIComponent(v2 ? fragment.slice(3) : fragment)
+    return id ? { database, id, v2 } : null
   } catch {
     return null
   }
