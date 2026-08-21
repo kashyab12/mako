@@ -100,12 +100,14 @@ the desktop bridge, OAuth remains provider-owned, and sync never removes a
 server. The bundled server uses MCP 2025-11-25 through the current TypeScript
 SDK, including tool safety annotations and Streamable HTTP compatibility.
 
-**Backend control plane** — `packages/backend` deploys Next.js and Eve as one
-Vercel project. It serves an authenticated stateless Streamable HTTP MCP endpoint,
-publishes trusted skills as resources, and hosts Slack through Vercel Connect
-with verified webhook delivery and durable threaded runs. Mako injects that
-backend only into sessions launched by Mako; its bearer token remains in the
-host and macOS Keychain rather than provider configuration or renderer state.
+**Backend control plane** — `packages/backend` deploys a narrow Next.js service
+on Vercel. It serves authenticated Streamable HTTP MCP, publishes trusted skills,
+and receives verified Slack events through Vercel Connect. Slack work waits in
+an Azure Queue until the local Mako host leases it, then runs through the chosen
+Claude Code, Codex, Cursor, or Grok harness using that harness’s existing account
+and model. Thread mappings live in Azure Table Storage, so a sleeping laptop loses
+nothing. Backend credentials remain in the host and macOS Keychain rather than
+provider configuration or renderer state.
 
 **Local computer and browser tools** — Mako exposes optional managed MCP
 definitions for macOS Harness and CUA Driver. macOS Harness is wrapped by

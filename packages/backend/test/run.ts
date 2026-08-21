@@ -1,7 +1,10 @@
 import assert from "node:assert/strict"
 import { z } from "zod"
 import { integrationCatalog } from "../src/integrations/catalog"
+import { formatHarnessReplies } from "../src/relay/delivery"
+import { parseSlackRelayCommand } from "../src/relay/commands"
 import { listSkills, readSkill } from "../src/skills/catalog"
+import { backendStatus } from "../src/status"
 
 const token = "mako-test-token-".padEnd(64, "x")
 process.env.MAKO_MCP_TOKEN = token
@@ -108,6 +111,39 @@ const connected = integrationCatalog({ slackConnected: true })
 assert.equal(connected[0]?.status.kind, "connected")
 const disconnected = integrationCatalog({ slackConnected: false })
 assert.equal(disconnected[0]?.status.kind, "available")
+
+const slack = {
+  channel: "CTEST",
+  eventId: "event-1",
+  teamId: "TTEST",
+  threadTs: "123.456",
+  userId: "UTEST",
+}
+assert.equal(
+  parseSlackRelayCommand({ mapping: null, slack, text: "new codex investigate" })
+    .kind,
+  "enqueue"
+)
+const continuation = parseSlackRelayCommand({
+  mapping: {
+    harness: "claude",
+    model: "sonnet",
+    threadPath: "/tmp/thread",
+  },
+  slack,
+  text: "continue",
+})
+assert.equal(continuation.kind, "enqueue")
+if (continuation.kind === "enqueue") {
+  assert.equal(continuation.payload.kind, "resume")
+}
+assert.deepEqual(formatHarnessReplies("one\\n\\ntwo"), ["one\n\ntwo"])
+assert.equal(formatHarnessReplies("x".repeat(24_000)).length, 3)
+assert.deepEqual(backendStatus({}).relay, {
+  execution: "local-harness",
+  persistence: "azure-storage",
+  offlineQueue: true,
+})
 
 assert.equal(JSON.stringify(tools).includes(token), false)
 assert.equal(JSON.stringify(resources).includes(token), false)

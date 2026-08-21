@@ -48,6 +48,25 @@ export async function ensureBackendConnectionEnvironment(): Promise<void> {
   }
 }
 
+export async function backendRelayPost(
+  path: string,
+  body: string
+): Promise<Response> {
+  await ensureBackendConnectionEnvironment()
+  const token = process.env.MAKO_BACKEND_TOKEN
+  if (!token) throw new Error("Mako backend token is missing")
+  return fetch(new URL(path, process.env.MAKO_BACKEND_URL ?? DEFAULT_URL), {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body,
+    signal: AbortSignal.timeout(30_000),
+  })
+}
+
 export async function backendConnectionStatus(): Promise<BackendConnectionStatus> {
   await ensureBackendConnectionEnvironment()
   const url = process.env.MAKO_BACKEND_URL ?? DEFAULT_URL

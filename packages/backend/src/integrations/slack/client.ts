@@ -244,7 +244,7 @@ export async function sendSlackMessage({
     await slackFetch("chat.postMessage", {
       channel,
       client_msg_id: idempotencyKey,
-      text,
+      markdown_text: text,
       thread_ts: threadTs,
       unfurl_links: false,
       unfurl_media: false,

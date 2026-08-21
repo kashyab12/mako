@@ -135,6 +135,7 @@ import {
   backendConnectionStatus,
   ensureBackendConnectionEnvironment,
 } from "./backend-connection.js"
+import { startSlackRelay, stopSlackRelay } from "./slack-relay.js"
 import {
   registerPreview,
   startPreviewControl,
@@ -1139,7 +1140,14 @@ app.whenReady().then(async () => {
     const live = await ready()
     await live.runInBackground(cwd, prompt)
   })
-  void ready().then((live) => watchWorkspace(live.active.workspace))
+  void ready().then((live) => {
+    watchWorkspace(live.active.workspace)
+    return startSlackRelay({
+      defaultCwd: () => live.active.workspace,
+      deviceFile: join(app.getPath("userData"), "slack-relay", "device-id"),
+      version: app.getVersion(),
+    })
+  })
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow()
   })
@@ -1156,6 +1164,7 @@ app.on("before-quit", () => {
   stopCuaEmbedded()
   stopPreviewControl()
   stopWatching()
+  stopSlackRelay()
   stopThreads()
   stopDrivers()
   stopAcp()

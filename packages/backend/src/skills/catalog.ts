@@ -24,7 +24,7 @@ export function listSkills(): BackendSkill[] {
 
 export async function readSkill(id: BackendSkill["id"]): Promise<string> {
   return readFile(
-    join(process.cwd(), "agent", "skills", id, "SKILL.md"),
+    join(process.cwd(), "skills", id, "SKILL.md"),
     "utf8"
   )
 }

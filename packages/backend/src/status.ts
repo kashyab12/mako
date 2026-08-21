@@ -12,6 +12,11 @@ export interface BackendStatus {
     authenticated: true
   }
   integrations: ReturnType<typeof integrationCatalog>
+  relay: {
+    execution: "local-harness"
+    persistence: "azure-storage"
+    offlineQueue: true
+  }
 }
 
 export function backendStatus(environment: Partial<ServerEnv>): BackendStatus {
@@ -28,5 +33,10 @@ export function backendStatus(environment: Partial<ServerEnv>): BackendStatus {
     integrations: integrationCatalog({
       slackConnected: Boolean(environment.SLACK_CONNECTOR),
     }),
+    relay: {
+      execution: "local-harness",
+      persistence: "azure-storage",
+      offlineQueue: true,
+    },
   }
 }

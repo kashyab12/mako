@@ -40,6 +40,7 @@ interface ResumeCommand {
  * surfaces that session in the rail the moment its store appears.
  */
 export interface FreshOptions {
+  captureOutput?: boolean
   model?: string
   effort?: string
   fast?: boolean
@@ -268,9 +269,17 @@ export function freshHarnesses(): string[] {
   return Object.keys(FRESH)
 }
 
+export interface NativeRunResult {
+  state: ThreadRunState
+  text: string
+}
+
 interface Run {
   child: ChildProcess
+  completed?: Promise<NativeRunResult>
+  resolve: (result: NativeRunResult) => void
   state: ThreadRunState
+  stdout: string
 }
 
 const runs = new Map<string, Run>()
@@ -283,6 +292,37 @@ export function bindDrivers(send: (event: HostEvent) => void): void {
 
 export function threadRun(path: string): ThreadRunState | null {
   return runs.get(path)?.state ?? null
+}
+
+export async function waitForNativeRun(
+  path: string,
+  timeoutMs = 30 * 60 * 1000
+): Promise<NativeRunResult> {
+  const run = runs.get(path)
+  const completed = run?.completed
+  if (!run || !completed) throw new Error(`No captured native run exists for ${path}`)
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    run.child.kill("SIGTERM")
+  }, timeoutMs)
+  try {
+    const result = await completed
+    return timedOut
+      ? {
+          state: {
+            ...result.state,
+            status: "failed",
+            error: "The local harness exceeded its 30 minute Slack limit",
+          },
+          text: result.text,
+        }
+      : result
+  } finally {
+    clearTimeout(timer)
+    run.completed = undefined
+    run.stdout = ""
+  }
 }
 
 /**
@@ -309,7 +349,8 @@ export async function resumeNative(
     ref.path,
     ref.harness,
     ref.cwd,
-    make(ref.nativeId, prompt, tuning)
+    make(ref.nativeId, prompt, tuning),
+    tuning?.captureOutput ?? false
   )
 }
 
@@ -337,7 +378,8 @@ export async function startFresh(
     `fresh:${harness}:${++freshCounter}`,
     harness,
     cwd,
-    make(prompt, options)
+    make(prompt, options),
+    options.captureOutput ?? false
   )
 }
 
@@ -345,7 +387,8 @@ async function launch(
   key: string,
   harness: string,
   workingDir: string | undefined,
-  resume: ResumeCommand
+  resume: ResumeCommand,
+  captureOutput: boolean
 ): Promise<ThreadRunState> {
   const { command, args } = resume
   const cwd = workingDir && existsSync(workingDir) ? workingDir : homedir()
@@ -358,7 +401,19 @@ async function launch(
   })
 
   const state: ThreadRunState = { path: key, harness, status: "running" }
-  const run: Run = { child, state }
+  let resolveRun: (result: NativeRunResult) => void = () => {}
+  const completed = captureOutput
+    ? new Promise<NativeRunResult>((resolve) => {
+        resolveRun = resolve
+      })
+    : undefined
+  const run: Run = {
+    child,
+    completed,
+    resolve: resolveRun,
+    state,
+    stdout: "",
+  }
   runs.set(key, run)
   push(state)
 
@@ -378,7 +433,13 @@ async function launch(
   child.stderr?.on("data", (chunk: Buffer) => {
     stderr = (stderr + chunk.toString()).slice(-4000)
   })
-  child.stdout?.resume() // Drain; the transcript arrives via the file watcher.
+  if (captureOutput) {
+    child.stdout?.on("data", (chunk: Buffer) => {
+      run.stdout = (run.stdout + chunk.toString()).slice(-1024 * 1024)
+    })
+  } else {
+    child.stdout?.resume()
+  }
 
   child.on("error", (error) => {
     finish(run, {
@@ -431,6 +492,7 @@ function finish(run: Run, next: Partial<ThreadRunState>): void {
     if (!removed) break
   }
   push(run.state)
+  run.resolve({ state: run.state, text: run.stdout.trim() })
 }
 
 function push(state: ThreadRunState): void {
