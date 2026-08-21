@@ -117,8 +117,8 @@ export function TitleBar() {
           <SettingsIcon />
         </IconAction>
         <IconAction
-          label={companionOpen ? "Hide the companion pane" : "Show the companion pane"}
-          keys={formatChord("mod+i")}
+          label={companionOpen ? "Hide the right sidebar" : "Show the right sidebar"}
+          keys={formatChord("mod+alt+b")}
           data-on={companionOpen}
           onClick={() => stage.toggleCompanion()}
         >
