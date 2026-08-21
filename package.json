@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.1",
   "description": "A local-first desktop meta-harness for every coding agent on your Mac.",
+  "author": "Mako contributors",
   "license": "MIT",
   "repository": "github:kashyab12/mako",
   "homepage": "https://github.com/kashyab12/mako",
