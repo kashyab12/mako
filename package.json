@@ -24,7 +24,7 @@
     "lint": "eslint . && npm run lint:anti-slop",
     "lint:anti-slop": "oxlint --config oxlint.config.ts src electron packages/sessions/src packages/backend/app packages/backend/agent packages/backend/scripts packages/backend/src packages/backend/test scripts",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
-    "typecheck": "tsc -b --force",
+    "typecheck": "npm run -s build --workspace @mako/sessions && tsc -b --force",
     "typecheck:all": "npm run typecheck && npm run backend:typecheck",
     "test:accounts": "tsx scripts/test-account-usage.ts",
     "test:automations": "tsx scripts/test-automations.ts",
