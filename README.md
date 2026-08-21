@@ -1,244 +1,219 @@
-# Mako
+<p align="center">
+  <img src="mako-icons/dark/logomark-1024.png" width="92" alt="Mako" />
+</p>
 
-<img src="mako-icons/dark/logomark-1024.png" width="88" align="right" alt="" />
+<h1 align="center">Mako</h1>
 
-A fast desktop meta-harness for Claude Code, Codex, Cursor, Grok, and Devin.
-Run several provider-native sessions at once, move conversations between them, and see what they change before you keep it.
+<p align="center">
+  <strong>One fast, local-first desktop for every coding agent on your Mac.</strong><br />
+  Claude Code, Codex, Cursor, Grok, and Devin stay provider-native—and finally work as peers.
+</p>
 
-## Run
+<p align="center">
+  <a href="https://github.com/kashyab12/mako/releases"><img src="https://img.shields.io/github/v/release/kashyab12/mako?display_name=tag&sort=semver" alt="Latest release" /></a>
+  <img src="https://img.shields.io/badge/macOS-Apple%20silicon-black" alt="Apple silicon" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-black" alt="MIT license" /></a>
+  <a href="https://github.com/kashyab12/mako/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/kashyab12/mako/release.yml?label=release" alt="Release workflow" /></a>
+</p>
+
+<p align="center">
+  <img src="docs/images/mako-hero.png" alt="Mako showing a live agent conversation, file workbench, and project sessions" width="1120" />
+</p>
+
+## Why Mako
+
+Coding-agent work is fragmented across terminals and apps. The account is
+already signed in. The model is already selected. The session is already on
+your machine. Mako reads those provider-owned sessions in place and gives them
+one calm control surface—without inserting another model between you and the
+agent.
+
+| | |
+| --- | --- |
+| **Every local session** | Discover and live-follow Claude Code, Codex, Cursor, Grok, and Devin sessions created in Mako, a terminal, Zed, or another compatible client. |
+| **Native continuation** | Resume with the provider that owns a session, or move the conversation to another provider through a deterministic transcript bundle. |
+| **A real workbench** | Keep the conversation visible while opening multiple files in preview or pinned tabs. Split files right or down without losing the live transcript. |
+| **Review before trust** | Inspect diffs, stage files, annotate lines, draft commits and pull requests, and keep publishing as an explicit action. |
+| **Local browser and computer use** | Run isolated browser and macOS automation locally. There is no cloud-browser mode. |
+| **Slack when the Mac is asleep** | A durable relay queues Slack work, then hands it to the selected local harness when Mako reconnects. Bring your own Slack app and backend. |
+
+## The workbench
+
+<p align="center">
+  <img src="docs/images/mako-workbench.png" alt="Mako workbench with conversation and split file tabs" width="1120" />
+</p>
+
+- Preview tabs replace each other while you browse; pin the files you intend to
+  keep.
+- Split file panes horizontally or vertically while the agent conversation
+  remains mounted and live.
+- Render source with syntax highlighting, Markdown as prose, images at native
+  quality, PDFs in Chromium, and CSV/TSV as bounded tables.
+- Re-read open files when an agent, formatter, editor, or terminal changes them.
+- Open a file in detected Zed, Cursor, VS Code, Windsurf, Sublime Text, or Xcode.
+
+## Provider-native by design
+
+| Provider | Discover | Live follow | Native resume | Models and controls |
+| --- | :---: | :---: | :---: | --- |
+| Claude Code | ✓ | ✓ | ✓ | model, effort, permissions |
+| Codex | ✓ | ✓ | ✓ | model, reasoning, service tier |
+| Cursor | ✓ | ✓ | ✓ | model, effort, fast mode |
+| Grok | ✓ | ✓ | ✓ | model and reasoning |
+| Devin | ✓ | ✓ | ✓ | model, mode, Zed/ACP ownership |
+
+Mako’s renderer never receives provider credentials. Provider-specific session
+formats, processes, locks, and continuation commands stay behind provider
+boundaries in the host and [`@mako/sessions`](packages/sessions).
+
+## See what the agents are doing
+
+Tool calls are compact by default, not dumped into chat. Completed work folds
+into one work log with elapsed time, tool count, failures, and background-agent
+count. Expand it to inspect subagent assignments, activity, transcripts, and
+results. Internal protocol and compaction messages never masquerade as user
+conversation.
+
+## Accounts and truthful usage
+
+<p align="center">
+  <img src="docs/images/mako-usage.png" alt="Provider-native account limits and local usage chart" width="880" />
+</p>
+
+- Account identity comes from each provider’s native credentials.
+- Rate-limit windows come from provider endpoints and retain their real
+  duration—Mako does not relabel a weekly window as “5h.”
+- Local history aggregates reported cost plus clearly labeled API-equivalent
+  estimates for Claude Code, Codex, and Mako sessions.
+- Pricing coverage and unpriced tokens stay visible. Estimates are not presented
+  as billing or subscription charges.
+
+## Integrations
+
+<p align="center">
+  <img src="docs/images/mako-integrations.png" alt="Mako integrations catalog" width="880" />
+</p>
+
+The catalog distinguishes what is connected, locally available, waiting for
+permission, or not implemented. Provider marks are recognizable; status color
+keeps its semantic meaning.
+
+Slack can use either Vercel Connect or a Slack bot you own. See
+**[Run your own Mako Slack bot](docs/self-hosted-slack.md)** for the app scopes,
+durable Azure relay, environment variables, Keychain setup, and end-to-end
+verification.
+
+## Install
+
+### Download the Mac app
+
+Download the latest Apple-silicon DMG from
+[GitHub Releases](https://github.com/kashyab12/mako/releases). Builds are ARM64
+only.
+
+Unsigned development releases may require one explicit approval in macOS
+Privacy & Security. The release workflow supports Developer ID signing and
+notarization when the repository secrets are configured.
+
+### Run from source
+
+Requirements: an Apple-silicon Mac, Node.js 24, Git, and at least one supported
+agent CLI.
 
 ```bash
+git clone https://github.com/kashyab12/mako.git
+cd mako
 npm install
 npm run desktop
 ```
 
-That is it — it uses whatever agent and models you already have set up.
+Mako auto-detects the agents, accounts, models, editors, and native session
+stores already present on the Mac.
 
-To work on the interface without an agent running:
+For UI work without starting an agent:
 
 ```bash
 npm run dev
 open 'http://127.0.0.1:5173/?mock'
 ```
 
-## What's here
+## Keyboard-first
 
-**Tabs** — several agents at once, each with its own runtime and working
-directory. A background tab keeps streaming while you read another one, and
-says so with a dot. ⌘T opens one, ⌘1–9 jumps, ⌘-click a thread in the sidebar
-opens it beside the current one. **Branch** on any past turn continues that
-conversation in a new tab, leaving the original running — which is how you
-answer the same question two ways and compare.
+| Shortcut | Action |
+| --- | --- |
+| `⌘K` | Commands, models, sessions, and plugin actions |
+| `⌘P` | Open a file by name |
+| `⌘⇧F` | Search files and conversations |
+| `⌘T` | New agent tab |
+| `⌘1–9` | Jump between agent tabs |
+| `⌘↑ / ⌘↓` | Previous or next conversation turn |
+| `⌘/` | Show contextual keyboard help |
+| `Esc` | Stop, dismiss, or return to the conversation |
 
-**Files** — the left rail switches between your threads and the project. ⌘P
-opens any file by name, ⌘⇧E shows the tree. A file opens in place of the
-transcript with syntax highlighting, and re-reads itself when the agent edits
-it, so what you are looking at is never a stale copy. ⌘↩ in the file finder
-puts an `@` reference in the composer instead of opening it.
+## Architecture
 
-**Search** — ⌘⇧F searches file contents *and* every conversation about this
-project in one query. Case, whole-word and regex switches; a hit in a file
-opens it at that line, a hit in a conversation opens that thread.
-
-**Composer** — model picker with context window, price, and whether a model
-reasons or takes images. Reasoning effort offers only the levels the selected
-model supports. `@` references files, `$` skills, `/` commands. While a turn is
-running, Enter steers it and ⌘↩ queues a follow-up.
-
-**Transcript** — no bubbles, no avatars. Tool calls collapse to one line each;
-`edit` shows an inline diff, `bash` shows the command and its output. Reasoning
-is a disclosure, not a wall of text. A tick per question down the right edge
-jumps between turns, or step with ⌘↑ / ⌘↓.
-
-**Inspector** — the working diff, what the agent has in context right now, and
-your turns as rewind points. Context is one screen: model and price, how full
-the window is, files in play, and every skill on one line each — open one to
-read it.
-
-**Sidebar** — wears the project's GitHub avatar, so several open workspaces are
-told apart by their logo rather than by identical folder icons. Scope to this
-project or every project you have worked in; group by date or project. Search
-reaches project names, so typing a repo name finds sessions inside it.
-
-**Agents** — the sidebar's third mode is every coding agent's sessions on this
-machine, not just this app's: Codex, Claude Code, Cursor, Grok, and Devin in
-one live list. Nothing imports and nothing polls — the native session stores
-are watched, so a session you start in a terminal appears here mid-turn.
-Opening one shows the conversation translated to one shape, live-tailed while
-its agent works. From there it goes anywhere: **reply** sends your next message
-through the provider that owns the session, while choosing another provider
-starts a new session from Mako's deterministic transcript bundle. Sessions are
-not bound to the tool that started them.
-
-The layer under this is [`@mako/sessions`](packages/sessions) — a dependency-free
-library that reads every harness's native store into one canonical format,
-catalogs them incrementally (a thousand unchanged sessions cost a thousand
-stats and zero reads), and streams gigabyte-sized files in fixed-size chunks.
-It also *writes* supported provider stores: a conversation can be emitted as a
-Claude project, a Codex rollout, a Grok session directory, or a Cursor SQLite store —
-which the target's ordinary resume machinery then loads with the full history
-in context. Continuation is not a pasted summary; the receiving agent
-remembers the conversation, because as far as its harness can tell, it had it.
-Devin accounts are managed in **Settings → Agents** — several at once, each
-session's path naming the account it came from. (They persist in
-`~/.mako/devin.json`, which scripts may also write.)
-
-**Accounts** — several logins per CLI, switchable in Settings → Agents.
-Each captured account is an isolated config home selected by environment
-variable at spawn (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), with everything except
-credentials symlinked back to the real home — so skills and sessions are
-identical across accounts, and the only thing that changes is who pays.
-Usage comes from the providers' own endpoints: five-hour and weekly windows
-per account, and a quiet suggestion when the active one is nearly spent and
-another has headroom. Nothing ever switches by itself.
-
-**MCP servers** — Settings → MCP servers discovers Claude, Codex, Cursor, Grok,
-and Devin configuration into one redacted registry. Mako injects portable
-missing definitions into local sessions and can preview an explicit user- or
-project-scoped sync before writing provider config. Secret values never cross
-the desktop bridge, OAuth remains provider-owned, and sync never removes a
-server. The bundled server uses MCP 2025-11-25 through the current TypeScript
-SDK, including tool safety annotations and Streamable HTTP compatibility.
-
-**Backend control plane** — `packages/backend` deploys a narrow Next.js service
-on Vercel. It serves authenticated Streamable HTTP MCP, publishes trusted skills,
-and receives verified Slack events through Vercel Connect. Slack work waits in
-an Azure Queue until the local Mako host leases it, then runs through the chosen
-Claude Code, Codex, Cursor, or Grok harness using that harness’s existing account
-and model. Thread mappings live in Azure Table Storage, so a sleeping laptop loses
-nothing. Backend credentials remain in the host and macOS Keychain rather than
-provider configuration or renderer state.
-
-**Local computer and browser tools** — Mako exposes optional managed MCP
-definitions for macOS Harness and CUA Driver. macOS Harness is wrapped by
-Mako's local stdio server; CUA uses its signed driver and private embedded
-socket for isolated local browser and computer control. These tools attach only
-to sessions launched by Mako and are never synced into provider clients.
-
-⌘K reaches every command, model, and session. ⌘P opens a file by name. **⌘/**
-shows what every region is for and every key that does something — generated
-from the command registry, so it cannot drift from the app, and it includes
-anything a plugin has registered.
-
-On a first run the empty conversation carries a four-line checklist. Each line
-completes by being done rather than by being clicked, and the whole thing
-disappears for good once it is finished.
-
-## Performance
-
-Streaming is the design constraint. The host sends only the in-flight message
-on the hot path and coalesces bursts to one flush per frame. Message identity
-is reconciled across updates, so a token re-renders one turn rather than the
-window. A background tab sends only the scalars its strip entry needs and hands
-over the transcript when you switch to it. The session list is virtualized,
-offscreen turns are skipped with `content-visibility`, and the diff engine is
-code-split out of the boot path.
-
-## Watching it run
-
-⌘⇧P opens the project's dev server beside the conversation. It lists the npm
-scripts this project actually has rather than guessing one, or points at a
-server you already have running. Nothing starts on its own — running an
-arbitrary script because someone opened a panel is not a thing an editor should
-do quietly — and stopping it kills the whole process group, so nothing is left
-holding a port. The server's own output is one click away, and opens itself
-when the server dies.
-
-## Usage
-
-Settings → Usage adds up what every model has cost you, by day, by model and
-by project, read from your own session files. No account and no network: the
-numbers are already on disk. It is spend, not billing — a payment method and an
-account model are a server and a product decision, not something to imply with
-a currency symbol.
-
-## Automations
-
-Saved prompts that can run on their own, defined in `.mako/automations.json`
-so they can be committed and shared. Three triggers: **manual**, **on file
-change** (globs), and **on commit**. A run opens a background tab — it never
-takes the window, because it fired when a file changed, not when you asked.
-
-Every automation arrives switched off, and enabling is local and never written
-back: cloning a repository must not start running an agent. A file trigger
-waits a minute between runs, so an agent editing the files it watches cannot
-loop.
-
-There is deliberately no schedule trigger. An app that is closed cannot fire
-one, and an app that is open quietly running jobs against your repository is a
-surprise nobody asked for. That wants a daemon, which is a different decision.
-
-## Ports
-
-The preview lists everything listening on the machine, with the ones that look
-like development servers first and the background machinery every Mac runs
-filtered out. Click one to preview it. The remote half of port forwarding needs
-a container to forward from and there is not one; this is the half that gets
-used anyway, when the agent starts a backend on one port and a front end on
-another.
-
-## Reviewing what the agent wrote
-
-Hover a line in the diff and comment on it, the way you would on a pull
-request. Notes collect at the bottom of the panel; **Send to the agent** turns
-them into one message — grouped by file, ordered by line, each quoting the line
-it is about — and drops it in the composer so you can add a sentence before
-sending. Notes survive a reload. The alternative is describing the location in
-prose, which is where the friction has always been: `src/net.ts:42` is not a
-sentence anyone should have to compose.
-
-## GitHub
-
-The branch's pull request lives under the commit box: state, base, diff size,
-whether CI passed, whether anyone approved, and whether it conflicts. No PR yet
-and commits to push? One line offers to open one — the agent drafts the title
-and body from the diff, you edit them, and nothing is published until you press
-the button. Authentication is whatever `gh` already has; if `gh` is missing or
-logged out, none of this appears rather than nagging.
-
-## Shipping it
-
-```bash
-npm run package    # builds a DMG and a zip into release/
+```text
+Provider stores and CLIs
+  Claude Code · Codex · Cursor · Grok · Devin
+                    │
+                    ▼
+      host process + @mako/sessions
+  credentials · processes · git · native formats
+                    │
+          one redacted IPC contract
+                    │
+                    ▼
+              React renderer
+ transcript · workbench · review · settings · plugins
 ```
 
-Pushing a `v*` tag builds on macOS and Linux and publishes to GitHub releases,
-which is also the update feed. The app checks on launch and every six hours,
-downloads on its own, and **never installs on its own** — a turn can run for
-minutes and touch real files, so the restart is always a click. Builds are
-unsigned until certificates exist; they install and update either way, macOS
-just asks once on first launch.
+The streaming hot path sends only the in-flight message and coalesces updates to
+one flush per frame. Session discovery uses bounded reads and persistent caches;
+unchanged sessions cost a stat and zero transcript reads. Long lists are
+virtualized, offscreen turns use `content-visibility`, and the syntax/diff engine
+loads only when a file opens.
 
-## Checking the UI
+## Build and release
 
 ```bash
-MAKO_AUTOMATION=7333 npm run desktop
-scripts/probe.sh 'document.querySelectorAll("[data-line]").length'
+npm run lint
+npm run typecheck:all
+npm run package:mac
 ```
 
-A loopback endpoint that evaluates an expression in the window, so a check can
-click a button, measure it, or hover it without taking over the pointer. Off
-unless a development build is launched with that variable set.
+`npm run package:mac` produces ARM64 DMG and ZIP artifacts in `release/`.
+Pushing a `v*` tag runs the GitHub release workflow, tests the repository,
+builds the Apple-silicon app, writes SHA-256 checksums, uploads workflow
+artifacts, and publishes the GitHub release. The same workflow can be run
+manually without publishing a release.
 
-## When it breaks
+## Security and privacy
 
-A component that throws no longer takes the window with it: you get a screen
-that says what happened and offers to retry or reload, and the agent keeps
-running either way — it lives in the main process. Unhandled errors, rejections
-and a dead renderer are written to `<userData>/crashes` with the app and OS
-versions and a trail of the last IPC calls. **Nothing is sent anywhere.**
-Settings → Diagnostics lists them and copies one on request.
+- Provider credentials remain in provider config or macOS Keychain.
+- Secrets are redacted before crossing IPC.
+- Slack requests use timestamped HMAC verification or Vercel Connect’s verified
+  connector path, plus an explicit user allowlist.
+- Automation definitions are shareable, but every automation starts disabled on
+  a new machine and enabled state is never committed.
+- Browser and computer-use tools run locally and are attached only to sessions
+  Mako launches.
+- Crash reports stay on disk unless you copy one yourself.
 
-## Extending it
+## Contributing
 
-Commands, slots, tool views, and inspector panels are registries in
-`src/extend/`. Everything Mako ships is registered through that same public
-API, so a plugin can add or replace any of it. See `AGENTS.md`.
+Read [`AGENTS.md`](AGENTS.md) before changing architecture or UI. The key rules:
+providers remain peers, internal implementation libraries never become public
+provider concepts, and Oxlint anti-slop must stay at zero warnings and errors.
 
-## Notes
+```bash
+npm run typecheck:all
+npm run lint
+npm test --workspace @mako/sessions
+npm run backend:test
+```
 
-`ignore/` is gitignored study material. Don't import from it.
+Issues and focused pull requests are welcome.
 
-If you see `Invalid signature in thinking block`, a reasoning block from before
-a mid-session model switch is being replayed and the provider will not take it.
-Start a new session, or turn thinking off.
+## License
+
+[MIT](LICENSE) © 2026 Mako contributors.

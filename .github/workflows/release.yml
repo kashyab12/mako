@@ -1,7 +1,5 @@
-name: Release
+name: Apple silicon release
 
-# Cutting a release is pushing a tag. Nothing else triggers a publish — a
-# release built from an arbitrary commit is a release nobody can point at.
 on:
   push:
     tags: ["v*"]
@@ -11,19 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      # One failing platform must not delete the artifacts of the others; the
-      # release is assembled from whatever finishes.
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-14
-            name: macOS
-          - os: ubuntu-24.04
-            name: Linux
-    runs-on: ${{ matrix.os }}
-    name: ${{ matrix.name }}
+  macos-arm64:
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
@@ -33,19 +20,45 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck:all
+      - run: npm test --workspace @mako/sessions
+      - run: npm run backend:test
 
-      # The same gate that must pass locally. `tsc -b` follows the project
-      # references; `tsc --noEmit` does not, and would check nothing here.
-      - run: npm run typecheck
-
-      - name: Build and publish
-        run: npx electron-builder --publish always
+      - name: Build Apple silicon app
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+            npm run release
+          else
+            npm run package:mac
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Signing and notarization are skipped until the certificates exist.
-          # An unsigned build still installs and still auto-updates; it just
-          # asks the user to confirm on first launch. Set these three secrets
-          # and the same workflow starts producing signed builds.
           CSC_LINK: ${{ secrets.MAC_CERT_P12 }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Write checksums
+        run: |
+          cd release
+          shasum -a 256 *.dmg *.zip > SHA256SUMS.txt
+
+      - name: Attach checksums to GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: gh release upload "$GITHUB_REF_NAME" release/SHA256SUMS.txt --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mako-macOS-arm64
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/latest-mac.yml
+            release/*.blockmap
+            release/SHA256SUMS.txt
+          if-no-files-found: error
