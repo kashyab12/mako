@@ -13,6 +13,53 @@ interface ToolEdit {
   newText: string
 }
 
+const TOOL_LABELS = new Map([
+  ["bash", "Shell"],
+  ["Bash", "Shell"],
+  ["shell", "Shell"],
+  ["Shell", "Shell"],
+  ["exec_command", "Shell"],
+  ["edit", "Edit"],
+  ["Edit", "Edit"],
+  ["write", "Write"],
+  ["Write", "Write"],
+  ["read", "Read"],
+  ["Read", "Read"],
+  ["grep", "Search"],
+  ["Grep", "Search"],
+  ["rg", "Search"],
+  ["find", "Find"],
+  ["glob", "Find"],
+  ["Glob", "Find"],
+  ["ls", "List"],
+  ["webfetch", "Web"],
+  ["WebFetch", "Web"],
+  ["websearch", "Web search"],
+  ["WebSearch", "Web search"],
+  ["apply_patch", "Edit"],
+  ["ReadFile", "Read"],
+  ["read_file", "Read"],
+  ["web_search", "Web search"],
+  ["list_agents", "Agents"],
+  ["wait_agent", "Wait for agent"],
+  ["send_message", "Message agent"],
+  ["read_subagent", "Read agent"],
+  ["Agent", "Agent"],
+  ["Subagent", "Agent"],
+  ["subagent", "Agent"],
+  ["Task", "Agent"],
+  ["task", "Agent"],
+  ["run_subagent", "Background agent"],
+  ["AwaitShell", "Wait for shell"],
+  ["write_stdin", "Terminal input"],
+  ["TodoWrite", "Plan"],
+  ["CreatePlan", "Plan"],
+  ["TaskCreate", "Create task"],
+  ["TaskUpdate", "Update task"],
+  ["ToolSearch", "Find tool"],
+  ["ScheduleWakeup", "Schedule"],
+])
+
 function parseToolContent<Content>(value: Content): ToolContent | undefined {
   let serialized: string | undefined
   try {
@@ -40,7 +87,15 @@ function isToolArguments(content: ToolContent | undefined): content is ToolArgum
 
 function parseToolArguments<Content>(value: Content): ToolArguments | undefined {
   const content = parseToolContent(value)
-  return isToolArguments(content) ? content : undefined
+  if (isToolArguments(content)) return content
+  const nested = stringContent(content)
+  if (!nested) return undefined
+  try {
+    const parsed: ToolContent = JSON.parse(nested)
+    return isToolArguments(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function stringContent(content: ToolContent | undefined): string | undefined {
@@ -52,8 +107,14 @@ function stringContent(content: ToolContent | undefined): string | undefined {
 function parseToolEdit(content: ToolContent): ToolEdit {
   const edit = isToolArguments(content) ? content : undefined
   return {
-    oldText: stringContent(edit?.oldText) ?? "",
-    newText: stringContent(edit?.newText) ?? "",
+    oldText:
+      stringContent(edit?.oldText) ??
+      stringContent(edit?.old_string) ??
+      "",
+    newText:
+      stringContent(edit?.newText) ??
+      stringContent(edit?.new_string) ??
+      "",
   }
 }
 
@@ -149,9 +210,96 @@ export function argAt<Content>(value: Content, key: string): string | undefined 
   return stringContent(parseToolArguments(value)?.[key])
 }
 
+export function booleanArgAt<Content>(
+  value: Content,
+  key: string
+): boolean | undefined {
+  const result = parseToolArguments(value)?.[key]
+  return Object.prototype.toString.call(result) === "[object Boolean]"
+    ? Boolean(result)
+    : undefined
+}
+
+export const SUBAGENT_LAUNCH_TOOLS = [
+  "Agent",
+  "Subagent",
+  "Task",
+  "task",
+  "run_subagent",
+  "spawn_agent",
+] as const
+
+export const SUBAGENT_CONTROL_TOOLS = [
+  "subagent",
+  "read_subagent",
+  "send_input",
+  "close_agent",
+  "send_message",
+  "list_agents",
+  "wait_agent",
+  "wait",
+] as const
+
+export const SUBAGENT_TOOLS = [
+  ...SUBAGENT_LAUNCH_TOOLS,
+  ...SUBAGENT_CONTROL_TOOLS,
+] as const
+
+export function isSubagentLaunch(call: ToolCall): boolean {
+  if (SUBAGENT_LAUNCH_TOOLS.some((candidate) => candidate === call.name)) {
+    return true
+  }
+  return (
+    call.name === "subagent" &&
+    Boolean(
+      argAt(call.arguments, "task") ??
+        argAt(call.arguments, "prompt") ??
+        argAt(call.arguments, "description")
+    )
+  )
+}
+
+export function isSubagentTool(name: string): boolean {
+  return SUBAGENT_TOOLS.some((candidate) => candidate === name)
+}
+
+export function reportedSubagentCount(call: ToolCall): number {
+  if (call.name !== "list_agents" || !call.result) return 0
+  try {
+    const parsed: ToolContent = JSON.parse(call.result)
+    const agents = isToolArguments(parsed) ? parsed.agents : undefined
+    return Array.isArray(agents) ? agents.length : 0
+  } catch {
+    return 0
+  }
+}
+
+export function subagentResultId(result: string | undefined): string | undefined {
+  if (!result) return undefined
+  return /<subagent\s+[^>]*sessionID="([^"]+)"/.exec(result)?.[1]
+}
+
+export function subagentResultText(result: string | undefined): string | undefined {
+  if (!result) return undefined
+  const error = /<task_error>([\s\S]*?)<\/task_error>/.exec(result)?.[1]
+  if (error?.trim()) return error.trim()
+  const completed = /<task_result>([\s\S]*?)<\/task_result>/.exec(result)?.[1]
+  if (completed?.trim()) return completed.trim()
+  const subagent = /<subagent\s+[^>]*>([\s\S]*?)<\/subagent>/.exec(result)?.[1]
+  if (subagent?.trim()) return subagent.trim()
+  return /^<(?:subagent|task_(?:result|error))\b/i.test(result.trim())
+    ? "Subagent result was incomplete."
+    : result
+}
+
 export function toolLabel(name: string): string {
+  const label = TOOL_LABELS.get(name)
+  if (label) return label
   if (name.startsWith("mako_macos_")) {
     return `macOS ${name.slice("mako_macos_".length).replaceAll("_", " ")}`
+  }
+  if (name.startsWith("mako_preview_")) {
+    return `Preview ${name.slice("mako_preview_".length).replaceAll("_", " ")}`
   }
   if (name.startsWith("browser_")) {
     return `Browser ${name.slice("browser_".length).replaceAll("_", " ")}`
@@ -171,7 +319,7 @@ export function editsOf(call: ToolCall): ToolEdit[] {
   const args = parseToolArguments(call.arguments)
   if (!args) return []
   if (Array.isArray(args.edits)) return args.edits.map(parseToolEdit)
-  const oldText = stringContent(args.oldText)
-  const newText = stringContent(args.newText)
+  const oldText = stringContent(args.oldText) ?? stringContent(args.old_string)
+  const newText = stringContent(args.newText) ?? stringContent(args.new_string)
   return oldText === undefined || newText === undefined ? [] : [{ oldText, newText }]
 }
