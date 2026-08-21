@@ -21,28 +21,33 @@ database.exec(`
     working_directory TEXT NOT NULL,
     model TEXT NOT NULL,
     title TEXT NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    main_chain_id INTEGER
   );
   CREATE TABLE message_nodes (
     row_id INTEGER PRIMARY KEY,
     session_id TEXT NOT NULL,
     node_id INTEGER NOT NULL,
+    parent_node_id INTEGER,
     chat_message TEXT NOT NULL,
     created_at INTEGER NOT NULL
   );
 `)
 
 database
-  .prepare("INSERT INTO sessions VALUES (?, 0, ?, ?, ?, ?, ?)")
-  .run("session-1", 2, "/work", "gpt-5-6-sol-high-priority", "Live session", 1)
+  .prepare(
+    "INSERT INTO sessions (id, hidden, last_activity_at, working_directory, model, title, created_at, main_chain_id) VALUES (?, 0, ?, ?, ?, ?, ?, ?)"
+  )
+  .run("session-1", 2, "/work", "gpt-5-6-sol-high-priority", "Live session", 1, 2)
 const insert = database.prepare(
-  "INSERT INTO message_nodes VALUES (?, ?, ?, ?, ?)"
+  "INSERT INTO message_nodes (row_id, session_id, node_id, parent_node_id, chat_message, created_at) VALUES (?, ?, ?, ?, ?, ?)"
 )
-insert.run(1, "session-1", 1, JSON.stringify({ role: "user", content: "hello" }), 1)
+insert.run(1, "session-1", 1, null, JSON.stringify({ role: "user", content: "hello" }), 1)
 insert.run(
   2,
   "session-1",
   2,
+  1,
   JSON.stringify({
     role: "assistant",
     thinking: { text: "checking" },
@@ -54,6 +59,14 @@ insert.run(
       },
     ],
   }),
+  2
+)
+insert.run(
+  6,
+  "session-1",
+  100,
+  null,
+  JSON.stringify({ role: "user", content: "internal subagent prompt" }),
   2
 )
 
@@ -88,22 +101,23 @@ try {
   const follower = provider.createFollower(file.path, file.bytes)
   const writable = new DatabaseSync(join(dir, "sessions.db"))
   writable
-    .prepare("INSERT INTO message_nodes VALUES (?, ?, ?, ?, ?)")
+    .prepare("INSERT INTO message_nodes VALUES (?, ?, ?, ?, ?, ?)")
     .run(
       3,
       "session-1",
       3,
+      2,
       JSON.stringify({ role: "tool", tool_call_id: "tool-1", content: "/work" }),
       3
     )
   writable
-    .prepare("UPDATE sessions SET last_activity_at = ? WHERE id = ?")
-    .run(3, "session-1")
+    .prepare("UPDATE sessions SET last_activity_at = ?, main_chain_id = ? WHERE id = ?")
+    .run(3, 3, "session-1")
   writable.close()
 
   const completed = await follower.next()
   assert.equal(completed.replace, true)
-  assert.equal(completed.replaceFrom, 0)
+  assert.equal(completed.replaceFrom, 1)
   const completedTool = completed.entries
     .filter((entry) => entry.kind === "assistant")
     .flatMap((entry) => entry.blocks)
@@ -112,11 +126,14 @@ try {
 
   const continued = new DatabaseSync(join(dir, "sessions.db"))
   continued
-    .prepare("INSERT INTO message_nodes VALUES (?, ?, ?, ?, ?)")
-    .run(4, "session-1", 4, JSON.stringify({ role: "user", content: "continue" }), 4)
+    .prepare("INSERT INTO message_nodes VALUES (?, ?, ?, ?, ?, ?)")
+    .run(4, "session-1", 4, 3, JSON.stringify({ role: "user", content: "continue" }), 4)
   continued
-    .prepare("INSERT INTO message_nodes VALUES (?, ?, ?, ?, ?)")
-    .run(5, "session-1", 5, JSON.stringify({ role: "assistant", content: "done" }), 5)
+    .prepare("INSERT INTO message_nodes VALUES (?, ?, ?, ?, ?, ?)")
+    .run(5, "session-1", 5, 4, JSON.stringify({ role: "assistant", content: "done" }), 5)
+  continued
+    .prepare("UPDATE sessions SET last_activity_at = ?, main_chain_id = ? WHERE id = ?")
+    .run(5, 5, "session-1")
   continued.close()
 
   const appended = await follower.next()

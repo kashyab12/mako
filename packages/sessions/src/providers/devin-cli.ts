@@ -92,7 +92,6 @@ interface MessageRow {
 interface MessageTranslator {
   push(row: MessageRow): void
   snapshot(): ThreadEntry[]
-  readonly unmatchedToolResult: boolean
 }
 
 let sqliteOpen: ((path: string) => DatabaseSync) | null | undefined
@@ -154,7 +153,7 @@ export class DevinCliProvider implements SessionProvider {
       const stored = db
         .prepare(
           `SELECT s.id AS id, s.last_activity_at AS activity,
-                  (SELECT COALESCE(MAX(row_id), 0) FROM message_nodes m WHERE m.session_id = s.id) AS top
+                  COALESCE(s.main_chain_id, 0) AS top
            FROM sessions s WHERE s.hidden = 0`
         )
         .all()
@@ -230,18 +229,9 @@ export class DevinCliProvider implements SessionProvider {
     const db = await openDatabase(this.dbPath())
     if (!db) return null
     try {
-      const stored = db
-        .prepare(
-          "SELECT row_id, chat_message, created_at FROM message_nodes WHERE session_id = ? ORDER BY row_id"
-        )
-        .iterate(id)
+      const cursor = mainChainId(db, id)
       const into = translator()
-      let cursor = 0
-      for (const fields of stored) {
-        const row = parseMessageRow(fields)
-        cursor = Math.max(cursor, row.rowId)
-        into.push(row)
-      }
+      for (const row of mainChainRows(db, id, cursor)) into.push(row)
       ref.bytes = cursor
       return { ref, entries: into.snapshot() }
     } catch {
@@ -254,8 +244,7 @@ export class DevinCliProvider implements SessionProvider {
   createFollower(path: string, fromByte: number): SessionFollower {
     const id = idOf(path)
     let cursor = fromByte
-    let into = translator()
-    let previous: string[] = []
+    let previous: string[] | null = null
 
     return {
       get offset() {
@@ -266,32 +255,14 @@ export class DevinCliProvider implements SessionProvider {
         const db = await openDatabase(this.dbPath())
         if (!db) return unchangedUpdate(cursor)
         try {
-          const stored = db
-            .prepare(
-              "SELECT row_id, chat_message, created_at FROM message_nodes WHERE session_id = ? AND row_id > ? ORDER BY row_id"
+          if (previous === null) {
+            previous = translatedMainChain(db, id, cursor).map((entry) =>
+              JSON.stringify(entry)
             )
-            .iterate(id, cursor)
-          let changed = false
-          for (const fields of stored) {
-            const row = parseMessageRow(fields)
-            cursor = Math.max(cursor, row.rowId)
-            into.push(row)
-            changed = true
           }
-          if (!changed) return unchangedUpdate(cursor)
-          if (into.unmatchedToolResult) {
-            const full = await this.read(path)
-            cursor = full?.ref.bytes ?? cursor
-            into = translator()
-            previous = []
-            return {
-              entries: full?.entries ?? [],
-              nextByte: cursor,
-              replace: true,
-              replaceFrom: 0,
-            }
-          }
-          const current = into.snapshot()
+          const nextCursor = mainChainId(db, id)
+          if (nextCursor === cursor) return unchangedUpdate(cursor)
+          const current = translatedMainChain(db, id, nextCursor)
           let shared = 0
           while (
             shared < previous.length &&
@@ -304,6 +275,7 @@ export class DevinCliProvider implements SessionProvider {
             ? current.slice(previous.length)
             : current.slice(shared)
           previous = current.map((entry) => JSON.stringify(entry))
+          cursor = nextCursor
           const update: SessionUpdate = {
             entries: structuredClone(entries),
             nextByte: cursor,
@@ -317,6 +289,54 @@ export class DevinCliProvider implements SessionProvider {
       },
     }
   }
+}
+
+function mainChainId(db: DatabaseSync, sessionId: string): number {
+  const stored = db
+    .prepare("SELECT COALESCE(main_chain_id, 0) AS main_chain_id FROM sessions WHERE id = ?")
+    .get(sessionId)
+  return stored && isSqliteNumber(stored.main_chain_id)
+    ? stored.main_chain_id
+    : 0
+}
+
+function mainChainRows(
+  db: DatabaseSync,
+  sessionId: string,
+  leafId: number
+): MessageRow[] {
+  if (leafId <= 0) return []
+  const stored = db
+    .prepare(
+      `WITH RECURSIVE chain(
+         row_id, node_id, parent_node_id, chat_message, created_at, depth
+       ) AS (
+         SELECT row_id, node_id, parent_node_id, chat_message, created_at, 0
+         FROM message_nodes
+         WHERE session_id = ? AND node_id = ?
+         UNION ALL
+         SELECT m.row_id, m.node_id, m.parent_node_id, m.chat_message,
+                m.created_at, chain.depth + 1
+         FROM message_nodes m
+         JOIN chain ON m.node_id = chain.parent_node_id
+         WHERE m.session_id = ?
+       )
+       SELECT row_id, chat_message, created_at
+       FROM chain
+       ORDER BY depth DESC`
+    )
+    .all(sessionId, leafId, sessionId)
+  return stored.map(parseMessageRow)
+}
+
+function translatedMainChain(
+  db: DatabaseSync,
+  sessionId: string,
+  leafId: number
+): ThreadEntry[] {
+  const into = translator()
+  for (const row of mainChainRows(db, sessionId, leafId)) into.push(row)
+  return into.snapshot()
 }
 
 async function lockedSessionIds(path: string): Promise<Set<string>> {
@@ -342,7 +362,6 @@ async function lockedSessionIds(path: string): Promise<Set<string>> {
 function translator(): MessageTranslator {
   const sink = new EntrySink()
   const tools = new Map<string, ToolBlock>()
-  let unmatchedToolResult = false
 
   return {
     push(row) {
@@ -379,19 +398,13 @@ function translator(): MessageTranslator {
         const block = message.tool_call_id
           ? tools.get(message.tool_call_id)
           : undefined
-        if (!block) {
-          unmatchedToolResult = true
-          return
-        }
+        if (!block) return
         const output = contentText(message.content)
         if (output) block.output = clip(output)
       }
     },
     snapshot() {
       return sink.snapshot()
-    },
-    get unmatchedToolResult() {
-      return unmatchedToolResult
     },
   }
 }
