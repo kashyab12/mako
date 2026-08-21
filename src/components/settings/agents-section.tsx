@@ -26,7 +26,7 @@ const HOW = new Map([
   ["cursor", "cursor-agent CLI"],
   ["grok", "grok CLI"],
   ["devin", "devin CLI / Zed / IDE"],
-  ["opencode", "opencode CLI / ACP"],
+  ["opencode", "OpenCode 2 / OpenCode / ACP"],
 ])
 
 const HARNESSES = Object.entries(HARNESS_LABEL).map(([id, name]) => ({
