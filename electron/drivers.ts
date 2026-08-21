@@ -99,9 +99,6 @@ function buildCodexResume(
     command: "codex",
     args: [
       "exec",
-      "resume",
-      id,
-      prompt,
       "--sandbox",
       "workspace-write",
       "--skip-git-repo-check",
@@ -112,6 +109,9 @@ function buildCodexResume(
       ...(tuning.serviceTier !== undefined
         ? ["-c", `service_tier="${tuning.serviceTier}"`]
         : []),
+      "resume",
+      id,
+      prompt,
     ],
   }
 }
