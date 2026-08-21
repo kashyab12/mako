@@ -16,6 +16,8 @@ import {
 
 interface RelayJobEntity extends TableEntity {
   createdAt: string
+  resultEffort?: string
+  resultFast?: boolean
   payload: string
   result?: string
   resultHarness?: string
@@ -28,6 +30,8 @@ interface RelayJobEntity extends TableEntity {
 
 interface RelayThreadEntity extends TableEntity {
   deviceId: string
+  effort?: string
+  fast?: boolean
   harness: string
   model?: string
   threadPath: string
@@ -193,6 +197,8 @@ export async function leaseRelayJob({
       kind: "completed",
       completion: RelayCompletionSchema.parse({
         deviceId: entity.workerId ?? deviceId,
+        effort: entity.resultEffort,
+        fast: entity.resultFast,
         harness: entity.resultHarness,
         jobId,
         messageId: message.messageId,
@@ -276,6 +282,8 @@ export async function recordRelayCompletion(
   const updated: RelayJobEntity = {
     ...entity,
     result: parsed.result,
+    resultEffort: parsed.effort,
+    resultFast: parsed.fast,
     resultHarness: parsed.harness,
     resultModel: parsed.model,
     status: "completed",
@@ -309,6 +317,8 @@ export async function markRelayDelivered({
       partitionKey: threadPartition(payload),
       rowKey: payload.slack.threadTs,
       deviceId: completion.deviceId,
+      effort: completion.effort,
+      fast: completion.fast,
       harness: completion.harness,
       model: completion.model,
       threadPath: completion.threadPath,
@@ -349,31 +359,4 @@ export async function readThreadMapping({
     if (error instanceof Error && statusCode(error) === 404) return null
     throw error
   }
-}
-
-export async function updateThreadSelection({
-  channel,
-  harness,
-  model,
-  teamId,
-  threadTs,
-}: {
-  channel: string
-  harness?: string
-  model?: string
-  teamId: string
-  threadTs: string
-}): Promise<RelayThreadEntity | null> {
-  const existing = await readThreadMapping({ channel, teamId, threadTs })
-  if (!existing) return null
-  const updated: RelayThreadEntity = {
-    ...existing,
-    harness: harness ?? existing.harness,
-    model: model === undefined ? existing.model : model,
-    updatedAt: new Date().toISOString(),
-  }
-  await relayClients().threads.updateEntity(updated, "Replace", {
-    etag: z.string().optional().parse(existing.etag),
-  })
-  return updated
 }

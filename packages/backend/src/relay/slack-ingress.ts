@@ -11,7 +11,6 @@ import {
   activeWorker,
   enqueueRelayJob,
   readThreadMapping,
-  updateThreadSelection,
 } from "./storage"
 
 const SlackMessageEventSchema = z.object({
@@ -99,6 +98,8 @@ async function processEvent(
   const command = parseSlackRelayCommand({
     mapping: mapping
       ? {
+          effort: mapping.effort,
+          fast: mapping.fast,
           harness: z
             .enum(["claude", "codex", "cursor", "grok"])
             .parse(mapping.harness),
@@ -122,48 +123,25 @@ async function processEvent(
   }
   if (command.kind === "status") {
     const worker = await activeWorker(callback.team_id)
+    const selection = mapping
+      ? [
+          `harness \`${mapping.harness}\``,
+          mapping.model ? `model \`${mapping.model}\`` : null,
+          mapping.effort ? `reasoning \`${mapping.effort}\`` : null,
+          mapping.fast === undefined ? null : `fast \`${mapping.fast ? "on" : "off"}\``,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : null
     await reply({
       channel: event.channel,
       text: worker
-        ? `Mako is online on *${worker.deviceName}*.${mapping ? ` This thread resumes \`${mapping.harness}\` at \`${mapping.threadPath}\`.` : " This Slack thread has no local Mako session yet."}`
+        ? `Mako is online on *${worker.deviceName}*.${mapping ? ` This thread resumes \`${mapping.threadPath}\` with ${selection}.` : " This Slack thread has no local Mako session yet."}`
         : "Mako is offline. New work will remain queued until your laptop reconnects.",
       threadTs,
     })
     return
   }
-  if (command.kind === "harness") {
-    const updated = await updateThreadSelection({
-      channel: event.channel,
-      harness: command.harness,
-      teamId: callback.team_id,
-      threadTs,
-    })
-    await reply({
-      channel: event.channel,
-      text: updated
-        ? `This Slack thread will continue with *${command.harness}*.`
-        : "Start or resume a Mako thread before changing its harness.",
-      threadTs,
-    })
-    return
-  }
-  if (command.kind === "model") {
-    const updated = await updateThreadSelection({
-      channel: event.channel,
-      model: command.model,
-      teamId: callback.team_id,
-      threadTs,
-    })
-    await reply({
-      channel: event.channel,
-      text: updated
-        ? `This Slack thread will use \`${command.model}\` on its next turn.`
-        : "Start or resume a Mako thread before changing its model.",
-      threadTs,
-    })
-    return
-  }
-
   const queued = await enqueueRelayJob(command.payload)
   if (!queued.created) return
   const worker = await activeWorker(callback.team_id)

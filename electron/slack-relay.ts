@@ -11,12 +11,15 @@ import {
   waitForNativeRun,
   type FreshOptions,
 } from "./drivers.js"
-import { harnessProfile } from "./harnesses.js"
+import { harnessProfile, resolveHarnessTuning } from "./harnesses.js"
+import type { HarnessModelOption } from "./shared.js"
 import { listThreads, transcriptInlineFor } from "./threads.js"
 
 const HarnessSchema = z.enum(["claude", "codex", "cursor", "grok"])
 
 const SelectionSchema = z.object({
+  effort: z.string().min(1).max(80).optional(),
+  fast: z.boolean().optional(),
   harness: HarnessSchema.optional(),
   model: z.string().min(1).max(160).optional(),
 })
@@ -49,6 +52,23 @@ const PayloadSchema = z.discriminatedUnion("kind", [
     selection: SelectionSchema,
     slack: SlackSchema,
     text: z.string(),
+  }),
+  z.object({
+    kind: z.literal("inspect-threads"),
+    query: z.string().optional(),
+    selection: SelectionSchema,
+    slack: SlackSchema,
+  }),
+  z.object({
+    kind: z.literal("inspect-models"),
+    selection: SelectionSchema,
+    slack: SlackSchema,
+  }),
+  z.object({
+    kind: z.literal("configure"),
+    selection: SelectionSchema,
+    slack: SlackSchema,
+    threadPath: z.string(),
   }),
 ])
 
@@ -85,6 +105,16 @@ async function deviceId(path: string): Promise<string> {
   }
 }
 
+function selectOption(
+  options: HarnessModelOption[],
+  id: string
+): Extract<HarnessModelOption, { kind: "select" }> | undefined {
+  return options.find(
+    (option): option is Extract<HarnessModelOption, { kind: "select" }> =>
+      option.kind === "select" && option.id === id
+  )
+}
+
 function findThread(query: string): ThreadRef | undefined {
   const normalized = query.toLowerCase()
   const refs = listThreads()
@@ -113,31 +143,61 @@ async function waitForFreshThread({
   return undefined
 }
 
-function tuning(model: string | undefined): FreshOptions {
-  return model ? { captureOutput: true, model } : { captureOutput: true }
-}
-
 async function executePayload(
   payload: z.infer<typeof PayloadSchema>,
   defaultCwd: string
 ): Promise<{
+  effort?: string
+  fast?: boolean
   harness: z.infer<typeof HarnessSchema>
   model?: string
   result: string
   threadPath?: string
 }> {
   const requested = payload.selection.harness
+  if (payload.kind === "inspect-threads") {
+    const query = payload.query?.toLowerCase()
+    const refs = listThreads()
+      .filter(
+        (ref) =>
+          !query ||
+          ref.nativeId.toLowerCase().includes(query) ||
+          ref.path.toLowerCase().includes(query) ||
+          ref.title?.toLowerCase().includes(query)
+      )
+      .slice(0, 15)
+    return {
+      harness: requested ?? "codex",
+      result:
+        refs.length > 0
+          ? refs
+              .map(
+                (ref) =>
+                  `• *${ref.title ?? "Untitled thread"}* — \`${ref.harness}\` — \`${ref.nativeId}\``
+              )
+              .join("\n")
+          : "Mako found no local threads matching that search.",
+    }
+  }
   const source =
-    payload.kind === "resume"
+    payload.kind === "resume" || payload.kind === "configure"
       ? findThread(payload.threadPath)
       : payload.kind === "resume-query"
         ? findThread(payload.query)
         : undefined
-  if (payload.kind !== "new" && !source) {
+  const failureThreadPath =
+    payload.kind === "configure" ? undefined : source?.path
+  if (
+    (payload.kind === "resume" ||
+      payload.kind === "resume-query" ||
+      payload.kind === "configure") &&
+    !source
+  ) {
+    const query = payload.kind === "resume-query" ? payload.query : payload.threadPath
     return {
       harness: requested ?? "codex",
       model: payload.selection.model,
-      result: `Mako could not find the local thread \`${payload.kind === "resume" ? payload.threadPath : payload.query}\`. Send \`help\` to see the available commands.`,
+      result: `Mako could not find the local thread \`${query}\`. Send \`threads\` to list resumable threads.`,
     }
   }
   const harness = requested ?? HarnessSchema.parse(source?.harness ?? "codex")
@@ -146,10 +206,26 @@ async function executePayload(
     return {
       harness,
       result: profile.error ?? `${profile.label} is not available on this Mac.`,
-      threadPath: source?.path,
+      threadPath: failureThreadPath,
     }
   }
-  const requestedModel = payload.selection.model
+  if (payload.kind === "inspect-models") {
+    return {
+      harness,
+      result: profile.models
+        .map((candidate) => {
+          const controls = candidate.options.map((option) =>
+            option.kind === "boolean"
+              ? option.label
+              : `${option.label}: ${option.values.map((value) => value.value).join(" | ")}`
+          )
+          return `• *${candidate.label}* — \`${candidate.id}\`${controls.length > 0 ? ` — ${controls.join(" · ")}` : ""}`
+        })
+        .join("\n"),
+    }
+  }
+  const requestedModel =
+    payload.selection.model ?? source?.model ?? profile.configuredModel ?? profile.defaultModel
   const selectedModel = requestedModel
     ? profile.models.find(
         (candidate) =>
@@ -160,32 +236,106 @@ async function executePayload(
   if (requestedModel && !selectedModel) {
     return {
       harness,
-      result: `Mako could not find \`${requestedModel}\` for ${profile.label}. Available models: ${profile.models.map((candidate) => `\`${candidate.id}\``).join(", ")}.`,
+      result: `Mako could not find \`${requestedModel}\` for ${profile.label}. Send \`models ${harness}\` to list live models.`,
+      threadPath: failureThreadPath,
+    }
+  }
+  const effort = payload.selection.effort
+  const effortOption = selectedModel
+    ? selectOption(selectedModel.options, "effort")
+    : undefined
+  if (
+    effort &&
+    (!effortOption || !effortOption.values.some((value) => value.value === effort))
+  ) {
+    return {
+      harness,
+      model: selectedModel?.id,
+      result: `\`${effort}\` is not available for this model. Send \`models ${harness}\` to see supported reasoning levels.`,
+      threadPath: failureThreadPath,
+    }
+  }
+  const fast = payload.selection.fast
+  const fastOption = selectedModel?.options.find((option) => option.id === "fast")
+  const speedOption = selectedModel
+    ? selectOption(selectedModel.options, "serviceTier")
+    : undefined
+  if (fast !== undefined && harness === "claude") {
+    return {
+      effort,
+      harness,
+      model: selectedModel?.id,
+      result: "Claude Code print mode does not currently expose its fast-mode control. Reasoning and model selection still work.",
+      threadPath: failureThreadPath,
+    }
+  }
+  if (fast !== undefined && !fastOption && !speedOption) {
+    return {
+      effort,
+      harness,
+      model: selectedModel?.id,
+      result: `Fast mode is not available for \`${selectedModel?.id ?? harness}\`.`,
+      threadPath: failureThreadPath,
+    }
+  }
+  const serviceTier = speedOption?.values.find((value) =>
+    fast
+      ? /fast|priority/i.test(`${value.value} ${value.label}`)
+      : /flex|standard|default/i.test(`${value.value} ${value.label}`)
+  )?.value
+  if (fast !== undefined && speedOption && !serviceTier) {
+    return {
+      effort,
+      harness,
+      model: selectedModel?.id,
+      result: `Mako could not map fast \`${fast ? "on" : "off"}\` to a speed tier for this model. Send \`models ${harness}\` to see its controls.`,
+      threadPath: failureThreadPath,
+    }
+  }
+  const resolved = resolveHarnessTuning(profile, {
+    model: selectedModel?.id,
+    effort,
+    fast,
+    options: serviceTier ? { serviceTier } : undefined,
+  })
+  const options: FreshOptions = {
+    ...resolved,
+    captureOutput: true,
+  }
+  const model = selectedModel?.id
+  if (payload.kind === "configure") {
+    return {
+      effort,
+      fast,
+      harness,
+      model,
+      result: `Updated this thread: harness \`${harness}\`${model ? ` · model \`${model}\`` : ""}${effort ? ` · reasoning \`${effort}\`` : ""}${fast === undefined ? "" : ` · fast \`${fast ? "on" : "off"}\``}.`,
       threadPath: source?.path,
     }
   }
-  const model = selectedModel?.id
-  const launchModel = selectedModel?.launchId ?? selectedModel?.id
+  const text = payload.text
   const cwd = source?.cwd ?? defaultCwd
   const before = new Set(listThreads().map((ref) => ref.path))
   const run =
     source && source.harness === harness
-      ? await resumeNative(source, payload.text, tuning(launchModel))
+      ? await resumeNative(source, text, options)
       : await startFresh(
           harness,
           cwd,
           source
-            ? `${(await transcriptInlineFor(source.path))?.content ?? ""}\n\nContinue this conversation with the user's new message:\n${payload.text}`
-            : payload.text,
-          tuning(launchModel)
+            ? `${(await transcriptInlineFor(source.path))?.content ?? ""}\n\nContinue this conversation with the user's new message:\n${text}`
+            : text,
+          options
         )
   const completed = await waitForNativeRun(run.path)
   if (completed.state.status !== "done") {
     return {
+      effort,
+      fast,
       harness,
       model,
       result: completed.state.error ?? `${harness} stopped before completing the turn.`,
-      threadPath: source?.path,
+      threadPath: failureThreadPath,
     }
   }
   const ref =
@@ -193,6 +343,8 @@ async function executePayload(
       ? source
       : await waitForFreshThread({ before, cwd, harness })
   return {
+    effort,
+    fast,
     harness,
     model: model ?? ref?.model,
     result: completed.text || `${harness} completed the turn without printable output.`,
@@ -251,6 +403,8 @@ async function poll(options: SlackRelayOptions, id: string): Promise<void> {
         "/api/relay/complete",
         JSON.stringify({
           deviceId: id,
+          effort: execution.effort,
+          fast: execution.fast,
           harness: execution.harness,
           jobId: leased.jobId,
           messageId: leased.messageId,

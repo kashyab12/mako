@@ -16,6 +16,8 @@ const SlackContextSchema = z.object({
 })
 
 const RuntimeSelectionSchema = z.object({
+  effort: z.string().min(1).max(80).optional(),
+  fast: z.boolean().optional(),
   harness: RelayHarnessSchema.optional(),
   model: z.string().min(1).max(160).optional(),
 })
@@ -40,6 +42,23 @@ export const RelayJobPayloadSchema = z.discriminatedUnion("kind", [
     selection: RuntimeSelectionSchema,
     slack: SlackContextSchema,
     text: z.string().min(1).max(20_000),
+  }),
+  z.object({
+    kind: z.literal("inspect-threads"),
+    query: z.string().max(500).optional(),
+    selection: RuntimeSelectionSchema,
+    slack: SlackContextSchema,
+  }),
+  z.object({
+    kind: z.literal("inspect-models"),
+    selection: RuntimeSelectionSchema,
+    slack: SlackContextSchema,
+  }),
+  z.object({
+    kind: z.literal("configure"),
+    selection: RuntimeSelectionSchema,
+    slack: SlackContextSchema,
+    threadPath: z.string().min(1).max(4_000),
   }),
 ])
 
@@ -78,6 +97,8 @@ export type RelayLease = z.infer<typeof RelayLeaseSchema>
 
 export const RelayCompletionSchema = z.object({
   deviceId: z.uuid(),
+  effort: z.string().min(1).max(80).optional(),
+  fast: z.boolean().optional(),
   harness: RelayHarnessSchema,
   jobId: z.uuid(),
   messageId: z.string().min(1),

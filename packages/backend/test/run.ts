@@ -137,6 +137,33 @@ assert.equal(continuation.kind, "enqueue")
 if (continuation.kind === "enqueue") {
   assert.equal(continuation.payload.kind, "resume")
 }
+for (const [text, field, value] of [
+  ["reasoning high", "effort", "high"],
+  ["fast on", "fast", true],
+  ["model gpt-5.6", "model", "gpt-5.6"],
+  ["harness codex", "harness", "codex"],
+] satisfies Array<
+  [string, "effort" | "fast" | "model" | "harness", string | boolean]
+>) {
+  const command = parseSlackRelayCommand({
+    mapping: {
+      harness: "claude",
+      model: "sonnet",
+      threadPath: "/tmp/thread",
+    },
+    slack,
+    text,
+  })
+  assert.equal(command.kind, "enqueue")
+  if (command.kind === "enqueue") {
+    assert.equal(command.payload.kind, "configure")
+    assert.equal(command.payload.selection[field], value)
+  }
+}
+assert.equal(
+  parseSlackRelayCommand({ mapping: null, slack, text: "threads auth" }).kind,
+  "enqueue"
+)
 assert.deepEqual(formatHarnessReplies("one\\n\\ntwo"), ["one\n\ntwo"])
 assert.equal(formatHarnessReplies("x".repeat(24_000)).length, 3)
 assert.deepEqual(backendStatus({}).relay, {
