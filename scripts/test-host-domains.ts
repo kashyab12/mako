@@ -42,6 +42,10 @@ try {
   const diff = await workspaceGit.diff("tracked.txt")
   assert.equal(diff.oldFile?.contents, "alpha needle\n")
   assert.equal(diff.newFile?.contents, "alpha needle\nchanged line\n")
+  const allDiffs = await workspaceGit.diffAll()
+  assert.equal(allDiffs.diffs.length, 1)
+  assert.equal(allDiffs.diffs[0]?.path, "tracked.txt")
+  assert.equal(allDiffs.truncated, 0)
 
   await workspaceGit.stage(["tracked.txt"])
   assert.equal((await workspaceGit.status()).files.find((file) => file.path === "tracked.txt")?.staged, true)

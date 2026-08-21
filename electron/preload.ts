@@ -313,6 +313,10 @@ const api = {
 
   gitStatus: () => invokeTrustedHost<GitStatus>("mako:git-status"),
   gitDiff: (path: string) => invokeTrustedHost<GitDiff>("mako:git-diff", path),
+  gitDiffAll: () =>
+    invokeTrustedHost<{ diffs: GitDiff[]; truncated: number }>(
+      "mako:git-diff-all"
+    ),
   gitStage: (paths: string[]) =>
     invokeTrustedHost<void>("mako:git-stage", paths),
   gitUnstage: (paths: string[]) =>

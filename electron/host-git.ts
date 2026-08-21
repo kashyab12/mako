@@ -212,6 +212,15 @@ export class WorkspaceGit {
     }
   }
 
+  async diffAll(): Promise<{ diffs: GitDiff[]; truncated: number }> {
+    const files = (await this.status()).files
+    const shown = files.filter((file) => !file.binary).slice(0, 25)
+    return {
+      diffs: await Promise.all(shown.map((file) => this.diff(file.path))),
+      truncated: files.length - shown.length,
+    }
+  }
+
   /**
    * One commit, as the files it touched.
    *

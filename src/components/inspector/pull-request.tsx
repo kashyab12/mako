@@ -64,7 +64,6 @@ export function PullRequestCard() {
     try {
       await getMako().gitPush()
       await actions.refreshGit()
-      toast.success("Pushed")
     } catch (error) {
       toast.error("Branch was not pushed", {
         description: error instanceof Error ? error.message : String(error),

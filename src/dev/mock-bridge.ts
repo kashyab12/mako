@@ -1041,6 +1041,23 @@ export function installMockBridge() {
         contents: "const sessions = useSession((state) => state.sessions)\n",
       },
     }),
+    gitDiffAll: async () => ({
+      diffs: [
+        {
+          path: "src/state/session.ts",
+          binary: false,
+          oldFile: {
+            name: "src/state/session.ts",
+            contents: "const sessions = useSession((state) => state)\n",
+          },
+          newFile: {
+            name: "src/state/session.ts",
+            contents: "const sessions = useSession((state) => state.sessions)\n",
+          },
+        },
+      ],
+      truncated: 0,
+    }),
     listPlugins: async () => [
       {
         id: "thread-counter",

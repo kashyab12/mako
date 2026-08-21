@@ -45,6 +45,7 @@ export interface Prefs {
   /** Folders open in the project tree. Keys are folded paths, not path prefixes. */
   openDirs: string[]
   autoOpenDiff: boolean
+  selectedDiffs: PreferenceStringMap
   /** The getting-started list is finished or dismissed, and will not return. */
   onboarded: boolean
   /** Checklist steps that have been true at least once. Done is done. */
@@ -105,6 +106,7 @@ const defaults: Prefs = {
   collapsedDirs: [],
   openDirs: [],
   autoOpenDiff: true,
+  selectedDiffs: {},
   onboarded: false,
   onboardedSteps: [],
   pinnedThreads: [],
@@ -282,6 +284,7 @@ function parsePrefs(value: JsonValue): Prefs | null {
     collapsedDirs: readStringList(value.collapsedDirs, defaults.collapsedDirs),
     openDirs: readStringList(value.openDirs, defaults.openDirs),
     autoOpenDiff: readBoolean(value.autoOpenDiff, defaults.autoOpenDiff),
+    selectedDiffs: readStringRecord(value.selectedDiffs),
     onboarded: readBoolean(value.onboarded, defaults.onboarded),
     onboardedSteps: readStringList(
       value.onboardedSteps,

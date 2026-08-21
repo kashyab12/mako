@@ -573,6 +573,10 @@ export class AgentHost {
     return this.workspaceGit.diff(path)
   }
 
+  async gitDiffAll(): Promise<{ diffs: GitDiff[]; truncated: number }> {
+    return this.workspaceGit.diffAll()
+  }
+
   async gitCommitFiles(
     hash: string
   ): Promise<Array<{ path: string; status: GitFileStatus; insertions: number; deletions: number; binary: boolean }>> {

@@ -19,6 +19,7 @@ import {
   ChevronRightIcon,
   Columns2Icon,
   FolderIcon,
+  Maximize2Icon,
   MinusIcon,
   PanelBottomCloseIcon,
   PanelBottomOpenIcon,
@@ -65,10 +66,11 @@ export function ChangesPanel() {
   const git = useSession((state) => state.git)
   const theme = usePrefs((prefs) => prefs.theme)
   const collapsed = usePrefs((prefs) => prefs.collapsedDirs)
+  const selectedDiffs = usePrefs((prefs) => prefs.selectedDiffs)
   const files = useMemo(() => git?.files ?? [], [git])
 
   const autoOpenDiff = usePrefs((prefs) => prefs.autoOpenDiff)
-  const [selected, setSelected] = useState<string>()
+  const selected = git?.root ? selectedDiffs[git.root] : undefined
   const [diff, setDiff] = useState<GitDiff>()
   const [diffStyle, setDiffStyle] = useState<"unified" | "split">("unified")
   const [wrapDiff, setWrapDiff] = useState(false)
@@ -116,6 +118,33 @@ export function ChangesPanel() {
       }
     })
   }, [])
+
+  const openWorkingTree = useCallback(() => {
+    void viewer.openDiff("Current changes", async () => {
+      const { diffs, truncated } = await getMako().gitDiffAll()
+      return {
+        diffs,
+        note:
+          truncated > 0
+            ? `${truncated} more changed file${truncated === 1 ? "" : "s"} — open it from the Changes list.`
+            : undefined,
+      }
+    })
+  }, [])
+
+  const selectFile = useCallback(
+    (filePath: string) => {
+      const root = git?.root
+      if (root) {
+        setPref("selectedDiffs", {
+          ...prefsStore.get().selectedDiffs,
+          [root]: filePath,
+        })
+      }
+      if (!prefsStore.get().autoOpenDiff) setPref("autoOpenDiff", true)
+    },
+    [git?.root]
+  )
 
   const allComments = useReview((state) => state.comments)
   const draft = useReview((state) => state.draft)
@@ -208,6 +237,13 @@ export function ChangesPanel() {
         </span>
         <div className="ml-auto flex items-center gap-0.5">
           <IconAction
+            label="Review current changes in the center"
+            size="xs"
+            onClick={openWorkingTree}
+          >
+            <Maximize2Icon />
+          </IconAction>
+          <IconAction
             label={staged === files.length ? "Unstage everything" : "Stage everything"}
             size="xs"
             onClick={() =>
@@ -246,7 +282,7 @@ export function ChangesPanel() {
               key={row.key}
               row={row}
               active={active?.path === row.file.path}
-              onSelect={setSelected}
+              onSelect={selectFile}
               onToggleStage={toggleStage}
             />
           )

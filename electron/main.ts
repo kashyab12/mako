@@ -564,6 +564,7 @@ function bindIpc() {
   handle("mako:git-diff", (_e, path: string) =>
     withHost((h) => h.gitDiff(path))
   )
+  handle("mako:git-diff-all", () => withHost((h) => h.gitDiffAll()))
   handle("mako:git-stage", (_e, paths: string[]) =>
     withHost((h) => h.gitStage(paths))
   )
