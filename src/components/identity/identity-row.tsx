@@ -24,31 +24,33 @@ export function IdentityRow() {
   }, [])
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="pressable flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors duration-100 hover:bg-fill-hover aria-expanded:bg-fill-selected"
-        >
-          {login ? (
-            <Avatar src={avatar} name={login} size={5} className="rounded-full" />
-          ) : (
-            <span className="flex size-5 items-center justify-center rounded-full bg-raised">
-              <UserIcon className="size-3 text-faint" />
+    <div className="px-2 pb-2 pt-1">
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="pressable flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors duration-100 hover:bg-fill-hover aria-expanded:bg-fill-selected"
+          >
+            {login ? (
+              <Avatar src={avatar} name={login} size={5} className="rounded-full" />
+            ) : (
+              <span className="flex size-5 items-center justify-center rounded-full bg-raised">
+                <UserIcon className="size-3 text-faint" />
+              </span>
+            )}
+            <span className="min-w-0 flex-1 truncate text-ui text-foreground/85">
+              {login ?? "Connect GitHub"}
             </span>
-          )}
-          <span className="min-w-0 flex-1 truncate text-ui text-foreground/85">
-            {login ?? "Connect GitHub"}
-          </span>
-          {activePlan ? (
-            <span className="shrink-0 text-label text-faint">{activePlan}</span>
-          ) : null}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" side="top" sideOffset={6} className="w-auto p-2">
-        <IdentityMenu />
-      </PopoverContent>
-    </Popover>
+            {activePlan ? (
+              <span className="shrink-0 text-label text-faint">{activePlan}</span>
+            ) : null}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" side="top" sideOffset={6} className="w-auto p-2">
+          <IdentityMenu />
+        </PopoverContent>
+      </Popover>
+    </div>
   )
 }
 

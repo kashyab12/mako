@@ -1,8 +1,14 @@
 import assert from "node:assert/strict"
+import { parseSlackWebhookBody } from "@chat-adapter/slack/webhook"
 import { z } from "zod"
 import { integrationCatalog } from "../src/integrations/catalog"
 import { formatHarnessReplies } from "../src/relay/delivery"
 import { parseSlackRelayCommand } from "../src/relay/commands"
+import {
+  prepareSlackRelayWebhook,
+  slackActionCommand,
+} from "../src/relay/slack-ingress"
+import { slackControlBlocks } from "../src/relay/slack-ui"
 import { listSkills, readSkill } from "../src/skills/catalog"
 import { backendStatus } from "../src/status"
 
@@ -164,6 +170,62 @@ assert.equal(
   parseSlackRelayCommand({ mapping: null, slack, text: "threads auth" }).kind,
   "enqueue"
 )
+const unsignedSlack = await prepareSlackRelayWebhook(
+  new Request("http://localhost:3000/api/slack/events", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  })
+)
+assert.equal(unsignedSlack.response.status, 401)
+
+const slash = parseSlackWebhookBody(
+  new URLSearchParams({
+    channel_id: "CTEST",
+    command: "/mako",
+    team_id: "TTEST",
+    text: "status",
+    trigger_id: "trigger-1",
+    user_id: "UTEST",
+  }).toString(),
+  { contentType: "application/x-www-form-urlencoded" }
+)
+assert.equal(slash.kind, "slash_command")
+if (slash.kind === "slash_command") assert.equal(slash.text, "status")
+const action = parseSlackWebhookBody(
+  new URLSearchParams({
+    payload: JSON.stringify({
+      type: "block_actions",
+      user: { id: "UTEST" },
+      team: { id: "TTEST" },
+      channel: { id: "CTEST" },
+      message: { ts: "123.456", thread_ts: "123.456" },
+      actions: [
+        {
+          action_id: "mako-harness",
+          type: "static_select",
+          selected_option: { value: "codex" },
+        },
+      ],
+    }),
+  }).toString(),
+  { contentType: "application/x-www-form-urlencoded" }
+)
+assert.equal(action.kind, "block_actions")
+if (action.kind === "block_actions") {
+  assert.equal(slackActionCommand(action), "harness codex")
+}
+const controls = JSON.stringify(slackControlBlocks())
+for (const actionId of [
+  "mako-harness",
+  "mako-reasoning",
+  "mako-fast-on",
+  "mako-status",
+  "mako-threads",
+  "mako-models",
+]) {
+  assert.match(controls, new RegExp(actionId))
+}
 assert.deepEqual(formatHarnessReplies("one\\n\\ntwo"), ["one\n\ntwo"])
 assert.equal(formatHarnessReplies("x".repeat(24_000)).length, 3)
 assert.deepEqual(backendStatus({}).relay, {
