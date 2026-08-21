@@ -1,115 +1,184 @@
-import { memo } from "react"
-import { useSurfaces } from "@/extend/surfaces"
-import { stage, useStage } from "@/state/stage"
-import { useTabs } from "@/state/tabs"
+import { IconAction } from "@/components/ui/kit"
+import { HarnessIcon } from "@/components/ui/provider-icon"
+import { MakoMark } from "@/components/ui/mako-mark"
+import { useAcp } from "@/state/acp"
 import { useSession } from "@/state/session"
-import { Keys } from "@/components/ui/kit"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import { formatChord } from "@/extend/commands"
+import { useThreads } from "@/state/threads"
+import { AGENT_TAB_ID, viewer, useViewer } from "@/state/viewer"
 import { cn } from "@/lib/utils"
+import { Columns2Icon, Rows2Icon, XIcon } from "lucide-react"
 
-/**
- * The stage strip: every reading surface of the current thread.
- *
- * This row replaced two older pieces of chrome at once — the inspector's tab
- * nav and the session tab strip. Horizontal tabs here mean *views of this
- * conversation*; the rail carries the conversations themselves, vertically.
- *
- * There is deliberately no "Chat" tab: the conversation is always on stage
- * and can never close, and a tab for a thing that cannot be left implies a
- * choice that does not exist. Each surface toggles when clicked; its ⌘digit
- * always opens it directly.
- *
- * It is a sibling of the stage, never its parent: a badge repaint or a
- * registry bump must not touch the cards.
- */
-export function StageStrip() {
-  const surfaces = useSurfaces().filter(
-    (surface) => surface.placement !== "bottom"
-  )
-  const activeId = useTabs((state) => state.activeId)
-  const companion = useStage((state) => state.byTab[activeId]?.companion ?? null)
-
-  return (
-    <nav className="flex h-9 shrink-0 items-center gap-0.5 px-2 pt-1.5">
-      {surfaces.map((surface, index) => {
-        const Icon = surface.icon
-        const on = companion === surface.id
-        return (
-          <StripTab
-            key={surface.id}
-            active={on}
-            icon={Icon ? <Icon className="size-3.5" /> : null}
-            label={surface.label}
-            keys={formatChord(`mod+${index + 2}`)}
-            onActivate={() => stage.toggle(surface.id)}
-            badge={surface.id === "changes" ? <ChangesBadge /> : null}
-          />
-        )
-      })}
-    </nav>
-  )
-}
-
-function StripTab({
-  active,
-  icon,
-  label,
-  keys,
-  badge,
-  onActivate,
+export function StageStrip({
+  paneId,
+  canClosePane,
 }: {
-  active: boolean
-  icon: React.ReactNode
-  label: string
-  keys: string[]
-  badge?: React.ReactNode
-  onActivate: () => void
+  paneId: string
+  canClosePane: boolean
 }) {
+  const pane = useViewer((state) =>
+    state.panes.find((candidate) => candidate.id === paneId)
+  )
+  const documents = useViewer((state) => state.documents)
+  const split = useViewer((state) => state.split)
+  const hasSecondPane = useViewer((state) => state.panes.length === 2)
+  const viewing = useThreads((state) => state.viewing?.ref)
+  const live = useAcp((state) => state.session)
+  const liveThreadPath = useAcp((state) => state.threadPath)
+  const nativeTitle = useSession((state) => state.meta?.sessionName)
+
+  if (!pane) return null
+  const canSplit = pane.activeId !== AGENT_TAB_ID
+  const viewingOwnsAgent = Boolean(
+    viewing && (!live || viewing.path !== liveThreadPath)
+  )
+  const agentHarness = viewingOwnsAgent ? viewing?.harness : live?.harness
+  const agentTitle =
+    (viewingOwnsAgent ? viewing?.title : live?.title) ?? nativeTitle ?? "Agent"
+
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-pressed={active}
-          // Mousedown, not click: switching a view should not wait out the
-          // press-release gap. Keyboard activation arrives with detail 0 and
-          // takes the click path instead.
-          onMouseDown={(event) => {
-            if (event.button === 0 && event.detail > 0) onActivate()
-          }}
-          onClick={(event) => {
-            if (event.detail === 0) onActivate()
-          }}
-          className={cn(
-            "flex h-7 items-center gap-1.5 rounded-md px-2 text-ui font-medium transition-colors duration-100",
-            active
-              ? "bg-fill-selected text-foreground"
-              : "text-faint hover:bg-fill-hover hover:text-muted-foreground"
-          )}
+    <div className="flex h-10 shrink-0 items-center border-b border-hairline bg-shell">
+      <div
+        role="tablist"
+        className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-2"
+      >
+        {pane.tabIds.map((id) => {
+          const document = documents[id]
+          const agent = id === AGENT_TAB_ID
+          if (!agent && !document) return null
+          const active = id === pane.activeId
+          const title = agent ? agentTitle : document.title
+          const pinned = agent || document.pinned
+          return (
+            <div
+              key={id}
+              data-active={active || undefined}
+              className={cn(
+                "group relative flex h-7 w-56 min-w-16 max-w-56 shrink items-center gap-0.5 overflow-hidden rounded-md",
+                active
+                  ? "bg-raised text-foreground"
+                  : "bg-shell text-faint hover:bg-fill-hover hover:text-muted-foreground"
+              )}
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={active}
+                tabIndex={active ? 0 : -1}
+                data-tab-id={id}
+                title={
+                  agent
+                    ? title
+                    : pinned
+                      ? document.path
+                      : `${document.path} · preview, double-click to pin`
+                }
+                onMouseDown={(event) => {
+                  if (event.button === 0 && event.detail > 0) {
+                    viewer.activate(pane.id, id)
+                  }
+                }}
+                onClick={(event) => {
+                  if (event.detail === 0) viewer.activate(pane.id, id)
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
+                      event.key
+                    )
+                  ) {
+                    return
+                  }
+                  event.preventDefault()
+                  const index = pane.tabIds.indexOf(id)
+                  const next =
+                    event.key === "Home"
+                      ? pane.tabIds[0]
+                      : event.key === "End"
+                        ? pane.tabIds.at(-1)
+                        : pane.tabIds[
+                            (index +
+                              (event.key === "ArrowRight" ? 1 : -1) +
+                              pane.tabIds.length) %
+                              pane.tabIds.length
+                          ]
+                  if (!next) return
+                  viewer.activate(pane.id, next)
+                  const list = event.currentTarget.closest('[role="tablist"]')
+                  requestAnimationFrame(() => {
+                    list
+                      ?.querySelector<HTMLButtonElement>(
+                        `[data-tab-id="${CSS.escape(next)}"]`
+                      )
+                      ?.focus()
+                  })
+                }}
+                onAuxClick={(event) => {
+                  if (!agent && event.button === 1) viewer.closeTab(pane.id, id)
+                }}
+                onDoubleClick={() => {
+                  if (!agent) viewer.pin(id)
+                }}
+                className="flex h-full min-w-0 flex-1 items-center gap-1.5 truncate px-1.5 text-left text-ui font-medium"
+              >
+                {agent ? (
+                  agentHarness ? (
+                    <HarnessIcon harness={agentHarness} className="size-4" />
+                  ) : (
+                    <MakoMark className="size-4 text-foreground/75" />
+                  )
+                ) : null}
+                <span className="truncate">{title}</span>
+              </button>
+              {!agent ? (
+                <button
+                  type="button"
+                  aria-label={`Close ${title}`}
+                  onClick={() => viewer.closeTab(pane.id, id)}
+                  className={cn(
+                    "pressable -ml-1 flex size-5 shrink-0 items-center justify-center rounded text-faint hover:bg-fill-hover hover:text-foreground",
+                    active
+                      ? "opacity-80"
+                      : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-80"
+                  )}
+                >
+                  <XIcon className="size-3" />
+                </button>
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
+      {!canClosePane ? (
+        <div className="flex shrink-0 items-center gap-0.5 px-1">
+          <IconAction
+            label="Split right"
+            size="xs"
+            disabled={!canSplit}
+            data-on={hasSecondPane && split === "right"}
+            onClick={() => viewer.splitPane("right")}
+          >
+            <Columns2Icon />
+          </IconAction>
+          <IconAction
+            label="Split down"
+            size="xs"
+            disabled={!canSplit}
+            data-on={hasSecondPane && split === "down"}
+            onClick={() => viewer.splitPane("down")}
+          >
+            <Rows2Icon />
+          </IconAction>
+        </div>
+      ) : (
+        <IconAction
+          label="Close pane"
+          size="xs"
+          className="m-1"
+          onClick={() => viewer.closePane(pane.id)}
         >
-          {icon}
-          {label}
-          {badge}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" sideOffset={6} className="gap-2">
-        {label}
-        <Keys keys={keys} inverted />
-      </TooltipContent>
-    </Tooltip>
+          <XIcon />
+        </IconAction>
+      )}
+    </div>
   )
 }
-
-/** A leaf on purpose: a git flush repaints this span and nothing else. */
-const ChangesBadge = memo(function ChangesBadge() {
-  const count = useSession((state) => state.git?.files.length ?? 0)
-  if (count === 0) return null
-  return (
-    <span className="tabular rounded bg-caution/15 px-1 text-label text-caution">{count}</span>
-  )
-})

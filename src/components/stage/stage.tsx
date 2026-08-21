@@ -6,13 +6,14 @@ import { AcpPanel } from "@/components/viewer/acp-panel"
 import { FileViewer } from "@/components/viewer/file-viewer"
 import { SearchView } from "@/components/search/search-view"
 import { Divider } from "@/components/shell/divider"
-import { useSurfaces } from "@/extend/surfaces"
+import {
+  useSurfaces,
+  type SurfaceDefinition,
+} from "@/extend/surfaces"
 import { stage, useStage } from "@/state/stage"
 import { useTabs } from "@/state/tabs"
 import { useThreads } from "@/state/threads"
 import { useAcp } from "@/state/acp"
-import { useViewer } from "@/state/viewer"
-import { useSearch } from "@/state/search"
 import { prefsStore, setPref, usePrefs } from "@/state/prefs"
 import {
   clampCompanionWidth,
@@ -32,11 +33,11 @@ const NO_COMPANION: TabStage = {
 }
 
 /**
- * The stage: chat, one reading companion beside it, and an independent dock.
+ * The stage: a central tab workbench, one right sidebar, and an independent dock.
  *
- * The chat card is rendered first, in a stable position, and is *hidden*
- * rather than unmounted when a companion covers the stage — opening a diff
- * must never cost the transcript its scroll position or its stream. This
+ * The workbench is rendered first, in a stable position, and is *hidden*
+ * rather than unmounted when the sidebar covers the stage — opening a panel
+ * must never cost the transcript or file tabs their state. This
  * container selects only the stage layout itself; git, meta, and messages
  * belong to the cards, so a token or a git flush cannot re-render the frame.
  */
@@ -44,6 +45,9 @@ export function Stage() {
   const activeId = useTabs((state) => state.activeId)
   const tabStage = useStage((state) => state.byTab[activeId] ?? NO_COMPANION)
   const surfaces = useSurfaces()
+  const sideSurfaces = surfaces.filter(
+    (surface) => surface.placement !== "bottom"
+  )
   const surfaceWidths = usePrefs((prefs) => prefs.surfaceWidths)
   const surfaceHeights = usePrefs((prefs) => prefs.surfaceHeights)
 
@@ -85,18 +89,19 @@ export function Stage() {
   const companionRef = useRef<HTMLDivElement>(null)
   const dockRef = useRef<HTMLDivElement>(null)
   const workbenchRef = useRef<HTMLDivElement>(null)
-  const [workbenchWidth, setWorkbenchWidth] = useState(640)
-  const [workbenchHeight, setWorkbenchHeight] = useState(360)
   const sideSurface = tabStage.companion
     ? surfaces.find((entry) => entry.id === tabStage.companion)
     : undefined
   const dockSurface = tabStage.dock
     ? surfaces.find((entry) => entry.id === tabStage.dock)
     : undefined
-  const min = Math.max(sideSurface?.minWidth ?? 0, COMPANION_MIN_DEFAULT)
+  const min = Math.max(
+    COMPANION_MIN_DEFAULT,
+    ...sideSurfaces.map((surface) => surface.minWidth ?? 0)
+  )
   const width = sideSurface
     ? clampCompanionWidth({
-        width: surfaceWidths[sideSurface.id] ?? min,
+        width: surfaceWidths["right-sidebar"] ?? 500,
         available: available?.width,
         min,
       })
@@ -120,74 +125,28 @@ export function Stage() {
     sideSurface &&
       (tabStage.presentation === "over" || !fitsBeside(available?.width, min))
   )
-  // Files take a stable workspace beside the mounted chat. At narrow widths
-  // that pair stacks vertically, while a companion steps aside without being
-  // closed so it can return when the workbench leaves.
-  const viewerUp = useViewer((state) => Boolean(state.path))
-  const searchUp = useSearch((state) => state.open)
-  const covered = wantsCover && !viewerUp && !searchUp
-  const companionHidden = viewerUp || (wantsCover && searchUp)
-  const viewerBelow = viewerUp && Boolean(available && available.width < 940)
-  const availableBodyHeight = Math.max(
-    360,
-    (available?.height ?? 800) - (dockSurface ? dockHeight + 9 : 0)
-  )
-  const workbenchMax = viewerBelow
-    ? Math.max(180, availableBodyHeight - 220)
-    : Math.max(280, (available?.width ?? 1200) - 380)
-  const workbenchMin = Math.min(viewerBelow ? 240 : 420, workbenchMax)
-  const workbenchSize = Math.min(
-    workbenchMax,
-    Math.max(workbenchMin, viewerBelow ? workbenchHeight : workbenchWidth)
-  )
+  const covered = wantsCover
 
   return (
     <div
       ref={stageRef}
       className="relative flex min-h-0 min-w-0 flex-1 flex-col"
     >
-      <div
-        className={cn(
-          "relative flex min-h-0 min-w-0 flex-1",
-          viewerBelow && "flex-col"
-        )}
-      >
-        <ChatCard hidden={covered} />
+      <div className="relative flex min-h-0 min-w-0 flex-1">
+        <FileViewer
+          AgentSurface={AgentSurface}
+          workspaceRef={workbenchRef}
+          className={cn("flex-1", covered && "hidden")}
+        />
 
-        {viewerUp ? (
-          <>
-            <Divider
-              side={viewerBelow ? "bottom" : "right"}
-              size={workbenchSize}
-              min={workbenchMin}
-              max={workbenchMax}
-              className={viewerBelow ? "mx-2 w-auto" : undefined}
-              onResize={(next) => {
-                if (!workbenchRef.current) return
-                if (viewerBelow) workbenchRef.current.style.height = `${next}px`
-                else workbenchRef.current.style.width = `${next}px`
-              }}
-              onCommit={(next) => {
-                if (viewerBelow) setWorkbenchHeight(next)
-                else setWorkbenchWidth(next)
-              }}
-            />
-            <FileViewer
-              workspaceRef={workbenchRef}
-              style={viewerBelow ? { height: workbenchSize } : { width: workbenchSize }}
-              className={viewerBelow ? "mx-2 mb-2 shrink-0" : "m-2 ml-0 shrink-0"}
-            />
-          </>
-        ) : null}
-
-        {sideSurface && !covered && !companionHidden ? (
+        {sideSurface && !covered ? (
           <Divider
             side="right"
             size={width}
             min={min}
             max={
               available
-                ? Math.max(available.width - 450 - 24, min)
+                ? Math.max(available.width - 450 - 1, min)
                 : 9999
             }
             onResize={(next) => {
@@ -197,7 +156,7 @@ export function Stage() {
             onCommit={(next) =>
               setPref("surfaceWidths", {
                 ...prefsStore.get().surfaceWidths,
-                [sideSurface.id]: next,
+                ["right-sidebar"]: next,
               })
             }
           />
@@ -206,17 +165,16 @@ export function Stage() {
         {sideSurface ? (
           <div
             ref={companionRef}
-            style={covered || companionHidden ? undefined : { width }}
+            style={covered ? undefined : { width }}
             className={cn(
-              "card relative m-2 ml-0 flex min-h-0 flex-col overflow-hidden",
-              covered && "ml-2 min-w-0 flex-1",
-              companionHidden && "hidden"
+              "relative flex min-h-0 flex-col overflow-hidden bg-surface",
+              covered && "min-w-0 flex-1"
             )}
           >
             {covered ? (
               <div className="flex h-8 shrink-0 items-center gap-2 border-b border-hairline px-2.5 text-label text-faint">
                 <span className="min-w-0 flex-1 truncate">
-                  {sideSurface.label} · conversation hidden at this width
+                  {sideSurface.label} · workbench hidden at this width
                 </span>
                 <button
                   type="button"
@@ -224,10 +182,14 @@ export function Stage() {
                   className="pressable flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground hover:bg-fill-hover hover:text-foreground"
                 >
                   <ArrowLeftIcon className="size-3" />
-                  Conversation
+                  Workbench
                 </button>
               </div>
             ) : null}
+            <RightSidebarTabs
+              surfaces={sideSurfaces}
+              activeId={sideSurface.id}
+            />
             <CompanionBody render={sideSurface.render} />
           </div>
         ) : null}
@@ -240,7 +202,6 @@ export function Stage() {
             size={dockHeight}
             min={dockMin}
             max={dockMax}
-            className="mx-2 w-auto"
             onResize={(next) => {
               if (dockRef.current) dockRef.current.style.height = `${next}px`
             }}
@@ -254,7 +215,7 @@ export function Stage() {
           <div
             ref={dockRef}
             style={{ height: dockHeight }}
-            className="card relative mx-2 mb-2 flex shrink-0 flex-col overflow-hidden"
+            className="relative flex shrink-0 flex-col overflow-hidden bg-surface"
           >
             <CompanionBody render={dockSurface.render} />
           </div>
@@ -264,25 +225,90 @@ export function Stage() {
   )
 }
 
-/**
- * The conversation, its composer, and the overlays that ride on it. Memoized
- * so stage-frame re-renders (a resize, a companion swap) reuse the subtree —
- * the transcript must keep scroll and stream across every stage change.
- */
-const ChatCard = memo(function ChatCard({ hidden }: { hidden: boolean }) {
+const AgentSurface = memo(function AgentSurface() {
   return (
-    <main
-      className={cn(
-        "card relative m-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
-        hidden && "hidden"
-      )}
-    >
+    <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <ConversationSurface />
       <Composer />
       <SearchView />
     </main>
   )
 })
+
+function RightSidebarTabs({
+  surfaces,
+  activeId,
+}: {
+  surfaces: SurfaceDefinition[]
+  activeId: string
+}) {
+  return (
+    <nav
+      role="tablist"
+      aria-label="Right sidebar"
+      className="flex h-10 shrink-0 items-center gap-1.5 overflow-hidden border-b border-hairline bg-shell px-2"
+    >
+      {surfaces.map((surface) => {
+        const active = surface.id === activeId
+        const Icon = surface.icon
+        return (
+          <button
+            key={surface.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            tabIndex={active ? 0 : -1}
+            data-surface-id={surface.id}
+            onClick={() => stage.open(surface.id)}
+            onKeyDown={(event) => {
+              if (
+                !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
+                  event.key
+                )
+              ) {
+                return
+              }
+              event.preventDefault()
+              const index = surfaces.findIndex(
+                (candidate) => candidate.id === surface.id
+              )
+              const next =
+                event.key === "Home"
+                  ? surfaces[0]
+                  : event.key === "End"
+                    ? surfaces.at(-1)
+                    : surfaces[
+                        (index +
+                          (event.key === "ArrowRight" ? 1 : -1) +
+                          surfaces.length) %
+                          surfaces.length
+                      ]
+              if (!next) return
+              stage.open(next.id)
+              const list = event.currentTarget.closest('[role="tablist"]')
+              requestAnimationFrame(() => {
+                list
+                  ?.querySelector<HTMLButtonElement>(
+                    `[data-surface-id="${CSS.escape(next.id)}"]`
+                  )
+                  ?.focus()
+              })
+            }}
+            className={cn(
+              "flex h-7 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-1.5 text-ui font-medium",
+              active
+                ? "bg-raised text-foreground"
+                : "bg-shell text-faint hover:bg-fill-hover hover:text-muted-foreground"
+            )}
+          >
+            {Icon ? <Icon className="size-3.5 shrink-0" /> : null}
+            <span className="truncate">{surface.label}</span>
+          </button>
+        )
+      })}
+    </nav>
+  )
+}
 
 const CompanionBody = memo(function CompanionBody({
   render: Render,

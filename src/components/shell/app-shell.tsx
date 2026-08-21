@@ -9,7 +9,6 @@ import { SessionRail } from "@/components/rail/session-rail"
 import { TitleBar } from "@/components/shell/title-bar"
 import { Divider } from "@/components/shell/divider"
 import { Stage } from "@/components/stage/stage"
-import { StageStrip } from "@/components/stage/stage-strip"
 import { Action, Blank } from "@/components/ui/kit"
 import { useDeskCommands } from "@/desk/use-desk-commands"
 import { actions, store, useSession } from "@/state/session"
@@ -122,7 +121,6 @@ export function AppShell() {
             </main>
           ) : (
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <StageStrip />
               <Stage />
             </div>
           )}

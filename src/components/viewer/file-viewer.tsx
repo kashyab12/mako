@@ -5,14 +5,17 @@ import {
   useEffect,
   useRef,
   useState,
+  type ComponentType,
   type CSSProperties,
   type RefObject,
 } from "react"
 import { Action, IconAction } from "@/components/ui/kit"
 import { Divider } from "@/components/shell/divider"
+import { StageStrip } from "@/components/stage/stage-strip"
 import { getMako } from "@/lib/bridge"
 import { prefsStore } from "@/state/prefs"
 import {
+  AGENT_TAB_ID,
   viewer,
   useViewer,
   type ViewerDocument,
@@ -23,12 +26,8 @@ import {
   AtSignIcon,
   BookOpenIcon,
   Code2Icon,
-  Columns2Icon,
   ExternalLinkIcon,
-  PinIcon,
   RefreshCwIcon,
-  Rows2Icon,
-  XIcon,
 } from "lucide-react"
 
 /** The highlighting runtime is heavy and nobody has opened a file yet. */
@@ -37,17 +36,19 @@ const View = lazy(() =>
 )
 
 /**
- * A renderer-local file workbench beside the mounted conversation.
+ * The central workbench for the agent session, files, and diffs.
  *
  * Tabs belong to a pane, transient previews are replaced by the state layer,
  * and the optional second pane writes drag sizes directly to its DOM node so
  * highlighting and Markdown do not re-render on every pointer move.
  */
 export function FileViewer({
+  AgentSurface,
   className,
   style,
   workspaceRef,
 }: {
+  AgentSurface: ComponentType
   className?: string
   style?: CSSProperties
   workspaceRef: RefObject<HTMLDivElement | null>
@@ -69,7 +70,7 @@ export function FileViewer({
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault()
-        viewer.close()
+        viewer.showAgent()
       }
     }
     window.addEventListener("keydown", onKey)
@@ -97,9 +98,7 @@ export function FileViewer({
       observer.disconnect()
       if (resizeTimer.current) clearTimeout(resizeTimer.current)
     }
-  }, [path])
-
-  if (!path) return null
+  }, [])
 
   const hasSecondPane = panes.length === 2
   const horizontal = split === "right"
@@ -114,35 +113,10 @@ export function FileViewer({
       ref={workspaceRef}
       style={style}
       className={cn(
-        "card animate-enter relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-surface",
+        "relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-surface",
         className
       )}
     >
-      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-hairline px-2">
-        <span className="min-w-0 flex-1 truncate px-1 text-ui font-medium text-muted-foreground">
-          Files
-        </span>
-        <IconAction
-          label="Split right"
-          size="xs"
-          data-on={hasSecondPane && split === "right"}
-          onClick={() => viewer.splitPane("right")}
-        >
-          <Columns2Icon />
-        </IconAction>
-        <IconAction
-          label="Split down"
-          size="xs"
-          data-on={hasSecondPane && split === "down"}
-          onClick={() => viewer.splitPane("down")}
-        >
-          <Rows2Icon />
-        </IconAction>
-        <IconAction label="Close file workspace" keys={["Esc"]} size="xs" onClick={() => viewer.close()}>
-          <XIcon />
-        </IconAction>
-      </div>
-
       <div
         ref={panesHost}
         className={cn(
@@ -151,6 +125,7 @@ export function FileViewer({
         )}
       >
         <FilePane
+          AgentSurface={AgentSurface}
           pane={panes[0]}
           documents={documents}
           focused={focusedPaneId === panes[0].id}
@@ -179,6 +154,7 @@ export function FileViewer({
               className="flex min-h-0 min-w-0 shrink-0"
             >
               <FilePane
+                AgentSurface={AgentSurface}
                 pane={panes[1]}
                 documents={documents}
                 focused={focusedPaneId === panes[1].id}
@@ -193,81 +169,43 @@ export function FileViewer({
 }
 
 const FilePane = memo(function FilePane({
+  AgentSurface,
   pane,
   documents,
   focused,
   canClosePane,
 }: {
+  AgentSurface: ComponentType
   pane: ViewerPane
   documents: Record<string, ViewerDocument>
   focused: boolean
   canClosePane: boolean
 }) {
+  const agent = pane.activeId === AGENT_TAB_ID
+  const hasAgent = pane.tabIds.includes(AGENT_TAB_ID)
   const document = pane.activeId ? documents[pane.activeId] : undefined
 
   return (
     <section
-      aria-label="File pane"
+      aria-label="Workbench pane"
       onPointerDown={() => viewer.focusPane(pane.id)}
       className={cn(
         "flex min-h-0 min-w-0 flex-1 flex-col bg-surface",
         focused && "ring-1 ring-border ring-inset"
       )}
     >
-      <div className="flex h-9 shrink-0 border-b border-hairline bg-raised/35">
-        <div role="tablist" className="flex min-w-0 flex-1 overflow-x-auto">
-          {pane.tabIds.map((id) => {
-            const tab = documents[id]
-            if (!tab) return null
-            const active = id === pane.activeId
-            return (
-              <div
-                key={id}
-                className={cn(
-                  "group flex h-full min-w-36 max-w-60 shrink-0 items-center border-r border-hairline",
-                  active ? "bg-surface text-foreground" : "text-faint hover:bg-fill-hover"
-                )}
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  title={tab.pinned ? tab.path : `${tab.path} · preview, double-click to pin`}
-                  onClick={() => viewer.activate(pane.id, id)}
-                  onDoubleClick={() => viewer.pin(id)}
-                  className={cn(
-                    "min-w-0 flex-1 truncate px-2 text-left font-mono text-label",
-                    !tab.pinned && "italic"
-                  )}
-                >
-                  {tab.pinned ? <PinIcon className="mr-1 inline size-2.5 text-faint" /> : null}
-                  {tab.title}
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Close ${tab.title}`}
-                  onClick={() => viewer.closeTab(pane.id, id)}
-                  className="pressable mr-1 flex size-5 shrink-0 items-center justify-center rounded text-faint opacity-70 hover:bg-fill-hover hover:text-foreground group-hover:opacity-100"
-                >
-                  <XIcon className="size-3" />
-                </button>
-              </div>
-            )
-          })}
+      <StageStrip paneId={pane.id} canClosePane={canClosePane} />
+      {hasAgent ? (
+        <div
+          className={cn(
+            "flex min-h-0 min-w-0 flex-1 flex-col",
+            !agent && "hidden"
+          )}
+        >
+          <AgentSurface />
         </div>
-        {canClosePane ? (
-          <IconAction
-            label="Close pane"
-            size="xs"
-            className="m-1"
-            onClick={() => viewer.closePane(pane.id)}
-          >
-            <XIcon />
-          </IconAction>
-        ) : null}
-      </div>
-
-      {document ? <DocumentView document={document} /> : null}
+      ) : null}
+      {!agent && document ? <DocumentView document={document} /> : null}
     </section>
   )
 })
