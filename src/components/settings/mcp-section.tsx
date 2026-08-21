@@ -246,8 +246,9 @@ export function McpSection() {
               Refresh
             </Action>
             <span className="text-label text-faint">
-              Preview is required before a write. Sync adds or replaces; it
-              never removes.
+              Preview is required before a write. Portable sync updates the
+              provider’s config and also affects that provider outside Mako;
+              Mako-managed browser and computer tools are never synced.
             </span>
           </div>
         </>
