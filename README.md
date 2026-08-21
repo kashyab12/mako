@@ -66,7 +66,7 @@ Xcode. Mako detects which editors are installed.
 | Cursor | yes | yes | yes | ACP |
 | Grok | yes | yes | yes | ACP |
 | Devin | yes | yes | yes | ACP |
-| OpenCode | yes | yes | yes | ACP |
+| OpenCode 2 / OpenCode | yes | yes | yes | ACP |
 
 Mako reads each tool’s session store directly. Credentials stay with the tool
 that owns them. The renderer receives a redacted, provider-independent IPC
