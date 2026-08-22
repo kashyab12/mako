@@ -56,7 +56,13 @@ const source = {
       at: "2026-08-18T10:00:10.000Z",
       blocks: [
         { type: "thinking", text: "Note the fact, check the repo." },
-        { type: "tool", name: "bash", input: "rg -n 'deploy' src/", output: "src/deploy.ts:12" },
+        {
+          type: "tool",
+          name: "bash",
+          input: "rg -n 'deploy' src/",
+          output: "src/deploy.ts:12",
+          error: true,
+        },
         { type: "text", text: "Noted. The deploy path runs through src/deploy.ts." },
       ],
     },
@@ -117,6 +123,7 @@ for (const target of MATRIX) {
       text.includes("What was the deploy key I told you?")
     checks.assistantText = text.includes("runs through src/deploy.ts")
     checks.toolRepresented = text.includes("rg -n 'deploy' src/") || text.includes("bash")
+    checks.toolError = text.includes("[tool: bash — failed]")
     checks.recall = text.includes(`You said ${FACT}`)
     checks.userTurnCount =
       (thread?.entries ?? []).filter((entry) => entry.kind === "user").length === 2
