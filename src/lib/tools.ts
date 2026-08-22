@@ -298,9 +298,6 @@ export function toolLabel(name: string): string {
   if (name.startsWith("mako_macos_")) {
     return `macOS ${name.slice("mako_macos_".length).replaceAll("_", " ")}`
   }
-  if (name.startsWith("mako_preview_")) {
-    return `Preview ${name.slice("mako_preview_".length).replaceAll("_", " ")}`
-  }
   if (name.startsWith("browser_")) {
     return `Browser ${name.slice("browser_".length).replaceAll("_", " ")}`
   }
