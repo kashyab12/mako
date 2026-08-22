@@ -35,7 +35,8 @@ One direction of knowledge, no exceptions:
 
 A provider is installed once from `electron/providers/<id>/index.ts`. That
 module contributes independent capabilities to `providerHost`: metadata and
-model discovery, native continuation, MCP discovery/writes, and skill roots.
+model discovery, native and ACP execution, native session emission, accounts,
+MCP discovery/writes, and skill roots.
 Consumers query those registries; they never maintain another list of provider
 ids or branch on all known providers. Provider-specific wire syntax and paths
 belong under that provider's directory. A new provider adds one module to

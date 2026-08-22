@@ -83,8 +83,8 @@ electron/          main process — needs a restart
                    agent-specific assumptions inside it.
   pool.ts          the open tabs: several `AgentHost`s at once, one in front.
                    Commands address the foreground tab; the rest keep running.
-  providers/       one vertical module per external harness: native runner,
-                   profile/metadata, MCP, and skill capabilities
+  providers/       one vertical module per external harness: native/ACP runs,
+                   profile, session emission, accounts, MCP, and skills
   ipc/             domain-owned request registration; `main.ts` only composes it
   automation.ts    a loopback eval endpoint for checking the UI, dev + opt-in
   automations.ts   saved prompts and their triggers; off until switched on
