@@ -12,7 +12,7 @@ export type RailMode = "threads" | "agents" | "files"
 
 /** How the session rail is scoped and grouped, mirroring ORCA's sidebar model. */
 export type RailScope = "workspace" | "all"
-export type RailSortBy = "recent" | "created" | "name" | "size"
+export type RailSortBy = "recent" | "created" | "name"
 
 interface PreferenceStringMap {
   [key: string]: string
@@ -230,17 +230,12 @@ function readComposerTuning(
   return tuning
 }
 
-/**
- * One-shot migrations from the inspector-era prefs: the dragged inspector
- * and preview widths seed the matching surface widths, and a deliberately
- * closed inspector stays closed at boot.
- */
+/** One-shot migration from the inspector-era width and open state. */
 function readSurfaceWidths(value: JsonObject): SurfaceWidthMap {
   const stored = readNumberRecord(value.surfaceWidths)
   if (Object.keys(stored).length > 0) return stored
   const seeded: SurfaceWidthMap = {}
   if (isJsonNumber(value.inspectorWidth)) seeded.changes = value.inspectorWidth
-  if (isJsonNumber(value.previewWidth)) seeded.preview = value.previewWidth
   return seeded
 }
 
@@ -276,7 +271,7 @@ function parsePrefs(value: JsonValue): Prefs | null {
     ),
     railSortBy: readChoice(
       value.railSortBy,
-      ["recent", "created", "name", "size"],
+      ["recent", "created", "name"],
       defaults.railSortBy
     ),
     collapsedGroups: readStringList(
