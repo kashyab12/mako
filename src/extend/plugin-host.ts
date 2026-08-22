@@ -49,8 +49,12 @@ import { Registry } from "@/extend/registry"
  *     a component rather than like restarting a service.
  */
 
+export const MAKO_UI_EXTENSION_API_VERSION = 1
+const MAX_REGISTRATIONS_PER_EXTENSION = 256
+
 /** What a plugin module is handed. Nothing else is reachable from one. */
 export interface MakoApi {
+  apiVersion: typeof MAKO_UI_EXTENSION_API_VERSION
   React: typeof React
   registerCommand: (command: DeskCommand) => void
   registerCommands: (list: DeskCommand[]) => void
@@ -114,9 +118,18 @@ function dispose(id: string) {
 function apiFor(id: string): MakoApi {
   const undo = disposers.get(id) ?? []
   disposers.set(id, undo)
-  const track = (disposer: () => void) => void undo.push(disposer)
+  const track = (disposer: () => void) => {
+    if (undo.length >= MAX_REGISTRATIONS_PER_EXTENSION) {
+      disposer()
+      throw new Error(
+        `A local UI extension can register at most ${MAX_REGISTRATIONS_PER_EXTENSION} contributions`
+      )
+    }
+    undo.push(disposer)
+  }
 
   return {
+    apiVersion: MAKO_UI_EXTENSION_API_VERSION,
     React,
     registerCommand: (command) => track(registerCommand(scopeCommand(id, command))),
     registerCommands: (list) => track(registerCommands(list.map((c) => scopeCommand(id, c)))),
@@ -149,8 +162,17 @@ function scopeCommand(id: string, command: DeskCommand): DeskCommand {
  * real ES module semantics — top-level `export`, and a stack trace that points
  * at a URL rather than at `<anonymous>`.
  */
-export async function loadPlugin(id: string, source: string): Promise<LoadedPlugin> {
+export async function loadPlugin(
+  id: string,
+  source: string,
+  sourceError?: string
+): Promise<LoadedPlugin> {
   dispose(id)
+  if (sourceError) {
+    const loaded = { id, source, error: sourceError }
+    plugins.register(id, loaded)
+    return loaded
+  }
 
   let url: string | undefined
   try {

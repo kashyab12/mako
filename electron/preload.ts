@@ -363,7 +363,7 @@ const api = {
     }
   },
   listPlugins: () =>
-    invokeTrustedHost<Array<{ id: string; source: string }>>(
+    invokeTrustedHost<Array<{ id: string; source: string; error?: string }>>(
       "mako:list-plugins"
     ),
   pluginsDir: () => invokeTrustedHost<string>("mako:plugins-dir"),

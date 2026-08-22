@@ -35,7 +35,7 @@ export function usePlugins() {
         // change would tear down and rebuild its contributions for nothing,
         // which is visible as a flicker in whatever slot it renders into.
         if (plugins.get(file.id)?.source === file.source) continue
-        const loaded = await loadPlugin(file.id, file.source)
+        const loaded = await loadPlugin(file.id, file.source, file.error)
         // A broken save should say so the moment it happens — the person
         // (or agent) who wrote it is looking at the wrong window to notice.
         if (loaded.error) {

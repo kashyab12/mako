@@ -1,7 +1,20 @@
 import { app } from "electron"
 import { mkdirSync, watch, type FSWatcher } from "node:fs"
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises"
+import {
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises"
 import { join } from "node:path"
+import {
+  MAX_UI_EXTENSIONS,
+  MAX_UI_EXTENSION_BYTES,
+  uiExtensionName,
+  validateUiExtensionWrite,
+} from "./plugin-policy.js"
 
 /**
  * Where plugins live on disk.
@@ -19,18 +32,32 @@ export function pluginsDir() {
 export interface PluginFile {
   id: string
   source: string
+  error?: string
 }
 
 /** Read every plugin, newest-name-first order being irrelevant here. */
 export async function listPlugins(): Promise<PluginFile[]> {
   const dir = pluginsDir()
   await mkdir(dir, { recursive: true })
-  const names = (await readdir(dir)).filter((name) => /\.(tsx|ts|jsx|js)$/.test(name))
+  const names = (await readdir(dir))
+    .filter((name) => /\.(tsx|ts|jsx|js)$/.test(name))
+    .sort()
+    .slice(0, MAX_UI_EXTENSIONS)
 
   const files = await Promise.all(
-    names.map(async (name) => {
+    names.map(async (name): Promise<PluginFile | null> => {
+      const id = name.replace(/\.\w+$/, "")
+      const path = join(dir, name)
       try {
-        return { id: name.replace(/\.\w+$/, ""), source: await readFile(join(dir, name), "utf8") }
+        const info = await stat(path)
+        if (info.size > MAX_UI_EXTENSION_BYTES) {
+          return {
+            id,
+            source: `// ${name} exceeds Mako's local UI extension size limit.`,
+            error: `Extension is larger than ${MAX_UI_EXTENSION_BYTES / 1024} KB`,
+          }
+        }
+        return { id, source: await readFile(path, "utf8") }
       } catch {
         return null
       }
@@ -42,21 +69,25 @@ export async function listPlugins(): Promise<PluginFile[]> {
 export async function writePlugin(id: string, source: string) {
   const dir = pluginsDir()
   await mkdir(dir, { recursive: true })
+  const entries = (await readdir(dir)).filter((entry) =>
+    /\.(tsx|ts|jsx|js)$/.test(entry)
+  )
+  const name = validateUiExtensionWrite(
+    id,
+    source,
+    entries.map((entry) => entry.replace(/\.\w+$/, ""))
+  )
   // The id is a bare name, never a path: a plugin called `../../etc/passwd`
   // must land in the plugins directory as a strange filename, not outside it.
-  await writeFile(join(dir, `${safe(id)}.tsx`), source, "utf8")
+  await writeFile(join(dir, `${name}.tsx`), source, "utf8")
 }
 
 export async function deletePlugin(id: string) {
-  await rm(join(pluginsDir(), `${safe(id)}.tsx`), { force: true })
+  await rm(join(pluginsDir(), `${uiExtensionName(id)}.tsx`), { force: true })
   // Other extensions the same plugin might have been saved under.
   for (const extension of ["ts", "jsx", "js"]) {
-    await rm(join(pluginsDir(), `${safe(id)}.${extension}`), { force: true })
+    await rm(join(pluginsDir(), `${uiExtensionName(id)}.${extension}`), { force: true })
   }
-}
-
-function safe(id: string) {
-  return id.replace(/[^\w.-]/g, "-").replace(/^\.+/, "")
 }
 
 /**

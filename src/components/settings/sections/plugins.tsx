@@ -3,7 +3,7 @@ import type { SettingsSection } from "./manifest"
 
 export const section = {
   id: "plugins",
-  title: "Plugins",
+  title: "UI extensions",
   group: "Extensions",
   keywords: [
     "plugin",

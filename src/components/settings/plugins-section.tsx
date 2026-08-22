@@ -9,10 +9,10 @@ import { AlertTriangleIcon, CheckIcon, ChevronRightIcon, FolderOpenIcon, PlusIco
 /**
  * The app, editing itself — with a place to watch it happen.
  *
- * Plugins are single files that hot-load into the running window: save one
- * — here, in an editor, or by asking the agent to write it — and its
- * commands, slots, and panels appear without a reload. This section is the
- * loop's dashboard: every plugin with its live status, its source editable
+ * Local UI extensions are trusted single files that hot-load into the running
+ * window: save one — here, in an editor, or by asking the agent to write it —
+ * and its commands, slots, and panels appear without a reload. This section is
+ * the loop's dashboard: every extension with its live status, its source editable
  * in place, and a broken one wearing its error instead of failing silently.
  *
  * The editor is a textarea on purpose. A plugin is a page of code; the
@@ -20,11 +20,12 @@ import { AlertTriangleIcon, CheckIcon, ChevronRightIcon, FolderOpenIcon, PlusIco
  * deserves the real editor — which is one "open folder" away.
  */
 
-const TEMPLATE = `// A Mako plugin: one file, hot-loaded on save.
+const TEMPLATE = `// A trusted local Mako UI extension, hot-loaded on save.
 // \`mako\` is in scope — commands, slots, session state, every thread on
 // this machine, and toasts. No imports, no build step.
 
 export function setup() {
+  if (mako.apiVersion !== 1) throw new Error("This extension requires Mako UI API 1")
   mako.registerCommand({
     id: "hello",
     title: "Say hello from a plugin",
@@ -86,15 +87,15 @@ export function PluginsSection() {
   return (
     <div>
       <p className="pb-3 text-ui leading-relaxed text-muted-foreground">
-        Single files that hot-load into the running window — save one and its
-        commands, slots, and panels appear without a reload. Ask the agent to
-        write one: it uses its ordinary file tools on{" "}
-        <code className="rounded bg-raised px-1 text-label">{dir || "the plugins folder"}</code>{" "}
-        and the window picks it up.
+        Trusted local UI code that hot-loads into this window. Extensions can
+        read and change the open session, preferences, and thread state, so use
+        only code you control. Ask the agent to write one in{" "}
+        <code className="rounded bg-raised px-1 text-label">{dir || "the extensions folder"}</code>{" "}
+        and the window picks it up without a reload.
       </p>
 
       {loaded.length === 0 ? (
-        <p className="pb-2 text-ui text-faint">No plugins yet.</p>
+        <p className="pb-2 text-ui text-faint">No local UI extensions yet.</p>
       ) : (
         loaded.map((plugin) => {
           const editing = open === plugin.id
@@ -175,7 +176,7 @@ export function PluginsSection() {
       <div className="flex items-center gap-2 pt-3">
         <Action onClick={() => void create()}>
           <PlusIcon className="size-3" />
-          New plugin
+          New UI extension
         </Action>
         <Action tone="outline" onClick={() => void pluginFiles.reveal()}>
           <FolderOpenIcon className="size-3" />
