@@ -3,14 +3,12 @@ import type {
   Automation,
   BootPayload,
   Capabilities,
-  DevServerState,
   ExternalEditor,
   FileContents,
   GitCommitEntry,
   GitDiff,
   GitHubStatus,
   IntegrationCatalogSnapshot,
-  ListeningPort,
   GitStatus,
   HostEvent,
   HarnessProfile,
@@ -407,19 +405,6 @@ const api = {
     invokeTrustedHost<void>("mako:run-automation", id),
   reloadAutomations: () =>
     invokeTrustedHost<Automation[]>("mako:reload-automations"),
-
-  ports: () => invokeTrustedHost<ListeningPort[]>("mako:ports"),
-  devScripts: () => invokeTrustedHost<string[]>("mako:dev-scripts"),
-  devState: () => invokeTrustedHost<DevServerState>("mako:dev-state"),
-  devStart: (script: string) =>
-    invokeTrustedHost<DevServerState>("mako:dev-start", script),
-  devStop: () => invokeTrustedHost<DevServerState>("mako:dev-stop"),
-  devAttach: (url: string) =>
-    invokeTrustedHost<DevServerState>("mako:dev-attach", url),
-  registerPreview: (webContentsId: number) =>
-    invokeTrustedHost<string>("mako:preview-register", webContentsId),
-  unregisterPreview: (id: string) =>
-    invokeTrustedHost<void>("mako:preview-unregister", id),
 
   terminalList: () =>
     invokeTrustedHost<TerminalSession[]>("mako:terminal-list"),
