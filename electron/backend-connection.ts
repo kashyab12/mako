@@ -6,6 +6,8 @@ import { z } from "zod"
 const run = promisify(execFile)
 const KEYCHAIN_SERVICE = "dev.mako.backend.mcp"
 const DEFAULT_URL = "https://mako-pearl.vercel.app/api/mcp"
+let backendUrl = process.env.MAKO_BACKEND_URL ?? DEFAULT_URL
+let backendToken = process.env.MAKO_BACKEND_TOKEN
 
 const HealthSchema = z.object({
   service: z.literal("mako-backend"),
@@ -41,11 +43,17 @@ async function keychainToken(): Promise<string | null> {
 }
 
 export async function ensureBackendConnectionEnvironment(): Promise<void> {
-  process.env.MAKO_BACKEND_URL ??= DEFAULT_URL
-  if (!process.env.MAKO_BACKEND_TOKEN) {
-    const token = await keychainToken()
-    if (token) process.env.MAKO_BACKEND_TOKEN = token
-  }
+  backendUrl = process.env.MAKO_BACKEND_URL ?? backendUrl
+  backendToken ??= process.env.MAKO_BACKEND_TOKEN ?? (await keychainToken()) ?? undefined
+}
+
+export function backendConnectionCredentials(): {
+  token: string
+  url: string
+} | null {
+  const token = process.env.MAKO_BACKEND_TOKEN ?? backendToken
+  const url = process.env.MAKO_BACKEND_URL ?? backendUrl
+  return token ? { token, url } : null
 }
 
 export async function backendRelayPost(
@@ -53,13 +61,13 @@ export async function backendRelayPost(
   body: string
 ): Promise<Response> {
   await ensureBackendConnectionEnvironment()
-  const token = process.env.MAKO_BACKEND_TOKEN
-  if (!token) throw new Error("Mako backend token is missing")
-  return fetch(new URL(path, process.env.MAKO_BACKEND_URL ?? DEFAULT_URL), {
+  const credentials = backendConnectionCredentials()
+  if (!credentials) throw new Error("Mako backend token is missing")
+  return fetch(new URL(path, credentials.url), {
     method: "POST",
     headers: {
       Accept: "application/json",
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${credentials.token}`,
       "Content-Type": "application/json",
     },
     body,
@@ -69,8 +77,9 @@ export async function backendRelayPost(
 
 export async function backendConnectionStatus(): Promise<BackendConnectionStatus> {
   await ensureBackendConnectionEnvironment()
-  const url = process.env.MAKO_BACKEND_URL ?? DEFAULT_URL
-  if (!process.env.MAKO_BACKEND_TOKEN) return { kind: "missing-token", url }
+  const credentials = backendConnectionCredentials()
+  const url = credentials?.url ?? backendUrl
+  if (!credentials) return { kind: "missing-token", url }
   try {
     const endpoint = new URL("/api/health", url)
     const response = await fetch(endpoint, {
