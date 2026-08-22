@@ -21,6 +21,7 @@ import {
   threadFolderKey,
 } from "../src/lib/thread-folders.ts"
 import { acpBlocksToMessages } from "../src/lib/acp-blocks.ts"
+import { acpStore, applyAcpUpdates } from "../src/state/acp.ts"
 import type { ThreadRef } from "../src/lib/types.ts"
 
 assert.equal(
@@ -111,6 +112,30 @@ assert.equal(acpConversation.messages[1]?.streaming, true)
 assert.deepEqual(acpConversation.plan, [
   { content: "Inspect", status: "completed" },
 ])
+
+acpStore.set({
+  session: {
+    id: "acp-echo",
+    harness: "grok",
+    cwd: "/repo",
+    status: "running",
+    modes: [],
+    currentMode: null,
+    configOptions: [],
+  },
+  blocks: [],
+  permission: null,
+  starting: false,
+  queued: null,
+})
+applyAcpUpdates("acp-echo", [
+  { kind: "user", text: "same prompt" },
+  { kind: "user", text: "same prompt" },
+])
+assert.deepEqual(acpStore.get().blocks, [
+  { type: "user", text: "same prompt" },
+])
+acpStore.set({ session: null, blocks: [] })
 
 const folderRefs = [
   {

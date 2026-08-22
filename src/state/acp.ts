@@ -142,7 +142,9 @@ function reduceUpdates(
     const last = next[next.length - 1]
     switch (update.kind) {
       case "user":
-        next.push({ type: "user", text: update.text })
+        if (last?.type !== "user" || last.text !== update.text) {
+          next.push({ type: "user", text: update.text })
+        }
         break
       case "text":
         if (last?.type === "text")
