@@ -100,6 +100,7 @@ interface ClaudeLine {
   isSidechain: boolean
   isMeta: boolean
   isCompactSummary: boolean
+  isAbortedMidStream: boolean
   message?: ClaudeMessage
 }
 
@@ -204,6 +205,7 @@ function parseClaudeLine(raw: string): ClaudeLine | null {
     isSidechain: root["isSidechain"] === true,
     isMeta: root["isMeta"] === true,
     isCompactSummary: root["isCompactSummary"] === true,
+    isAbortedMidStream: root["isAbortedMidStream"] === true,
     message: parseMessage(root["message"]),
   }
 }
@@ -449,7 +451,12 @@ function translator(): ClaudeTranslator {
     if (!started) needsReset = true
     started = true
     const message = line.message
-    if (!message || !Array.isArray(message.content)) return
+    if (!message || !Array.isArray(message.content)) {
+      if (line.isAbortedMidStream) {
+        sink.push({ kind: "event", at: line.timestamp, label: "Interrupted" })
+      }
+      return
+    }
     if (!assistant) {
       assistant = {
         kind: "assistant",
@@ -484,6 +491,11 @@ function translator(): ClaudeTranslator {
       }
     }
     if (message.usage) turn.usage = message.usage
+    if (line.isAbortedMidStream) {
+      sink.push({ kind: "event", at: line.timestamp, label: "Interrupted" })
+      assistant = null
+      toolsById.clear()
+    }
   }
 
   return {
