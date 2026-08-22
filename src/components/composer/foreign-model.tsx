@@ -20,7 +20,15 @@ import { harnessModelByIdentity } from "@/lib/types"
 import type { HarnessModel, HarnessProfile } from "@/lib/types"
 import { CheckIcon, ChevronDownIcon, StarIcon } from "lucide-react"
 
-export function ForeignModelPicker({ harness }: { harness: string }) {
+export function ForeignModelPicker({
+  harness,
+  threadModel,
+  onChange,
+}: {
+  harness: string
+  threadModel?: string
+  onChange?: () => void
+}) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [profile, setProfile] = useState<HarnessProfile | null>(null)
@@ -42,9 +50,15 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
     load()
   }, [load])
 
+  const identity =
+    threadModel ?? chosen ?? profile?.configuredModel ?? profile?.defaultModel
   const effective =
-    harnessModelByIdentity(profile ?? undefined, chosen)?.id ?? chosen
+    harnessModelByIdentity(profile ?? undefined, identity)?.id ?? identity
   const selected = harnessModelByIdentity(profile ?? undefined, effective)
+  const variant = selected?.variants?.find(
+    (candidate) => candidate.id === identity
+  )
+  const label = variant?.label ?? selected?.label ?? effective
   const models = useMemo(
     () => rankModels(profile?.models ?? [], query, favorites, harness),
     [favorites, harness, profile?.models, query]
@@ -57,6 +71,7 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
       fast: undefined,
       options: undefined,
     })
+    onChange?.()
     setOpen(false)
   }
 
@@ -71,7 +86,7 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={`Model: ${selected?.label ?? effective ?? "Provider setting"}`}
+          aria-label={`Model: ${label ?? `${harnessLabel(harness)} default`}`}
           className={cn(
             "pressable no-drag flex h-7 min-w-0 max-w-[15rem] items-center gap-1.5 rounded-md px-2",
             "text-ui font-medium text-foreground/85",
@@ -80,7 +95,9 @@ export function ForeignModelPicker({ harness }: { harness: string }) {
           )}
         >
           <HarnessIcon harness={harness} className="size-3.5" />
-          <span className="truncate">{selected?.label ?? effective ?? "Provider setting"}</span>
+          <span className="truncate">
+            {label ?? `${harnessLabel(harness)} default`}
+          </span>
           <ChevronDownIcon className="size-3 shrink-0 text-faint/70" />
         </button>
       </PopoverTrigger>
