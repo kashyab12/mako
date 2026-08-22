@@ -54,6 +54,32 @@ export default defineConfig([
     },
   },
   {
+    files: ["electron/providers/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "../harnesses.js",
+                "../../harnesses.js",
+                "../drivers.js",
+                "../../drivers.js",
+                "../mcp-registry.js",
+                "../../mcp-registry.js",
+                "../skill-registry.js",
+                "../../skill-registry.js",
+              ],
+              message:
+                "Provider capabilities cannot import their consumers; move shared mechanics under electron/providers/.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Design-token guards: hue is spent only through the semantic tokens
     // (positive/negative/caution, diff add/remove), never as a raw Tailwind
     // palette class. provider-icon.tsx draws brand marks, which are logos,

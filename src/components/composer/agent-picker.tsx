@@ -18,8 +18,6 @@ import { harnessModelByIdentity } from "@/lib/types"
  * same treatment.
  */
 
-const ORDER = ["claude", "codex", "cursor", "grok", "devin", "opencode"]
-
 export function AgentPicker() {
   const [open, setOpen] = useState(false)
   const selected = useThreads((state) => state.composerHarness)
@@ -63,7 +61,7 @@ function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void
     void providers.loadAll()
   }, [])
 
-  const choices = ORDER
+  const choices = Object.keys(profiles)
 
   const modelFor = (harness: string): string | undefined => {
     const profile = profiles[harness]

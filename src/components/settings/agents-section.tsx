@@ -29,12 +29,6 @@ const HOW = new Map([
   ["opencode", "OpenCode 2 / OpenCode / ACP"],
 ])
 
-const HARNESSES = Object.entries(HARNESS_LABEL).map(([id, name]) => ({
-  id,
-  name,
-  how: HOW.get(id) ?? `${id} CLI`,
-}))
-
 /**
  * The harnesses this machine can host, and the accounts that need keys.
  *
@@ -43,12 +37,18 @@ const HARNESSES = Object.entries(HARNESS_LABEL).map(([id, name]) => ({
  */
 export function AgentsSection() {
   const conversionMode = usePrefs((prefs) => prefs.conversionMode)
+  const profiles = useProviders((state) => state.profiles)
   const availability = useProviders((state) => state.availability)
   const daemon = useProviders((state) => state.daemon)
   const loginStart = useProviders((state) => state.daemonLogin)
+  const harnesses = Object.keys(availability ?? HARNESS_LABEL).map((id) => ({
+    id,
+    name: profiles[id]?.label ?? HARNESS_LABEL[id] ?? id,
+    how: HOW.get(id) ?? `${id} CLI`,
+  }))
 
   useEffect(() => {
-    void providers.loadStatus()
+    void Promise.all([providers.loadStatus(), providers.loadAll()])
   }, [])
 
   return (
@@ -98,7 +98,7 @@ export function AgentsSection() {
         ) : null}
       </p>
       <ListCard>
-        {HARNESSES.map((entry) => (
+        {harnesses.map((entry) => (
           <ListCardRow key={entry.id} className="flex items-center gap-2.5">
             <HarnessIcon harness={entry.id} className="size-4" />
             <span className="min-w-0 flex-1 text-ui">{entry.name}</span>

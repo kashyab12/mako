@@ -13,13 +13,13 @@ Edits you make here change the window you are being read in.
 **Decide which one you are doing before you start.** They have different reach
 and very different feedback loops.
 
-### 1. A plugin — works in every build, applies with no reload
+### 1. A trusted local UI extension — works in every build, applies with no reload
 
-Write one `.tsx` file into the plugins directory. Mako compiles it in-process,
-runs it, and the surfaces it contributes to repaint immediately — no reload, no
-lost session, no lost scroll position. Editing the file swaps it again. This is
-the only path that works in a **packaged** app, so unless the change genuinely
-cannot be expressed as a plugin, do it this way.
+Write one `.tsx` file into the extensions directory. Mako compiles it in the
+renderer, runs it with full renderer-state access, and repaints its contributions
+immediately. Use this only for trusted local presentation, commands, and transcript
+renderers. Provider transports, accounts, MCP/skills, persistence, and host tools
+belong in source under `electron/providers/`; UI extensions cannot add them.
 
 The directory is `<userData>/plugins/` — on macOS,
 `~/Library/Application Support/mako/plugins/`. Write there with your ordinary
@@ -34,20 +34,22 @@ export function setup(mako) {
     run: () => navigator.clipboard.writeText(mako.session.read().git?.branch ?? ""),
   })
 
-  mako.registerSlot("statusbar.trailing", () => {
+  mako.registerSlot("rail.footer", () => {
     const branch = mako.session.use((s) => s.git?.branch)
-    return <span style={{ fontSize: 11 }}>{branch}</span>
+    return <span>{branch}</span>
   })
 }
 ```
 
-What `mako` gives you: `registerCommand`, `registerCommands`, `registerSlot`,
-`registerToolView`, `registerInspectorPanel`, `runCommand`, `session`
-(`read` / `use` / `actions`), `prefs` (`read` / `use` / `set` / `toggle`), and
-`React`.
+What `mako` gives you: `apiVersion`, `registerCommand`, `registerCommands`,
+`registerSlot`, `registerToolView`, `registerSurface`, `runCommand`, `session`,
+`threads`, `prefs`, `toast`, and `React`.
 
-Three rules:
+Four rules:
 
+- **Trusted code only.** Extensions execute inside Mako's renderer with access
+  to its state. They are bounded, but not sandboxed or suitable for third-party
+  code.
 - **No imports.** There is no bundler in the loop. Everything you may use is on
   `mako`; a bare `import` of a package will fail.
 - **Types are stripped, not checked.** Write TypeScript if you like, but nothing
@@ -81,6 +83,9 @@ electron/          main process — needs a restart
                    agent-specific assumptions inside it.
   pool.ts          the open tabs: several `AgentHost`s at once, one in front.
                    Commands address the foreground tab; the rest keep running.
+  providers/       one vertical module per external harness: native runner,
+                   profile/metadata, MCP, and skill capabilities
+  ipc/             domain-owned request registration; `main.ts` only composes it
   automation.ts    a loopback eval endpoint for checking the UI, dev + opt-in
   automations.ts   saved prompts and their triggers; off until switched on
   crash.ts         local-only crash reports, plus the IPC breadcrumb trail
@@ -102,7 +107,7 @@ src/
                    strip plus a cache of every background conversation,
                    `viewer.ts` is the open file
   lib/             pure helpers; no React, no IPC
-  extend/          the plugin registries (commands, slots, tool views)
+  extend/          UI extension registries (commands, slots, tool views)
   desk/            command definitions and app-level wiring
 ```
 
@@ -110,9 +115,9 @@ Two rules the structure depends on:
 
 - `src/lib/` is pure. No React, no IPC, no DOM. If you need a helper for a
   component, it goes here only if it would still make sense in a test.
-- Everything the app ships is registered through the same public API in
-  `src/extend/` that a plugin would use. If you add a command, add it the way a
-  plugin would.
+- Everything the desk ships is registered through the same API in
+  `src/extend/` that a local UI extension uses. Add commands and surfaces
+  through those registries rather than privileged component branches.
 
 ## Design rules
 
@@ -206,12 +211,12 @@ window, so the whole check runs while the machine is in use.
 - `npm run typecheck` must pass. It runs `tsc -b`, which follows the project
   references — `tsc --noEmit` does not, and silently checked nothing for months.
   Run it before you say you are done.
-  It does not cover plugins — those are transpiled, not checked — so read a
-  plugin back after writing it.
+  It does not cover local UI extensions — those are transpiled, not checked —
+  so read an extension back after writing it.
 - Match the surrounding code's comment density. Comments here explain *why* a
   decision was made, not what the line does. If a line is obvious, say nothing.
 - Make the change the user asked for. If you notice something else wrong,
   mention it — do not fix it silently in the same edit.
 - When you finish, say which files changed and whether the user needs to
-  restart. A plugin is always already applied. A source edit is applied only if
+  restart. A local UI extension is already applied. A source edit is applied only if
   Mako is running from a checkout.

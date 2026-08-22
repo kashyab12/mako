@@ -28,8 +28,22 @@ One direction of knowledge, no exceptions:
 2. **State** (`src/state/`) is React-free. `store.ts` is the observable;
    `session.ts` applies host events and owns every mutation the UI can make.
 3. **Components** (`src/components/`) are presentation. They read through
-   selectors and call `actions.*`. No component talks to the bridge directly
-   except the changes panel, which fetches one diff on demand.
+   selectors and call domain actions in `src/state/`. Components and desk code
+   never import `src/lib/bridge.ts`; ESLint enforces that boundary.
+
+## Provider composition
+
+A provider is installed once from `electron/providers/<id>/index.ts`. That
+module contributes independent capabilities to `providerHost`: metadata and
+model discovery, native continuation, MCP discovery/writes, and skill roots.
+Consumers query those registries; they never maintain another list of provider
+ids or branch on all known providers. Provider-specific wire syntax and paths
+belong under that provider's directory. A new provider adds one module to
+`electron/providers/index.ts`; it does not add switches to shared consumers.
+
+`@mako/sessions` remains the pure native-store layer. Its `SessionProvider`
+contract owns discovery, translation, and following without importing Electron
+or any provider host capability.
 
 ## The hot path
 
@@ -93,6 +107,11 @@ a fixed, draggable width; the independent Terminal dock can remain open below it
 at a fixed, draggable height. Neither uses percentage splits. The central workbench
 stays mounted under a covering sidebar so transcripts and file tabs keep their state.
 
+Files loaded from the user-data extensions directory are **trusted local UI
+extensions**, not sandboxed host plugins. They can read and mutate renderer
+state, are bounded by file/contribution limits, and cannot register host
+providers. Do not describe them as isolated or safe for third-party code.
+
 Slots are declared in `SlotMap` (`src/extend/slots.ts`) — that table is the
 contract for what may render where and with which props. Adding a seam means
 adding a key there. Built-in registrations live in `src/desk/builtins.tsx` and
@@ -103,6 +122,11 @@ keyboard layer, and in any menu that reads the registry. Never add a bare
 `keydown` listener for a shortcut.
 
 ## The transcript is grouped by exchange
+
+Built-in sessions, native-store threads, and live ACP/app-server sessions all
+project into `ChatMessage` and render through `conversation-timeline.tsx`.
+Provider-specific headers, permissions, and modes may wrap that timeline; they
+must not introduce another transcript renderer.
 
 `src/lib/exchanges.ts` folds messages into one question plus everything the
 agent did to answer it. Two things depend on that grouping and both were wrong
