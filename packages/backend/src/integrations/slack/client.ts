@@ -112,7 +112,7 @@ async function sleep(milliseconds: number): Promise<void> {
 
 async function slackFetch(
   method: string,
-  input: Record<string, string | number | boolean | undefined>,
+  input: Record<string, z.input<typeof z.json> | undefined>,
   state: SlackAttempt = InitialAttempt
 ): Promise<z.output<typeof z.json>> {
   const credential = await slackCredential()
@@ -243,6 +243,32 @@ export async function readSlackThread({
       cursor,
       limit,
       ts: threadTs,
+    })
+  )
+}
+
+export async function sendSlackBlocks({
+  blocks,
+  channel,
+  idempotencyKey,
+  text,
+  threadTs,
+}: {
+  blocks: z.input<typeof z.json>
+  channel: string
+  idempotencyKey: string
+  text: string
+  threadTs?: string
+}): Promise<SlackPostMessage> {
+  return SlackPostMessageSchema.parse(
+    await slackFetch("chat.postMessage", {
+      blocks,
+      channel,
+      client_msg_id: idempotencyKey,
+      text,
+      thread_ts: threadTs,
+      unfurl_links: false,
+      unfurl_media: false,
     })
   )
 }
