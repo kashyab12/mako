@@ -123,6 +123,12 @@ interface CodexFunctionOutputResponse extends CodexRolloutBase {
   output: string
 }
 
+interface CodexEventLine extends CodexRolloutBase {
+  kind: "event"
+  label: string
+  detail?: string
+}
+
 interface CodexIgnoredRolloutLine extends CodexRolloutBase {
   kind: "ignored"
 }
@@ -138,6 +144,7 @@ type CodexRolloutEvent =
   | CodexReasoningResponse
   | CodexFunctionCallResponse
   | CodexFunctionOutputResponse
+  | CodexEventLine
   | CodexIgnoredRolloutLine
 
 type AssistantEntry = Extract<ThreadEntry, { kind: "assistant" }>
@@ -276,6 +283,15 @@ function parseCodexRolloutLine(raw: string): CodexRolloutEvent | null {
             at,
             usage: parseTokenUsage(payload),
           }
+        case "turn_aborted":
+          return {
+            kind: "event",
+            at,
+            label: "Interrupted",
+            detail: stringValue(payload["reason"]),
+          }
+        case "context_compacted":
+          return { kind: "event", at, label: "Context compacted" }
         default:
           return { kind: "ignored", at }
       }
@@ -486,6 +502,17 @@ function translator(): CodexTranslator {
         }
         return
       }
+      case "event":
+        assistant = null
+        callsById.clear()
+        const item: Extract<ThreadEntry, { kind: "event" }> = {
+          kind: "event",
+          label: event.label,
+        }
+        if (event.at) item.at = event.at
+        if (event.detail) item.detail = event.detail
+        sink.push(item)
+        return
       case "session_meta":
       case "user_message_event":
       case "plumbing_response":
