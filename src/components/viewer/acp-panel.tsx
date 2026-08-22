@@ -142,25 +142,36 @@ function Blocks() {
       streamingId={running ? lastExchangeId : undefined}
       failedId={session?.status === "failed" ? lastExchangeId : undefined}
       empty={
-        <p className="pt-8 text-center text-ui leading-relaxed text-faint">
-          The session is loaded. Anything you send continues it — same
-          conversation, same working directory.
-        </p>
+        <div className="mx-auto flex w-full max-w-content flex-col gap-4 px-6 py-6">
+          <p className="pt-8 text-center text-ui leading-relaxed text-faint">
+            The session is loaded. Anything you send continues it — same
+            conversation, same working directory.
+          </p>
+          <AcpActivity plan={conversation.plan} running={running} />
+        </div>
       }
-      footer={
-        <>
-          {conversation.plan.length > 0 ? (
-            <Plan entries={conversation.plan} />
-          ) : null}
-          {running ? (
-            <div className="flex items-center gap-1.5 py-2 text-label text-faint">
-              <Loader2Icon className="size-3 animate-spin" />
-              working
-            </div>
-          ) : null}
-        </>
-      }
+      footer={<AcpActivity plan={conversation.plan} running={running} />}
     />
+  )
+}
+
+function AcpActivity({
+  plan,
+  running,
+}: {
+  plan: AcpPlanEntry[]
+  running: boolean
+}) {
+  return (
+    <>
+      {plan.length > 0 ? <Plan entries={plan} /> : null}
+      {running ? (
+        <div className="flex items-center gap-1.5 py-2 text-label text-faint">
+          <Loader2Icon className="size-3 animate-spin" />
+          working
+        </div>
+      ) : null}
+    </>
   )
 }
 
