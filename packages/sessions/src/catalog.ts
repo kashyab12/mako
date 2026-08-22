@@ -16,9 +16,9 @@
  *     costs one positional read of only the appended bytes per flush.
  */
 
-import { existsSync, watch, type FSWatcher } from "node:fs"
+import { existsSync, realpathSync, watch, type FSWatcher } from "node:fs"
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises"
-import { dirname } from "node:path"
+import { dirname, join } from "node:path"
 import type { Thread, ThreadEntry, ThreadOrigin, ThreadRef } from "./format.js"
 import type {
   NativeFile,
@@ -65,6 +65,43 @@ const CACHE_SAVE_DEBOUNCE_MS = 2000
 
 /** Rescan cadence where recursive watching is unavailable. Stat-only. */
 const POLL_FALLBACK_MS = 30_000
+const workspaceRoots = new Map<string, string>()
+
+function workspaceOf(cwd: string | undefined): string | undefined {
+  if (!cwd) return undefined
+  const cached = workspaceRoots.get(cwd)
+  if (cached) return cached
+  let path = cwd
+  try {
+    path = realpathSync(cwd)
+  } catch {
+    while (path.length > 1 && /[\\/]$/.test(path)) path = path.slice(0, -1)
+  }
+  let cursor = path
+  while (cursor !== dirname(cursor)) {
+    if (existsSync(join(cursor, ".git"))) {
+      workspaceRoots.set(cwd, cursor)
+      return cursor
+    }
+    cursor = dirname(cursor)
+  }
+  workspaceRoots.set(cwd, path)
+  return path
+}
+
+function withWorkspace(ref: ThreadRef | null): ThreadRef | null {
+  if (!ref) return null
+  const workspace = workspaceOf(ref.cwd)
+  return workspace && workspace !== ref.workspace
+    ? { ...ref, workspace }
+    : ref
+}
+
+function withThreadWorkspace(thread: Thread | null): Thread | null {
+  if (!thread) return null
+  const ref = withWorkspace(thread.ref)
+  return ref === thread.ref || !ref ? thread : { ...thread, ref }
+}
 
 export class SessionCatalog {
   private providers: SessionProvider[]
@@ -83,6 +120,12 @@ export class SessionCatalog {
     path: string
     throughByte: number
     entryCount: number
+  } | null = null
+  private threadCache: {
+    path: string
+    bytes: number
+    mtimeMs: number
+    thread: Thread
   } | null = null
 
   private archive: SessionArchive | null = null
@@ -122,7 +165,9 @@ export class SessionCatalog {
               cached.mtimeMs === file.mtimeMs
             )
               return
-            const ref = await provider.peek(file).catch(() => null)
+            const ref = withWorkspace(
+              await provider.peek(file).catch(() => null)
+            )
             this.byPath.set(file.path, {
               bytes: file.bytes,
               mtimeMs: file.mtimeMs,
@@ -149,7 +194,7 @@ export class SessionCatalog {
       if (!ref) return
       if (filter.harness && ref.harness !== filter.harness) return
       if (filter.cwd && ref.cwd !== filter.cwd) return
-      refs.push(ref)
+      refs.push(withWorkspace(ref) ?? ref)
     }
     for (const entry of this.byPath.values()) admit(entry.ref)
     // Sessions whose native store forgot them. The archive did not.
@@ -180,9 +225,31 @@ export class SessionCatalog {
 
   /** Full translation of one session, via whichever store owns its path. */
   async open(path: string, trackForFollow = true): Promise<Thread | null> {
+    const stamp = this.byPath.get(path)
+    const held = this.threadCache
+    const cached =
+      held &&
+      stamp &&
+      held.path === path &&
+      held.bytes === stamp.bytes &&
+      held.mtimeMs === stamp.mtimeMs
+        ? held.thread
+        : null
     const provider = this.ownerOf(path)
-    const native = provider ? await provider.read(path).catch(() => null) : null
+    const native =
+      cached ??
+      withThreadWorkspace(
+        provider ? await provider.read(path).catch(() => null) : null
+      )
     if (native) {
+      if (stamp && !cached) {
+        this.threadCache = {
+          path,
+          bytes: stamp.bytes,
+          mtimeMs: stamp.mtimeMs,
+          thread: native,
+        }
+      }
       if (trackForFollow) {
         this.opened = {
           path,
@@ -218,7 +285,7 @@ export class SessionCatalog {
               this.noticed(`${root}/${filename.toString()}`)
             }
           )
-          watcher.on("error", () => {})
+          watcher.on("error", () => this.ensurePolling())
           this.watchers.push(watcher)
         } catch {
           // Recursive watching is unavailable on some platforms and network
@@ -227,12 +294,7 @@ export class SessionCatalog {
         }
       }
     }
-    if (unwatchable && !this.pollTimer) {
-      this.pollTimer = setInterval(() => {
-        void this.scan({ emitChanges: true })
-      }, POLL_FALLBACK_MS)
-      this.pollTimer.unref?.()
-    }
+    if (unwatchable) this.ensurePolling()
   }
 
   onEvent(listener: (event: CatalogEvent) => void): () => void {
@@ -278,6 +340,7 @@ export class SessionCatalog {
 
   stop(): void {
     this.archive?.stop()
+    for (const provider of this.providers) provider.close?.()
     for (const watcher of this.watchers) watcher.close()
     this.watchers = []
     if (this.pollTimer) {
@@ -286,6 +349,7 @@ export class SessionCatalog {
     }
     for (const timer of this.pending.values()) clearTimeout(timer)
     this.pending.clear()
+    this.threadCache = null
     if (this.saveTimer) {
       clearTimeout(this.saveTimer)
       this.saveTimer = null
@@ -294,6 +358,14 @@ export class SessionCatalog {
   }
 
   /* ------------------------------------------------------------ internals */
+
+  private ensurePolling(): void {
+    if (this.pollTimer) return
+    this.pollTimer = setInterval(() => {
+      void this.scan({ emitChanges: true })
+    }, POLL_FALLBACK_MS)
+    this.pollTimer.unref?.()
+  }
 
   private ownerOf(path: string): SessionProvider | null {
     for (const provider of this.providers) {
@@ -311,6 +383,9 @@ export class SessionCatalog {
   private noticed(path: string): void {
     const provider = this.ownerOf(path)
     if (!provider) return
+    if (provider.rescanRoot || this.threadCache?.path === path) {
+      this.threadCache = null
+    }
     // Shared-database stores have no per-session file to stat: any write
     // under the root re-runs that provider's discovery, debounced under
     // one key so a burst costs one rescan.
@@ -320,11 +395,14 @@ export class SessionCatalog {
     clearTimeout(this.pending.get(key))
     this.pending.set(
       key,
-      setTimeout(() => {
-        this.pending.delete(key)
-        if (provider.rescanRoot) void this.rescanProvider(provider)
-        else void this.refresh(provider, path)
-      }, WATCH_DEBOUNCE_MS)
+      setTimeout(
+        () => {
+          this.pending.delete(key)
+          if (provider.rescanRoot) void this.rescanProvider(provider)
+          else void this.refresh(provider, path)
+        },
+        provider.rescanDebounceMs ?? WATCH_DEBOUNCE_MS
+      )
     )
   }
 
@@ -341,6 +419,11 @@ export class SessionCatalog {
         do {
           state.requested = false
           await this.rescanProviderOnce(provider)
+          if (state.requested) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, provider.rescanDebounceMs ?? WATCH_DEBOUNCE_MS)
+            )
+          }
         } while (state.requested)
       } finally {
         if (this.rescans.get(key) === state) this.rescans.delete(key)
@@ -357,13 +440,15 @@ export class SessionCatalog {
     for (const file of files) {
       seen.add(file.path)
       const cached = this.byPath.get(file.path)
+      const followed = (this.follows.get(file.path)?.listeners.size ?? 0) > 0
       if (
+        !followed &&
         cached &&
         cached.bytes === file.bytes &&
         cached.mtimeMs === file.mtimeMs
       )
         continue
-      const ref = await provider.peek(file).catch(() => null)
+      const ref = withWorkspace(await provider.peek(file).catch(() => null))
       this.byPath.set(file.path, {
         bytes: file.bytes,
         mtimeMs: file.mtimeMs,
@@ -464,7 +549,7 @@ export class SessionCatalog {
             bytes: file.bytes,
             updatedAt: new Date(file.mtimeMs).toISOString(),
           }
-        : await provider.peek(file).catch(() => null)
+        : withWorkspace(await provider.peek(file).catch(() => null))
     this.byPath.set(path, { bytes: file.bytes, mtimeMs: file.mtimeMs, ref })
     this.scheduleSave()
     if (ref) this.emit({ type: cached?.ref ? "updated" : "added", ref })
@@ -488,7 +573,9 @@ export class SessionCatalog {
       }
       const update = await follow.follower.next().catch(() => null)
       if (update?.reset && grew && cached.ref) {
-        const resetRef = await provider.peek(file).catch(() => null)
+        const resetRef = withWorkspace(
+          await provider.peek(file).catch(() => null)
+        )
         this.byPath.set(path, {
           bytes: file.bytes,
           mtimeMs: file.mtimeMs,
