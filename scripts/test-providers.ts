@@ -19,6 +19,9 @@ assert.deepEqual(
   providerHost.skillSources.list().map((source) => source.provider),
   providers
 )
+for (const source of providerHost.acpSources.list()) {
+  assert.ok(providers.includes(source.provider))
+}
 assert.deepEqual(
   providerHost.accountCapabilities
     .list()

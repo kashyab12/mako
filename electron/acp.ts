@@ -19,7 +19,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
-import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { Readable, Writable } from "node:stream"
 import { app } from "electron"
@@ -42,16 +41,12 @@ import {
   type SessionUpdate,
 } from "@agentclientprotocol/sdk"
 import { accountEnv } from "./accounts.js"
-import {
-  devinExecutable,
-  normalizeAcpOptions,
-  openCodeInstallation,
-  openCodeSessionGeneration,
-  type OpenCodeInstallation,
-} from "./harnesses.js"
+import { normalizeAcpOptions } from "./harnesses.js"
+import { providerHost } from "./providers/index.js"
+import type { AcpTuning } from "./providers/acp-source.js"
 import { discoverMcpRegistry } from "./mcp-registry.js"
 import { acpMcpServers } from "./mcp-runtime.js"
-import type { McpProvider, McpTransport } from "./shared.js"
+import type { McpTransport } from "./shared.js"
 import type {
   AcpPermissionRequest,
   AcpPromptAttachment,
@@ -59,23 +54,6 @@ import type {
   AcpUpdate,
   HostEvent,
 } from "./shared.js"
-
-interface AgentSpec {
-  command: string
-  args: string[]
-}
-
-interface AcpTuning {
-  model?: string
-  effort?: string
-  fast?: boolean
-  options?: Record<string, string | boolean>
-}
-
-interface OpenCodeAcpConfig {
-  model?: string
-  agent?: { build: { variant: string } }
-}
 
 interface ClaudeCodeOptions {
   model?: string
@@ -101,79 +79,12 @@ interface AcpToolOutputBoundary {
   >["rawOutput"]
 }
 
-/**
- * How each harness is spawned as an ACP agent. The Claude adapter is bundled
- * with the app (it is an npm dependency); Cursor's is the CLI itself.
- */
-function specFor(
-  harness: string,
-  tuning?: AcpTuning,
-  openCodeGeneration?: OpenCodeInstallation["generation"]
-): AgentSpec | null {
-  switch (harness) {
-    case "claude": {
-      // The adapter is a bin script; run it with our own Node (Electron).
-      const script = join(
-        app.getAppPath(),
-        "node_modules",
-        "@zed-industries",
-        "claude-code-acp",
-        "dist",
-        "index.js"
-      )
-      return existsSync(script)
-        ? { command: process.execPath, args: [script] }
-        : null
-    }
-    case "cursor":
-      return { command: "cursor-agent", args: ["acp"] }
-    case "grok": {
-      const command = join(homedir(), ".grok", "bin", "grok")
-      const args = ["agent", "--no-leader"]
-      if (tuning?.effort) args.push("--reasoning-effort", tuning.effort)
-      args.push("stdio")
-      return {
-        command: existsSync(command) ? command : "grok",
-        args,
-      }
-    }
-    case "devin":
-      return { command: devinExecutable() ?? "devin", args: ["acp"] }
-    case "opencode": {
-      const installation =
-        openCodeInstallation(openCodeGeneration) ?? openCodeInstallation()
-      return {
-        command: installation?.command ?? "opencode",
-        args: ["acp"],
-      }
-    }
-    default:
-      return null
-  }
-}
-
-function isMcpProvider(value: string): value is McpProvider {
-  return (
-    value === "claude" ||
-    value === "codex" ||
-    value === "cursor" ||
-    value === "grok" ||
-    value === "devin" ||
-    value === "opencode"
-  )
-}
-
 export function acpHarnesses(): string[] {
-  return ["claude", "cursor", "grok", "devin", "opencode"].filter((harness) => {
-    const spec = specFor(harness)
-    return Boolean(
-      spec &&
-      (spec.command === "cursor-agent" ||
-        spec.command === "grok" ||
-        spec.command === "devin" ||
-        existsSync(spec.command))
-    )
-  })
+  const appPath = app.getAppPath()
+  return providerHost.acpSources
+    .list()
+    .filter((source) => source.available(appPath))
+    .map((source) => source.provider)
 }
 
 interface Live {
@@ -221,11 +132,13 @@ export async function acpStart(
     tuning?: AcpTuning
   } = {}
 ): Promise<AcpSessionState> {
-  const openCodeGeneration =
-    harness === "opencode" && options.resume
-      ? await openCodeSessionGeneration(options.resume)
-      : undefined
-  const spec = specFor(harness, options.tuning, openCodeGeneration)
+  const source = providerHost.acpSources.get(harness)
+  const spec = await source?.launch({
+    appPath: app.getAppPath(),
+    execPath: process.execPath,
+    resume: options.resume,
+    tuning: options.tuning,
+  })
   if (!spec) throw new Error(`${harness} does not speak ACP here yet`)
 
   const id = `acp-${++counter}`
@@ -239,31 +152,7 @@ export async function acpStart(
   const env = await accountEnv(harness, process.env)
   delete env.CLAUDECODE
   delete env.CLAUDE_CODE_ENTRYPOINT
-  if (harness === "claude") {
-    env.ELECTRON_RUN_AS_NODE = "1"
-    if (options.tuning?.options?.agentTeams === true) {
-      env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"
-    }
-    if (!env.CLAUDE_CODE_EXECUTABLE) {
-      const installed = join(homedir(), ".local", "bin", "claude")
-      if (existsSync(installed)) env.CLAUDE_CODE_EXECUTABLE = installed
-    }
-  }
-  if (harness === "grok") env.GROK_DISABLE_AUTOUPDATER = "1"
-  if (
-    harness === "opencode" &&
-    (openCodeGeneration ?? openCodeInstallation()?.generation) !== "v2" &&
-    options.tuning
-  ) {
-    const config: OpenCodeAcpConfig = {}
-    if (options.tuning.model) config.model = options.tuning.model
-    if (options.tuning.effort) {
-      config.agent = { build: { variant: options.tuning.effort } }
-    }
-    if (Object.keys(config).length > 0) {
-      env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config)
-    }
-  }
+  spec.configureEnvironment(env)
 
   const child = spawn(spec.command, spec.args, {
     cwd: workingDir,
@@ -354,7 +243,7 @@ export async function acpStart(
     const transports: McpTransport[] = ["stdio"]
     if (mcpCapabilities?.http) transports.push("http")
     if (mcpCapabilities?.sse) transports.push("sse")
-    live.mcpServers = isMcpProvider(harness)
+    live.mcpServers = providerHost.mcpSources.get(harness)
       ? acpMcpServers(mcpSnapshot, harness, transports)
       : []
     const session = options.resume
