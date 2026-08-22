@@ -7,11 +7,13 @@ import { delimiter, isAbsolute, join } from "node:path"
 import { promisify } from "node:util"
 import { z } from "zod"
 import { accountEnv, selectedAccount } from "./accounts.js"
-import { devinExecutable, openCodeExecutable } from "./harnesses.js"
+import { providerHost } from "./providers/index.js"
+import type { ProviderMcpSource } from "./providers/mcp-source.js"
 import { backendConnectionCredentials } from "./backend-connection.js"
 import { cuaEmbeddedSocket } from "./cua-embedded.js"
 import type { JsonObject, JsonValue } from "./codex-app-json.js"
 import type {
+  McpProvider,
   McpRegistryProviderStatus,
   McpRegistrySnapshot,
   McpServerDefinition,
@@ -21,19 +23,10 @@ import type {
 } from "./shared.js"
 
 const run = promisify(execFile)
-const PROVIDERS = [
-  "claude",
-  "codex",
-  "cursor",
-  "grok",
-  "devin",
-  "opencode",
-] as const
 const SECRET_KEY =
   /(?:authorization|api[-_]?key|access[-_]?token|bearer|credential|oauth|password|secret|token)/i
 const MAX_CLI_OUTPUT = 4 * 1024 * 1024
 
-type Provider = (typeof PROVIDERS)[number]
 const StringMapSchema = z.record(z.string(), z.string()).catch({})
 const OptionalStringSchema = z
   .string()
@@ -103,10 +96,13 @@ export interface McpDiscoveredDefinition {
 }
 
 export interface McpDiscoveryRoute {
-  provider: Provider
+  provider: McpProvider
   account: string
   cwd: string
   env: NodeJS.ProcessEnv
+  command: string | null
+  readsCli: boolean
+  write: ProviderMcpSource["write"]
   userFiles: string[]
   workspaceFiles: string[]
 }
@@ -226,7 +222,7 @@ function parseNamedMap(value: JsonValue): McpInternalDefinition[] {
 }
 
 export function parseProviderJson(
-  provider: Provider,
+  provider: McpProvider,
   contents: string
 ): McpInternalDefinition[] {
   const value = z.json().parse(JSON.parse(contents))
@@ -365,47 +361,23 @@ async function canExecute(
 }
 
 export async function mcpDiscoveryRoute(
-  provider: Provider,
+  provider: McpProvider,
   cwd: string
 ): Promise<McpDiscoveryRoute> {
+  const source = providerHost.mcpSources.get(provider)
+  if (!source) throw new Error(`Provider ${provider} has no MCP discovery source`)
   const env = await accountEnv(provider, process.env)
   const selected = await selectedAccount(provider)
-  const userFiles: string[] = []
-  const workspaceFiles: string[] = []
-  if (provider === "claude") {
-    userFiles.push(
-      selected.dir
-        ? join(selected.dir, ".claude.json")
-        : join(homedir(), ".claude.json")
-    )
-    workspaceFiles.push(join(cwd, ".mcp.json"))
-  } else if (provider === "cursor") {
-    userFiles.push(join(homedir(), ".cursor", "mcp.json"))
-    workspaceFiles.push(join(cwd, ".cursor", "mcp.json"))
-  } else if (provider === "devin") {
-    userFiles.push(
-      join(homedir(), ".config", "devin", "mcp_config.json"),
-      join(homedir(), ".config", "devin", "mcp.json"),
-      join(homedir(), ".devin", "mcp.json")
-    )
-    workspaceFiles.push(
-      join(cwd, ".devin", "mcp_config.local.json"),
-      join(cwd, ".devin", "mcp_config.json")
-    )
-  } else if (provider === "opencode") {
-    userFiles.push(
-      join(homedir(), ".config", "opencode", "opencode.json"),
-      join(homedir(), ".opencode", "config.json")
-    )
-    workspaceFiles.push(join(cwd, "opencode.json"), join(cwd, ".opencode", "config.json"))
-  }
   return {
     provider,
     account: selected.name,
     cwd,
     env,
-    userFiles,
-    workspaceFiles,
+    command: source.command(env),
+    readsCli: source.readsCli,
+    write: source.write,
+    userFiles: source.userFiles(selected),
+    workspaceFiles: source.workspaceFiles(cwd),
   }
 }
 
@@ -445,8 +417,8 @@ async function readJsonDefinitions(
 async function readCliDefinitions(
   route: McpDiscoveryRoute
 ): Promise<McpDiscoveredDefinition[]> {
-  if (route.provider !== "codex" && route.provider !== "grok") return []
-  const command = route.provider
+  if (!route.readsCli || !route.command) return []
+  const command = route.command
   if (!(await canExecute(command, route.env))) return []
   try {
     const { stdout } = await run(command, ["mcp", "list", "--json"], {
@@ -596,18 +568,13 @@ export async function managedMcpDefinitions(
 }
 
 function providerStatus(
-  provider: Provider,
+  provider: McpProvider,
   route: McpDiscoveryRoute,
   available: boolean
 ): McpRegistryProviderStatus {
   return {
     id: provider,
-    label:
-      provider === "claude"
-        ? "Claude Code"
-        : provider === "opencode"
-          ? "OpenCode"
-          : provider[0].toUpperCase() + provider.slice(1),
+    label: providerHost.profiles.get(provider)?.label ?? provider,
     account: route.account,
     available,
     source: route.userFiles[0] ?? `${provider} mcp list --json`,
@@ -619,17 +586,14 @@ export async function discoverMcpRegistry(
   appPath: string
 ): Promise<McpRegistrySnapshot> {
   const routes = await Promise.all(
-    PROVIDERS.map((provider) => mcpDiscoveryRoute(provider, cwd))
+    providerHost.mcpSources
+      .list()
+      .map((source) => mcpDiscoveryRoute(source.provider, cwd))
   )
   const available = await Promise.all(
-    routes.map((route) => {
-      if (route.provider === "devin") return Boolean(devinExecutable())
-      if (route.provider === "opencode") return Boolean(openCodeExecutable())
-      return canExecute(
-        route.provider === "cursor" ? "cursor-agent" : route.provider,
-        route.env
-      )
-    })
+    routes.map((route) =>
+      route.command ? canExecute(route.command, route.env) : false
+    )
   )
   const discovered = (
     await Promise.all(
@@ -675,7 +639,7 @@ export async function discoverMcpRegistry(
 
 export function projectPortableDefinitions(
   snapshot: McpRegistrySnapshot,
-  provider: Provider,
+  provider: McpProvider,
   transports: readonly McpTransport[]
 ): McpServerDefinition[] {
   const nativeNames = new Set(
@@ -706,7 +670,7 @@ const MAKO_RUNTIME_SERVERS = new Set([
 
 export function projectRuntimeDefinitions(
   snapshot: McpRegistrySnapshot,
-  provider: Provider,
+  provider: McpProvider,
   transports: readonly McpTransport[]
 ): McpServerDefinition[] {
   const nativeNames = new Set(

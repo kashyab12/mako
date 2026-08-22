@@ -1,0 +1,12 @@
+import { homedir } from "node:os"
+import { join } from "node:path"
+import type { ProviderMcpSource } from "../mcp-source.js"
+
+export const cursorMcpSource: ProviderMcpSource = {
+  provider: "cursor",
+  command: () => "cursor-agent",
+  userFiles: () => [join(homedir(), ".cursor", "mcp.json")],
+  workspaceFiles: (cwd) => [join(cwd, ".cursor", "mcp.json")],
+  readsCli: false,
+  write: { kind: "none" },
+}

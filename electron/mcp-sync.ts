@@ -14,7 +14,6 @@ import { dirname, join } from "node:path"
 import { promisify } from "node:util"
 import { z } from "zod"
 import type { JsonObject } from "./codex-app-json.js"
-import { devinExecutable } from "./harnesses.js"
 import { mcpDiscoveryRoute, type McpDiscoveryRoute } from "./mcp-registry.js"
 import type {
   McpRegistrySnapshot,
@@ -269,45 +268,6 @@ export async function previewMcpSync(
   }
 }
 
-function cliArgs(
-  provider: "codex" | "grok" | "devin",
-  definition: McpServerDefinition,
-  scope: "user" | "workspace"
-): string[] {
-  const scopeArgs =
-    provider === "grok"
-      ? ["--scope", scope === "workspace" ? "project" : "user"]
-      : provider === "devin"
-        ? ["--scope", scope === "workspace" ? "project" : "user"]
-        : []
-  if (definition.transport === "stdio") {
-    const envArgs = Object.entries(managedEnvironment(definition)).flatMap(
-      ([name, value]) => [provider === "codex" ? "--env" : "-e", `${name}=${value}`]
-    )
-    return [
-      "mcp",
-      "add",
-      ...scopeArgs,
-      ...envArgs,
-      definition.name,
-      "--",
-      definition.command ?? "",
-      ...(definition.args ?? []),
-    ]
-  }
-  if (provider === "codex")
-    return ["mcp", "add", definition.name, "--url", definition.url ?? ""]
-  return [
-    "mcp",
-    "add",
-    ...scopeArgs,
-    "--transport",
-    definition.transport,
-    definition.name,
-    definition.url ?? "",
-  ]
-}
-
 export async function applyMcpSync(
   snapshot: McpRegistrySnapshot,
   serverId: string,
@@ -353,27 +313,29 @@ export async function applyMcpSync(
     return
   }
   const route = await mcpDiscoveryRoute(target.provider, snapshot.cwd)
-  const command =
-    target.provider === "devin" ? devinExecutable() : target.provider
-  if (
-    !command ||
-    (target.provider !== "codex" &&
-      target.provider !== "grok" &&
-      target.provider !== "devin")
-  ) {
+  const command = route.command
+  if (!command || route.write.kind === "none") {
     previews.delete(key)
     throw new Error(
       `${target.provider} does not expose a reliable MCP write command`
     )
   }
   try {
-    await run(command, cliArgs(target.provider, definition, target.scope), {
-      cwd: snapshot.cwd,
-      env: route.env,
-      timeout: 15_000,
-      maxBuffer: 1024 * 1024,
-      windowsHide: true,
-    })
+    await run(
+      command,
+      route.write.args(
+        definition,
+        target.scope,
+        managedEnvironment(definition)
+      ),
+      {
+        cwd: snapshot.cwd,
+        env: route.env,
+        timeout: 15_000,
+        maxBuffer: 1024 * 1024,
+        windowsHide: true,
+      }
+    )
   } finally {
     previews.delete(key)
   }

@@ -12,6 +12,10 @@ assert.deepEqual(
   providerHost.profiles.list().map((loader) => loader.provider),
   providers
 )
+assert.deepEqual(
+  providerHost.mcpSources.list().map((source) => source.provider),
+  providers
+)
 
 const codex = providerHost.nativeRunners.get("codex")!
 assert.deepEqual(codex.resume("session", "continue", {

@@ -791,13 +791,8 @@ export interface StagedFile {
   size: number
 }
 
-export type McpProvider =
-  | "claude"
-  | "cursor"
-  | "devin"
-  | "codex"
-  | "grok"
-  | "opencode"
+/** Open provider id; MCP-capable harnesses register at host composition. */
+export type McpProvider = string & {}
 export type McpTransport = "stdio" | "http" | "sse"
 export type McpScope = "user" | "workspace" | "effective" | "managed"
 
