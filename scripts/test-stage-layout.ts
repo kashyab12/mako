@@ -11,6 +11,12 @@ import {
   subagentResultText,
   toolLabel,
 } from "../src/lib/tools.ts"
+import { threadStatus, threadsStore } from "../src/state/threads.ts"
+import {
+  groupThreadFolders,
+  threadFolderKey,
+} from "../src/lib/thread-folders.ts"
+import type { ThreadRef } from "../src/lib/types.ts"
 
 assert.equal(
   clampCompanionWidth({ width: 520, available: 1400, min: 400 }),
@@ -67,4 +73,60 @@ assert.equal(
 assert.equal(toolLabel("exec_command"), "Shell")
 assert.equal(toolLabel("TaskUpdate"), "Update task")
 
-console.log("stage layout, tool mapping, and subagent formatting passed")
+const folderRefs = [
+  {
+    harness: "opencode",
+    nativeId: "one",
+    path: "/one",
+    cwd: "/repo/packages/app",
+    workspace: "/repo",
+    updatedAt: "2026-01-02T00:00:00.000Z",
+  },
+  {
+    harness: "codex",
+    nativeId: "two",
+    path: "/two",
+    cwd: "/repo",
+    workspace: "/repo",
+    updatedAt: "2026-01-03T00:00:00.000Z",
+  },
+] satisfies ThreadRef[]
+assert.equal(threadFolderKey(folderRefs[0]), "/repo")
+assert.equal(
+  threadFolderKey({
+    harness: "claude",
+    nativeId: "temp",
+    path: "/temp",
+    cwd: "/private/tmp/session",
+  }),
+  ""
+)
+assert.deepEqual(
+  groupThreadFolders({
+    refs: folderRefs,
+    currentCwd: "/repo/packages/app",
+    pinnedThreads: [],
+    pinnedFolders: [],
+    sortBy: "recent",
+  }).map((folder) => ({ cwd: folder.cwd, count: folder.refs.length })),
+  [{ cwd: "/repo", count: 2 }]
+)
+
+const statusState = threadsStore.get()
+const openCodeRef = {
+  harness: "opencode" as const,
+  nativeId: "session",
+  path: "/session",
+}
+assert.deepEqual(threadStatus({ ...openCodeRef, active: true }, statusState), {
+  kind: "external-active",
+})
+assert.deepEqual(
+  threadStatus(
+    { ...openCodeRef, active: false },
+    { ...statusState, observed: { "/session": true } }
+  ),
+  { kind: "idle" }
+)
+
+console.log("stage layout, tool mapping, subagent formatting, and explicit activity passed")
