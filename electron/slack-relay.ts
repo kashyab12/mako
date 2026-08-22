@@ -6,6 +6,7 @@ import { z } from "zod"
 import type { ThreadRef } from "@mako/sessions"
 import { backendRelayPost } from "./backend-connection.js"
 import {
+  abortNative,
   resumeNative,
   startFresh,
   waitForNativeRun,
@@ -154,7 +155,8 @@ async function waitForFreshThread({
 
 async function executePayload(
   payload: z.infer<typeof PayloadSchema>,
-  defaultCwd: string
+  defaultCwd: string,
+  signal: AbortSignal
 ): Promise<{
   effort?: string
   fast?: boolean
@@ -336,7 +338,15 @@ async function executePayload(
             : text,
           options
         )
-  const completed = await waitForNativeRun(run.path)
+  if (signal.aborted) {
+    abortNative(run.path)
+    throw new Error("The Slack relay lease was lost before execution started")
+  }
+  const abort = () => abortNative(run.path)
+  signal.addEventListener("abort", abort, { once: true })
+  const completed = await waitForNativeRun(run.path).finally(() =>
+    signal.removeEventListener("abort", abort)
+  )
   if (completed.state.status !== "done") {
     return {
       effort,
@@ -361,6 +371,40 @@ async function executePayload(
   }
 }
 
+async function renewLease(
+  id: string,
+  lease: z.infer<typeof LeaseSchema>["lease"],
+  popReceipt: string
+): Promise<string> {
+  let failure: unknown
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const renewed = await backendRelayPost(
+        "/api/relay/renew",
+        JSON.stringify({
+          deviceId: id,
+          jobId: lease.jobId,
+          messageId: lease.messageId,
+          popReceipt,
+          visibilityTimeoutSeconds: 300,
+        })
+      )
+      if (!renewed.ok) {
+        throw new Error(`Relay renewal returned ${renewed.status}`)
+      }
+      return z
+        .object({ popReceipt: z.string().min(1) })
+        .parse(z.json().parse(await renewed.json())).popReceipt
+    } catch (error) {
+      failure = error
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 5_000))
+      }
+    }
+  }
+  throw failure
+}
+
 async function poll(options: SlackRelayOptions, id: string): Promise<void> {
   if (stopped) return
   try {
@@ -383,27 +427,24 @@ async function poll(options: SlackRelayOptions, id: string): Promise<void> {
       const leased = LeaseSchema.parse(value).lease
       let popReceipt = leased.popReceipt
       let renewal = Promise.resolve()
+      const leaseAbort = new AbortController()
       const renewTimer = setInterval(() => {
-        renewal = renewal.then(async () => {
-          const renewed = await backendRelayPost(
-            "/api/relay/renew",
-            JSON.stringify({
-              deviceId: id,
-              jobId: leased.jobId,
-              messageId: leased.messageId,
-              popReceipt,
-              visibilityTimeoutSeconds: 300,
-            })
-          )
-          if (!renewed.ok) throw new Error(`Relay renewal returned ${renewed.status}`)
-          popReceipt = z
-            .object({ popReceipt: z.string().min(1) })
-            .parse(z.json().parse(await renewed.json())).popReceipt
-        })
+        renewal = renewal
+          .then(async () => {
+            popReceipt = await renewLease(id, leased, popReceipt)
+          })
+          .catch(() => {
+            leaseAbort.abort()
+            throw new Error("Relay lease renewal failed")
+          })
       }, 180_000)
       let execution: Awaited<ReturnType<typeof executePayload>>
       try {
-        execution = await executePayload(leased.payload, options.defaultCwd())
+        execution = await executePayload(
+          leased.payload,
+          options.defaultCwd(),
+          leaseAbort.signal
+        )
       } finally {
         clearInterval(renewTimer)
         await renewal
