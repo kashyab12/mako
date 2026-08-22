@@ -801,6 +801,11 @@ function ComposerRouting() {
   const harness = useThreads((state) => state.composerHarness)
   const live = useAcp((state) => state.session)
   const queued = useAcp((state) => state.queued)
+  const [modelChangedFor, setModelChangedFor] = useState<string | null>(null)
+  const moving = Boolean(viewing && harness !== viewing.harness)
+  const modelContext = `${viewing?.path ?? "new"}:${harness}`
+  const threadModel =
+    !moving && modelChangedFor !== modelContext ? viewing?.model : undefined
 
   if (live) {
     return (
@@ -825,12 +830,15 @@ function ComposerRouting() {
     )
   }
 
-  const moving = viewing && harness !== viewing.harness
   return (
     <>
       <AgentPicker />
-      <ForeignModelPicker harness={harness} />
-      <ForeignEffortPicker harness={harness} />
+      <ForeignModelPicker
+        harness={harness}
+        threadModel={threadModel}
+        onChange={() => setModelChangedFor(modelContext)}
+      />
+      <ForeignEffortPicker harness={harness} threadModel={threadModel} />
       {viewing && run?.status === "running" ? (
         <button
           type="button"
