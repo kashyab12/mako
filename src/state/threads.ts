@@ -1,5 +1,6 @@
 import { getMako, hasBridge } from "@/lib/bridge"
 import type { ThreadRef } from "@/lib/types"
+import { bindQueuedReplySender } from "@/state/thread-queue"
 import {
   takePendingThread,
   threadContinuationActions,
@@ -165,3 +166,5 @@ export const threads = {
   ...threadViewingActions,
   ...threadContinuationActions,
 }
+
+bindQueuedReplySender(threadContinuationActions.reply)

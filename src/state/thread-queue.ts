@@ -3,6 +3,15 @@ import type { ViewedUserEntry } from "@/state/thread-state"
 import { threadsStore } from "@/state/thread-store"
 
 const releasingReplies = new Set<string>()
+let queuedReplySender:
+  | ((ref: ThreadRef, prompt: string) => Promise<boolean>)
+  | null = null
+
+export function bindQueuedReplySender(
+  sender: (ref: ThreadRef, prompt: string) => Promise<boolean>
+): void {
+  queuedReplySender = sender
+}
 
 export function appendOptimisticReply(ref: ThreadRef, prompt: string): boolean {
   const { viewing } = threadsStore.get()
@@ -40,10 +49,11 @@ export function releaseQueuedReply(path: string): void {
   const prompt = queue?.prompts[0]
   if (!queue || prompt === undefined || releasingReplies.has(path)) return
 
+  const send = queuedReplySender
+  if (!send) return
   releasingReplies.add(path)
   setTimeout(() => {
-    void import("@/state/threads")
-      .then(({ threads }) => threads.reply(queue.ref, prompt))
+    void send(queue.ref, prompt)
       .then((sent) => {
         if (!sent) return
         const current = threadsStore.get().queuedReplies[path]

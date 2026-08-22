@@ -13,6 +13,10 @@ import {
 } from "../src/lib/tools.ts"
 import { threadStatus, threadsStore } from "../src/state/threads.ts"
 import {
+  bindQueuedReplySender,
+  releaseQueuedReply,
+} from "../src/state/thread-queue.ts"
+import {
   groupThreadFolders,
   threadFolderKey,
 } from "../src/lib/thread-folders.ts"
@@ -163,5 +167,25 @@ assert.deepEqual(
   ),
   { kind: "idle" }
 )
+
+const queuedRef = {
+  harness: "codex",
+  nativeId: "queued",
+  path: "/queued",
+} satisfies ThreadRef
+let queuedSend: { ref: ThreadRef; prompt: string } | null = null
+bindQueuedReplySender(async (ref, prompt) => {
+  queuedSend = { ref, prompt }
+  return true
+})
+threadsStore.set({
+  queuedReplies: {
+    [queuedRef.path]: { ref: queuedRef, prompts: ["second turn"] },
+  },
+})
+releaseQueuedReply(queuedRef.path)
+await new Promise((resolve) => setTimeout(resolve, 80))
+assert.deepEqual(queuedSend, { ref: queuedRef, prompt: "second turn" })
+assert.equal(threadsStore.get().queuedReplies[queuedRef.path], undefined)
 
 console.log("stage layout, tool mapping, subagent formatting, and explicit activity passed")

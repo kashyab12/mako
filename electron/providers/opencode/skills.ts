@@ -7,7 +7,7 @@ const configRoot = () => join(homedir(), ".config", "opencode", "skills")
 
 export const openCodeSkillSource: ProviderSkillSource = {
   provider: "opencode",
-  command: () => openCodeExecutable(),
+  command: () => openCodeExecutable() ?? "opencode",
   userRoots: () => [configRoot(), join(homedir(), ".opencode", "skills")],
   workspaceFolder: ".opencode",
   targetUserRoot: configRoot,

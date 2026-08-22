@@ -23,7 +23,8 @@ export const openCodeAcpSource: ProviderAcpSource = {
       command: installation.command,
       args: ["acp"],
       configureEnvironment(env) {
-        if (installation.generation === "v2" || !options.tuning) return
+        if ((generation ?? installation.generation) === "v2" || !options.tuning)
+          return
         const config: OpenCodeAcpConfig = {}
         if (options.tuning.model) config.model = options.tuning.model
         if (options.tuning.effort) {

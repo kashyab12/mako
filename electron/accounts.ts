@@ -48,9 +48,7 @@ import type {
   ProviderAccountCapability,
   SelectableAccountCapability,
 } from "./providers/account-capability.js"
-import { classifyCodexWindows } from "./providers/codex/accounts.js"
 import { providerHost } from "./providers/index.js"
-import { parseOpenCodeAccounts } from "./providers/opencode/accounts.js"
 
 export type {
   AccountHarness,
@@ -62,8 +60,6 @@ export type {
   SelectedAccount,
   UsageWindow,
 } from "./account-types.js"
-export { classifyCodexWindows, parseOpenCodeAccounts }
-
 function selectableCapability(provider: string): SelectableAccountCapability {
   const capability = providerHost.accountCapabilities.get(provider)
   if (!capability || capability.mode !== "selectable") {

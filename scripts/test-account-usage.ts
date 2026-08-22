@@ -1,11 +1,11 @@
 import assert from "node:assert/strict"
 import {
   accountEnv,
-  classifyCodexWindows,
-  parseOpenCodeAccounts,
   selectedAccount,
   type UsageWindow,
 } from "../electron/accounts"
+import { classifyCodexWindows } from "../electron/providers/codex/accounts"
+import { parseOpenCodeAccounts } from "../electron/providers/opencode/accounts"
 import {
   normalizeOpenCodeModels,
   preferredOpenCodeDefault,

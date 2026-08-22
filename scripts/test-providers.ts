@@ -19,12 +19,14 @@ assert.deepEqual(
   providerHost.skillSources.list().map((source) => source.provider),
   providers
 )
-for (const source of providerHost.acpSources.list()) {
-  assert.ok(providers.includes(source.provider))
-}
-for (const emitter of providerHost.sessionEmitters.list()) {
-  assert.ok(providers.includes(emitter.provider))
-}
+assert.deepEqual(
+  providerHost.acpSources.list().map((source) => source.provider),
+  ["claude", "cursor", "grok", "devin", "opencode"]
+)
+assert.deepEqual(
+  providerHost.sessionEmitters.list().map((emitter) => emitter.provider),
+  ["claude", "codex", "cursor", "grok"]
+)
 assert.equal(
   providerHost.nativeRunners.get("claude")?.fastMode,
   "unsupported"
@@ -43,6 +45,25 @@ assert.equal(providerHost.accountCapabilities.get("cursor"), undefined)
 const accountCapability: ProviderAccountCapability =
   providerHost.accountCapabilities.get("claude")!
 assert.equal(accountCapability.mode, "selectable")
+
+const claude = providerHost.nativeRunners.get("claude")!
+assert.deepEqual(claude.resume("session", "continue", {
+  model: "opus",
+  effort: "high",
+}), {
+  command: "claude",
+  args: [
+    "-p",
+    "continue",
+    "--resume",
+    "session",
+    "--dangerously-skip-permissions",
+    "--model",
+    "opus",
+    "--effort",
+    "high",
+  ],
+})
 
 const codex = providerHost.nativeRunners.get("codex")!
 assert.deepEqual(
@@ -89,6 +110,89 @@ assert.deepEqual(
     ],
   }
 )
+
+const grok = providerHost.nativeRunners.get("grok")!
+assert.deepEqual(grok.resume("session", "continue", { effort: "high" }), {
+  command: "agent",
+  args: [
+    "-p",
+    "continue",
+    "--resume",
+    "session",
+    "--always-approve",
+    "--reasoning-effort",
+    "high",
+  ],
+})
+
+const devin = providerHost.nativeRunners.get("devin")!
+assert.deepEqual(
+  devin.fresh("start", { model: "adaptive" }).args,
+  [
+    "-p",
+    "start",
+    "--permission-mode",
+    "smart",
+    "--respect-workspace-trust",
+    "false",
+    "--model",
+    "adaptive",
+  ]
+)
+
+const openCode = providerHost.nativeRunners.get("opencode")!
+const openCodeFresh = openCode.fresh("start", { model: "openai/gpt" })
+assert.equal(openCodeFresh.args[0], "run")
+assert.equal(openCodeFresh.args.at(-1), "start")
+assert.ok(openCodeFresh.args.includes("openai/gpt"))
+
+const cursorAcp = await providerHost.acpSources.get("cursor")!.launch({
+  appPath: process.cwd(),
+  execPath: process.execPath,
+})
+assert.deepEqual(
+  cursorAcp && { command: cursorAcp.command, args: cursorAcp.args },
+  { command: "cursor-agent", args: ["acp"] }
+)
+
+const grokAcp = await providerHost.acpSources.get("grok")!.launch({
+  appPath: process.cwd(),
+  execPath: process.execPath,
+  tuning: { effort: "high" },
+})
+assert.deepEqual(grokAcp?.args, [
+  "agent",
+  "--no-leader",
+  "--reasoning-effort",
+  "high",
+  "stdio",
+])
+const grokEnv: NodeJS.ProcessEnv = {}
+grokAcp?.configureEnvironment(grokEnv)
+assert.equal(grokEnv.GROK_DISABLE_AUTOUPDATER, "1")
+
+const claudeSource = providerHost.acpSources.get("claude")!
+if (claudeSource.available(process.cwd())) {
+  const claudeAcp = await claudeSource.launch({
+    appPath: process.cwd(),
+    execPath: "/fixture/electron",
+    tuning: { options: { agentTeams: true } },
+  })
+  assert.equal(claudeAcp?.command, "/fixture/electron")
+  const claudeEnv: NodeJS.ProcessEnv = {}
+  claudeAcp?.configureEnvironment(claudeEnv)
+  assert.equal(claudeEnv.ELECTRON_RUN_AS_NODE, "1")
+  assert.equal(claudeEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS, "1")
+}
+
+const openCodeSource = providerHost.acpSources.get("opencode")!
+if (openCodeSource.available(process.cwd())) {
+  const openCodeAcp = await openCodeSource.launch({
+    appPath: process.cwd(),
+    execPath: process.execPath,
+  })
+  assert.deepEqual(openCodeAcp?.args, ["acp"])
+}
 
 const registry = new ProviderRegistry<NativeRunner>()
 const runner: NativeRunner = {
