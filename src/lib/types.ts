@@ -25,7 +25,6 @@ export type {
   ChatRole,
   CommandSummary,
   ContextUsage,
-  DevServerState,
   ExternalEditor,
   FileContents,
   GitCommitEntry,
@@ -33,7 +32,6 @@ export type {
   GitFile,
   GitFileStatus,
   GitStatus,
-  ListeningPort,
   GitHubStatus,
   CheckSummary,
   PullRequest,
@@ -109,6 +107,7 @@ export function harnessModelByIdentity(
     (model) =>
       model.id === identity ||
       model.launchId === identity ||
-      model.aliases?.includes(identity)
+      model.aliases?.includes(identity) ||
+      model.variants?.some((variant) => variant.id === identity)
   )
 }
