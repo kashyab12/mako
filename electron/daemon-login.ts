@@ -54,6 +54,27 @@ export async function ensureDaemonLoginDefault(): Promise<void> {
   }
 }
 
+export async function daemonLoginProcess(): Promise<number | null> {
+  if (process.platform !== "darwin") return null
+  const uid = process.getuid?.() ?? 501
+  try {
+    const { stdout } = await run("launchctl", [
+      "print",
+      `gui/${uid}/${LABEL}`,
+    ])
+    const match = /\bpid = (\d+)/.exec(stdout)
+    return match ? Number(match[1]) : null
+  } catch {
+    return null
+  }
+}
+
+export async function stopDaemonLoginJob(): Promise<void> {
+  if (process.platform !== "darwin") return
+  const uid = process.getuid?.() ?? 501
+  await run("launchctl", ["bootout", `gui/${uid}/${LABEL}`]).catch(() => {})
+}
+
 export async function daemonLoginEnabled(): Promise<boolean> {
   if (process.platform !== "darwin") return false
   try {
@@ -111,11 +132,17 @@ export async function setDaemonLogin(enabled: boolean): Promise<void> {
   await writeFile(plistPath(), plist, "utf8")
   // Re-bootstrap so a re-save (after an app update moved the binary) takes.
   await run("launchctl", ["bootout", `gui/${uid}/${LABEL}`]).catch(() => {})
-  await run("launchctl", ["bootstrap", `gui/${uid}`, plistPath()]).catch(async (error) => {
-    // An unloadable plist should not stay on disk claiming otherwise.
-    await rm(plistPath(), { force: true })
-    throw new Error(
-      `launchctl refused the job: ${error instanceof Error ? error.message : String(error)}`
-    )
-  })
+  let failure: Error | null = null
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await run("launchctl", ["bootstrap", `gui/${uid}`, plistPath()])
+      return
+    } catch (error) {
+      failure = error instanceof Error ? error : new Error(String(error))
+      await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)))
+    }
+  }
+  // An unloadable plist should not stay on disk claiming otherwise.
+  await rm(plistPath(), { force: true })
+  throw new Error(`launchctl refused the job: ${failure?.message ?? "unknown error"}`)
 }
