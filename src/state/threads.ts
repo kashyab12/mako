@@ -10,6 +10,16 @@ import type {
   ThreadRunState,
 } from "@/lib/types"
 
+const INTERACTIVE_RESUME_HARNESSES = new Set([
+  "claude",
+  "grok",
+  "opencode",
+])
+
+export function canResumeInteractively(harness: string): boolean {
+  return INTERACTIVE_RESUME_HARNESSES.has(harness)
+}
+
 const HARNESS_NAMES = new Map([
   ["codex", "Codex"],
   ["claude", "Claude Code"],
@@ -174,10 +184,12 @@ export function threadStatus(
   if (attention) return attention
   const working = state.working[ref.path]
   if (working) return working
+  if (ref.active === true) return EXTERNAL_ACTIVE_STATUS
   if (ref.locked)
     return state.observed[ref.path]
       ? EXTERNAL_ACTIVE_STATUS
       : EXTERNAL_OPEN_STATUS
+  if (ref.active === false) return IDLE_STATUS
   return state.observed[ref.path] ? OBSERVED_STATUS : IDLE_STATUS
 }
 
@@ -366,7 +378,8 @@ export function applyThreadRef(ref: ThreadRef) {
       ((ref.bytes ?? 0) > (previous.bytes ?? 0) ||
         ref.updatedAt !== previous.updatedAt)
   )
-  if (recentlyAdded || advanced) markObserved(ref.path)
+  if (ref.active !== undefined) clearObserved(ref.path)
+  else if (recentlyAdded || advanced) markObserved(ref.path)
   const next = at === -1 ? [...current, ref] : current.map((entry, index) => (index === at ? ref : entry))
   next.sort((left, right) =>
     (right.updatedAt ?? "").localeCompare(left.updatedAt ?? "")
@@ -732,8 +745,15 @@ export const threads = {
       }
       return true
     }
-    if (threadsStore.get().acpable.includes(ref.harness)) {
-      return (await import("@/state/acp")).acp.resumeAndSend(ref, prompt)
+    if (
+      canResumeInteractively(ref.harness) &&
+      threadsStore.get().acpable.includes(ref.harness)
+    ) {
+      const resumed = await (await import("@/state/acp")).acp.resumeAndSend(
+        ref,
+        prompt
+      )
+      if (resumed) return true
     }
     // Paint the message NOW. The CLI takes a second to launch and the tail
     // another moment to land; a reply that vanishes into that gap reads as
