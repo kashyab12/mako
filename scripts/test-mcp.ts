@@ -24,6 +24,7 @@ import {
 import { integrationCatalog } from "../electron/integrations.js"
 import { LOCAL_TOOL_INPUTS } from "../electron/local-tools-main.js"
 import {
+  cuaEmbeddedSocket,
   ensureCuaEmbedded,
   stopCuaEmbedded,
 } from "../electron/cua-embedded.js"
@@ -441,6 +442,29 @@ async function testManagedDefinitions(): Promise<void> {
   })
 }
 
+async function testManagedCommandIsolation(): Promise<void> {
+  if (process.platform !== "darwin") return
+  const directory = await mkdtemp(join(tmpdir(), "mako-mcp-command-env-"))
+  const report = join(directory, "environment.json")
+  const command = join(directory, "macos-harness")
+  const keys = ["MAKO_BACKEND_TOKEN", "MAKO_CUA_SOCKET"]
+  await writeFile(
+    command,
+    `#!${process.execPath}\nrequire("node:fs").writeFileSync(${JSON.stringify(report)}, JSON.stringify(${JSON.stringify(keys)}.filter(key => process.env[key])))\n`
+  )
+  await chmod(command, 0o755)
+  try {
+    await managedMcpDefinitions("/app", "/electron", {
+      PATH: directory,
+      MAKO_BACKEND_TOKEN: "backend-secret",
+      MAKO_CUA_SOCKET: "/tmp/cua.sock",
+    })
+    assert.deepEqual(JSON.parse(await readFile(report, "utf8")), [])
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+}
+
 async function testMakoRuntimeProjection(): Promise<void> {
   const managed = (
     name: "mako-local-tools" | "mako-local-control",
@@ -481,10 +505,6 @@ async function testMakoRuntimeProjection(): Promise<void> {
       availability: "available" as const,
     })),
   }
-  const previousSocket = process.env.MAKO_PREVIEW_SOCKET
-  const previousToken = process.env.MAKO_PREVIEW_TOKEN
-  process.env.MAKO_PREVIEW_SOCKET = "/tmp/mako-preview.sock"
-  process.env.MAKO_PREVIEW_TOKEN = "a".repeat(64)
   const acpServers = acpMcpServers(snapshot, "claude", ["stdio"])
   assert.deepEqual(
     acpServers.map((server) => server.name),
@@ -492,11 +512,7 @@ async function testMakoRuntimeProjection(): Promise<void> {
   )
   assert.deepEqual(
     acpServers.find((server) => server.name === "mako-local-tools")?.env,
-    [
-      { name: "ELECTRON_RUN_AS_NODE", value: "1" },
-      { name: "MAKO_PREVIEW_SOCKET", value: "/tmp/mako-preview.sock" },
-      { name: "MAKO_PREVIEW_TOKEN", value: "a".repeat(64) },
-    ]
+    [{ name: "ELECTRON_RUN_AS_NODE", value: "1" }]
   )
   const codex = codexMcpConfig(snapshot)
   const servers = z
@@ -545,10 +561,6 @@ async function testMakoRuntimeProjection(): Promise<void> {
     ),
     ["mako-local-control", "mako-local-tools"]
   )
-  if (previousSocket) process.env.MAKO_PREVIEW_SOCKET = previousSocket
-  else delete process.env.MAKO_PREVIEW_SOCKET
-  if (previousToken) process.env.MAKO_PREVIEW_TOKEN = previousToken
-  else delete process.env.MAKO_PREVIEW_TOKEN
 }
 
 async function testMakoBackendProjection(): Promise<void> {
@@ -610,6 +622,7 @@ async function testMakoBackendProjection(): Promise<void> {
 }
 
 async function testEmbeddedCuaHost(): Promise<void> {
+  const previousSocket = process.env.MAKO_CUA_SOCKET
   const directory = await mkdtemp(join(tmpdir(), "mako-cua-embedded-"))
   const command = join(directory, "cua-driver")
   const state = join(directory, "state")
@@ -621,10 +634,13 @@ async function testEmbeddedCuaHost(): Promise<void> {
       PATH: directory,
     })
     assert.ok(socket)
-    assert.equal(process.env.MAKO_CUA_SOCKET, socket)
+    assert.equal(cuaEmbeddedSocket(), socket)
+    assert.equal(process.env.MAKO_CUA_SOCKET, previousSocket)
   } finally {
     stopCuaEmbedded()
     await new Promise((resolve) => setTimeout(resolve, 50))
+    assert.equal(cuaEmbeddedSocket(), null)
+    assert.equal(process.env.MAKO_CUA_SOCKET, previousSocket)
     await rm(directory, { recursive: true, force: true })
   }
 }
@@ -758,6 +774,7 @@ await testSerializedGuardedMerge()
 await testGuardedAtomicMerge()
 testAcpProjection()
 await testManagedDefinitions()
+await testManagedCommandIsolation()
 await testMakoRuntimeProjection()
 await testMakoBackendProjection()
 await testEmbeddedCuaHost()
