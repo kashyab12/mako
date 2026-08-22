@@ -4,7 +4,8 @@ import {
   buildWorkspaceTree,
   pathToOpenKeys,
 } from "../src/lib/workspace-tree.ts"
-import type { WorkspaceFile } from "../electron/shared.ts"
+import type { ChatMessage, WorkspaceFile } from "../electron/shared.ts"
+import { reconcileMessages } from "../src/lib/reconcile.ts"
 
 const files: WorkspaceFile[] = Array.from({ length: 20_000 }, (_, index) => ({
   path: `packages/package-${Math.floor(index / 200)}/src/features/feature-${index}/index.ts`,
@@ -26,4 +27,24 @@ assert.equal(
   rows.some((row) => row.kind === "file" && row.path === target),
   true
 )
+
+const previous: ChatMessage = {
+  id: "assistant-1",
+  role: "assistant",
+  blocks: [
+    { type: "toolResult", id: "tool-1", text: "done" },
+    { type: "toolCall", id: "tool-2", arguments: { path: "one" } },
+  ],
+}
+const same = structuredClone(previous)
+assert.equal(reconcileMessages([previous], [same])[0], previous)
+const rewritten: ChatMessage = {
+  ...structuredClone(previous),
+  blocks: [
+    { type: "toolResult", id: "tool-1", text: "fail" },
+    { type: "toolCall", id: "tool-2", arguments: { path: "two" } },
+  ],
+}
+assert.equal(reconcileMessages([previous], [rewritten])[0], rewritten)
+
 console.log(`workspace reveal over 20,000 files passed in ${duration.toFixed(1)}ms`)
