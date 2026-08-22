@@ -1,6 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
-import { Exchange } from "@/components/transcript/exchange"
-import { NAVIGATOR_WIDTH, TurnNavigator } from "@/components/transcript/turn-navigator"
+import { useEffect, useMemo, useState } from "react"
+import { ConversationTimeline } from "@/components/transcript/conversation-timeline"
 import { harnessLabel } from "@/components/rail/harness-meta"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { Action, IconAction } from "@/components/ui/kit"
@@ -315,163 +314,57 @@ function SessionStatusIcon({ status }: { status: ThreadStatus }) {
  *
  * Canonical entries convert to native messages and group into exchanges —
  * the same components, the same markdown, the same tool rows as any
- * conversation here. Sticks to the bottom while the live tail appends, and
- * stops sticking the moment the reader scrolls up.
+ * conversation here.
  */
-function exchangeInterrupted(exchange: ExchangeData): boolean {
-  return exchange.system.some((message) =>
-    message.blocks.some((block) => {
-      const text = block.type === "text" ? block.text : undefined
-      return text ? /^Interrupted(?:\s|$)/i.test(text.trim()) : false
-    })
-  )
-}
-
 function Conversation() {
   const thread = useThreads((state) => state.viewing)
   const run = useThreads((state) => state.run)
   const status = useThreads((state) =>
     state.viewing ? threadStatus(state.viewing.ref, state) : null
   )
-  const scroller = useRef<HTMLDivElement | null>(null)
-  const pane = useRef<HTMLDivElement | null>(null)
-  const stick = useRef(true)
-  const [activeTurn, setActiveTurn] = useState<string | null>(null)
-  const [showEarlier, setShowEarlier] = useState(false)
   const [buildExchanges] = useState(() => createExchangeBuilder())
+  const exchanges = useMemo(
+    () => buildExchanges(thread),
+    [buildExchanges, thread]
+  )
+  if (!thread) return null
 
-  /*
-   * Incremental conversion — the difference between streaming and replay.
-   *
-   * The state-owned builder is stable for this component's lifetime. Entries
-   * only ever append, so each batch converts ONLY the new tail and replaces at
-   * most the last exchange. Every earlier exchange keeps its object identity,
-   * letting memoized rows skip their render.
-   */
-  const exchanges = useMemo(() => buildExchanges(thread), [buildExchanges, thread])
-
-  const renderedExchanges = showEarlier ? exchanges : exchanges.slice(-30)
   const live =
     run?.status === "running" ||
     status?.kind === "working" ||
     status?.kind === "observed" ||
     status?.kind === "external-active"
-  const interrupted = run?.status === "stopped"
-  const failed = run?.status === "failed" || status?.kind === "failed"
-  const lastExchangeId = renderedExchanges.at(-1)?.id
-
-  // Which turn is in view — the navigator's cursor. Same observer the
-  // native transcript uses: costs nothing while entries stream in.
-  useEffect(() => {
-    const node = scroller.current
-    if (!node) return
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0]
-        const id = visible?.target.getAttribute("data-exchange")
-        if (id) setActiveTurn(id)
-      },
-      { root: node, rootMargin: "-10% 0px -70% 0px", threshold: 0 }
-    )
-    for (const element of node.querySelectorAll("[data-exchange]")) observer.observe(element)
-    return () => observer.disconnect()
-  }, [renderedExchanges.length])
-
-  const jump = (id: string) => {
-    stick.current = false
-    scroller.current
-      ?.querySelector(`[data-exchange="${CSS.escape(id)}"]`)
-      ?.scrollIntoView({ block: "start", behavior: "smooth" })
-  }
-
-  // A conversation opens at its end — that is where the conversation is.
-  // Before paint, so the reader never sees the top flash by; and pinned
-  // through late growth (markdown, code blocks, images settling) by
-  // watching the content's own height, not just entry counts.
-  useLayoutEffect(() => {
-    stick.current = true
-    const node = scroller.current
-    if (node) node.scrollTop = node.scrollHeight
-  }, [thread?.ref.path])
-
-  useEffect(() => {
-    const node = scroller.current
-    if (!node) return
-    const pin = () => {
-      if (stick.current) node.scrollTop = node.scrollHeight
-    }
-    pin()
-    const grown = new ResizeObserver(pin)
-    if (node.firstElementChild) grown.observe(node.firstElementChild)
-    return () => grown.disconnect()
-  }, [thread?.ref.path, renderedExchanges.length])
-
-  useEffect(() => {
-    const node = scroller.current
-    if (node && stick.current) node.scrollTop = node.scrollHeight
-  }, [renderedExchanges.length, thread?.entries.length])
-
+  const lastExchangeId = exchanges.at(-1)?.id
   return (
-    <div ref={pane} className="relative flex min-h-0 flex-1">
-      <div
-        ref={scroller}
-        onScroll={(event) => {
-          const node = event.currentTarget
-          stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80
-        }}
-        style={{ paddingRight: NAVIGATOR_WIDTH }}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
-      >
-        {exchanges.length === 0 ? (
-          <p className="pt-12 text-center text-ui text-faint">
-            This session has no readable conversation.
-          </p>
-        ) : (
-          <div className="mx-auto flex w-full max-w-content flex-col gap-7 px-6 py-6">
-            {!showEarlier && exchanges.length > renderedExchanges.length ? (
-              <button
-                type="button"
-                onClick={() => setShowEarlier(true)}
-                className="pressable self-center rounded-md bg-raised px-2.5 py-1 text-label text-faint hover:text-foreground"
-              >
-                Show {exchanges.length - renderedExchanges.length} earlier turns
-              </button>
-            ) : null}
-            {renderedExchanges.map((exchange) => (
-              <Exchange
-                key={exchange.id}
-                exchange={exchange}
-                streaming={live && exchange.id === lastExchangeId}
-                interrupted={
-                  exchangeInterrupted(exchange) ||
-                  (interrupted && exchange.id === lastExchangeId)
-                }
-                failed={failed && exchange.id === lastExchangeId}
-              />
-            ))}
-            {live && thread ? (
-              <div className="animate-enter flex items-center gap-2 px-0.5 text-ui">
-                <HarnessIcon
-                  harness={thread.ref.harness}
-                  className="size-3.5 animate-live"
-                />
-                <span className="shimmer">
-                  {harnessLabel(thread.ref.harness)} is working…
-                </span>
-              </div>
-            ) : null}
+    <ConversationTimeline
+      identity={thread.ref.path}
+      exchanges={exchanges}
+      streamingId={live ? lastExchangeId : undefined}
+      interruptedId={run?.status === "stopped" ? lastExchangeId : undefined}
+      failedId={
+        run?.status === "failed" || status?.kind === "failed"
+          ? lastExchangeId
+          : undefined
+      }
+      empty={
+        <p className="pt-12 text-center text-ui text-faint">
+          This session has no readable conversation.
+        </p>
+      }
+      footer={
+        live ? (
+          <div className="animate-enter flex items-center gap-2 px-0.5 text-ui">
+            <HarnessIcon
+              harness={thread.ref.harness}
+              className="size-3.5 animate-live"
+            />
+            <span className="shimmer">
+              {harnessLabel(thread.ref.harness)} is working…
+            </span>
           </div>
-        )}
-      </div>
-      <TurnNavigator
-        exchanges={renderedExchanges}
-        activeId={activeTurn}
-        onJump={jump}
-        paneRef={pane}
-      />
-    </div>
+        ) : null
+      }
+    />
   )
 }
 
