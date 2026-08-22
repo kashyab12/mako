@@ -7,18 +7,18 @@ import type {
   McpTransport,
 } from "./shared.js"
 import type { JsonObject } from "./codex-app-json.js"
+import { backendConnectionCredentials } from "./backend-connection.js"
 
 function backendHeaders(definition: McpServerDefinition): Array<{
   name: string
   value: string
 }> {
-  if (definition.name !== "mako-backend" || !process.env.MAKO_BACKEND_TOKEN) {
-    return []
-  }
+  const credentials = backendConnectionCredentials()
+  if (definition.name !== "mako-backend" || !credentials) return []
   return [
     {
       name: "Authorization",
-      value: `Bearer ${process.env.MAKO_BACKEND_TOKEN}`,
+      value: `Bearer ${credentials.token}`,
     },
   ]
 }
@@ -27,21 +27,9 @@ function localEnvironment(definition: McpServerDefinition): Array<{
   name: string
   value: string
 }> {
-  if (definition.name !== "mako-local-tools") return []
-  const environment = [{ name: "ELECTRON_RUN_AS_NODE", value: "1" }]
-  if (process.env.MAKO_PREVIEW_SOCKET && process.env.MAKO_PREVIEW_TOKEN) {
-    environment.push(
-      {
-        name: "MAKO_PREVIEW_SOCKET",
-        value: process.env.MAKO_PREVIEW_SOCKET,
-      },
-      {
-        name: "MAKO_PREVIEW_TOKEN",
-        value: process.env.MAKO_PREVIEW_TOKEN,
-      }
-    )
-  }
-  return environment
+  return definition.name === "mako-local-tools"
+    ? [{ name: "ELECTRON_RUN_AS_NODE", value: "1" }]
+    : []
 }
 
 export function acpMcpServers(
