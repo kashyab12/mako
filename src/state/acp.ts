@@ -2,6 +2,7 @@ import { createHook, createStore } from "@/state/store"
 import { getMako, hasBridge } from "@/lib/bridge"
 import { toast } from "sonner"
 import {
+  canResumeInteractively,
   setThreadAttention,
   setThreadRunning,
   setThreadWorkDetail,
@@ -215,14 +216,7 @@ export const acp = {
     if (!hasBridge()) return
     acpStore.set({ starting: true, blocks: [], permission: null })
     try {
-      const canResume = [
-        "claude",
-        "codex",
-        "cursor",
-        "grok",
-        "devin",
-        "opencode",
-      ].includes(ref.harness)
+      const canResume = canResumeInteractively(ref.harness)
       const harness = canResume
         ? ref.harness
         : threadsStore.get().composerHarness
@@ -279,10 +273,9 @@ export const acp = {
       acpStore.set({ session, starting: false })
       await getMako().acpPrompt(session.id, prompt, attachments)
       return true
-    } catch (error) {
+    } catch {
       setThreadRunning(ref.path, false)
       acpStore.set({ starting: false, threadPath: undefined })
-      toast.error(error instanceof Error ? error.message : String(error))
       return false
     }
   },
