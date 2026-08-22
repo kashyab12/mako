@@ -32,6 +32,7 @@
     "test:host": "tsx scripts/test-host-domains.ts",
     "test:mcp": "tsx scripts/test-mcp.ts",
     "test:performance": "tsx scripts/test-performance.ts",
+    "test:providers": "tsx scripts/test-providers.ts",
     "test:skills": "tsx scripts/test-skills.ts",
     "test:stage": "tsx scripts/test-stage-layout.ts",
     "test:tuning": "tsx scripts/test-tuning-import.ts",

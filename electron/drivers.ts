@@ -26,351 +26,21 @@ import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import type { ThreadRef } from "@mako/sessions"
 import { accountEnv, switchSuggestion } from "./accounts.js"
-import { devinExecutable, openCodeInstallation } from "./harnesses.js"
+import { providerHost } from "./providers/index.js"
+import type {
+  NativeCommand,
+  NativeRunOptions,
+} from "./providers/native-runner.js"
 import type { HostEvent, ThreadRunState } from "./shared.js"
 
-interface ResumeCommand {
-  command: string
-  args: string[]
-}
-
-/**
- * How each harness starts a *new* headless session with an opening prompt.
- * Used by cross-harness continuation: the rendered handoff becomes the first
- * message of a fresh session in the same working directory, and the watcher
- * surfaces that session in the rail the moment its store appears.
- */
-export interface FreshOptions {
-  captureOutput?: boolean
-  model?: string
-  effort?: string
-  fast?: boolean
-  options?: Record<string, string | boolean>
-  nativePath?: string
-}
-
-interface CommandTuning {
-  model?: string
-  effort?: string
-  cliEffort?: string
-  fast?: boolean
-  serviceTier?: string
-}
-
-function stringOption(value: string | boolean | undefined): string | undefined {
-  if (value === undefined || value === true || value === false) return undefined
-  return value
-}
-
-function commandTuning(options: FreshOptions | undefined): CommandTuning {
-  if (!options) return {}
-  const tuning: CommandTuning = {}
-  const optionEffort = stringOption(options.options?.effort)
-  const serviceTier = stringOption(options.options?.serviceTier)
-  if (options.model !== undefined) tuning.model = options.model
-  if (options.effort !== undefined) tuning.effort = options.effort
-  if (options.effort || optionEffort !== undefined) {
-    tuning.cliEffort = options.effort ?? optionEffort
-  }
-  if (options.fast !== undefined) tuning.fast = options.fast
-  if (serviceTier !== undefined) tuning.serviceTier = serviceTier
-  return tuning
-}
-
-/**
- * Cursor takes tuning as bracket parameters on the model itself —
- * `sonnet-4.5[effort=high,fast=true]` — so its options fold into one flag.
- */
-function cursorModel(options: CommandTuning): string | undefined {
-  const params: string[] = []
-  if (options.effort) params.push(`effort=${options.effort}`)
-  if (options.fast !== undefined) params.push(`fast=${options.fast}`)
-  if (!options.model && params.length === 0) return undefined
-  const base = options.model ?? "auto"
-  return params.length > 0 ? `${base}[${params.join(",")}]` : base
-}
-
-function buildCodexResume(
-  id: string,
-  prompt: string,
-  options?: FreshOptions
-): ResumeCommand {
-  const tuning = commandTuning(options)
-  return {
-    command: "codex",
-    args: [
-      "exec",
-      "--sandbox",
-      "workspace-write",
-      "--skip-git-repo-check",
-      ...(tuning.model ? ["-m", tuning.model] : []),
-      ...(tuning.cliEffort !== undefined
-        ? ["-c", `model_reasoning_effort="${tuning.cliEffort}"`]
-        : []),
-      ...(tuning.serviceTier !== undefined
-        ? ["-c", `service_tier="${tuning.serviceTier}"`]
-        : []),
-      "resume",
-      id,
-      prompt,
-    ],
-  }
-}
-
-function buildClaudeResume(
-  id: string,
-  prompt: string,
-  options?: FreshOptions
-): ResumeCommand {
-  const tuning = commandTuning(options)
-  return {
-    command: "claude",
-    args: [
-      "-p",
-      prompt,
-      "--resume",
-      id,
-      "--dangerously-skip-permissions",
-      ...(tuning.model ? ["--model", tuning.model] : []),
-      ...(tuning.effort ? ["--effort", tuning.effort] : []),
-    ],
-  }
-}
-
-function buildCursorResume(
-  id: string,
-  prompt: string,
-  options?: FreshOptions
-): ResumeCommand {
-  const tuning = commandTuning(options)
-  return {
-    command: "cursor-agent",
-    args: [
-      "-p",
-      prompt,
-      "--resume",
-      id,
-      "--force",
-      // Only when a model was chosen: effort/fast are bracket parameters on
-      // the model flag, and passing "auto[...]" would silently change the
-      // session's model just to express an effort.
-      ...(tuning.model ? ["--model", cursorModel(tuning) ?? tuning.model] : []),
-    ],
-  }
-}
-
-function buildGrokResume(
-  id: string,
-  prompt: string,
-  options?: FreshOptions
-): ResumeCommand {
-  const tuning = commandTuning(options)
-  return {
-    command: "agent",
-    args: [
-      "-p",
-      prompt,
-      "--resume",
-      id,
-      "--always-approve",
-      ...(tuning.model ? ["--model", tuning.model] : []),
-      ...(tuning.cliEffort !== undefined
-        ? ["--reasoning-effort", tuning.cliEffort]
-        : []),
-    ],
-  }
-}
-
-function buildCodexFresh(prompt: string, options: FreshOptions): ResumeCommand {
-  const tuning = commandTuning(options)
-  return {
-    command: "codex",
-    args: [
-      "exec",
-      prompt,
-      "--sandbox",
-      "workspace-write",
-      "--skip-git-repo-check",
-      ...(tuning.model ? ["-m", tuning.model] : []),
-      ...(tuning.cliEffort !== undefined
-        ? ["-c", `model_reasoning_effort="${tuning.cliEffort}"`]
-        : []),
-      ...(tuning.serviceTier !== undefined
-        ? ["-c", `service_tier="${tuning.serviceTier}"`]
-        : []),
-    ],
-  }
-}
-
-function buildClaudeFresh(
-  prompt: string,
-  options: FreshOptions
-): ResumeCommand {
-  const tuning = commandTuning(options)
-  return {
-    command: "claude",
-    args: [
-      "-p",
-      prompt,
-      "--dangerously-skip-permissions",
-      ...(tuning.model ? ["--model", tuning.model] : []),
-      ...(tuning.effort ? ["--effort", tuning.effort] : []),
-    ],
-  }
-}
-
-function buildCursorFresh(
-  prompt: string,
-  options: FreshOptions
-): ResumeCommand {
-  const model = cursorModel(commandTuning(options))
-  return {
-    command: "cursor-agent",
-    args: ["-p", prompt, "--force", ...(model ? ["--model", model] : [])],
-  }
-}
-
-function buildGrokFresh(prompt: string, options: FreshOptions): ResumeCommand {
-  const tuning = commandTuning(options)
-  return {
-    command: "agent",
-    args: [
-      "-p",
-      prompt,
-      "--always-approve",
-      ...(tuning.model ? ["--model", tuning.model] : []),
-      ...(tuning.cliEffort !== undefined
-        ? ["--reasoning-effort", tuning.cliEffort]
-        : []),
-    ],
-  }
-}
-
-function buildDevinResume(
-  id: string,
-  prompt: string,
-  options?: FreshOptions
-): ResumeCommand {
-  const tuning = commandTuning(options)
-  return {
-    command: devinExecutable() ?? "devin",
-    args: [
-      "-p",
-      prompt,
-      "--resume",
-      id,
-      "--permission-mode",
-      "smart",
-      "--respect-workspace-trust",
-      "false",
-      ...(tuning.model ? ["--model", tuning.model] : []),
-    ],
-  }
-}
-
-function buildDevinFresh(prompt: string, options: FreshOptions): ResumeCommand {
-  const tuning = commandTuning(options)
-  return {
-    command: devinExecutable() ?? "devin",
-    args: [
-      "-p",
-      prompt,
-      "--permission-mode",
-      "smart",
-      "--respect-workspace-trust",
-      "false",
-      ...(tuning.model ? ["--model", tuning.model] : []),
-    ],
-  }
-}
-
-function openCodeTuningArgs(tuning: CommandTuning, generation: "v1" | "v2") {
-  if (!tuning.model) return []
-  if (generation === "v2") {
-    return [
-      "--model",
-      tuning.cliEffort ? `${tuning.model}#${tuning.cliEffort}` : tuning.model,
-    ]
-  }
-  return [
-    "--model",
-    tuning.model,
-    ...(tuning.cliEffort ? ["--variant", tuning.cliEffort] : []),
-  ]
-}
-
-function buildOpenCodeResume(
-  id: string,
-  prompt: string,
-  options?: FreshOptions
-): ResumeCommand {
-  const tuning = commandTuning(options)
-  const preferred =
-    options?.nativePath?.includes("#v2:") ||
-    options?.nativePath?.includes("opencode-next.db#")
-      ? "v2"
-      : "v1"
-  const installation =
-    openCodeInstallation(preferred) ?? openCodeInstallation()
-  const generation = installation?.generation ?? preferred
-  return {
-    command: installation?.command ?? "opencode",
-    args: [
-      "run",
-      ...(generation === "v2" ? ["--auto"] : []),
-      "--session",
-      id,
-      ...openCodeTuningArgs(tuning, generation),
-      prompt,
-    ],
-  }
-}
-
-function buildOpenCodeFresh(
-  prompt: string,
-  options: FreshOptions
-): ResumeCommand {
-  const tuning = commandTuning(options)
-  const installation = openCodeInstallation()
-  const generation = installation?.generation ?? "v1"
-  return {
-    command: installation?.command ?? "opencode",
-    args: [
-      "run",
-      ...(generation === "v2" ? ["--auto"] : []),
-      ...openCodeTuningArgs(tuning, generation),
-      prompt,
-    ],
-  }
-}
-
-/** How each harness resumes a session headlessly with one new message. */
-const RESUME = {
-  codex: buildCodexResume,
-  // No --fork-session: the default reuses the session id, so the turn lands
-  // in the same file the viewer is tailing.
-  claude: buildClaudeResume,
-  cursor: buildCursorResume,
-  grok: buildGrokResume,
-  devin: buildDevinResume,
-  opencode: buildOpenCodeResume,
-}
-
-const FRESH = {
-  codex: buildCodexFresh,
-  claude: buildClaudeFresh,
-  cursor: buildCursorFresh,
-  grok: buildGrokFresh,
-  devin: buildDevinFresh,
-  opencode: buildOpenCodeFresh,
-}
+export type FreshOptions = NativeRunOptions
 
 export function resumableHarnesses(): string[] {
-  return Object.keys(RESUME)
+  return providerHost.nativeRunners.list().map((runner) => runner.provider)
 }
 
 export function freshHarnesses(): string[] {
-  return Object.keys(FRESH)
+  return providerHost.nativeRunners.list().map((runner) => runner.provider)
 }
 
 export interface NativeRunResult {
@@ -444,18 +114,15 @@ export async function resumeNative(
   const existing = runs.get(ref.path)
   if (existing && existing.state.status === "running") return existing.state
 
-  const make = Object.entries(RESUME).find(
-    ([harness]) => harness === ref.harness
-  )?.[1]
-  if (!make)
+  const runner = providerHost.nativeRunners.get(ref.harness)
+  if (!runner)
     throw new Error(`Sessions from ${ref.harness} cannot be resumed here`)
-  const options =
-    ref.harness === "opencode" ? { ...tuning, nativePath: ref.path } : tuning
+  const options = { ...tuning, nativePath: ref.path }
   return launch(
     ref.path,
     ref.harness,
     ref.cwd,
-    make(ref.nativeId, prompt, options),
+    runner.resume(ref.nativeId, prompt, options),
     tuning?.captureOutput ?? false
   )
 }
@@ -475,16 +142,14 @@ export async function startFresh(
   prompt: string,
   options: FreshOptions = {}
 ): Promise<ThreadRunState> {
-  const make = Object.entries(FRESH).find(
-    ([candidate]) => candidate === harness
-  )?.[1]
-  if (!make)
+  const runner = providerHost.nativeRunners.get(harness)
+  if (!runner)
     throw new Error(`A new ${harness} session cannot be started from here`)
   return launch(
     `fresh:${harness}:${++freshCounter}`,
     harness,
     cwd,
-    make(prompt, options),
+    runner.fresh(prompt, options),
     options.captureOutput ?? false
   )
 }
@@ -493,7 +158,7 @@ async function launch(
   key: string,
   harness: string,
   workingDir: string | undefined,
-  resume: ResumeCommand,
+  resume: NativeCommand,
   captureOutput: boolean
 ): Promise<ThreadRunState> {
   const { command, args } = resume
