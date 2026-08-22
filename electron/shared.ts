@@ -473,8 +473,6 @@ export type HostEventBody =
   | { type: "plugins-changed" }
   /** Update progress. Window-wide, not tied to any tab. */
   | { type: "update"; update: UpdateState }
-  /** Dev server progress. Also window-wide: there is one project. */
-  | { type: "devserver"; devserver: DevServerState }
   | { type: "automations"; automations: Automation[] }
   | { type: "automation-run"; run: AutomationRun }
   /**
@@ -654,37 +652,6 @@ export interface AutomationRun {
   at: number
   status: "started" | "completed" | "failed"
   error?: string
-}
-
-/** A process listening on a TCP port, as far as `lsof` can see. */
-export interface ListeningPort {
-  port: number
-  pid: number
-  /** The owning process name, which is usually enough to recognise it. */
-  command: string
-  url: string
-  /** Bound only to loopback, so nothing else on the network can reach it. */
-  loopbackOnly: boolean
-  /** Looks like a development server rather than background machinery. */
-  likely: boolean
-}
-
-/**
- * The project's dev server, as far as this app knows.
- *
- * `failed` covers both "would not start" and "exited on its own", because for
- * something whose entire job is to keep running those are the same event from
- * the outside.
- */
-export interface DevServerState {
-  status: "idle" | "starting" | "running" | "stopping" | "failed"
-  /** The npm script being run, when this app started it. */
-  script?: string
-  /** Where it is serving, once it has said so. */
-  url?: string
-  /** Recent output, capped. */
-  lines: string[]
-  exitCode?: number
 }
 
 /* ------------------------------------------------------------------ */
