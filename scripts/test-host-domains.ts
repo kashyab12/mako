@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
+import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -10,6 +11,7 @@ import { WorkspaceFiles } from "../electron/host-workspace.ts"
 import { workspacePreviewPath } from "../electron/workspace-preview.ts"
 
 const execFileAsync = promisify(execFile)
+assert.equal(existsSync(join(process.cwd(), "electron", "preload.js")), false)
 const directory = await mkdtemp(join(tmpdir(), "mako-host-domains-"))
 const firstRepo = join(directory, "first")
 const secondRepo = join(directory, "second")
