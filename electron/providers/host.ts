@@ -1,3 +1,4 @@
+import type { ProviderAccountCapability } from "./account-capability.js"
 import type { ProviderMcpSource } from "./mcp-source.js"
 import type { NativeRunner } from "./native-runner.js"
 import type { ProviderProfileLoader } from "./profile-loader.js"
@@ -9,6 +10,7 @@ export interface ProviderHost {
   profiles: ProviderRegistry<ProviderProfileLoader>
   mcpSources: ProviderRegistry<ProviderMcpSource>
   skillSources: ProviderRegistry<ProviderSkillSource>
+  accountCapabilities: ProviderRegistry<ProviderAccountCapability>
 }
 
 export type ProviderModule = (host: ProviderHost) => void
@@ -19,5 +21,6 @@ export function createProviderHost(): ProviderHost {
     profiles: new ProviderRegistry(),
     mcpSources: new ProviderRegistry(),
     skillSources: new ProviderRegistry(),
+    accountCapabilities: new ProviderRegistry(),
   }
 }

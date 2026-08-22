@@ -3,6 +3,7 @@ import {
   accountEnv,
   classifyCodexWindows,
   parseOpenCodeAccounts,
+  selectedAccount,
   type UsageWindow,
 } from "../electron/accounts"
 import {
@@ -112,4 +113,19 @@ assert.equal(childEnv.PATH, "/fixture/bin")
 assert.equal(childEnv.MAKO_BACKEND_TOKEN, undefined)
 assert.equal(childEnv.MAKO_CUA_SOCKET, undefined)
 
-console.log("Account discovery, usage classification, and child environment isolation passed")
+// Providers without an account capability retain the default account and
+// inherit ordinary process values while Mako runtime secrets stay isolated.
+const cursorEnv = await accountEnv("cursor", {
+  PATH: "/fixture/bin",
+  CURSOR_API_KEY: "provider-owned-fixture",
+  MAKO_BACKEND_TOKEN: "backend-secret",
+})
+assert.deepEqual(cursorEnv, {
+  PATH: "/fixture/bin",
+  CURSOR_API_KEY: "provider-owned-fixture",
+})
+assert.deepEqual(await selectedAccount("cursor"), { name: "default" })
+
+console.log(
+  "Account discovery, usage classification, and child environment isolation passed"
+)

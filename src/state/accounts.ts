@@ -17,8 +17,8 @@ import { toast } from "sonner"
  * providers' usage endpoints.
  */
 
-export type AccountHarness = "claude" | "codex"
-export type AccountProvider = AccountHarness | "opencode"
+export type AccountHarness = string
+export type AccountProvider = string
 
 export interface ProviderAccount {
   harness: AccountProvider

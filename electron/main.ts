@@ -90,6 +90,7 @@ import {
   listAccounts,
   removeAccount,
   selectAccount,
+  type AccountHarness,
   type AccountProvider,
 } from "./accounts.js"
 import { daemonLoginEnabled, setDaemonLogin } from "./daemon-login.js"
@@ -551,17 +552,17 @@ function bindIpc() {
   handle("mako:accounts", () => listAccounts())
   handle(
     "mako:account-capture",
-    (_e, harness: "claude" | "codex", name: string) =>
+    (_e, harness: AccountHarness, name: string) =>
       captureAccount(harness, name)
   )
   handle(
     "mako:account-select",
-    (_e, harness: "claude" | "codex", name: string | null) =>
+    (_e, harness: AccountHarness, name: string | null) =>
       selectAccount(harness, name)
   )
   handle(
     "mako:account-remove",
-    (_e, harness: "claude" | "codex", name: string) =>
+    (_e, harness: AccountHarness, name: string) =>
       removeAccount(harness, name)
   )
   handle(

@@ -48,6 +48,7 @@ import type {
 
 import type { CrashReport } from "./crash.js"
 import type {
+  AccountHarness,
   AccountProvider,
   AccountUsage,
   HarnessAccount,
@@ -185,11 +186,11 @@ const api = {
 
   /* Harness accounts: several logins per CLI. */
   accounts: () => invokeTrustedHost<HarnessAccount[]>("mako:accounts"),
-  captureAccount: (harness: "claude" | "codex", name: string) =>
+  captureAccount: (harness: AccountHarness, name: string) =>
     invokeTrustedHost<void>("mako:account-capture", harness, name),
-  selectAccount: (harness: "claude" | "codex", name: string | null) =>
+  selectAccount: (harness: AccountHarness, name: string | null) =>
     invokeTrustedHost<void>("mako:account-select", harness, name),
-  removeAccount: (harness: "claude" | "codex", name: string) =>
+  removeAccount: (harness: AccountHarness, name: string) =>
     invokeTrustedHost<void>("mako:account-remove", harness, name),
   accountUsage: (harness: AccountProvider, name: string) =>
     invokeTrustedHost<AccountUsage>("mako:account-usage", harness, name),
