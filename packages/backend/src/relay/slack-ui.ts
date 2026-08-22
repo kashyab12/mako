@@ -1,10 +1,9 @@
-import { getToken } from "@vercel/connect"
+import { randomUUID } from "node:crypto"
 import {
   cardToSlackBlocks,
   type SlackCardElement,
 } from "@chat-adapter/slack/blocks"
-import { postSlackMessage } from "@chat-adapter/slack/api"
-import { readOptionalServerEnv } from "../config/env"
+import { sendSlackBlocks } from "../integrations/slack/client"
 
 const card: SlackCardElement = {
   type: "card",
@@ -65,10 +64,6 @@ const card: SlackCardElement = {
   ],
 }
 
-function connector(): string {
-  return readOptionalServerEnv().SLACK_CONNECTOR ?? "slack/mako"
-}
-
 export function slackControlBlocks() {
   return cardToSlackBlocks(card)
 }
@@ -80,18 +75,12 @@ export async function postSlackControls({
   channel: string
   threadTs?: string
 }): Promise<string> {
-  const posted = await postSlackMessage({
+  const posted = await sendSlackBlocks({
     blocks: slackControlBlocks(),
     channel,
+    idempotencyKey: randomUUID(),
     text: "Mako local harness controls",
     threadTs,
-    token: () =>
-      getToken(connector(), {
-        subject: { type: "app" },
-        scopes: ["*"],
-      }),
-    unfurlLinks: false,
-    unfurlMedia: false,
   })
-  return posted.id
+  return posted.ts
 }
