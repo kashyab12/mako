@@ -15,7 +15,7 @@ import { stage } from "@/state/stage"
 import { surfaces } from "@/extend/surfaces"
 import { tabsStore } from "@/state/tabs"
 import { search } from "@/state/search"
-import { viewer } from "@/state/viewer"
+import { AGENT_TAB_ID, viewer, viewerStore } from "@/state/viewer"
 
 const openPalette = () => {
   window.dispatchEvent(new CustomEvent("mako:palette"))
@@ -38,6 +38,19 @@ function stepTab(delta: number) {
   const at = tabs.findIndex((tab) => tab.id === activeId)
   const next = tabs[(at + delta + tabs.length) % tabs.length]
   if (next) void actions.switchTab(next.id)
+}
+
+function closeActiveTab() {
+  const state = viewerStore.get()
+  const pane =
+    state.panes.find((candidate) => candidate.id === state.focusedPaneId) ??
+    state.panes[0]
+  if (pane?.activeId && pane.activeId !== AGENT_TAB_ID) {
+    viewer.closeTab(pane.id, pane.activeId)
+    return
+  }
+  const tabId = tabsStore.get().activeId
+  if (tabId) void actions.closeTab(tabId)
 }
 
 /** Advance to the next effort level the current model actually supports. */
@@ -75,12 +88,11 @@ const DESK_COMMANDS: DeskCommand[] = [
   },
   {
     id: "tab.close",
-    title: "Detach this session",
+    title: "Close active tab",
     section: "Session",
-    hint: "It stays in the rail; it just stops being held open",
+    hint: "Closes the active file, or detaches the active session",
     keys: "mod+w",
-    when: () => tabsStore.get().tabs.length > 1,
-    run: () => void actions.closeTab(tabsStore.get().activeId),
+    run: closeActiveTab,
   },
   {
     id: "tab.next",
@@ -201,14 +213,6 @@ const DESK_COMMANDS: DeskCommand[] = [
     section: "View",
     keys: "mod+b",
     run: () => togglePref("railOpen"),
-  },
-  {
-    id: "view.preview",
-    title: "Toggle the preview",
-    section: "View",
-    keys: "mod+shift+p",
-    hint: "The dev server, beside the conversation",
-    run: () => stage.toggle("preview"),
   },
   {
     id: "view.toggle-diff",
