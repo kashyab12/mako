@@ -1,0 +1,181 @@
+import { getMako, hasBridge } from "@/lib/bridge"
+import type { ThreadEntry, ThreadRef } from "@/lib/types"
+import type {
+  ThreadsState,
+  ViewedThread,
+  ViewedThreadEntry,
+} from "@/state/thread-state"
+import { markObserved, markThreadReviewed } from "@/state/thread-status"
+import { threadsStore } from "@/state/thread-store"
+import { toast } from "sonner"
+
+/** The composer harness to give back when the viewer closes. */
+let harnessBeforeViewing: string | null = null
+
+export function leaveViewerForLive(harness: string) {
+  harnessBeforeViewing = null
+  threadsStore.set({
+    viewing: null,
+    run: null,
+    composerHarness: harness,
+  })
+  if (hasBridge()) void getMako().unfollowThread()
+}
+
+/**
+ * Threads already read this run, so switching back is a paint, not a fetch.
+ * Stale-while-revalidate: the cached conversation shows instantly and the
+ * fresh read replaces it the moment it lands. Bounded; oldest falls out.
+ */
+const threadCache = new Map<string, ViewedThread>()
+const THREAD_CACHE_MAX = 4
+const THREAD_CACHE_BYTES = 24 * 1024 * 1024
+
+function estimatedThreadBytes(thread: ViewedThread): number {
+  return Math.max(thread.ref.bytes ?? 0, thread.entries.length * 4096)
+}
+
+export function rememberThread(thread: ViewedThread) {
+  threadCache.delete(thread.ref.path)
+  threadCache.set(thread.ref.path, thread)
+  let bytes = 0
+  for (const cached of threadCache.values()) {
+    bytes += estimatedThreadBytes(cached)
+  }
+  while (
+    threadCache.size > 1 &&
+    (threadCache.size > THREAD_CACHE_MAX || bytes > THREAD_CACHE_BYTES)
+  ) {
+    const oldest = threadCache.keys().next().value
+    if (!oldest) break
+    const removed = threadCache.get(oldest)
+    threadCache.delete(oldest)
+    if (removed) bytes -= estimatedThreadBytes(removed)
+  }
+}
+
+export function isOptimisticEcho(entry: ViewedThreadEntry): boolean {
+  return entry.kind === "user" && entry.echo === true
+}
+
+/** Entries appended — by whatever app is writing — to the viewed thread. */
+export function applyThreadEntries(
+  path: string,
+  entries: ThreadEntry[],
+  replace?: boolean,
+  replaceFrom?: number
+) {
+  markObserved(path)
+  const { viewing } = threadsStore.get()
+  if (!viewing || viewing.ref.path !== path) return
+  // The real turn arriving retires its optimistic echo: the reply was
+  // painted the instant it was sent, and the file tail is the truth that
+  // replaces it rather than doubling it.
+  const arrivedUserTexts = new Set(
+    entries.filter((entry) => entry.kind === "user").map((entry) => entry.text)
+  )
+  const base = replace
+    ? viewing.entries.slice(0, replaceFrom ?? 0)
+    : viewing.entries.filter(
+        (entry) =>
+          !isOptimisticEcho(entry) ||
+          !(entry.kind === "user" && arrivedUserTexts.has(entry.text))
+      )
+  const next: ViewedThread = {
+    ...viewing,
+    entries: [...base, ...entries],
+  }
+  if (replace) {
+    next.streamRevision = (viewing.streamRevision ?? 0) + 1
+    next.streamReplaceFrom = replaceFrom ?? 0
+  }
+  threadsStore.set({ viewing: next })
+  rememberThread(next)
+}
+
+export const threadViewingActions = {
+  /** Open a foreign session read-only, translated to the canonical shape. */
+  async view(ref: ThreadRef) {
+    if (!hasBridge()) return
+    markThreadReviewed(ref.path)
+    const cached = threadCache.get(ref.path)
+    if (cached) {
+      // Instant: the last read paints now, the fresh one lands underneath.
+      if (harnessBeforeViewing === null) {
+        harnessBeforeViewing = threadsStore.get().composerHarness
+      }
+      threadsStore.set({
+        viewing: cached,
+        viewingBusy: false,
+        run: null,
+        composerHarness: cached.ref.harness,
+      })
+      void getMako()
+        .threadRun(ref.path)
+        .then((run) => {
+          if (threadsStore.get().viewing?.ref.path === ref.path)
+            threadsStore.set({ run })
+        })
+        .catch(() => {})
+      // One follow, registered only after the fresh read, from the fresh
+      // byte offset. Following from the cached (stale) offset once replayed
+      // the overlap into the viewer as duplicates.
+      void getMako()
+        .openThread(ref.path)
+        .then((fresh) => {
+          if (!fresh) return
+          const replaced: ViewedThread = {
+            ...fresh,
+            streamRevision: (cached.streamRevision ?? 0) + 1,
+            streamReplaceFrom: 0,
+          }
+          rememberThread(replaced)
+          if (threadsStore.get().viewing?.ref.path === ref.path) {
+            threadsStore.set({ viewing: replaced })
+            void getMako().followThread(ref.path, replaced.ref.bytes ?? 0)
+          }
+        })
+        .catch(() => {})
+      return
+    }
+    threadsStore.set({ viewingBusy: true })
+    try {
+      const thread = await getMako().openThread(ref.path)
+      if (!thread) throw new Error("This session could not be read")
+      rememberThread(thread)
+      const run = await getMako()
+        .threadRun(ref.path)
+        .catch(() => null)
+      // The composer adopts this conversation: its agent picker shows the
+      // harness that owns the session, and switching it moves the
+      // conversation on the next send. No separate "move" ceremony.
+      if (harnessBeforeViewing === null) {
+        harnessBeforeViewing = threadsStore.get().composerHarness
+      }
+      threadsStore.set({
+        viewing: thread,
+        viewingBusy: false,
+        run,
+        composerHarness: thread.ref.harness,
+      })
+      // Live from here: the agent writing this session — in whatever app —
+      // keeps appending, and those entries belong on screen.
+      void getMako().followThread(ref.path, thread.ref.bytes ?? 0)
+    } catch (error) {
+      threadsStore.set({ viewingBusy: false })
+      toast.error(error instanceof Error ? error.message : String(error))
+    }
+  },
+
+  closeViewer() {
+    const restore = harnessBeforeViewing
+    harnessBeforeViewing = null
+    const patch: Partial<ThreadsState> = {
+      viewing: null,
+      run: null,
+    }
+    if (restore !== null) patch.composerHarness = restore
+    threadsStore.set(patch)
+    if (hasBridge()) void getMako().unfollowThread()
+  },
+}
