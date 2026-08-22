@@ -13,7 +13,7 @@ import {
 import { parse } from "yaml"
 import { z } from "zod"
 import { selectedAccount } from "./accounts.js"
-import { openCodeExecutable } from "./harnesses.js"
+import { providerHost } from "./providers/index.js"
 import type {
   SkillOrigin,
   SkillProvider,
@@ -24,14 +24,6 @@ import type {
   SkillSyncTarget,
 } from "./shared.js"
 
-const PROVIDERS = [
-  "claude",
-  "codex",
-  "cursor",
-  "grok",
-  "devin",
-  "opencode",
-] as const
 const MAX_SKILL_FILES = 1024
 const MAX_SKILL_BYTES = 64 * 1024 * 1024
 const MAX_SKILL_FILE_BYTES = 16 * 1024 * 1024
@@ -48,8 +40,6 @@ const frontmatterSchema = z
       .optional(),
   })
   .passthrough()
-
-export type SkillProviderId = (typeof PROVIDERS)[number]
 
 export interface SkillRoot {
   provider: SkillProvider
@@ -213,80 +203,39 @@ function workspaceBases(cwd: string): string[] {
 }
 
 export async function skillRoots(cwd: string): Promise<SkillRoot[]> {
-  const home = homedir()
-  const claude = await selectedAccount("claude")
-  const codex = await selectedAccount("codex")
   const roots: SkillRoot[] = [
     {
       provider: "agents",
       account: "local",
       scope: "user",
-      root: join(home, ".agents", "skills"),
-    },
-    {
-      provider: "claude",
-      account: claude.name,
-      scope: "user",
-      root: join(claude.dir ?? join(home, ".claude"), "skills"),
-    },
-    {
-      provider: "codex",
-      account: codex.name,
-      scope: "user",
-      root: join(codex.dir ?? join(home, ".codex"), "skills"),
-    },
-    {
-      provider: "cursor",
-      account: "default",
-      scope: "user",
-      root: join(home, ".cursor", "skills"),
-    },
-    {
-      provider: "grok",
-      account: "default",
-      scope: "user",
-      root: join(home, ".grok", "skills"),
-    },
-    {
-      provider: "devin",
-      account: "default",
-      scope: "user",
-      root: join(home, ".config", "devin", "skills"),
-    },
-    {
-      provider: "devin",
-      account: "default",
-      scope: "user",
-      root: join(home, ".devin", "skills"),
-    },
-    {
-      provider: "opencode",
-      account: "default",
-      scope: "user",
-      root: join(home, ".config", "opencode", "skills"),
-    },
-    {
-      provider: "opencode",
-      account: "default",
-      scope: "user",
-      root: join(home, ".opencode", "skills"),
+      root: join(homedir(), ".agents", "skills"),
     },
   ]
-  for (const base of workspaceBases(cwd)) {
-    for (const [provider, folder] of [
-      ["agents", ".agents"],
-      ["claude", ".claude"],
-      ["codex", ".codex"],
-      ["cursor", ".cursor"],
-      ["grok", ".grok"],
-      ["devin", ".devin"],
-      ["opencode", ".opencode"],
-    ] as const) {
+  const sources = providerHost.skillSources.list()
+  for (const source of sources) {
+    const account = await selectedAccount(source.provider)
+    for (const root of source.userRoots(account)) {
       roots.push({
-        provider,
-        account: provider === "agents" ? "local" : "default",
+        provider: source.provider,
+        account: account.name,
+        scope: "user",
+        root,
+      })
+    }
+  }
+  for (const base of workspaceBases(cwd)) {
+    roots.push({
+      provider: "agents",
+      account: "local",
+      scope: "workspace",
+      root: join(base, ".agents", "skills"),
+    })
+    for (const source of sources) {
+      roots.push({
+        provider: source.provider,
+        account: "default",
         scope: "workspace",
-        root: join(base, folder, "skills"),
+        root: join(base, source.workspaceFolder, "skills"),
       })
     }
   }
@@ -298,22 +247,16 @@ export async function skillTargetRoot(
   cwd: string,
   target: SkillSyncTarget
 ): Promise<string> {
+  const source = providerHost.skillSources.get(target.provider)
+  if (!source) throw new Error(`Provider ${target.provider} has no skill source`)
   if (target.scope === "workspace") {
-    return join(cwd, `.${target.provider}`, "skills")
+    return join(cwd, source.workspaceFolder, "skills")
   }
   const account = await selectedAccount(target.provider)
   if (account.name !== target.account) {
     throw new Error("The target account is no longer selected")
   }
-  if (target.provider === "claude")
-    return join(account.dir ?? join(homedir(), ".claude"), "skills")
-  if (target.provider === "codex")
-    return join(account.dir ?? join(homedir(), ".codex"), "skills")
-  if (target.provider === "cursor") return join(homedir(), ".cursor", "skills")
-  if (target.provider === "grok") return join(homedir(), ".grok", "skills")
-  if (target.provider === "opencode")
-    return join(homedir(), ".config", "opencode", "skills")
-  return join(homedir(), ".config", "devin", "skills")
+  return source.targetUserRoot(account)
 }
 
 function mergeSkills(skills: DiscoveredSkill[]): SkillRecord[] {
@@ -352,23 +295,18 @@ function mergeSkills(skills: DiscoveredSkill[]): SkillRecord[] {
 
 async function providerStatuses(): Promise<SkillProviderStatus[]> {
   return Promise.all(
-    PROVIDERS.map(async (provider) => {
-      const account = await selectedAccount(provider)
-      const command =
-        provider === "cursor"
-          ? "cursor-agent"
-          : provider === "grok"
-            ? join(homedir(), ".grok", "bin", "grok")
-            : provider === "opencode"
-              ? (openCodeExecutable() ?? "opencode")
-              : provider
+    providerHost.skillSources.list().map(async (source) => {
+      const account = await selectedAccount(source.provider)
+      const command = source.command()
       let available = false
-      const candidates = command.includes("/")
-        ? [command]
-        : (process.env.PATH ?? "")
-            .split(delimiter)
-            .filter(Boolean)
-            .map((folder) => join(folder, command))
+      const candidates = !command
+        ? []
+        : command.includes("/")
+          ? [command]
+          : (process.env.PATH ?? "")
+              .split(delimiter)
+              .filter(Boolean)
+              .map((folder) => join(folder, command))
       for (const candidate of candidates) {
         try {
           await access(candidate, constants.X_OK)
@@ -379,13 +317,8 @@ async function providerStatuses(): Promise<SkillProviderStatus[]> {
         }
       }
       return {
-        id: provider,
-        label:
-          provider === "claude"
-            ? "Claude Code"
-            : provider === "opencode"
-              ? "OpenCode"
-              : provider[0].toUpperCase() + provider.slice(1),
+        id: source.provider,
+        label: providerHost.profiles.get(source.provider)?.label ?? source.provider,
         account: account.name,
         available,
       }
