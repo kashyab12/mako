@@ -83,6 +83,7 @@ export class OpenCodeProvider implements SessionProvider {
   harness = "opencode" as const
   displayName = "OpenCode"
   rescanRoot = true
+  rescanDebounceMs = 100
 
   private root: string
   private snapshots = new Map<string, Snapshot>()
@@ -326,7 +327,14 @@ function sessionRows(
   sessionTable = "session"
 ): SessionRow[] {
   const rows = database
-    .prepare(sessionQuery(kind, false, sessionTable))
+    .prepare(
+      sessionQuery(
+        kind,
+        false,
+        sessionTable,
+        hasTable(database, "session_pending")
+      )
+    )
     .all(limit)
   return rows.map(parseSessionRow).filter((row): row is SessionRow => row !== null)
 }
@@ -338,7 +346,14 @@ function sessionRow(
   sessionTable = "session"
 ): SessionRow | null {
   const stored = database
-    .prepare(sessionQuery(kind, true, sessionTable))
+    .prepare(
+      sessionQuery(
+        kind,
+        true,
+        sessionTable,
+        hasTable(database, "session_pending")
+      )
+    )
     .get(id)
   return stored ? parseSessionRow(stored) : null
 }
@@ -346,7 +361,8 @@ function sessionRow(
 function sessionQuery(
   kind: StoreKind,
   one: boolean,
-  sessionTable = "session"
+  sessionTable = "session",
+  hasPending = false
 ): string {
   const source = kind === "current" ? "session_message" : "message"
   const partRevision = kind === "legacy"
@@ -371,6 +387,12 @@ function sessionQuery(
                   THEN 1 ELSE 0 END
            FROM message m3 WHERE m3.session_id = s.id
            ORDER BY m3.time_created DESC, m3.id DESC LIMIT 1)`
+  const pending = hasPending
+    ? `CASE WHEN EXISTS (
+               SELECT 1 FROM session_pending pending
+               WHERE pending.session_id = s.id
+             ) THEN 1 ELSE 0 END`
+    : "0"
   const where = one
     ? "s.id = ?"
     : sessionTable === "session_v2"
@@ -382,6 +404,7 @@ function sessionQuery(
                  s.time_archived AS time_archived, p.worktree AS project_worktree,
                  p.name AS project_name${model},
                  COALESCE(${active}, 0) AS active,
+                 ${pending} AS pending,
                  MAX(s.time_updated,
                      COALESCE((SELECT MAX(m.time_updated) FROM ${source} m WHERE m.session_id = s.id), 0)
                      ${partRevision}) AS revision_time,
@@ -406,8 +429,9 @@ function parseSessionRow(fields: SqliteFields): SessionRow | null {
     updatedAt,
     archived: fields.time_archived !== null && fields.time_archived !== undefined,
     active:
-      sqliteNumber(fields.active) === 1 &&
-      Date.now() - revisionTime < 5 * 60_000,
+      sqliteNumber(fields.pending) === 1 ||
+      (sqliteNumber(fields.active) === 1 &&
+        Date.now() - revisionTime < 5 * 60_000),
     revision: revisionOf(
       revisionTime,
       sqliteNumber(fields.revision_count) ?? 0
@@ -422,19 +446,23 @@ function refFrom(
   model: { id?: string; provider?: string } | null
 ): ThreadRef {
   const title = titleFrom(row.title) ?? titleFrom(row.projectName) ?? row.title
+  const modelId =
+    model?.id && model.provider && !model.id.includes("/")
+      ? `${model.provider}/${model.id}`
+      : model?.id
   const ref: ThreadRef = {
     harness: "opencode",
     nativeId: row.id,
     path,
     cwd: row.directory ?? row.projectWorktree,
     title,
-    model: model?.id,
+    model: modelId,
     modelProvider: model?.provider,
     startedAt: isoOf(row.startedAt),
     updatedAt: isoOf(row.updatedAt),
     bytes: revision,
     archived: row.archived,
-    locked: row.active,
+    active: row.active,
   }
   return ref
 }
