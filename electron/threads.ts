@@ -39,7 +39,13 @@ import {
   type ThreadRef,
 } from "@mako/sessions"
 import { annotate, bindLineage, loadLineage } from "./lineage.js"
-import { ensureDaemonLoginDefault } from "./daemon-login.js"
+import {
+  daemonLoginEnabled,
+  daemonLoginProcess,
+  ensureDaemonLoginDefault,
+  setDaemonLogin,
+  stopDaemonLoginJob,
+} from "./daemon-login.js"
 import type {
   HostEvent,
   ThreadFileContext,
@@ -62,10 +68,8 @@ let stopping = false
  *
  * The daemon owns the watchers and the always-warm cache, so the app's
  * "scan" becomes one socket round-trip — and sync keeps happening while no
- * window is open, which is the entire point of having one. The app spawns
- * it if it is not running (as this process's own runtime in Node mode — no
- * second Node ships for forty lines) and exactly one survives, because the
- * daemon exits quietly when another already answers.
+ * window is open, which is the entire point of having one. On macOS the
+ * LaunchAgent owns startup; other platforms use one detached fallback.
  */
 export function installThreads(send: (event: HostEvent) => void): void {
   emit = send
@@ -75,9 +79,9 @@ export function installThreads(send: (event: HostEvent) => void): void {
       await loadLineage()
       // Sync should simply be on: the LaunchAgent installs itself the first
       // time, and only an explicit opt-out in settings keeps it off.
-      void ensureDaemonLoginDefault()
+      await ensureDaemonLoginDefault()
       if (await connectViaDaemon()) return
-      spawnDaemon()
+      await startDaemon()
       for (let attempt = 0; attempt < 10; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 50))
         if (await connectViaDaemon()) return
@@ -113,7 +117,14 @@ async function connectViaDaemon(): Promise<boolean> {
           // It exited between the liveness check and the signal.
         }
       }
+      for (let attempt = 0; attempt < 100 && processIsAlive(pid); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
       return false
+    }
+    const loginPid = await daemonLoginProcess()
+    if (loginPid && loginPid !== client.stats.pid) {
+      await stopDaemonLoginJob()
     }
     daemon = client
     mirror.clear()
@@ -150,7 +161,7 @@ async function connectViaDaemon(): Promise<boolean> {
 
 function recoverDaemon(): Promise<void> {
   recoveringDaemon ??= (async () => {
-    spawnDaemon()
+    await startDaemon()
     for (let attempt = 0; attempt < 10; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)))
       if (stopping) return
@@ -182,6 +193,14 @@ function processIsAlive(pid: number): boolean {
   } catch {
     return false
   }
+}
+
+async function startDaemon(): Promise<void> {
+  if (await daemonLoginEnabled()) {
+    await setDaemonLogin(true)
+    return
+  }
+  spawnDaemon()
 }
 
 function spawnDaemon(): void {
