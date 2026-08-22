@@ -79,6 +79,11 @@ try {
       time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, data TEXT NOT NULL
     );
     CREATE UNIQUE INDEX session_message_seq_idx ON session_message(session_id, seq);
+    CREATE TABLE session_pending (
+      id TEXT PRIMARY KEY, session_id TEXT NOT NULL, type TEXT NOT NULL,
+      data TEXT NOT NULL, delivery TEXT NOT NULL, admitted_seq INTEGER NOT NULL,
+      time_created INTEGER NOT NULL
+    );
   `)
 
   legacy.prepare("INSERT INTO project VALUES (?, ?, ?, ?, ?)").run(
@@ -447,6 +452,17 @@ try {
     4100,
     json({ text: "current child protocol", files: [], agents: [], time: { created: 4100 } })
   )
+  current
+    .prepare("INSERT INTO session_pending VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .run(
+      "pending_current",
+      "ses_current",
+      "prompt",
+      json({ text: "queued" }),
+      "steer",
+      1,
+      8100
+    )
 
   const provider = new OpenCodeProvider(home)
   const discovered = await provider.discover()
@@ -477,16 +493,19 @@ try {
   const v2Ref = await provider.peek(v2File)
   assert.equal(legacyRef.cwd, "/projects/legacy-root/app")
   assert.equal(legacyRef.title, "Legacy root session")
-  assert.equal(legacyRef.model, "claude-legacy")
+  assert.equal(legacyRef.model, "anthropic/claude-legacy")
   assert.equal(legacyRef.modelProvider, "anthropic")
   assert.equal(legacyRef.archived, false)
   assert.equal(currentRef.cwd, "/projects/current-root/pkg")
-  assert.equal(currentRef.model, "gpt-current")
+  assert.equal(currentRef.model, "openai/gpt-current")
   assert.equal(currentRef.modelProvider, "openai")
   assert.equal(currentRef.archived, true)
+  assert.equal(currentRef.active, true)
+  current.prepare("DELETE FROM session_pending WHERE id = ?").run("pending_current")
+  assert.equal((await provider.peek(currentFile))?.active, false)
   assert.equal(v2Ref.cwd, "/projects/v2-root")
   assert.equal(v2Ref.title, "OpenCode 2 session")
-  assert.equal(v2Ref.model, "gpt-v2")
+  assert.equal(v2Ref.model, "openai/gpt-v2")
   assert.equal(v2Ref.modelProvider, "openai")
 
   const v2Thread = await provider.read(v2File.path)
