@@ -10,9 +10,9 @@ import type { Block, ChatMessage } from "@/lib/types"
  *
  * Reconciling by content lets the unchanged tail of a long conversation keep
  * its previous objects and skip rendering entirely. The comparison is
- * deliberately structural rather than a deep equality or a hash: it allocates
- * nothing and touches only lengths and discriminators, so it stays cheap on
- * the exact sessions where it matters most.
+ * deliberately structural rather than a general deep equality or hash. Text
+ * is compared directly so in-place provider rewrites cannot preserve stale
+ * output merely because the replacement has the same length.
  */
 export function reconcileMessages(previous: ChatMessage[], next: ChatMessage[]): ChatMessage[] {
   if (previous.length === 0) return next
@@ -52,9 +52,14 @@ function sameBlock(a: Block, b: Block): boolean {
   if (a.id !== b.id) return false
   if (a.name !== b.name) return false
   if (a.isError !== b.isError) return false
-  // Length is a sound proxy here: a block's text only ever grows by append
-  // during a turn, and a settled block never changes at all.
-  if ((a.text?.length ?? 0) !== (b.text?.length ?? 0)) return false
-  if ((a.thinking?.length ?? 0) !== (b.thinking?.length ?? 0)) return false
+  if (a.text !== b.text) return false
+  if (a.thinking !== b.thinking) return false
+  if (a.mimeType !== b.mimeType) return false
+  if (
+    a.arguments !== b.arguments &&
+    JSON.stringify(a.arguments) !== JSON.stringify(b.arguments)
+  ) {
+    return false
+  }
   return true
 }
