@@ -80,8 +80,7 @@ export function ToolGlyph({
     override ??
     (normalized.startsWith("mako_macos_")
       ? MonitorCogIcon
-      : normalized.startsWith("browser_") ||
-          normalized.startsWith("mako_preview_")
+      : normalized.startsWith("browser_")
         ? GlobeIcon
         : ICONS.get(normalized)) ??
     WrenchIcon
