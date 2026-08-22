@@ -12,7 +12,6 @@ import {
   protocol,
   shell,
   systemPreferences,
-  webContents,
   type BrowserWindowConstructorOptions,
 } from "electron"
 import { watch } from "node:fs"
@@ -30,7 +29,6 @@ import {
 } from "./crash.js"
 import { installAutomation } from "./automation.js"
 import { check, installNow, installUpdates, updateState } from "./updates.js"
-import { listPorts } from "./ports.js"
 import { usageSummary } from "./usage.js"
 import { getAgentDir } from "@earendil-works/pi-coding-agent"
 import {
@@ -44,14 +42,6 @@ import {
   stopWatching,
   watchWorkspace,
 } from "./automations.js"
-import {
-  attachDevServer,
-  bindDevServer,
-  devScripts,
-  devServerState,
-  startDevServer,
-  stopDevServer,
-} from "./devserver.js"
 import {
   createPull,
   githubStatus,
@@ -142,12 +132,6 @@ import {
   ensureBackendConnectionEnvironment,
 } from "./backend-connection.js"
 import { startSlackRelay, stopSlackRelay } from "./slack-relay.js"
-import {
-  registerPreview,
-  startPreviewControl,
-  stopPreviewControl,
-  unregisterPreview,
-} from "./preview-control.js"
 import { applyMcpSync, previewMcpSync } from "./mcp-sync.js"
 import { discoverSkillRegistry } from "./skill-registry.js"
 import {
@@ -321,11 +305,6 @@ async function createWindow() {
       sandbox: false,
       // The transcript is long-lived; keep the renderer warm when hidden.
       backgroundThrottling: false,
-      // For the dev-server preview. A `<webview>` rather than an iframe so the
-      // previewed app runs in its own process with its own storage: it cannot
-      // reach this window, and its cookies and local storage never mix with
-      // the app's own.
-      webviewTag: true,
     },
   }
   if (icon) windowOptions.icon = icon
@@ -1077,25 +1056,6 @@ function bindIpc() {
     withHost((h) => loadAutomations(h.workspace))
   )
 
-  handle("mako:ports", () => listPorts())
-  handle("mako:dev-scripts", () => withHost((h) => devScripts(h.workspace)))
-  handle("mako:dev-state", () => devServerState())
-  handle("mako:dev-start", (_e, script: string) =>
-    withHost((h) => startDevServer(h.workspace, script))
-  )
-  handle("mako:dev-stop", () => stopDevServer())
-  handle("mako:dev-attach", (_e, url: string) => attachDevServer(url))
-  handle("mako:preview-register", (event, webContentsId: number) => {
-    const guest = webContents.fromId(webContentsId)
-    if (!guest || guest.hostWebContents !== event.sender) {
-      throw new Error("That preview does not belong to this Mako window")
-    }
-    return registerPreview(guest)
-  })
-  handle("mako:preview-unregister", (_event, id: string) =>
-    unregisterPreview(id)
-  )
-
   handle("mako:terminal-list", () => terminal().list())
   handle("mako:terminal-create", (_e, options: TerminalCreateOptions) =>
     terminal().create(options)
@@ -1183,9 +1143,6 @@ app.whenReady().then(async () => {
       return new Response("Not found", { status: 404 })
     }
   })
-  await startPreviewControl(
-    join(app.getPath("userData"), "computer-use", "preview")
-  ).catch(() => null)
   terminalClient = new TerminalDaemonClient(
     join(__dirname, "terminal-daemon.js"),
     join(app.getPath("userData"), "terminal"),
@@ -1202,7 +1159,6 @@ app.whenReady().then(async () => {
   bindDrivers(emit)
   bindAcp(emit)
   bindCodexApp(emit)
-  bindDevServer(emit)
   bindAutomations(emit, async (cwd, prompt) => {
     const live = await ready()
     await live.runInBackground(cwd, prompt)
@@ -1229,14 +1185,11 @@ app.on("before-quit", () => {
   powerMonitor.removeListener("unlock-screen", emitTerminalWake)
   terminalClient?.dispose()
   stopCuaEmbedded()
-  stopPreviewControl()
   stopWatching()
   stopSlackRelay()
   stopThreads()
   stopDrivers()
   stopAcp()
   stopCodexApps()
-  // The dev server is in its own process group and will not die with us.
-  void stopDevServer()
   void pool.dispose()
 })
