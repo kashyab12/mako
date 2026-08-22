@@ -4,7 +4,6 @@ import {
   GitCompareIcon,
   HistoryIcon,
   LayersIcon,
-  MonitorIcon,
   TerminalSquareIcon,
 } from "lucide-react"
 import { registerSlot, registerToolView, type ToolCall } from "@/extend/slots"
@@ -16,7 +15,6 @@ import { FileTree } from "@/components/rail/file-tree"
 import { ContextPanel } from "@/components/inspector/context-panel"
 import { HistoryPanel } from "@/components/inspector/history-panel"
 import { TerminalPanel } from "@/components/inspector/terminal-lazy"
-import { PreviewPane } from "@/components/preview/preview-pane"
 import { TerminalDockToggle } from "@/components/stage/terminal-dock-toggle"
 import {
   BashBody,
@@ -40,7 +38,12 @@ import { fileName } from "@/lib/format"
  */
 
 export function installBuiltins(): () => void {
+  const preload = window.requestIdleCallback(
+    () => void import("@/components/inspector/changes-panel"),
+    { timeout: 1_000 }
+  )
   const disposers = [
+    () => window.cancelIdleCallback(preload),
     registerSurface({
       id: "changes",
       label: "Changes",
@@ -79,15 +82,6 @@ export function installBuiltins(): () => void {
       placement: "bottom",
       minHeight: 180,
     }),
-    registerSurface({
-      id: "preview",
-      label: "Preview",
-      icon: MonitorIcon,
-      render: PreviewPane,
-      order: 5,
-      minWidth: 460,
-    }),
-
     // Identity, through the same slots a plugin would use.
     registerSlot("identity", "titlebar.trailing", IdentityBadge, -10),
     registerSlot("identity", "rail.footer", IdentityRow, -10),
@@ -191,14 +185,6 @@ export function installBuiltins(): () => void {
       "mako_macos_type",
       "mako_macos_script",
       "mako_macos_exec",
-      "mako_preview_list",
-      "mako_preview_state",
-      "mako_preview_snapshot",
-      "mako_preview_navigate",
-      "mako_preview_click",
-      "mako_preview_type",
-      "mako_preview_press",
-      "mako_preview_evaluate",
     ].map((name) =>
       registerToolView(name, {
         summary: (call: ToolCall) =>
