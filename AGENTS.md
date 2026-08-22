@@ -86,7 +86,7 @@ registerToolView("bash", { summary, body, icon })             // transcript rows
 registerSurface({ id, label, icon, render, minWidth })        // stage companions
 ```
 
-The stage's surfaces — Changes, Context, History, Files, Terminal, Preview —
+The stage's surfaces — Changes, Context, History, Files, Terminal —
 are all registered through `registerSurface` on exactly the same footing as
 anything a plugin would add. One reading surface opens as the right sidebar at
 a fixed, draggable width; the independent Terminal dock can remain open below it
