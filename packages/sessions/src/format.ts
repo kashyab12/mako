@@ -76,6 +76,7 @@ export interface ThreadRef {
   /** The native file (or directory) holding the full session. */
   path: string
   cwd?: string
+  workspace?: string
   title?: string
   model?: string
   startedAt?: string
@@ -84,6 +85,7 @@ export interface ThreadRef {
   bytes?: number
   /** The provider reports that another live client holds this native session. */
   locked?: boolean
+  active?: boolean
   /** Earlier harnesses this conversation lived on, oldest first. */
   lineage?: ThreadOrigin[]
   /** The provider behind the model, when the harness records one. */
