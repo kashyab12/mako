@@ -69,6 +69,20 @@ insert.run(
   JSON.stringify({ role: "user", content: "internal subagent prompt" }),
   2
 )
+database.exec("ALTER TABLE message_nodes ADD COLUMN metadata TEXT")
+database
+  .prepare("UPDATE message_nodes SET metadata = ? WHERE row_id = ?")
+  .run(
+    JSON.stringify({
+      metrics: {
+        input_tokens: 120,
+        output_tokens: 30,
+        cache_read_tokens: 40,
+        cache_creation_tokens: 10,
+      },
+    }),
+    2
+  )
 
 database.close()
 
@@ -87,6 +101,13 @@ try {
   assert.equal(opened.ref.model, "gpt-5-6-sol-high-priority")
   assert.equal(opened.ref.locked, true)
   assert.equal(opened.entries.length, 2)
+  const assistant = opened.entries.find((entry) => entry.kind === "assistant")
+  assert.deepEqual(assistant?.usage, {
+    input: 120,
+    output: 30,
+    cacheRead: 40,
+    cacheWrite: 10,
+  })
   const firstTool = opened.entries
     .filter((entry) => entry.kind === "assistant")
     .flatMap((entry) => entry.blocks)
@@ -101,7 +122,7 @@ try {
   const follower = provider.createFollower(file.path, file.bytes)
   const writable = new DatabaseSync(join(dir, "sessions.db"))
   writable
-    .prepare("INSERT INTO message_nodes VALUES (?, ?, ?, ?, ?, ?)")
+    .prepare("INSERT INTO message_nodes (row_id, session_id, node_id, parent_node_id, chat_message, created_at) VALUES (?, ?, ?, ?, ?, ?)")
     .run(
       3,
       "session-1",
@@ -126,10 +147,10 @@ try {
 
   const continued = new DatabaseSync(join(dir, "sessions.db"))
   continued
-    .prepare("INSERT INTO message_nodes VALUES (?, ?, ?, ?, ?, ?)")
+    .prepare("INSERT INTO message_nodes (row_id, session_id, node_id, parent_node_id, chat_message, created_at) VALUES (?, ?, ?, ?, ?, ?)")
     .run(4, "session-1", 4, 3, JSON.stringify({ role: "user", content: "continue" }), 4)
   continued
-    .prepare("INSERT INTO message_nodes VALUES (?, ?, ?, ?, ?, ?)")
+    .prepare("INSERT INTO message_nodes (row_id, session_id, node_id, parent_node_id, chat_message, created_at) VALUES (?, ?, ?, ?, ?, ?)")
     .run(5, "session-1", 5, 4, JSON.stringify({ role: "assistant", content: "done" }), 5)
   continued
     .prepare("UPDATE sessions SET last_activity_at = ?, main_chain_id = ? WHERE id = ?")
@@ -146,7 +167,7 @@ try {
 
   const notified = new DatabaseSync(join(dir, "sessions.db"))
   notified
-    .prepare("INSERT INTO message_nodes VALUES (?, ?, ?, ?, ?, ?)")
+    .prepare("INSERT INTO message_nodes (row_id, session_id, node_id, parent_node_id, chat_message, created_at) VALUES (?, ?, ?, ?, ?, ?)")
     .run(
       7,
       "session-1",
@@ -205,6 +226,7 @@ try {
   const [cachedRef] = await cached.scan()
   assert.equal(cachedRef.locked, true)
   cached.stop()
+  provider.close()
   console.log("Devin CLI tests clean: streamed rows, tools, thinking, locks, and incremental follow verified.")
 } finally {
   rmSync(home, { recursive: true, force: true })
