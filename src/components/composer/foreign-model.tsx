@@ -4,11 +4,10 @@ import { Eyebrow } from "@/components/ui/kit"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { harnessLabel } from "@/components/rail/harness-meta"
 import {
-  initializeComposerTuning,
   setComposerTuning,
   useThreads,
 } from "@/state/threads"
-import { getMako, hasBridge } from "@/lib/bridge"
+import { providers, useProviders } from "@/state/providers"
 import { fuzzy } from "@/lib/fuzzy"
 import { cn } from "@/lib/utils"
 import {
@@ -17,7 +16,7 @@ import {
   usePrefs,
 } from "@/state/prefs"
 import { harnessModelByIdentity } from "@/lib/types"
-import type { HarnessModel, HarnessProfile } from "@/lib/types"
+import type { HarnessModel } from "@/lib/types"
 import { CheckIcon, ChevronDownIcon, StarIcon } from "lucide-react"
 
 export function ForeignModelPicker({
@@ -31,19 +30,12 @@ export function ForeignModelPicker({
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
-  const [profile, setProfile] = useState<HarnessProfile | null>(null)
+  const profile = useProviders((state) => state.profiles[harness])
   const chosen = useThreads((state) => state.composerTuning[harness]?.model)
   const favorites = usePrefs((prefs) => prefs.favoriteModels)
 
   const load = useCallback(() => {
-    if (!hasBridge()) return
-    void getMako()
-      .harnessTuning(harness)
-      .then((next) => {
-        setProfile(next)
-        initializeComposerTuning(next)
-      })
-      .catch(() => {})
+    void providers.load(harness)
   }, [harness])
 
   useEffect(() => {

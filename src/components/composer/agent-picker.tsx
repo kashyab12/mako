@@ -2,16 +2,11 @@ import { useEffect, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { harnessLabel } from "@/components/rail/harness-meta"
-import {
-  initializeComposerTuning,
-  setComposerHarness,
-  useThreads,
-} from "@/state/threads"
-import { getMako, hasBridge } from "@/lib/bridge"
+import { setComposerHarness, useThreads } from "@/state/threads"
+import { providers, useProviders } from "@/state/providers"
 import { cn } from "@/lib/utils"
 import { CheckIcon, ChevronDownIcon } from "lucide-react"
 import { harnessModelByIdentity } from "@/lib/types"
-import type { HarnessProfile } from "@/lib/types"
 
 /**
  * Who answers. One question, one panel.
@@ -61,19 +56,11 @@ export function AgentPicker() {
 }
 
 function AgentPanel({ selected, onDone }: { selected: string; onDone: () => void }) {
-  const [profiles, setProfiles] = useState<Record<string, HarnessProfile>>({})
+  const profiles = useProviders((state) => state.profiles)
   const tuning = useThreads((state) => state.composerTuning)
 
   useEffect(() => {
-    if (!hasBridge()) return
-    void getMako()
-      .harnessProfiles()
-      .then((items) => {
-        const next = Object.fromEntries(items.map((profile) => [profile.id, profile]))
-        setProfiles(next)
-        for (const profile of items) initializeComposerTuning(profile)
-      })
-      .catch(() => {})
+    void providers.loadAll()
   }, [])
 
   const choices = ORDER

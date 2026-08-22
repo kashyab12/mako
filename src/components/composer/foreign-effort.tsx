@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
-  initializeComposerTuning,
   setComposerTuning,
   useThreads,
 } from "@/state/threads"
-import { getMako, hasBridge } from "@/lib/bridge"
+import { providers, useProviders } from "@/state/providers"
 import { cn } from "@/lib/utils"
 import { harnessModelByIdentity } from "@/lib/types"
-import type { HarnessModelOption, HarnessProfile } from "@/lib/types"
+import type { HarnessModelOption } from "@/lib/types"
 import { CheckIcon, SlidersHorizontalIcon, ZapIcon } from "lucide-react"
 
 interface TuningPatch {
@@ -28,18 +27,11 @@ export function ForeignEffortPicker({
   threadModel?: string
 }) {
   const [open, setOpen] = useState(false)
-  const [profile, setProfile] = useState<HarnessProfile | null>(null)
+  const profile = useProviders((state) => state.profiles[harness])
   const chosen = useThreads((state) => state.composerTuning[harness] ?? NO_TUNING)
 
   useEffect(() => {
-    if (!hasBridge()) return
-    void getMako()
-      .harnessTuning(harness)
-      .then((next) => {
-        setProfile(next)
-        initializeComposerTuning(next)
-      })
-      .catch(() => {})
+    void providers.load(harness)
   }, [harness])
 
   const model = harnessModelByIdentity(

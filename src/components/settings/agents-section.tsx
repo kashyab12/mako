@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import { accounts as accountActions, useAccounts } from "@/state/accounts"
 import {
   Action,
@@ -10,8 +10,8 @@ import {
 } from "@/components/ui/kit"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { HARNESS_LABEL } from "@/components/rail/harness-meta"
-import { getMako, hasBridge } from "@/lib/bridge"
 import { setPref, usePrefs } from "@/state/prefs"
+import { providers, useProviders } from "@/state/providers"
 import { cn } from "@/lib/utils"
 import { formatRelative } from "@/lib/format"
 import { usageWindowLabel } from "@/lib/usage-window"
@@ -43,33 +43,13 @@ const HARNESSES = Object.entries(HARNESS_LABEL).map(([id, name]) => ({
  */
 export function AgentsSection() {
   const conversionMode = usePrefs((prefs) => prefs.conversionMode)
-  const [availability, setAvailability] = useState<Record<
-    string,
-    boolean
-  > | null>(null)
-  const [daemon, setDaemon] = useState<{
-    pid: number
-    startedAt: number
-    sessions: number
-  } | null>(null)
-  const [loginStart, setLoginStart] = useState<boolean | null>(null)
+  const availability = useProviders((state) => state.availability)
+  const daemon = useProviders((state) => state.daemon)
+  const loginStart = useProviders((state) => state.daemonLogin)
 
-  const load = useCallback(() => {
-    if (!hasBridge()) return
-    void getMako()
-      .harnessAvailability()
-      .then(setAvailability)
-      .catch(() => setAvailability({}))
-    void getMako()
-      .daemonStatus()
-      .then(setDaemon)
-      .catch(() => setDaemon(null))
-    void getMako()
-      .daemonLogin()
-      .then(setLoginStart)
-      .catch(() => setLoginStart(null))
+  useEffect(() => {
+    void providers.loadStatus()
   }, [])
-  useEffect(load, [load])
 
   return (
     <div className="flex flex-col gap-1">
@@ -109,11 +89,7 @@ export function AgentsSection() {
               type="checkbox"
               checked={loginStart}
               onChange={(event) => {
-                const next = event.target.checked
-                setLoginStart(next)
-                void getMako()
-                  .setDaemonLogin(next)
-                  .catch(() => setLoginStart(!next))
+                void providers.setDaemonLogin(event.target.checked)
               }}
               className="size-3 accent-current"
             />
