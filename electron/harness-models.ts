@@ -176,40 +176,6 @@ export interface HarnessModelCatalog {
   configuredModel?: string
 }
 
-export function availableHarnessProfile(
-  harness: string,
-  catalog: HarnessModelCatalog
-): HarnessProfile {
-  const metadata = harnessMetadata(harness)
-  const profile: HarnessProfile = {
-    id: harness,
-    label: metadata.label,
-    available: true,
-    transport: metadata.transport,
-    models: catalog.models,
-    capabilities: metadata.capabilities,
-  }
-  if (catalog.defaultModel) profile.defaultModel = catalog.defaultModel
-  if (catalog.configuredModel) profile.configuredModel = catalog.configuredModel
-  return profile
-}
-
-export function unavailableHarnessProfile(
-  harness: string,
-  error: string
-): HarnessProfile {
-  const metadata = harnessMetadata(harness)
-  return {
-    id: harness,
-    label: metadata.label,
-    available: false,
-    transport: metadata.transport,
-    models: [],
-    capabilities: metadata.capabilities,
-    error,
-  }
-}
-
 export function harnessModelByIdentity(
   models: HarnessModel[],
   identity: string | undefined
@@ -641,58 +607,6 @@ function normalizeDevinVariants(raw: DevinVariantRow[] | undefined): HarnessMode
     byId.set(id, variant)
   }
   return [...byId.values()]
-}
-
-interface HarnessMetadata {
-  label: string
-  transport: HarnessProfile["transport"]
-  capabilities: string[]
-}
-
-function harnessMetadata(harness: string): HarnessMetadata {
-  if (harness === "claude") {
-    return {
-      label: "Claude Code",
-      transport: "acp",
-      capabilities: ["start", "resume", "fork", "stream", "interrupt", "permissions", "images", "commands", "mcp", "models", "agent-teams"],
-    }
-  }
-  if (harness === "codex") {
-    return {
-      label: "Codex",
-      transport: "app-server",
-      capabilities: ["start", "resume", "fork-at-turn", "stream", "steer", "interrupt", "permissions", "images", "audio", "skills", "mcp", "models", "review"],
-    }
-  }
-  if (harness === "cursor") {
-    return {
-      label: "Cursor",
-      transport: "acp",
-      capabilities: ["start", "resume-acp", "stream", "interrupt", "permissions", "images", "commands", "mcp", "models"],
-    }
-  }
-  if (harness === "grok") {
-    return {
-      label: "Grok",
-      transport: "acp",
-      capabilities: ["start", "resume", "fork", "stream", "interrupt", "permissions", "images", "commands", "mcp", "models", "memory"],
-    }
-  }
-  if (harness === "devin") {
-    return {
-      label: "Devin",
-      transport: "acp",
-      capabilities: ["start", "resume", "stream", "interrupt", "permissions", "images", "commands", "mcp", "models"],
-    }
-  }
-  if (harness === "opencode") {
-    return {
-      label: "OpenCode",
-      transport: "acp",
-      capabilities: ["start", "resume", "fork", "stream", "steer", "interrupt", "permissions", "images", "commands", "mcp", "models", "agents"],
-    }
-  }
-  return { label: harness, transport: "remote", capabilities: [] }
 }
 
 function canonicalDevinDefault(models: HarnessModel[], identity: string | undefined): string | undefined {

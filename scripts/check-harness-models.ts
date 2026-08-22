@@ -1,6 +1,5 @@
 import assert from "node:assert/strict"
 import {
-  availableHarnessProfile,
   canonicalHarnessModelId,
   normalizeClaudeModels,
   normalizeCodexModels,
@@ -10,6 +9,9 @@ import {
   resolveHarnessTuning,
 } from "../electron/harness-models.ts"
 import { harnessProfiles } from "../electron/harnesses.ts"
+import { claudeProfileLoader } from "../electron/providers/claude/profile.ts"
+import { devinProfileLoader } from "../electron/providers/devin/profile.ts"
+import { availableProviderProfile } from "../electron/providers/profile-loader.ts"
 import type { HarnessModel, HarnessProfile } from "../electron/shared.ts"
 
 const claudeFixture = [
@@ -175,7 +177,7 @@ function assertFixtureProfiles(): void {
       { id: "claude-sonnet-5", launchId: "sonnet", label: "Sonnet" },
     ]
   )
-  const claudeProfile = availableHarnessProfile("claude", claude)
+  const claudeProfile = availableProviderProfile(claudeProfileLoader, claude)
   assert.equal(resolveHarnessTuning(claudeProfile, { model: "claude-opus-5[1m]" })?.model, "opus[1m]")
 
   const codex = normalizeCodexModels(codexFixture)
@@ -235,7 +237,7 @@ function assertFixtureProfiles(): void {
       { id: "gpt-5-6-sol-high-priority", contextWindow: 700_000, maxOutputTokens: 64_000 },
     ]
   )
-  const devinProfile = availableHarnessProfile("devin", devin)
+  const devinProfile = availableProviderProfile(devinProfileLoader, devin)
   const selected = { model: "gpt", effort: "high", fast: true }
   assert.equal(resolveHarnessTuning(devinProfile, selected)?.model, "gpt-5-6-sol-high-priority")
   assert.equal(resolveHarnessTuning(devinProfile, { model: "gpt-5.6-sol" })?.model, "gpt-5-6-sol-medium")

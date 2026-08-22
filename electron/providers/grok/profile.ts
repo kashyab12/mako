@@ -2,15 +2,32 @@ import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import {
-  availableHarnessProfile,
   normalizeGrokModels,
   type GrokModelCache,
 } from "../../harness-models.js"
-import type { ProviderProfileLoader } from "../profile-loader.js"
+import {
+  availableProviderProfile,
+  type ProviderProfileLoader,
+} from "../profile-loader.js"
 import { readJson, runDiscovery } from "../profile-transport.js"
 
 export const grokProfileLoader: ProviderProfileLoader = {
   provider: "grok",
+  label: "Grok",
+  transport: "acp",
+  capabilities: [
+    "start",
+    "resume",
+    "fork",
+    "stream",
+    "interrupt",
+    "permissions",
+    "images",
+    "commands",
+    "mcp",
+    "models",
+    "memory",
+  ],
   cacheKey: () => "",
   async load(env) {
     const installed = join(homedir(), ".grok", "bin", "grok")
@@ -19,6 +36,9 @@ export const grokProfileLoader: ProviderProfileLoader = {
     const cached = await readJson<GrokModelCache>(
       join(homedir(), ".grok", "models_cache.json")
     )
-    return availableHarnessProfile("grok", normalizeGrokModels(output, cached))
+    return availableProviderProfile(
+      grokProfileLoader,
+      normalizeGrokModels(output, cached)
+    )
   },
 }

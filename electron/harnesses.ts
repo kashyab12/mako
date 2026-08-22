@@ -1,6 +1,9 @@
 import { accountEnv } from "./accounts.js"
-import { unavailableHarnessProfile } from "./harness-models.js"
 import { providerHost } from "./providers/index.js"
+import {
+  unavailableProviderProfile,
+  unknownProviderProfile,
+} from "./providers/profile-loader.js"
 import type { HarnessProfile } from "./shared.js"
 
 export { normalizeAcpOptions, resolveHarnessTuning } from "./harness-models.js"
@@ -16,7 +19,7 @@ const cache = new Map<string, { at: number; profile: HarnessProfile }>()
 
 export async function harnessProfile(harness: string): Promise<HarnessProfile> {
   const loader = providerHost.profiles.get(harness)
-  if (!loader) return unavailableHarnessProfile(harness, "Unknown provider")
+  if (!loader) return unknownProviderProfile(harness, "Unknown provider")
   const env = await accountEnv(harness, process.env)
   const key = `${harness}:${loader.cacheKey(env)}`
   const now = Date.now()
@@ -29,8 +32,8 @@ export async function harnessProfile(harness: string): Promise<HarnessProfile> {
   try {
     profile = await loader.load(env)
   } catch (error) {
-    profile = unavailableHarnessProfile(
-      harness,
+    profile = unavailableProviderProfile(
+      loader,
       error instanceof Error ? error.message : String(error)
     )
   }

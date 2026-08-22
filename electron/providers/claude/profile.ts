@@ -1,10 +1,12 @@
 import {
-  availableHarnessProfile,
   normalizeClaudeModels,
   type ClaudeModelRow,
 } from "../../harness-models.js"
+import {
+  availableProviderProfile,
+  type ProviderProfileLoader,
+} from "../profile-loader.js"
 import { streamRequest } from "../profile-transport.js"
-import type { ProviderProfileLoader } from "../profile-loader.js"
 
 interface ClaudeControlMessage {
   type?: string
@@ -16,6 +18,21 @@ interface ClaudeControlMessage {
 
 export const claudeProfileLoader: ProviderProfileLoader = {
   provider: "claude",
+  label: "Claude Code",
+  transport: "acp",
+  capabilities: [
+    "start",
+    "resume",
+    "fork",
+    "stream",
+    "interrupt",
+    "permissions",
+    "images",
+    "commands",
+    "mcp",
+    "models",
+    "agent-teams",
+  ],
   cacheKey: (env) => env.CLAUDE_CONFIG_DIR ?? "",
   async load(env) {
     const response = await streamRequest<
@@ -43,6 +60,9 @@ export const claudeProfileLoader: ProviderProfileLoader = {
           ? message.response.response?.models
           : undefined
     )
-    return availableHarnessProfile("claude", normalizeClaudeModels(response))
+    return availableProviderProfile(
+      claudeProfileLoader,
+      normalizeClaudeModels(response)
+    )
   },
 }

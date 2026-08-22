@@ -4,12 +4,14 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { z } from "zod"
 import {
-  availableHarnessProfile,
   normalizeOpenCodeModels,
   preferredOpenCodeDefault,
   type OpenCodeModelRow,
 } from "../../harness-models.js"
-import type { ProviderProfileLoader } from "../profile-loader.js"
+import {
+  availableProviderProfile,
+  type ProviderProfileLoader,
+} from "../profile-loader.js"
 import { runDiscovery } from "../profile-transport.js"
 import { openCodeInstallation } from "./installation.js"
 
@@ -74,6 +76,22 @@ const ConfigSchema = z.object({ model: z.string().optional() }).passthrough()
 
 export const openCodeProfileLoader: ProviderProfileLoader = {
   provider: "opencode",
+  label: "OpenCode",
+  transport: "acp",
+  capabilities: [
+    "start",
+    "resume",
+    "fork",
+    "stream",
+    "steer",
+    "interrupt",
+    "permissions",
+    "images",
+    "commands",
+    "mcp",
+    "models",
+    "agents",
+  ],
   cacheKey: () => {
     try {
       const info = statSync(
@@ -106,7 +124,7 @@ export const openCodeProfileLoader: ProviderProfileLoader = {
     } else {
       catalog.defaultModel = preferredOpenCodeDefault(catalog.models)
     }
-    return availableHarnessProfile("opencode", catalog)
+    return availableProviderProfile(openCodeProfileLoader, catalog)
   },
 }
 
