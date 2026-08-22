@@ -400,7 +400,7 @@ export function threadRun(path: string): ThreadRunState | null {
 
 export async function waitForNativeRun(
   path: string,
-  timeoutMs = 30 * 60 * 1000
+  timeoutMs = 2 * 60 * 60 * 1000
 ): Promise<NativeRunResult> {
   const run = runs.get(path)
   const completed = run?.completed
@@ -417,7 +417,7 @@ export async function waitForNativeRun(
           state: {
             ...result.state,
             status: "failed",
-            error: "The local harness exceeded its 30 minute Slack limit",
+            error: "The local harness exceeded its two hour Slack limit",
           },
           text: result.text,
         }
