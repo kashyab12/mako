@@ -8,6 +8,8 @@ import { promisify } from "node:util"
 import { z } from "zod"
 import { accountEnv, selectedAccount } from "./accounts.js"
 import { devinExecutable, openCodeExecutable } from "./harnesses.js"
+import { backendConnectionCredentials } from "./backend-connection.js"
+import { cuaEmbeddedSocket } from "./cua-embedded.js"
 import type { JsonObject, JsonValue } from "./codex-app-json.js"
 import type {
   McpRegistryProviderStatus,
@@ -493,20 +495,35 @@ async function harnessDoctor(
   }
 }
 
+function managedRuntimeEnvironment(): NodeJS.ProcessEnv {
+  const env = { ...process.env }
+  const cuaSocket = cuaEmbeddedSocket()
+  const backend = backendConnectionCredentials()
+  if (cuaSocket) env.MAKO_CUA_SOCKET = cuaSocket
+  if (backend) {
+    env.MAKO_BACKEND_URL = backend.url
+    env.MAKO_BACKEND_TOKEN = backend.token
+  }
+  return env
+}
+
 export async function managedMcpDefinitions(
   appPath: string,
   execPath = process.execPath,
-  env: NodeJS.ProcessEnv = process.env
+  env?: NodeJS.ProcessEnv
 ): Promise<McpDiscoveredDefinition[]> {
-  const harnessPath = await findExecutable("macos-harness", env)
-  const cuaPath = await findExecutable("cua-driver", env)
+  const runtimeEnv = env ?? managedRuntimeEnvironment()
+  const commandEnv = { ...runtimeEnv }
+  delete commandEnv.MAKO_BACKEND_TOKEN
+  delete commandEnv.MAKO_CUA_SOCKET
+  const harnessPath = await findExecutable("macos-harness", commandEnv)
+  const cuaPath = await findExecutable("cua-driver", commandEnv)
   const harness = harnessPath !== null
-  const cuaSocket = env.MAKO_CUA_SOCKET
+  const cuaSocket = runtimeEnv.MAKO_CUA_SOCKET
   const cua = cuaPath !== null && Boolean(cuaSocket)
-  const preview = Boolean(env.MAKO_PREVIEW_SOCKET && env.MAKO_PREVIEW_TOKEN)
-  const backendUrl = env.MAKO_BACKEND_URL
-  const backend = Boolean(backendUrl && env.MAKO_BACKEND_TOKEN)
-  const doctor = await harnessDoctor(harness, env)
+  const backendUrl = runtimeEnv.MAKO_BACKEND_URL
+  const backend = Boolean(backendUrl && runtimeEnv.MAKO_BACKEND_TOKEN)
+  const doctor = await harnessDoctor(harness, commandEnv)
   const definitions: Array<
     McpInternalDefinition & { availability: boolean; detail: string }
   > = [
@@ -522,20 +539,13 @@ export async function managedMcpDefinitions(
               execPath,
               localServerPath(appPath),
             ],
-      envNames: [
-        ...(process.platform === "win32" ? ["ELECTRON_RUN_AS_NODE"] : []),
-        ...(env.MAKO_PREVIEW_SOCKET && env.MAKO_PREVIEW_TOKEN
-          ? ["MAKO_PREVIEW_SOCKET", "MAKO_PREVIEW_TOKEN"]
-          : []),
-      ],
+      envNames:
+        process.platform === "win32" ? ["ELECTRON_RUN_AS_NODE"] : [],
       headerNames: [],
       portable: true,
-      availability: preview || (process.platform === "darwin" && harness),
-      detail: preview
-        ? process.platform === "darwin" && harness
-          ? "Local app and Preview control are ready"
-          : "Preview control is ready"
-        : process.platform === "darwin"
+      availability: process.platform === "darwin" && harness,
+      detail:
+        process.platform === "darwin"
           ? doctor
           : "Local app control is available only on macOS",
     },
