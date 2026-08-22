@@ -213,9 +213,19 @@ try {
       1_767_225_609
     )
 
+  const interruptedBatch = notification(
+    "_x.ai/session/update",
+    {
+      sessionUpdate: "turn_completed",
+      prompt_id: "prompt-2",
+      stop_reason: "cancelled",
+    },
+    1_767_225_610
+  )
+
   const follower = provider.createFollower(updatesPath, 0)
   let incremental = []
-  for (const batch of [firstBatch, secondBatch]) {
+  for (const batch of [firstBatch, secondBatch, interruptedBatch]) {
     await appendFile(updatesPath, batch)
     const update = await follower.next()
     incremental = apply(incremental, update)
@@ -260,6 +270,11 @@ try {
         at: "2026-01-01T00:00:07.000Z",
         label: "Plan updated",
         detail: "completed: Verify result",
+      },
+      {
+        kind: "event",
+        at: "2026-01-01T00:00:10.000Z",
+        label: "Interrupted",
       },
     ]
   )
