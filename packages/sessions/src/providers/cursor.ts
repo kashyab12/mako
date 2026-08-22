@@ -112,6 +112,7 @@ interface CursorAssistantMessage {
 interface CursorToolMessage {
   role: "tool"
   content: CursorToolPart[]
+  isError: boolean
 }
 
 interface CursorOtherMessage {
@@ -268,6 +269,8 @@ function spokenText(content: CursorTextContent): string | null {
 export class CursorProvider implements SessionProvider {
   harness = "cursor" as const
   displayName = "Cursor"
+  rescanRoot = true
+  rescanDebounceMs = 100
   private root: string
 
   constructor(home = homedir()) {
@@ -404,6 +407,7 @@ export class CursorProvider implements SessionProvider {
               const block = toolsById.get(part.toolCallId)
               if (block) {
                 block.output = clip(formatToolResult(part.result))
+                if (message.isError) block.error = true
                 toolsById.delete(part.toolCallId)
               }
             }
@@ -585,7 +589,11 @@ function parseCursorMessage(raw: string): CursorMessage | null {
         model: stringValue(value["model"]),
       }
     case "tool":
-      return { role: "tool", content: parseToolContent(value["content"]) }
+      return {
+        role: "tool",
+        content: parseToolContent(value["content"]),
+        isError: cursorToolError(value["providerOptions"]),
+      }
     default:
       return { role: "other" }
   }
@@ -629,6 +637,17 @@ function parseAssistantPart(value: JsonValue): CursorAssistantPart {
     default:
       return { type: "other" }
   }
+}
+
+function cursorToolError(value: JsonValue | undefined): boolean {
+  const provider = isJsonObject(value) ? value : undefined
+  const cursor = isJsonObject(provider?.["cursor"])
+    ? provider["cursor"]
+    : undefined
+  const result = isJsonObject(cursor?.["highLevelToolCallResult"])
+    ? cursor["highLevelToolCallResult"]
+    : undefined
+  return result?.["isError"] === true
 }
 
 function parseToolContent(value: JsonValue | undefined): CursorToolPart[] {
