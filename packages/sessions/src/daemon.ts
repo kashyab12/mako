@@ -30,13 +30,18 @@ import {
   type Server,
   type Socket,
 } from "node:net"
-import { unlink } from "node:fs/promises"
+import { chmod, mkdir, open, readFile, unlink } from "node:fs/promises"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { StringDecoder } from "node:string_decoder"
 import type { SessionCatalog } from "./catalog.js"
 import type { Thread, ThreadEntry, ThreadOrigin, ThreadRef } from "./format.js"
 
 export function daemonSocketPath(): string {
+  if (process.platform === "win32") {
+    const user = (process.env.USERNAME ?? "user").replace(/[^a-z0-9_-]/gi, "-")
+    return `\\\\.\\pipe\\mako-syncd-${user}`
+  }
   return join(homedir(), ".mako", "syncd.sock")
 }
 
@@ -123,18 +128,84 @@ type ParsedDaemonResponse =
  * without it forever. Clients that see an older daemon retire it and let a
  * fresh one take the socket.
  */
-export const PROTOCOL_VERSION = 14
+export const PROTOCOL_VERSION = 23
+const MAX_CLIENTS = 64
+const MAX_REQUEST_FRAME_BYTES = 1024 * 1024
+const MAX_RESPONSE_FRAME_BYTES = 256 * 1024 * 1024
+const MAX_PENDING_WRITE_BYTES = 256 * 1024 * 1024
+
+export interface DaemonClaim {
+  release(): Promise<void>
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function claimDaemon(
+  socketPath = daemonSocketPath()
+): Promise<DaemonClaim> {
+  const lockPath =
+    process.platform === "win32"
+      ? join(homedir(), ".mako", "syncd.lock")
+      : `${socketPath}.lock`
+  await mkdir(dirname(lockPath), { recursive: true, mode: 0o700 })
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const handle = await open(lockPath, "wx", 0o600)
+      await handle.writeFile(String(process.pid))
+      let released = false
+      return {
+        async release() {
+          if (released) return
+          released = true
+          await handle.close().catch(() => {})
+          const owner = Number(await readFile(lockPath, "utf8").catch(() => ""))
+          if (owner === process.pid) await unlink(lockPath).catch(() => {})
+        },
+      }
+    } catch (error) {
+      const owner = Number(await readFile(lockPath, "utf8").catch(() => ""))
+      if (Number.isInteger(owner) && owner > 0 && processIsAlive(owner)) {
+        throw new Error(`A sync daemon is already starting (pid ${owner})`)
+      }
+      await unlink(lockPath).catch(() => {})
+      if (attempt === 1) throw error
+    }
+  }
+  throw new Error("The sync daemon lock could not be acquired")
+}
+
+function writeFrame(socket: Socket, frame: string): void {
+  if (socket.destroyed) return
+  if (
+    socket.writableLength + Buffer.byteLength(frame) >
+    MAX_PENDING_WRITE_BYTES
+  ) {
+    socket.destroy(new Error("The sync daemon client stopped reading"))
+    return
+  }
+  socket.write(frame)
+}
 
 /** Serve one catalog over the socket. Resolves once listening. */
 export async function serveCatalog(
   catalog: SessionCatalog,
-  socketPath = daemonSocketPath()
+  socketPath = daemonSocketPath(),
+  claim?: DaemonClaim
 ): Promise<Server> {
-  // If a daemon already answers, this one has no job.
+  const ownership = claim ?? (await claimDaemon(socketPath))
   const alive = await pingDaemon(socketPath).catch(() => null)
-  if (alive)
+  if (alive) {
+    await ownership.release()
     throw new Error(`A sync daemon is already running (pid ${alive.pid})`)
-  await unlink(socketPath).catch(() => {}) // A stale socket from a dead process.
+  }
+  if (process.platform !== "win32") await unlink(socketPath).catch(() => {})
 
   const startedAt = Date.now()
   const clients = new Set<Socket>()
@@ -142,10 +213,10 @@ export async function serveCatalog(
 
   const broadcast = (frame: DaemonEvent) => {
     const line = serializeDaemonFrame(frame)
-    for (const client of clients) client.write(line)
+    for (const client of clients) writeFrame(client, line)
   }
 
-  catalog.onEvent((event) => {
+  const stopEvents = catalog.onEvent((event) => {
     if (event.type === "removed") {
       broadcast({ event: "removed", path: event.path })
       return
@@ -154,22 +225,34 @@ export async function serveCatalog(
   })
 
   const server = createServer((socket) => {
+    if (clients.size >= MAX_CLIENTS) {
+      socket.destroy(new Error("The sync daemon has too many clients"))
+      return
+    }
     clients.add(socket)
     follows.set(socket, new Map())
     let buffer = ""
+    const decoder = new StringDecoder("utf8")
 
     const reply = (frame: DaemonResponseFrame) => {
-      socket.write(serializeDaemonFrame(frame))
+      writeFrame(socket, serializeDaemonFrame(frame))
     }
 
     socket.on("data", (chunk) => {
-      buffer += chunk.toString()
+      buffer += decoder.write(chunk)
       let at: number
       while ((at = buffer.indexOf("\n")) !== -1) {
         const raw = buffer.slice(0, at)
         buffer = buffer.slice(at + 1)
+        if (Buffer.byteLength(raw) > MAX_REQUEST_FRAME_BYTES) {
+          socket.destroy(new Error("The sync daemon request was too large"))
+          return
+        }
         const frame = parseDaemonRequest(raw)
         if (frame) void handle(frame)
+      }
+      if (Buffer.byteLength(buffer) > MAX_REQUEST_FRAME_BYTES) {
+        socket.destroy(new Error("The sync daemon request was too large"))
       }
     })
 
@@ -216,7 +299,7 @@ export async function serveCatalog(
                   replace: replaced,
                 }
                 if (replaceFrom !== undefined) event.replaceFrom = replaceFrom
-                socket.write(serializeDaemonFrame(event))
+                writeFrame(socket, serializeDaemonFrame(event))
               }
             )
             mine?.set(frame.path, stop)
@@ -227,7 +310,11 @@ export async function serveCatalog(
             // A newer client wants this vintage gone. Answer, then leave —
             // the socket frees, and the successor takes over the watchers.
             reply({ id: frame.id, ok: true, result: null })
-            setTimeout(() => process.exit(0), 100)
+            server.close()
+            setTimeout(() => {
+              catalog.stop()
+              for (const client of clients) client.destroy()
+            }, 100)
             return
           }
           case "unfollow": {
@@ -261,11 +348,23 @@ export async function serveCatalog(
     socket.on("error", cleanup)
   })
 
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject)
-    server.listen(socketPath, resolve)
+  server.once("close", () => {
+    stopEvents()
+    void ownership.release()
+    if (process.platform !== "win32") void unlink(socketPath).catch(() => {})
   })
-  return server
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject)
+      server.listen(socketPath, resolve)
+    })
+    if (process.platform !== "win32") await chmod(socketPath, 0o600)
+    return server
+  } catch (error) {
+    stopEvents()
+    await ownership.release()
+    throw error
+  }
 }
 
 /* ------------------------------------------------------------ client */
@@ -306,13 +405,18 @@ export async function connectDaemon(
   const eventListeners = new Set<(event: DaemonEvent) => void>()
   const closeListeners = new Set<() => void>()
   let buffer = ""
+  const decoder = new StringDecoder("utf8")
 
   socket.on("data", (chunk) => {
-    buffer += chunk.toString()
+    buffer += decoder.write(chunk)
     let at: number
     while ((at = buffer.indexOf("\n")) !== -1) {
       const raw = buffer.slice(0, at)
       buffer = buffer.slice(at + 1)
+      if (Buffer.byteLength(raw) > MAX_RESPONSE_FRAME_BYTES) {
+        socket.destroy(new Error("The sync daemon response was too large"))
+        return
+      }
       const record = parseJsonRecord(raw)
       if (!record) continue
       const id = readNumber(record, "id")
@@ -347,6 +451,9 @@ export async function connectDaemon(
         for (const listener of eventListeners) listener(event)
       }
     }
+    if (Buffer.byteLength(buffer) > MAX_RESPONSE_FRAME_BYTES) {
+      socket.destroy(new Error("The sync daemon response was too large"))
+    }
   })
 
   const dead = () => {
@@ -362,7 +469,7 @@ export async function connectDaemon(
   socket.on("error", () => socket.destroy())
 
   const send = (frame: DaemonRequestFrame): void => {
-    socket.write(`${JSON.stringify(frame)}\n`)
+    writeFrame(socket, `${JSON.stringify(frame)}\n`)
   }
   const requestTimer = (
     id: number,
@@ -410,37 +517,42 @@ export async function connectDaemon(
       send(frame(id))
     })
 
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error("The sync daemon did not answer")),
-      timeoutMs
-    )
-    socket.once("connect", () => {
-      clearTimeout(timer)
-      resolve()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error("The sync daemon did not answer")),
+        timeoutMs
+      )
+      socket.once("connect", () => {
+        clearTimeout(timer)
+        resolve()
+      })
+      socket.once("error", (error) => {
+        clearTimeout(timer)
+        reject(error)
+      })
     })
-    socket.once("error", (error) => {
-      clearTimeout(timer)
-      reject(error)
-    })
-  })
 
-  const stats = await requestPing()
+    const stats = await requestPing()
 
-  return {
-    stats,
-    list: requestList,
-    open: requestOpen,
-    follow: (path, fromByte) =>
-      requestAck((id) => ({ id, op: "follow", path, fromByte })),
-    unfollow: (path) => requestAck((id) => ({ id, op: "unfollow", path })),
-    retire: () => requestAck((id) => ({ id, op: "retire" })),
-    onEvent: (listener) => {
-      eventListeners.add(listener)
-      return () => eventListeners.delete(listener)
-    },
-    onClose: (listener) => void closeListeners.add(listener),
-    close: () => socket.destroy(),
+    return {
+      stats,
+      list: requestList,
+      open: requestOpen,
+      follow: (path, fromByte) =>
+        requestAck((id) => ({ id, op: "follow", path, fromByte })),
+      unfollow: (path) => requestAck((id) => ({ id, op: "unfollow", path })),
+      retire: () => requestAck((id) => ({ id, op: "retire" })),
+      onEvent: (listener) => {
+        eventListeners.add(listener)
+        return () => eventListeners.delete(listener)
+      },
+      onClose: (listener) => void closeListeners.add(listener),
+      close: () => socket.destroy(),
+    }
+  } catch (error) {
+    socket.destroy()
+    throw error
   }
 }
 
@@ -581,22 +693,26 @@ function parseThreadRef(value: JsonValue | undefined): ThreadRef | null {
   if (!harness || !nativeId || !path) return null
   const ref: ThreadRef = { harness, nativeId, path }
   const cwd = readString(value, "cwd")
+  const workspace = readString(value, "workspace")
   const title = readString(value, "title")
   const model = readString(value, "model")
   const startedAt = readString(value, "startedAt")
   const updatedAt = readString(value, "updatedAt")
   const bytes = readNumber(value, "bytes")
   const locked = readBoolean(value, "locked")
+  const active = readBoolean(value, "active")
   const lineage = parseArray(value.lineage, parseThreadOrigin)
   const modelProvider = readString(value, "modelProvider")
   const archived = readBoolean(value, "archived")
   if (cwd !== undefined) ref.cwd = cwd
+  if (workspace !== undefined) ref.workspace = workspace
   if (title !== undefined) ref.title = title
   if (model !== undefined) ref.model = model
   if (startedAt !== undefined) ref.startedAt = startedAt
   if (updatedAt !== undefined) ref.updatedAt = updatedAt
   if (bytes !== undefined) ref.bytes = bytes
   if (locked !== undefined) ref.locked = locked
+  if (active !== undefined) ref.active = active
   if (lineage) ref.lineage = lineage
   if (modelProvider !== undefined) ref.modelProvider = modelProvider
   if (archived !== undefined) ref.archived = archived
