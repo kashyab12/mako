@@ -1644,39 +1644,6 @@ export function installMockBridge() {
     setAutomationEnabled: async () => [],
     runAutomation: async () => {},
     reloadAutomations: async () => [],
-    ports: async () => [
-      {
-        port: 5173,
-        pid: 1,
-        command: "node",
-        url: "http://localhost:5173",
-        loopbackOnly: true,
-        likely: true,
-      },
-      {
-        port: 8787,
-        pid: 2,
-        command: "python3",
-        url: "http://localhost:8787",
-        loopbackOnly: true,
-        likely: true,
-      },
-    ],
-    devScripts: async () => ["dev", "desktop", "build"],
-    devState: async () => ({ status: "idle" as const, lines: [] }),
-    devStart: async (script: string) => ({
-      status: "starting" as const,
-      script,
-      lines: [],
-    }),
-    devStop: async () => ({ status: "idle" as const, lines: [] }),
-    devAttach: async (url: string) => ({
-      status: "running" as const,
-      url,
-      lines: [],
-    }),
-    registerPreview: async () => "preview-mock",
-    unregisterPreview: async () => {},
     terminalList: async () => terminalSessions,
     terminalCreate: async (options) => {
       const now = Date.now()
