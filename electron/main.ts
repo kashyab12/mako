@@ -18,9 +18,8 @@ import { watch } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { COMMIT_PROMPT, type AgentHost } from "./host.js"
+import type { AgentHost } from "./host.js"
 import {
-  breadcrumb,
   clearCrashes,
   crashesDir,
   installCrashReporting,
@@ -139,17 +138,21 @@ import {
   previewSkillRemove,
   previewSkillSync,
 } from "./skill-sync.js"
+import { installGitIpc } from "./ipc/git.js"
+import { registerIpc as handle } from "./ipc/register.js"
+import { installSessionIpc } from "./ipc/session.js"
+import {
+  installWorkspaceIpc,
+  stopWorkspaceIpc,
+} from "./ipc/workspace.js"
 import type {
   AcpPermissionResponse,
   AcpPromptAttachment,
-  BootPayload,
   HostEvent,
   MakoComputerPermissions,
   McpSyncTarget,
-  SearchOptions,
   SkillSyncTarget,
   TerminalCreateOptions,
-  ThinkingLevel,
   ThreadContextOptions,
 } from "./shared.js"
 
@@ -239,12 +242,6 @@ function emitTerminalWake() {
   if (!window?.isDestroyed()) {
     window?.webContents.send("mako:terminal-event", { type: "wake" })
   }
-}
-
-let fileWatcher: import("node:fs").FSWatcher | null = null
-function stopFileWatch() {
-  fileWatcher?.close()
-  fileWatcher = null
 }
 
 function emit(event: HostEvent) {
@@ -394,226 +391,16 @@ async function createWindow() {
   }
 }
 
-/**
- * Every IPC call, wrapped once.
- *
- * Two things fall out of doing this in one place rather than at forty call
- * sites: a breadcrumb per call, so a crash report says what the app was doing;
- * and a recorded report for any handler that throws, which until now surfaced
- * only as a toast and left nothing behind to read afterwards.
- *
- * The breadcrumb is the channel name and nothing else. Arguments would mean
- * keeping the user's prompts and source on disk, which the crash file promises
- * not to do.
- */
-function handle(
-  channel: string,
-  listener: Parameters<typeof ipcMain.handle>[1]
-) {
-  ipcMain.handle(channel, async (event, ...args) => {
-    breadcrumb(channel)
-    try {
-      return await listener(event, ...args)
-    } catch (error) {
-      record("main-uncaught", error, channel)
-      throw error
-    }
-  })
-}
-
 function bindIpc() {
-  handle("mako:boot", async (): Promise<BootPayload> => {
-    const live = await ready()
-    const [tabs, models] = await Promise.all([
-      live.snapshots(),
-      live.active.listModels(),
-    ])
-    return {
-      tabs,
-      activeTabId: live.activeId,
-      models,
-      platform: process.platform,
-      // Only when the renderer is coming from Vite: that is exactly the
-      // condition under which an edit here shows up without a restart.
-      sourceRoot: isDev ? app.getAppPath() : undefined,
-    }
+  installSessionIpc({
+    ready,
+    withHost,
+    platform: process.platform,
+    sourceRoot: isDev ? app.getAppPath() : undefined,
   })
 
-  handle(
-    "mako:open-tab",
-    async (_e, options?: { cwd?: string; sessionPath?: string }) => {
-      const live = await ready()
-      return live.open(options ?? {})
-    }
-  )
-  handle("mako:close-tab", async (_e, id: string) => {
-    const live = await ready()
-    return live.close(id)
-  })
-  handle("mako:activate-tab", async (_e, id: string) => {
-    const live = await ready()
-    return live.activate(id)
-  })
-
-  handle(
-    "mako:list-sessions",
-    (_e, cwd?: string, scope?: "workspace" | "all") =>
-      withHost((h) => h.listSessions(cwd, scope))
-  )
-  handle("mako:open-session", (_e, path: string) =>
-    withHost(async (h) => {
-      await h.openSession(path)
-      return h.state()
-    })
-  )
-  handle("mako:new-session", () =>
-    withHost(async (h) => {
-      await h.newSession()
-      return h.state()
-    })
-  )
-  handle("mako:set-cwd", (_e, cwd: string) =>
-    withHost(async (h) => {
-      await h.setCwd(cwd)
-      return h.state()
-    })
-  )
-  handle("mako:set-name", (_e, name: string) =>
-    withHost((h) => h.setName(name))
-  )
-
-  ipcMain.handle(
-    "mako:prompt",
-    (
-      _e,
-      text: string,
-      mode?: "steer" | "followUp",
-      images?: Array<{ mimeType: string; data: string }>
-    ) => withHost((h) => h.prompt(text, mode, images))
-  )
-  handle("mako:abort", () => withHost((h) => h.abort()))
-  handle("mako:clear-queue", () => withHost((h) => h.clearQueue()))
-  // Branching opens a tab rather than replacing this one. Exploring the same
-  // question two ways only works if both answers stay on screen.
-  handle(
-    "mako:fork",
-    async (_e, entryId: string, position?: "before" | "at") => {
-      const live = await ready()
-      return live.forkIntoTab(entryId, position)
-    }
-  )
-  handle("mako:navigate-tree", (_e, targetId: string) =>
-    withHost(async (h) => {
-      await h.navigateTree(targetId)
-      return h.state()
-    })
-  )
-  handle("mako:compact", (_e, instructions?: string) =>
-    withHost((h) => h.compact(instructions))
-  )
-  handle("mako:set-auto-compaction", (_e, enabled: boolean) =>
-    withHost((h) => h.setAutoCompaction(enabled))
-  )
-
-  handle("mako:list-models", () => withHost((h) => h.listModels()))
-  handle("mako:set-model", (_e, provider: string, id: string) =>
-    withHost((h) => h.setModel(provider, id))
-  )
-  handle("mako:set-thinking", (_e, level: ThinkingLevel) =>
-    withHost((h) => h.setThinking(level))
-  )
-
-  handle("mako:capabilities", () => withHost((h) => h.capabilities()))
-  handle("mako:set-active-tools", (_e, names: string[]) =>
-    withHost((h) => h.setActiveTools(names))
-  )
-  handle("mako:run-command", (_e, name: string, args?: string) =>
-    withHost((h) => h.runCommand(name, args))
-  )
-
-  handle("mako:list-files", () => withHost((h) => h.listFiles()))
-  handle("mako:read-file", (_e, path: string) =>
-    withHost(async (host) => {
-      const file = await host.readWorkspaceFile(path)
-      if (file.media !== "spreadsheet") return file
-      const absolute = await host.resolvePath(path)
-      try {
-        const thumbnail = await nativeImage.createThumbnailFromPath(absolute, {
-          width: 1200,
-          height: 900,
-        })
-        if (!thumbnail.isEmpty()) file.thumbnailUrl = thumbnail.toDataURL()
-      } catch {
-        return file
-      }
-      return file
-    })
-  )
-  /**
-   * Watch the one file the viewer has open. An agent mid-edit rewrites it
-   * every few seconds; the viewer should breathe with it, not wait for a
-   * manual reopen. One watcher, replaced on every call, dropped on unwatch.
-   */
-  handle("mako:watch-file", (_e, path: string) => {
-    stopFileWatch()
-    try {
-      let timer: NodeJS.Timeout | null = null
-      fileWatcher = watch(path, () => {
-        if (timer) clearTimeout(timer)
-        timer = setTimeout(() => emit({ type: "file-changed", path }), 120)
-      })
-    } catch {
-      // A file that cannot be watched simply does not live-update.
-    }
-  })
-  handle("mako:unwatch-file", () => stopFileWatch())
-  handle("mako:search", (_e, query: string, options?: SearchOptions) =>
-    withHost((h) => h.search(query, options))
-  )
-
-  handle("mako:git-status", () => withHost((h) => h.gitStatus()))
-  handle("mako:git-diff", (_e, path: string) =>
-    withHost((h) => h.gitDiff(path))
-  )
-  handle("mako:git-diff-all", () => withHost((h) => h.gitDiffAll()))
-  handle("mako:git-stage", (_e, paths: string[]) =>
-    withHost((h) => h.gitStage(paths))
-  )
-  handle("mako:git-unstage", (_e, paths: string[]) =>
-    withHost((h) => h.gitUnstage(paths))
-  )
-  handle("mako:git-stage-all", () => withHost((h) => h.gitStageAll()))
-  handle("mako:git-unstage-all", () => withHost((h) => h.gitUnstageAll()))
-  handle(
-    "mako:git-commit",
-    (_e, message: string, options?: { amend?: boolean }) =>
-      withHost((h) => h.gitCommit(message, options))
-  )
-  handle("mako:git-push", () => withHost((h) => h.gitPush()))
-  handle("mako:git-log", (_e, limit?: number) =>
-    withHost((h) => h.gitLog(limit))
-  )
-  handle("mako:git-commit-files", (_e, hash: string) =>
-    withHost((h) => h.gitCommitFiles(hash))
-  )
-  handle("mako:git-commit-file-diff", (_e, hash: string, path: string) =>
-    withHost((h) => h.gitCommitFileDiff(hash, path))
-  )
-  handle("mako:git-commit-diff-all", (_e, hash: string) =>
-    withHost((h) => h.gitCommitDiffAll(hash))
-  )
-  handle(
-    "mako:git-generate-message",
-    (_e, options?: { prompt?: string; model?: string }) =>
-      withHost((h) => h.generateCommitMessage(options))
-  )
-  handle("mako:stage-file", (_e, name: string, base64: string) =>
-    withHost((h) => h.stageFile(name, base64))
-  )
-  handle("mako:stage-file-path", (_e, sourcePath: string) =>
-    withHost((h) => h.stageFilePath(sourcePath))
-  )
-  handle("mako:default-commit-prompt", () => COMMIT_PROMPT)
+  installWorkspaceIpc({ withHost, emit })
+  installGitIpc({ withHost })
 
   handle("mako:list-plugins", () => listPlugins())
   handle("mako:plugins-dir", () => pluginsDir())
@@ -1185,6 +972,7 @@ app.on("before-quit", () => {
   powerMonitor.removeListener("unlock-screen", emitTerminalWake)
   terminalClient?.dispose()
   stopCuaEmbedded()
+  stopWorkspaceIpc()
   stopWatching()
   stopSlackRelay()
   stopThreads()
