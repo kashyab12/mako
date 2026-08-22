@@ -32,7 +32,6 @@ import {
   automations,
   noteAutomationRun,
 } from "@/state/automations"
-import { applyDevServer } from "@/state/devserver"
 import {
   applyThreadEntries,
   applyThreadRef,
@@ -212,9 +211,6 @@ function applyToActive(event: HostEvent) {
       break
     case "update":
       applyUpdate(event.update)
-      break
-    case "devserver":
-      applyDevServer(event.devserver)
       break
     case "automations":
       applyAutomations(event.automations)
