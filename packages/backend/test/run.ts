@@ -11,7 +11,10 @@ import {
   prepareSlackRelayWebhook,
   slackActionCommand,
 } from "../src/relay/slack-ingress"
-import { slackControlBlocks } from "../src/relay/slack-ui"
+import {
+  postSlackControls,
+  slackControlBlocks,
+} from "../src/relay/slack-ui"
 import { listSkills, readSkill } from "../src/skills/catalog"
 import { backendStatus } from "../src/status"
 
@@ -68,16 +71,20 @@ async function jsonRpc(response: Response) {
   return body.result
 }
 
-function signedSlackRequest(body: string, signingSecret: string): Request {
-  const timestamp = Math.floor(Date.now() / 1_000).toString()
+function signedSlackRequest(
+  body: string,
+  signingSecret: string,
+  timestamp = Math.floor(Date.now() / 1_000)
+): Request {
+  const timestampHeader = timestamp.toString()
   const signature = createHmac("sha256", signingSecret)
-    .update(`v0:${timestamp}:${body}`)
+    .update(`v0:${timestampHeader}:${body}`)
     .digest("hex")
   return new Request("http://localhost:3000/api/slack/events", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Slack-Request-Timestamp": timestamp,
+      "X-Slack-Request-Timestamp": timestampHeader,
       "X-Slack-Signature": `v0=${signature}`,
     },
     body,
@@ -222,15 +229,38 @@ const invalidDirectWebhook = await prepareSlackRelayWebhook(
   signedSlackRequest(challengeBody, "fedcba9876543210fedcba9876543210")
 )
 assert.equal(invalidDirectWebhook.response.status, 401)
+const staleDirectWebhook = await prepareSlackRelayWebhook(
+  signedSlackRequest(
+    challengeBody,
+    directSigningSecret,
+    Math.floor(Date.now() / 1_000) - 301
+  )
+)
+assert.equal(staleDirectWebhook.response.status, 401)
 
 const originalFetch = globalThis.fetch
 let directSlackApiCalled = false
+let directSlackControlsCalled = false
 globalThis.fetch = async (input, init) => {
-  directSlackApiCalled = String(input) === "https://slack.com/api/auth.test"
+  const url = String(input)
+  directSlackApiCalled ||= url === "https://slack.com/api/auth.test"
+  directSlackControlsCalled ||= url === "https://slack.com/api/chat.postMessage"
   assert.equal(
     new Headers(init?.headers).get("authorization") === `Bearer ${directBotToken}`,
     true
   )
+  if (url === "https://slack.com/api/chat.postMessage") {
+    const body = z
+      .object({ blocks: z.array(z.json()).min(1), channel: z.literal("CTEST") })
+      .parse(JSON.parse(String(init?.body)))
+    assert.ok(body.blocks.length > 0)
+    return Response.json({
+      ok: true,
+      channel: "CTEST",
+      ts: "123.456",
+      message: { text: "Mako local harness controls" },
+    })
+  }
   return Response.json({
     ok: true,
     team: "Test Team",
@@ -244,6 +274,8 @@ try {
   const identity = await slackIdentity()
   assert.equal(identity.team_id, "TTEST")
   assert.equal(directSlackApiCalled, true)
+  assert.equal(await postSlackControls({ channel: "CTEST" }), "123.456")
+  assert.equal(directSlackControlsCalled, true)
 } finally {
   globalThis.fetch = originalFetch
 }
