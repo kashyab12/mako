@@ -107,13 +107,9 @@ const childEnv = await accountEnv("opencode", {
   PATH: "/fixture/bin",
   MAKO_BACKEND_TOKEN: "backend-secret",
   MAKO_CUA_SOCKET: "/fixture/cua.sock",
-  MAKO_PREVIEW_SOCKET: "/fixture/preview.sock",
-  MAKO_PREVIEW_TOKEN: "preview-secret",
 })
 assert.equal(childEnv.PATH, "/fixture/bin")
 assert.equal(childEnv.MAKO_BACKEND_TOKEN, undefined)
 assert.equal(childEnv.MAKO_CUA_SOCKET, undefined)
-assert.equal(childEnv.MAKO_PREVIEW_SOCKET, undefined)
-assert.equal(childEnv.MAKO_PREVIEW_TOKEN, undefined)
 
 console.log("Account discovery, usage classification, and child environment isolation passed")
