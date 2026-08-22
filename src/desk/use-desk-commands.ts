@@ -9,7 +9,7 @@ import {
 } from "@/extend/commands"
 import { installBuiltins } from "@/desk/builtins"
 import { actions, store } from "@/state/session"
-import { getMako } from "@/lib/bridge"
+import { git } from "@/state/git"
 import { prefsStore, setPref, togglePref } from "@/state/prefs"
 import { stage } from "@/state/stage"
 import { surfaces } from "@/extend/surfaces"
@@ -162,14 +162,14 @@ const DESK_COMMANDS: DeskCommand[] = [
     id: "workspace.stage-all",
     title: "Stage every change",
     section: "Workspace",
-    run: () => void getMako().gitStageAll(),
+    run: () => void git.stageAll(),
   },
   {
     id: "workspace.push",
     title: "Push the current branch",
     section: "Workspace",
     hint: "Publishes work outside this machine",
-    run: () => void getMako().gitPush(),
+    run: () => void git.push(),
   },
   {
     id: "workspace.refresh-git",

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { SearchSelect } from "@/components/ui/search-select"
-import { getMako, hasBridge } from "@/lib/bridge"
+import { desktop } from "@/state/desktop"
 import type { ExternalEditor } from "@/lib/types"
 import { setPref, usePrefs } from "@/state/prefs"
 
@@ -9,11 +9,7 @@ export function EditorSection() {
   const [editors, setEditors] = useState<ExternalEditor[]>([])
 
   useEffect(() => {
-    if (!hasBridge()) return
-    void getMako()
-      .externalEditors()
-      .then(setEditors)
-      .catch(() => setEditors([]))
+    void desktop.externalEditors().then(setEditors).catch(() => setEditors([]))
   }, [])
 
   return (

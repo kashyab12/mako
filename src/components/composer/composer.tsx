@@ -37,7 +37,7 @@ import { threads, threadsStore, useThreads } from "@/state/threads"
 import { acp, acpStore, useAcp } from "@/state/acp"
 import { draftText, rememberDraft } from "@/state/drafts"
 import { stage } from "@/state/stage"
-import { getMako } from "@/lib/bridge"
+import { stageFile } from "@/state/workspace"
 import { cn } from "@/lib/utils"
 import type { AcpPromptAttachment, Harness } from "@/lib/types"
 import {
@@ -297,7 +297,7 @@ export function Composer() {
           if (item.stagedPath || item.kind !== "image" || !item.data)
             return item
           try {
-            const file = await getMako().stageFile(item.name, item.data)
+            const file = await stageFile(item.name, item.data)
             return { ...item, stagedPath: file.path }
           } catch {
             return item

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Action } from "@/components/ui/kit"
-import { getMako, hasBridge } from "@/lib/bridge"
+import { pluginFiles } from "@/state/plugins"
 import { plugins } from "@/extend/plugin-host"
 import { useRegistry } from "@/extend/registry"
 import { cn } from "@/lib/utils"
@@ -53,8 +53,8 @@ export function PluginsSection() {
   const [dir, setDir] = useState("")
 
   useEffect(() => {
-    if (!hasBridge()) return
-    void getMako().pluginsDir().then(setDir).catch(() => {})
+    if (!pluginFiles.available()) return
+    void pluginFiles.directory().then(setDir).catch(() => {})
   }, [])
 
   const edit = (id: string, source: string) => {
@@ -65,7 +65,7 @@ export function PluginsSection() {
   const save = async (id: string) => {
     setSaving(true)
     try {
-      await getMako().writePlugin(id, draft)
+      await pluginFiles.write(id, draft)
       // The watcher reloads it; the row's status updates itself through the
       // registry. Nothing to await here except the write.
     } finally {
@@ -78,7 +78,7 @@ export function PluginsSection() {
     let name = base
     let counter = 2
     while (loaded.some((plugin) => plugin.id === name)) name = `${base}-${counter++}`
-    await getMako().writePlugin(name, TEMPLATE)
+    await pluginFiles.write(name, TEMPLATE)
     setOpen(name)
     setDraft(TEMPLATE)
   }
@@ -132,7 +132,7 @@ export function PluginsSection() {
                   aria-label={`Delete ${plugin.id}`}
                   onClick={(event) => {
                     event.stopPropagation()
-                    void getMako().deletePlugin(plugin.id)
+                    void pluginFiles.remove(plugin.id)
                     if (open === plugin.id) setOpen(null)
                   }}
                   className="shrink-0 rounded p-1 text-faint transition-colors hover:text-negative"
@@ -177,7 +177,7 @@ export function PluginsSection() {
           <PlusIcon className="size-3" />
           New plugin
         </Action>
-        <Action tone="outline" onClick={() => void getMako().revealPlugins()}>
+        <Action tone="outline" onClick={() => void pluginFiles.reveal()}>
           <FolderOpenIcon className="size-3" />
           Open folder
         </Action>

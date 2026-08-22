@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react"
 import { Action } from "@/components/ui/kit"
-import { getMako, hasBridge } from "@/lib/bridge"
+import { desktop } from "@/state/desktop"
+import { diagnostics } from "@/state/diagnostics"
 import { MakoMark } from "@/components/ui/mako-mark"
 
 /**
@@ -32,9 +33,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     this.setState({ info: info.componentStack ?? undefined })
-    if (!hasBridge()) return
-    void getMako()
-      .reportCrash("renderer-error", {
+    if (!desktop.available()) return
+    void diagnostics
+      .report("renderer-error", {
         message: error.message,
         stack: `${error.stack ?? ""}\n--- component stack ---${info.componentStack ?? ""}`,
         source: "react",
@@ -49,9 +50,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   }
 
   private revealReport = async () => {
-    if (!hasBridge()) return
-    const dir = await getMako().crashesDir()
-    await getMako().revealPath(dir)
+    if (!desktop.available()) return
+    const dir = await diagnostics.directory()
+    await desktop.revealPath(dir)
   }
 
   render() {
@@ -81,7 +82,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
           <Action tone="outline" size="md" onClick={() => location.reload()}>
             Reload the window
           </Action>
-          {hasBridge() ? (
+          {desktop.available() ? (
             <Action tone="ghost" size="md" onClick={() => void this.revealReport()}>
               Show local report
             </Action>

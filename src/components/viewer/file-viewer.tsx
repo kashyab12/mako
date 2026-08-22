@@ -12,7 +12,7 @@ import {
 import { Action, IconAction } from "@/components/ui/kit"
 import { Divider } from "@/components/shell/divider"
 import { StageStrip } from "@/components/stage/stage-strip"
-import { getMako } from "@/lib/bridge"
+import { desktop } from "@/state/desktop"
 import { prefsStore } from "@/state/prefs"
 import {
   AGENT_TAB_ID,
@@ -264,7 +264,7 @@ function DocumentView({ document }: { document: ViewerDocument }) {
               label="Open in your editor"
               size="xs"
               onClick={() =>
-                void getMako().openInEditor(
+                void desktop.openInEditor(
                   document.path,
                   prefsStore.get().externalEditor
                 )

@@ -16,7 +16,7 @@ import {
 } from "lucide-react"
 import { Blank } from "@/components/ui/kit"
 import { cn } from "@/lib/utils"
-import { getMako } from "@/lib/bridge"
+import { desktop } from "@/state/desktop"
 import { detectMacOptionIsMeta } from "@/lib/mac-option-meta"
 import { createTerminalFileLinks } from "@/lib/terminal-links"
 import {
@@ -300,7 +300,7 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
         const path = link.path.startsWith(prefix)
           ? link.path.slice(prefix.length)
           : link.path
-        if (path.startsWith("/")) void getMako().revealPath(path)
+        if (path.startsWith("/")) void desktop.revealPath(path)
         else void viewer.open(path, link.line)
       })
     )
@@ -565,7 +565,7 @@ async function openTerminalLink(
   uri: string
 ): Promise<void> {
   if (!uri.startsWith("file://")) {
-    await getMako().openUrl(uri)
+    await desktop.openUrl(uri)
     return
   }
   try {
@@ -574,7 +574,7 @@ async function openTerminalLink(
     if (path.startsWith(prefix)) {
       await viewer.open(path.slice(prefix.length))
     } else {
-      await getMako().revealPath(path)
+      await desktop.revealPath(path)
     }
   } catch {
     return

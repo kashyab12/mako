@@ -37,6 +37,23 @@ export default defineConfig([
     },
   },
   {
+    files: ["src/components/**/*.{ts,tsx}", "src/desk/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/lib/bridge"],
+              message:
+                "Presentation cannot call the host transport; add the operation to its owning state domain.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Design-token guards: hue is spent only through the semantic tokens
     // (positive/negative/caution, diff add/remove), never as a raw Tailwind
     // palette class. provider-icon.tsx draws brand marks, which are logos,

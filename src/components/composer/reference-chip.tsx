@@ -1,6 +1,6 @@
 import { fileKind } from "@/lib/mentions"
 import { fileName } from "@/lib/format"
-import { getMako } from "@/lib/bridge"
+import { desktop } from "@/state/desktop"
 import { useThreads } from "@/state/threads"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { cn } from "@/lib/utils"
@@ -53,7 +53,7 @@ export function FileChip({ path, interactive }: { path: string; interactive?: bo
     <button
       type="button"
       title={`Open ${path}`}
-      onClick={() => void getMako().revealPath(path)}
+      onClick={() => void desktop.revealPath(path)}
       className={cn(className, "pressable hover:bg-accent hover:text-foreground")}
     >
       {body}

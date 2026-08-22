@@ -1,5 +1,5 @@
 import { Action } from "@/components/ui/kit"
-import { getMako } from "@/lib/bridge"
+import { desktop } from "@/state/desktop"
 import { useUpdates } from "@/state/updates"
 import { ExternalLinkIcon } from "lucide-react"
 import { FaGithub } from "react-icons/fa"
@@ -33,13 +33,13 @@ export function AboutSection() {
       </p>
 
       <div className="flex items-center gap-2">
-        <Action onClick={() => void getMako().openUrl(REPOSITORY)}>
+        <Action onClick={() => void desktop.openUrl(REPOSITORY)}>
           <FaGithub />
           GitHub
         </Action>
         <Action
           tone="outline"
-          onClick={() => void getMako().openUrl(`${REPOSITORY}/issues`)}
+          onClick={() => void desktop.openUrl(`${REPOSITORY}/issues`)}
         >
           Report an issue
           <ExternalLinkIcon />
@@ -50,7 +50,7 @@ export function AboutSection() {
         Released under the{" "}
         <button
           type="button"
-          onClick={() => void getMako().openUrl(`${REPOSITORY}/blob/main/LICENSE`)}
+          onClick={() => void desktop.openUrl(`${REPOSITORY}/blob/main/LICENSE`)}
           className="pressable rounded text-muted-foreground underline decoration-foreground/20 underline-offset-2 hover:text-foreground"
         >
           MIT License

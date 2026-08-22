@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo, useState } from "react"
 import { Chip, Eyebrow, ListCard } from "@/components/ui/kit"
 import { touchedFiles, type FileAction, type TouchedFile } from "@/lib/context-files"
 import { fileDir, fileName, formatContextWindow, formatCost, formatRate, formatTokens } from "@/lib/format"
-import { getMako } from "@/lib/bridge"
+import { desktop } from "@/state/desktop"
 import { actions, shallowEqual, useSession } from "@/state/session"
 import { cn } from "@/lib/utils"
 import type { SkillSummary } from "@/lib/types"
@@ -194,7 +194,7 @@ const FileRow = memo(function FileRow({
     <button
       type="button"
       title={`${file.path} · ${file.action}${file.count > 1 ? ` ${file.count}×` : ""}`}
-      onClick={() => void getMako().revealPath(file.path)}
+      onClick={() => void desktop.revealPath(file.path)}
       className="contain-turn flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors duration-100 hover:bg-fill-hover [contain-intrinsic-size:auto_30px]"
     >
       <Icon className={cn("size-3 shrink-0", FILE_TONE[file.action])} />

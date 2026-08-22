@@ -2,8 +2,9 @@ import { useEffect, useState } from "react"
 import { Action, Keys } from "@/components/ui/kit"
 import { SearchSelect } from "@/components/ui/search-select"
 import { formatChord } from "@/extend/commands"
-import { getMako, hasBridge } from "@/lib/bridge"
 import { setPref, usePrefs } from "@/state/prefs"
+import { git } from "@/state/git"
+import { listUtilityModels } from "@/state/model-runtime"
 import type { ModelInfo } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { RotateCcwIcon } from "lucide-react"
@@ -18,15 +19,8 @@ export function CommitPromptSection() {
   const customized = Boolean(stored && stored !== fallback)
 
   useEffect(() => {
-    if (!hasBridge()) return
-    void getMako()
-      .defaultCommitPrompt()
-      .then(setFallback)
-      .catch(() => setFallback(""))
-    void getMako()
-      .listModels()
-      .then(setModels)
-      .catch(() => setModels([]))
+    void git.defaultPrompt().then(setFallback).catch(() => setFallback(""))
+    void listUtilityModels().then(setModels).catch(() => setModels([]))
   }, [])
 
   return (

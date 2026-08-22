@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { Action, IconAction, Keys } from "@/components/ui/kit"
 import { formatChord } from "@/extend/commands"
-import { getMako } from "@/lib/bridge"
+import { git } from "@/state/git"
 import { actions, useSession } from "@/state/session"
 import { prefsStore, usePrefs } from "@/state/prefs"
 import { cn } from "@/lib/utils"
@@ -41,7 +41,7 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
     setDrafting(true)
     try {
       const prefs = prefsStore.get()
-      const next = await getMako().generateCommitMessage({
+      const next = await git.generateMessage({
         prompt: prefs.commitPrompt,
         model: prefs.commitModel,
       })
@@ -61,7 +61,7 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
     if (!message.trim() || busy) return
     setBusy(true)
     try {
-      await getMako().gitCommit(message.trim())
+      await git.commit(message.trim())
       setMessage("")
       await actions.refreshGit()
     } catch (error) {
@@ -173,7 +173,7 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
  */
 async function guardedPush() {
   try {
-    await getMako().gitPush()
+    await git.push()
     await actions.refreshGit()
   } catch (error) {
     toast.error("Branch was not pushed", {

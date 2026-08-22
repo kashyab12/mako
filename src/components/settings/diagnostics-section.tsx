@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { Action } from "@/components/ui/kit"
-import { getMako, hasBridge } from "@/lib/bridge"
+import { desktop } from "@/state/desktop"
+import { diagnostics } from "@/state/diagnostics"
 import { formatRelative } from "@/lib/format"
 import type { CrashReport } from "../../../electron/crash.ts"
 
@@ -18,15 +19,8 @@ export function DiagnosticsSection() {
   const [openId, setOpenId] = useState<string>()
 
   const load = useCallback(() => {
-    if (!hasBridge()) return
-    void getMako()
-      .crashes()
-      .then(setCrashes)
-      .catch(() => setCrashes([]))
-    void getMako()
-      .crashesDir()
-      .then(setDir)
-      .catch(() => setDir(""))
+    void diagnostics.list().then(setCrashes).catch(() => setCrashes([]))
+    void diagnostics.directory().then(setDir).catch(() => setDir(""))
   }, [])
 
   useEffect(load, [load])
@@ -99,7 +93,7 @@ export function DiagnosticsSection() {
           Refresh
         </Action>
         {dir ? (
-          <Action tone="ghost" onClick={() => void getMako().revealPath(dir)}>
+          <Action tone="ghost" onClick={() => void desktop.revealPath(dir)}>
             Show the folder
           </Action>
         ) : null}
@@ -107,7 +101,7 @@ export function DiagnosticsSection() {
           <Action
             tone="danger"
             onClick={() => {
-              void getMako().clearCrashes().then(load)
+              void diagnostics.clear().then(load)
             }}
           >
             Delete them all

@@ -7,7 +7,7 @@ import { review, useReview } from "@/state/review"
 import { PullRequestCard } from "@/components/inspector/pull-request"
 import { Slot } from "@/extend/slot"
 import { actions, useSession } from "@/state/session"
-import { getMako } from "@/lib/bridge"
+import { git as gitActions } from "@/state/git"
 import { GitLog } from "@/components/inspector/git-log"
 import { buildFileTree, type TreeRow } from "@/lib/file-tree"
 import { cn } from "@/lib/utils"
@@ -87,8 +87,8 @@ export function ChangesPanel() {
   useEffect(() => {
     if (!path) return
     let cancelled = false
-    void getMako()
-      .gitDiff(path)
+    void gitActions
+      .diff(path)
       .then((next) => {
         if (!cancelled) setDiff(next)
       })
@@ -105,13 +105,13 @@ export function ChangesPanel() {
   // wrong for reading history. Split view, Escape gives the chat back.
   const pickCommitFile = useCallback((hash: string, filePath: string) => {
     void viewer.openDiff(`${hash.slice(0, 7)} · ${filePath}`, async () => ({
-      diffs: [await getMako().gitCommitFileDiff(hash, filePath)],
+      diffs: [await gitActions.commitFileDiff(hash, filePath)],
     }))
   }, [])
 
   const pickCommit = useCallback((hash: string, subject: string) => {
     void viewer.openDiff(`${hash.slice(0, 7)} — ${subject}`, async () => {
-      const { diffs, truncated } = await getMako().gitCommitDiffAll(hash)
+      const { diffs, truncated } = await gitActions.commitDiffAll(hash)
       return {
         diffs,
         note: truncated > 0 ? `${truncated} more file${truncated === 1 ? "" : "s"} in this commit — open them from the commit's file list.` : undefined,
@@ -121,7 +121,7 @@ export function ChangesPanel() {
 
   const openWorkingTree = useCallback(() => {
     void viewer.openDiff("Current changes", async () => {
-      const { diffs, truncated } = await getMako().gitDiffAll()
+      const { diffs, truncated } = await gitActions.diffAll()
       return {
         diffs,
         note:
@@ -143,7 +143,7 @@ export function ChangesPanel() {
       }
       if (prefsStore.get().autoOpenDiff) setPref("autoOpenDiff", false)
       void viewer.openDiff(filePath, async () => ({
-        diffs: [await getMako().gitDiff(filePath)],
+        diffs: [await gitActions.diff(filePath)],
       }))
     },
     [git?.root]
@@ -188,18 +188,16 @@ export function ChangesPanel() {
   }, [])
 
   const toggleStage = useCallback(async (file: GitFile) => {
-    const bridge = getMako()
-    if (file.staged) await bridge.gitUnstage([file.path])
-    else await bridge.gitStage([file.path])
+    if (file.staged) await gitActions.unstage([file.path])
+    else await gitActions.stage([file.path])
   }, [])
 
   const stagePaths = useCallback(async (paths: string[], stage: boolean) => {
     if (paths.length === 0) return
-    const bridge = getMako()
     // One call for the whole folder: `git add -- a b c` is atomic where a loop
     // would emit a status refresh per file and flicker the list.
-    if (stage) await bridge.gitStage(paths)
-    else await bridge.gitUnstage(paths)
+    if (stage) await gitActions.stage(paths)
+    else await gitActions.unstage(paths)
   }, [])
 
   if (files.length === 0) {
@@ -251,8 +249,8 @@ export function ChangesPanel() {
             size="xs"
             onClick={() =>
               void (staged === files.length
-                ? getMako().gitUnstageAll()
-                : getMako().gitStageAll())
+                ? gitActions.unstageAll()
+                : gitActions.stageAll())
             }
           >
             {staged === files.length ? <MinusIcon /> : <PlusIcon />}

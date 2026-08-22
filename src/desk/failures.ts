@@ -1,4 +1,5 @@
-import { getMako, hasBridge } from "@/lib/bridge"
+import { desktop } from "@/state/desktop"
+import { diagnostics } from "@/state/diagnostics"
 
 /**
  * Errors the error boundary never sees.
@@ -35,12 +36,12 @@ function report(
   stack?: string,
   source?: string
 ) {
-  if (!hasBridge() || !message) return
+  if (!desktop.available() || !message) return
   const key = `${kind}:${message}:${source ?? ""}`
   if (seen.has(key) || seen.size >= LIMIT) return
   seen.add(key)
-  void getMako()
-    .reportCrash(kind, { message, stack, source })
+  void diagnostics
+    .report(kind, { message, stack, source })
     .catch(() => {
       // Reporting a failure must never itself fail loudly.
     })

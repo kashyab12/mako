@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Eyebrow } from "@/components/ui/kit"
-import { getMako, hasBridge } from "@/lib/bridge"
+import { loadUsage } from "@/state/usage"
 import { formatTokens } from "@/lib/format"
 import type { UsageSummary, UsageTotals } from "@/lib/types"
 
@@ -9,10 +9,8 @@ export function UsageSection() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!hasBridge()) return
-    void getMako()
-      .usage()
-      .then(setData)
+    void loadUsage()
+      .then((summary) => setData(summary ?? undefined))
       .catch(() => setData(undefined))
       .finally(() => setLoading(false))
   }, [])

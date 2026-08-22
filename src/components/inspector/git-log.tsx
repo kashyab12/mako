@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Blank } from "@/components/ui/kit"
-import { getMako } from "@/lib/bridge"
+import { git, type GitCommitFile } from "@/state/git"
 import { formatRelative } from "@/lib/format"
 import { useSession } from "@/state/session"
 import { cn } from "@/lib/utils"
@@ -15,14 +15,6 @@ import { ChevronRightIcon, GitCommitHorizontalIcon } from "lucide-react"
  * version against the commit's, in the same diff surface the working tree
  * uses. History you can only read is a list; history you can open is a tool.
  */
-
-interface CommitFile {
-  path: string
-  status: GitFileStatus
-  insertions: number
-  deletions: number
-  binary: boolean
-}
 
 interface StatusGlyph {
   glyph: string
@@ -55,13 +47,13 @@ export function GitLog({
 
   const [commits, setCommits] = useState<GitCommitEntry[] | null>(null)
   const [open, setOpen] = useState<string | null>(null)
-  const [filesByHash, setFilesByHash] = useState<Record<string, CommitFile[]>>({})
+  const [filesByHash, setFilesByHash] = useState<Record<string, GitCommitFile[]>>({})
 
   useEffect(() => {
     if (!root) return
     let cancelled = false
-    void getMako()
-      .gitLog(80)
+    void git
+      .log(80)
       .then((next) => {
         if (!cancelled) setCommits(next)
       })
@@ -78,8 +70,8 @@ export function GitLog({
     const next = open === hash ? null : hash
     setOpen(next)
     if (next && !filesByHash[next]) {
-      void getMako()
-        .gitCommitFiles(next)
+      void git
+        .commitFiles(next)
         .then((list) => setFilesByHash((prev) => ({ ...prev, [next]: list })))
         .catch(() => setFilesByHash((prev) => ({ ...prev, [next]: [] })))
     }

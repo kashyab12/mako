@@ -6,7 +6,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { getMako } from "@/lib/bridge"
+import { desktop } from "@/state/desktop"
+import { git } from "@/state/git"
 import { github, useGitHub } from "@/state/github"
 import { prefsStore } from "@/state/prefs"
 import { actions, useSession } from "@/state/session"
@@ -64,7 +65,7 @@ export function PullRequestCard() {
     if (pushing) return
     setPushing(true)
     try {
-      await getMako().gitPush()
+      await git.push()
       await actions.refreshGit()
     } catch (error) {
       toast.error("Branch was not pushed", {
@@ -245,8 +246,8 @@ function ComposePull({
   const [selectedBase, setSelectedBase] = useState(base)
 
   useEffect(() => {
-    void getMako()
-      .pullBranches()
+    void github
+      .listBranches()
       .then((next) => {
         const ordered = base
           ? [base, ...next.filter((branchName) => branchName !== base)]
@@ -263,7 +264,7 @@ function ComposePull({
     try {
       // The utility model reads the same bounded diff as the commit drafter,
       // but uses a PR-specific structure with a summary and test plan.
-      const text = await getMako().generateCommitMessage({
+      const text = await git.generateMessage({
         prompt: PULL_REQUEST_PROMPT,
         model: prefsStore.get().commitModel,
       })
@@ -425,7 +426,7 @@ function PullSummary({ pull, loading }: { pull: Pull; loading: boolean }) {
         <span className="tabular shrink-0 text-ui text-faint">#{pull.number}</span>
         <button
           type="button"
-          onClick={() => void getMako().openUrl(pull.url)}
+          onClick={() => void desktop.openUrl(pull.url)}
           title={pull.url}
           className="min-w-0 flex-1 truncate text-left text-ui text-foreground/90 hover:text-foreground"
         >
@@ -445,7 +446,7 @@ function PullSummary({ pull, loading }: { pull: Pull; loading: boolean }) {
           merging={merging}
           onMerge={(strategy) => void merge(strategy)}
         />
-        <IconAction label="Open on GitHub" size="xs" onClick={() => void getMako().openUrl(pull.url)}>
+        <IconAction label="Open on GitHub" size="xs" onClick={() => void desktop.openUrl(pull.url)}>
           <ExternalLinkIcon />
         </IconAction>
       </div>

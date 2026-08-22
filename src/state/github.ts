@@ -59,6 +59,10 @@ export const github = {
     githubStore.set({ pull, loading: false, branch })
   },
 
+  listBranches(): Promise<string[]> {
+    return getMako().pullBranches()
+  },
+
   async create(options: { title: string; body: string; base?: string; draft?: boolean }) {
     const pull = await getMako().createPull(options)
     githubStore.set({ pull })
