@@ -7,15 +7,18 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, realpathSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 
 import { SessionCatalog } from "../dist/catalog.js"
 import { EntrySink } from "../dist/format.js"
 import { ClaudeProvider } from "../dist/providers/claude.js"
 import { CodexProvider } from "../dist/providers/codex.js"
+import { CursorProvider } from "../dist/providers/cursor.js"
 import { DevinLocalProvider } from "../dist/providers/devin-local.js"
+import { emitCursorSession } from "../dist/emit.js"
 import { GrokProvider } from "../dist/providers/grok.js"
 import { PiProvider } from "../dist/providers/pi.js"
 
@@ -252,6 +255,7 @@ const CASES = [
               message: {
                 model: "opus",
                 content: [
+                  { type: "thinking", thinking: "checking the tool" },
                   {
                     type: "tool_use",
                     id: "tool-1",
@@ -305,6 +309,14 @@ const CASES = [
                 type: "message",
                 role: "user",
                 content: [{ type: "input_text", text: "hello" }],
+              },
+            }) +
+            line({
+              timestamp: "2026-01-01T00:00:01.500Z",
+              type: "response_item",
+              payload: {
+                type: "reasoning",
+                summary: [{ type: "summary_text", text: "checking the tool" }],
               },
             }) +
             line({
@@ -489,6 +501,13 @@ async function splitToolResultsConverge() {
       "done",
       `${testCase.name} lost the split tool result`
     )
+    if (testCase.name === "claude" || testCase.name === "codex") {
+      const thinking = incremental
+        .filter((entry) => entry.kind === "assistant")
+        .flatMap((entry) => entry.blocks)
+        .find((block) => block.type === "thinking")
+      assert.equal(thinking?.text, "checking the tool")
+    }
   }
 }
 
@@ -648,6 +667,203 @@ async function sharedStoreRescansSerialize() {
   catalog.stop()
 }
 
+async function codexLifecycleMarkersSurvive() {
+  const home = temp("codex-lifecycle")
+  const path = join(
+    home,
+    ".codex",
+    "sessions",
+    "2026",
+    "01",
+    "01",
+    "rollout-lifecycle.jsonl"
+  )
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(
+    path,
+    line({
+      type: "session_meta",
+      payload: { id: "lifecycle", cwd: "/work" },
+    }) +
+      line({
+        type: "event_msg",
+        payload: { type: "context_compacted" },
+      }) +
+      line({
+        type: "event_msg",
+        payload: { type: "turn_aborted", reason: "user" },
+      })
+  )
+  const thread = await new CodexProvider(home).read(path)
+  assert.deepEqual(
+    thread?.entries.filter((entry) => entry.kind === "event"),
+    [
+      { kind: "event", label: "Context compacted" },
+      { kind: "event", label: "Interrupted", detail: "user" },
+    ]
+  )
+}
+
+async function claudeInterruptedMarkerSurvives() {
+  const home = temp("claude-interrupted")
+  const path = join(home, ".claude", "projects", "p", "interrupted.jsonl")
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(
+    path,
+    line({
+      type: "user",
+      sessionId: "interrupted",
+      cwd: "/work",
+      message: { content: "start" },
+    }) +
+      line({
+        type: "assistant",
+        sessionId: "interrupted",
+        isAbortedMidStream: true,
+        message: {
+          model: "opus",
+          content: [{ type: "text", text: "partial" }],
+        },
+      })
+  )
+  const thread = await new ClaudeProvider(home).read(path)
+  assert.equal(
+    thread?.entries.some(
+      (entry) => entry.kind === "event" && entry.label === "Interrupted"
+    ),
+    true
+  )
+}
+
+async function cursorWatcherDeliversReplacement() {
+  const home = temp("cursor-watch")
+  const emitted = await emitCursorSession(
+    {
+      ref: {
+        harness: "cursor",
+        nativeId: "source",
+        path: "/source",
+        cwd: "/work",
+        title: "Cursor watch",
+      },
+      entries: [
+        { kind: "user", text: "one" },
+        {
+          kind: "assistant",
+          blocks: [{ type: "text", text: "answer" }],
+        },
+      ],
+    },
+    { cwd: "/work", home }
+  )
+  const provider = new CursorProvider(home)
+  const catalog = new SessionCatalog([provider])
+  await catalog.scan()
+  const opened = await catalog.open(emitted.path)
+  assert.ok(opened)
+  const delivered = new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error("Cursor database update was not delivered")),
+      2_000
+    )
+    catalog.follow(emitted.path, opened.ref.bytes, (entries, replaced) => {
+      if (
+        !entries.some(
+          (entry) => entry.kind === "user" && entry.text === "two"
+        )
+      ) {
+        return
+      }
+      clearTimeout(timer)
+      resolve({ entries, replaced })
+    })
+  })
+  catalog.startWatching()
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  const database = new DatabaseSync(emitted.path)
+  const rows = database.prepare("SELECT id, data FROM blobs").all()
+  const user = rows.find((row) =>
+    Buffer.from(row.data).toString("utf8").includes("<user_query>")
+  )
+  assert.ok(user)
+  const updated = Buffer.from(rowText(user).replace("one", "two"))
+  database.prepare("UPDATE blobs SET data = ? WHERE id = ?").run(updated, user.id)
+  database.close()
+  const update = await delivered
+  assert.equal(update.replaced, true)
+  assert.equal(
+    update.entries.some(
+      (entry) => entry.kind === "user" && entry.text === "two"
+    ),
+    true
+  )
+  catalog.stop()
+}
+
+function rowText(row) {
+  return Buffer.from(row.data).toString("utf8")
+}
+
+async function catalogCanonicalizesWorkspaceRoots() {
+  const project = temp("workspace-root")
+  const nested = join(project, "packages", "app")
+  const path = join(project, "session.jsonl")
+  await mkdir(join(project, ".git"), { recursive: true })
+  await mkdir(nested, { recursive: true })
+  await writeFile(path, "session\n")
+  const base = fileProvider(project)
+  let reads = 0
+  const provider = {
+    ...base,
+    peek: async (file) => ({
+      harness: "test",
+      nativeId: "workspace-session",
+      path: file.path,
+      cwd: nested,
+      bytes: file.bytes,
+      updatedAt: new Date(file.mtimeMs).toISOString(),
+    }),
+    read: async (file) => {
+      reads += 1
+      const thread = await base.read(file)
+      return { ...thread, ref: { ...thread.ref, cwd: nested } }
+    },
+  }
+  const catalog = new SessionCatalog([provider])
+  const workspace = realpathSync(project)
+  const [ref] = await catalog.scan()
+  assert.equal(ref.workspace, workspace)
+  const opened = await catalog.open(path)
+  assert.equal(opened?.ref.workspace, workspace)
+  assert.equal((await catalog.open(path))?.ref.workspace, workspace)
+  assert.equal(reads, 1)
+  catalog.stop()
+}
+
+async function externalWatcherDeliversAppend() {
+  const root = temp("external-watch")
+  const path = join(root, "session.jsonl")
+  await writeFile(path, "initial\n")
+  const provider = fileProvider(root)
+  const catalog = new SessionCatalog([provider])
+  await catalog.scan()
+  const delivered = new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error("external file update was not delivered")),
+      2_000
+    )
+    catalog.follow(path, Buffer.byteLength("initial\n"), (entries) => {
+      clearTimeout(timer)
+      resolve(entries)
+    })
+  })
+  catalog.startWatching()
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  await appendFile(path, "external\n")
+  assert.deepEqual(await delivered, [{ kind: "user", text: "external" }])
+  catalog.stop()
+}
+
 async function entrySinkBoundsMutatedPayloads() {
   const sink = new EntrySink(100, 120)
   sink.push({
@@ -670,6 +886,11 @@ const tests = [
   ["catalog full/follow convergence", catalogFollowConverges],
   ["peek-call churn", peekChurn],
   ["shared store rescan serialization", sharedStoreRescansSerialize],
+  ["Codex lifecycle markers", codexLifecycleMarkersSurvive],
+  ["Claude interruption marker", claudeInterruptedMarkerSurvives],
+  ["Cursor watcher replacement delivery", cursorWatcherDeliversReplacement],
+  ["canonical workspace roots", catalogCanonicalizesWorkspaceRoots],
+  ["external watcher append delivery", externalWatcherDeliversAppend],
   ["entry sink payload budget", entrySinkBoundsMutatedPayloads],
 ]
 
