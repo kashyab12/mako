@@ -18,6 +18,7 @@ function tuningArgs(options: Parameters<NativeRunner["fresh"]>[1]): string[] {
 
 export const codexNativeRunner: NativeRunner = {
   provider: "codex",
+  fastMode: "supported",
   resume(id, prompt, options) {
     return {
       command: "codex",

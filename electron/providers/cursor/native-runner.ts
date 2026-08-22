@@ -17,6 +17,7 @@ function cursorModel(tuning: CommandTuning): string | undefined {
 
 export const cursorNativeRunner: NativeRunner = {
   provider: "cursor",
+  fastMode: "supported",
   resume(id, prompt, options) {
     const tuning = commandTuning(options)
     return {

@@ -49,7 +49,7 @@ function directPath(
   route: McpDiscoveryRoute,
   scope: "user" | "workspace"
 ): string | null {
-  if (route.provider !== "claude" && route.provider !== "cursor") return null
+  if (route.write.kind !== "file") return null
   return scope === "user"
     ? (route.userFiles[0] ?? null)
     : (route.workspaceFiles[0] ?? null)
@@ -239,11 +239,22 @@ export async function previewMcpSync(
       target,
       definition.blockReason ?? "resolve this server conflict before syncing"
     )
-  if (target.provider === "codex" && target.scope === "workspace")
+  const route = await mcpDiscoveryRoute(target.provider, snapshot.cwd)
+  if (route.write.kind === "none")
     return blockedPreview(
       serverId,
       target,
-      "Codex CLI does not support project-scoped MCP writes"
+      `${target.provider} does not expose a reliable MCP write path`
+    )
+  if (
+    route.write.kind === "cli" &&
+    route.write.scopes === "user" &&
+    target.scope === "workspace"
+  )
+    return blockedPreview(
+      serverId,
+      target,
+      `${target.provider} does not support project-scoped MCP writes`
     )
   const existing = targetExisting(snapshot, definition, target)
   const action = existing
@@ -251,7 +262,6 @@ export async function previewMcpSync(
       ? "unchanged"
       : "replace"
     : "add"
-  const route = await mcpDiscoveryRoute(target.provider, snapshot.cwd)
   const path = directPath(route, target.scope)
   const contents = path ? await readExisting(path) : ""
   const cached: CachedPreview = { hash: hash(contents) }
@@ -295,26 +305,26 @@ export async function applyMcpSync(
   }
   const cached = previews.get(key)
   if (!cached) throw new Error("Preview this MCP sync before applying it")
+  const route = await mcpDiscoveryRoute(target.provider, snapshot.cwd)
   if (cached.path) {
+    if (route.write.kind !== "file") {
+      previews.delete(key)
+      throw new Error(`${target.provider} MCP write mode changed after preview`)
+    }
     try {
       await atomicJsonMcpMerge(
         cached.path,
         cached.hash,
         definition,
-        target.provider === "claude"
-          ? "claude"
-          : target.provider === "opencode"
-            ? "opencode"
-            : "cursor"
+        route.write.format
       )
     } finally {
       previews.delete(key)
     }
     return
   }
-  const route = await mcpDiscoveryRoute(target.provider, snapshot.cwd)
   const command = route.command
-  if (!command || route.write.kind === "none") {
+  if (!command || route.write.kind !== "cli") {
     previews.delete(key)
     throw new Error(
       `${target.provider} does not expose a reliable MCP write command`

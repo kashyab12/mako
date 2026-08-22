@@ -10,5 +10,5 @@ export const claudeMcpSource: ProviderMcpSource = {
   ],
   workspaceFiles: (cwd) => [join(cwd, ".mcp.json")],
   readsCli: false,
-  write: { kind: "none" },
+  write: { kind: "file", format: "claude" },
 }

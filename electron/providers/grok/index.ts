@@ -1,3 +1,4 @@
+import { emitGrokSession } from "@mako/sessions"
 import type { ProviderModule } from "../host.js"
 import { grokAcpSource } from "./acp.js"
 import { grokMcpSource } from "./mcp.js"
@@ -11,4 +12,8 @@ export const installGrok: ProviderModule = (host) => {
   host.profiles.register(grokProfileLoader)
   host.mcpSources.register(grokMcpSource)
   host.skillSources.register(grokSkillSource)
+  host.sessionEmitters.register({
+    provider: "grok",
+    emit: (thread) => emitGrokSession(thread, {}),
+  })
 }

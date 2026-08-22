@@ -22,6 +22,7 @@ function tuningArgs(tuning: CommandTuning, generation: "v1" | "v2") {
 
 export const openCodeNativeRunner: NativeRunner = {
   provider: "opencode",
+  fastMode: "supported",
   resume(id, prompt, options) {
     const preferred =
       options?.nativePath?.includes("#v2:") ||

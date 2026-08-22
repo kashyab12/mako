@@ -190,7 +190,7 @@ async function launch(
 
   // The moment someone spends from an account is the moment its headroom is
   // worth a look. Suggest, never switch: money moves are the user's.
-  if (harness === "claude" || harness === "codex") {
+  if (providerHost.accountCapabilities.get(harness)?.mode === "selectable") {
     void switchSuggestion(harness)
       .then((message) => {
         if (message) emit({ type: "notice", level: "info", message })

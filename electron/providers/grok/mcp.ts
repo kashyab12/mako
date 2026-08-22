@@ -9,5 +9,5 @@ export const grokMcpSource: ProviderMcpSource = {
   userFiles: () => [],
   workspaceFiles: () => [],
   readsCli: true,
-  write: { kind: "cli", args: scopedMcpWriteArgs },
+  write: { kind: "cli", scopes: "both", args: scopedMcpWriteArgs },
 }

@@ -8,6 +8,7 @@ export const codexMcpSource: ProviderMcpSource = {
   readsCli: true,
   write: {
     kind: "cli",
+    scopes: "user",
     args(definition, _scope, environment) {
       if (definition.transport === "stdio") {
         const envArgs = Object.entries(environment).flatMap(([name, value]) => [

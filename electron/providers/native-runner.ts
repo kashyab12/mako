@@ -15,6 +15,7 @@ export interface NativeCommand {
 }
 
 export interface NativeRunner extends ProviderCapability {
+  fastMode: "supported" | "unsupported"
   resume(
     id: string,
     prompt: string,

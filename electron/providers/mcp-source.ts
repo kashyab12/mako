@@ -49,8 +49,10 @@ export interface ProviderMcpSource extends ProviderCapability {
   readsCli: boolean
   write:
     | { kind: "none" }
+    | { kind: "file"; format: "claude" | "cursor" | "opencode" }
     | {
         kind: "cli"
+        scopes: "user" | "both"
         args(
           definition: McpServerDefinition,
           scope: Extract<McpScope, "user" | "workspace">,

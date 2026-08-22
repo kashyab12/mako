@@ -6,6 +6,7 @@ import {
 
 export const devinNativeRunner: NativeRunner = {
   provider: "devin",
+  fastMode: "supported",
   resume(id, prompt, options) {
     const tuning = commandTuning(options)
     return {

@@ -23,10 +23,6 @@ import {
   connectDaemon,
   PROTOCOL_VERSION,
   defaultCatalog,
-  emitClaudeSession,
-  emitCodexSession,
-  emitCursorSession,
-  emitGrokSession,
   renderTranscript,
   renderTranscriptBundle,
   type TranscriptBundle,
@@ -39,6 +35,7 @@ import {
   type ThreadRef,
 } from "@mako/sessions"
 import { annotate, bindLineage, loadLineage } from "./lineage.js"
+import { providerHost } from "./providers/index.js"
 import {
   daemonLoginEnabled,
   daemonLoginProcess,
@@ -646,18 +643,9 @@ export async function emitThreadAs(
     upto !== undefined && upto < opened.entries.length
       ? { ref: opened.ref, entries: opened.entries.slice(0, upto + 1) }
       : opened
-  const emitter =
-    harness === "claude"
-      ? emitClaudeSession
-      : harness === "codex"
-        ? emitCodexSession
-        : harness === "grok"
-          ? emitGrokSession
-          : harness === "cursor"
-            ? emitCursorSession
-            : null
+  const emitter = providerHost.sessionEmitters.get(harness)
   if (!emitter) return null
-  const emitted = await emitter(thread, {})
+  const emitted = await emitter.emit(thread)
   return { thread, sessionId: emitted.sessionId, sessionPath: emitted.path }
 }
 

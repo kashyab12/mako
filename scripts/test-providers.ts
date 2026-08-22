@@ -22,6 +22,13 @@ assert.deepEqual(
 for (const source of providerHost.acpSources.list()) {
   assert.ok(providers.includes(source.provider))
 }
+for (const emitter of providerHost.sessionEmitters.list()) {
+  assert.ok(providers.includes(emitter.provider))
+}
+assert.equal(
+  providerHost.nativeRunners.get("claude")?.fastMode,
+  "unsupported"
+)
 assert.deepEqual(
   providerHost.accountCapabilities
     .list()
@@ -86,6 +93,7 @@ assert.deepEqual(
 const registry = new ProviderRegistry<NativeRunner>()
 const runner: NativeRunner = {
   provider: "fixture",
+  fastMode: "supported",
   resume: () => ({ command: "fixture", args: [] }),
   fresh: () => ({ command: "fixture", args: [] }),
 }

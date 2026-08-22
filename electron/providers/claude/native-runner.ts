@@ -5,6 +5,7 @@ import {
 
 export const claudeNativeRunner: NativeRunner = {
   provider: "claude",
+  fastMode: "unsupported",
   resume(id, prompt, options) {
     const tuning = commandTuning(options)
     return {

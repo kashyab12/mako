@@ -8,5 +8,5 @@ export const cursorMcpSource: ProviderMcpSource = {
   userFiles: () => [join(homedir(), ".cursor", "mcp.json")],
   workspaceFiles: (cwd) => [join(cwd, ".cursor", "mcp.json")],
   readsCli: false,
-  write: { kind: "none" },
+  write: { kind: "file", format: "cursor" },
 }

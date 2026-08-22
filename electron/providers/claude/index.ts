@@ -1,3 +1,4 @@
+import { emitClaudeSession } from "@mako/sessions"
 import type { ProviderModule } from "../host.js"
 import { claudeAcpSource } from "./acp.js"
 import { claudeAccountCapability } from "./accounts.js"
@@ -13,4 +14,8 @@ export const installClaude: ProviderModule = (host) => {
   host.profiles.register(claudeProfileLoader)
   host.mcpSources.register(claudeMcpSource)
   host.skillSources.register(claudeSkillSource)
+  host.sessionEmitters.register({
+    provider: "claude",
+    emit: (thread) => emitClaudeSession(thread, {}),
+  })
 }

@@ -13,17 +13,11 @@ import {
   type FreshOptions,
 } from "./drivers.js"
 import { harnessProfile, resolveHarnessTuning } from "./harnesses.js"
+import { providerHost } from "./providers/index.js"
 import type { HarnessModelOption } from "./shared.js"
 import { listThreads, transcriptInlineFor } from "./threads.js"
 
-const HarnessSchema = z.enum([
-  "claude",
-  "codex",
-  "cursor",
-  "grok",
-  "devin",
-  "opencode",
-])
+const HarnessSchema = z.string().min(1).max(80)
 
 const SelectionSchema = z.object({
   effort: z.string().min(1).max(80).optional(),
@@ -271,12 +265,15 @@ async function executePayload(
   const speedOption = selectedModel
     ? selectOption(selectedModel.options, "serviceTier")
     : undefined
-  if (fast !== undefined && harness === "claude") {
+  if (
+    fast !== undefined &&
+    providerHost.nativeRunners.get(harness)?.fastMode === "unsupported"
+  ) {
     return {
       effort,
       harness,
       model: selectedModel?.id,
-      result: "Claude Code print mode does not currently expose its fast-mode control. Reasoning and model selection still work.",
+      result: `${profile.label} print mode does not currently expose its fast-mode control. Reasoning and model selection still work.`,
       threadPath: failureThreadPath,
     }
   }

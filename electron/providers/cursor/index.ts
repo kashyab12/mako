@@ -1,3 +1,4 @@
+import { emitCursorSession } from "@mako/sessions"
 import type { ProviderModule } from "../host.js"
 import { cursorAcpSource } from "./acp.js"
 import { cursorMcpSource } from "./mcp.js"
@@ -11,4 +12,8 @@ export const installCursor: ProviderModule = (host) => {
   host.profiles.register(cursorProfileLoader)
   host.mcpSources.register(cursorMcpSource)
   host.skillSources.register(cursorSkillSource)
+  host.sessionEmitters.register({
+    provider: "cursor",
+    emit: (thread) => emitCursorSession(thread, {}),
+  })
 }

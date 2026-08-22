@@ -3,6 +3,7 @@ import type { ProviderAcpSource } from "./acp-source.js"
 import type { ProviderMcpSource } from "./mcp-source.js"
 import type { NativeRunner } from "./native-runner.js"
 import type { ProviderProfileLoader } from "./profile-loader.js"
+import type { ProviderSessionEmitter } from "./session-emitter.js"
 import type { ProviderSkillSource } from "./skill-source.js"
 import { ProviderRegistry } from "./registry.js"
 
@@ -12,6 +13,7 @@ export interface ProviderHost {
   profiles: ProviderRegistry<ProviderProfileLoader>
   mcpSources: ProviderRegistry<ProviderMcpSource>
   skillSources: ProviderRegistry<ProviderSkillSource>
+  sessionEmitters: ProviderRegistry<ProviderSessionEmitter>
   accountCapabilities: ProviderRegistry<ProviderAccountCapability>
 }
 
@@ -24,6 +26,7 @@ export function createProviderHost(): ProviderHost {
     profiles: new ProviderRegistry(),
     mcpSources: new ProviderRegistry(),
     skillSources: new ProviderRegistry(),
+    sessionEmitters: new ProviderRegistry(),
     accountCapabilities: new ProviderRegistry(),
   }
 }
