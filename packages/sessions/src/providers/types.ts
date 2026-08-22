@@ -42,6 +42,7 @@ export interface SessionProvider {
    * discovery for this provider instead of refreshing one path.
    */
   rescanRoot?: boolean
+  rescanDebounceMs?: number
 
   /**
    * Directories the harness writes sessions under. Used for discovery and
@@ -68,6 +69,7 @@ export interface SessionProvider {
    * (Cursor's SQLite) fall back to a full re-read by omitting this.
    */
   createFollower?(path: string, fromByte: number): SessionFollower
+  close?(): void
   tail?(
     path: string,
     fromByte: number
