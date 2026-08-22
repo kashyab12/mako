@@ -89,12 +89,7 @@ const CLAUDE_AUTH_ENV = [
   "CLAUDE_CODE_OAUTH_TOKEN",
 ]
 const CODEX_AUTH_ENV = ["OPENAI_API_KEY"]
-const MAKO_RUNTIME_ENV = [
-  "MAKO_BACKEND_TOKEN",
-  "MAKO_CUA_SOCKET",
-  "MAKO_PREVIEW_SOCKET",
-  "MAKO_PREVIEW_TOKEN",
-]
+const MAKO_RUNTIME_ENV = ["MAKO_BACKEND_TOKEN", "MAKO_CUA_SOCKET"]
 
 /** What stays shared across accounts, per harness. Everything but the keys. */
 const SHARED = {
