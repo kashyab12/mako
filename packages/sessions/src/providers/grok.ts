@@ -599,6 +599,12 @@ function updatesTranslator(): GrokTranslator {
         const completedAssistant = assistant ?? latestAssistant
         if (completedAssistant && event.usage) completedAssistant.usage = event.usage
         flushAssistant()
+        if (
+          event.stopReason &&
+          /cancel|interrupt|abort/i.test(event.stopReason)
+        ) {
+          sink.push({ kind: "event", at: event.at, label: "Interrupted" })
+        }
         toolsById.clear()
         latestAssistant = null
         plan = null
