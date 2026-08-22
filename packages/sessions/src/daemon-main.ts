@@ -11,14 +11,29 @@
  * survives.
  */
 
-import { mkdir } from "node:fs/promises"
+import { chmod, mkdir } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import type { Server } from "node:net"
 import { defaultCatalog } from "./index.js"
-import { daemonSocketPath, serveCatalog } from "./daemon.js"
+import {
+  claimDaemon,
+  daemonSocketPath,
+  serveCatalog,
+  type DaemonClaim,
+} from "./daemon.js"
 async function main(): Promise<void> {
   const dir = join(homedir(), ".mako")
-  await mkdir(dir, { recursive: true })
+  await mkdir(dir, { recursive: true, mode: 0o700 })
+  await chmod(dir, 0o700)
+  const socketPath = daemonSocketPath()
+  let claim: DaemonClaim
+  try {
+    claim = await claimDaemon(socketPath)
+  } catch (error) {
+    console.log(String(error instanceof Error ? error.message : error))
+    return
+  }
 
   const catalog = defaultCatalog({
     cachePath: join(dir, "syncd-catalog.json"),
@@ -28,25 +43,26 @@ async function main(): Promise<void> {
   })
 
   const started = performance.now()
-  const refs = await catalog.scan()
-  catalog.startWatching()
-
+  let server: Server
   try {
-    await serveCatalog(catalog, daemonSocketPath())
+    const refs = await catalog.scan()
+    catalog.startWatching()
+    server = await serveCatalog(catalog, socketPath, claim)
+    console.log(
+      `mako-syncd: ${refs.length} sessions in ${Math.round(performance.now() - started)}ms, watching · ${socketPath}`
+    )
   } catch (error) {
-    // Another daemon won the race. Not a failure — the job is being done.
     console.log(String(error instanceof Error ? error.message : error))
     catalog.stop()
-    process.exit(0)
+    await claim.release()
+    return
   }
-
-  console.log(
-    `mako-syncd: ${refs.length} sessions in ${Math.round(performance.now() - started)}ms, watching · ${daemonSocketPath()}`
-  )
 
   const stop = () => {
     catalog.stop()
-    process.exit(0)
+    const timer = setTimeout(() => process.exit(0), 500)
+    timer.unref?.()
+    server.close(() => process.exit(0))
   }
   process.on("SIGINT", stop)
   process.on("SIGTERM", stop)
