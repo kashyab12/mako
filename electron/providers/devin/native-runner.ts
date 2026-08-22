@@ -1,4 +1,4 @@
-import { devinExecutable } from "../../harnesses.js"
+import { devinExecutable } from "./executable.js"
 import {
   commandTuning,
   type NativeRunner,

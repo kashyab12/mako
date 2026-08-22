@@ -1,4 +1,4 @@
-import { openCodeInstallation } from "../../harnesses.js"
+import { openCodeInstallation } from "./installation.js"
 import {
   commandTuning,
   type CommandTuning,

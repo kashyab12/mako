@@ -3,9 +3,14 @@ import { providerHost } from "../electron/providers/index.ts"
 import type { NativeRunner } from "../electron/providers/native-runner.ts"
 import { ProviderRegistry } from "../electron/providers/registry.ts"
 
+const providers = ["claude", "codex", "cursor", "grok", "devin", "opencode"]
 assert.deepEqual(
   providerHost.nativeRunners.list().map((runner) => runner.provider),
-  ["claude", "codex", "cursor", "grok", "devin", "opencode"]
+  providers
+)
+assert.deepEqual(
+  providerHost.profiles.list().map((loader) => loader.provider),
+  providers
 )
 
 const codex = providerHost.nativeRunners.get("codex")!
