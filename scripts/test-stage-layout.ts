@@ -16,6 +16,7 @@ import {
   groupThreadFolders,
   threadFolderKey,
 } from "../src/lib/thread-folders.ts"
+import { acpBlocksToMessages } from "../src/lib/acp-blocks.ts"
 import type { ThreadRef } from "../src/lib/types.ts"
 
 assert.equal(
@@ -72,6 +73,40 @@ assert.equal(
 )
 assert.equal(toolLabel("exec_command"), "Shell")
 assert.equal(toolLabel("TaskUpdate"), "Update task")
+
+const acpConversation = acpBlocksToMessages(
+  [
+    { type: "user", text: "Inspect it" },
+    { type: "thinking", text: "Checking" },
+    {
+      type: "tool",
+      id: "tool-1",
+      title: "Read file",
+      toolKind: "read_file",
+      status: "completed",
+      input: '{"path":"README.md"}',
+      output: "Mako",
+    },
+    { type: "text", text: "Done" },
+    {
+      type: "plan",
+      entries: [{ content: "Inspect", status: "completed" }],
+    },
+  ],
+  true
+)
+assert.deepEqual(
+  acpConversation.messages.map((message) => message.role),
+  ["user", "assistant"]
+)
+assert.deepEqual(
+  acpConversation.messages[1]?.blocks.map((block) => block.type),
+  ["thinking", "toolCall", "toolResult", "text"]
+)
+assert.equal(acpConversation.messages[1]?.streaming, true)
+assert.deepEqual(acpConversation.plan, [
+  { content: "Inspect", status: "completed" },
+])
 
 const folderRefs = [
   {

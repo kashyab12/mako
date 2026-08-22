@@ -1,20 +1,20 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { SearchSelect } from "@/components/ui/search-select"
 import { harnessLabel } from "@/components/rail/harness-meta"
-import { ToolGlyph } from "@/components/transcript/tool-views"
+import { ConversationTimeline } from "@/components/transcript/conversation-timeline"
 import {
-  isSubagentTool,
-  subagentResultText,
-  toolLabel,
-} from "@/lib/tools"
-import { acp, acpStore, useAcp, type AcpBlock } from "@/state/acp"
+  acpBlocksToMessages,
+  type AcpPlanEntry,
+} from "@/lib/acp-blocks"
+import { toExchanges } from "@/lib/exchanges"
+import { foldTools } from "@/lib/tools"
+import { acp, acpStore, useAcp } from "@/state/acp"
 import type { AcpPermissionRequest } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import {
   CheckCheckIcon,
   CheckIcon,
-  ChevronRightIcon,
   CircleIcon,
   Loader2Icon,
   ShieldQuestionIcon,
@@ -122,154 +122,73 @@ function ModePicker() {
 }
 
 function Blocks() {
+  const session = useAcp((state) => state.session)
   const blocks = useAcp((state) => state.blocks)
-  const running = useAcp((state) => state.session?.status === "running")
-  const scroller = useRef<HTMLDivElement | null>(null)
-  const stick = useRef(true)
-
-  useEffect(() => {
-    const node = scroller.current
-    if (node && stick.current) node.scrollTop = node.scrollHeight
-  }, [blocks])
+  const running = session?.status === "running"
+  const conversation = useMemo(
+    () => acpBlocksToMessages(blocks, running),
+    [blocks, running]
+  )
+  const exchanges = useMemo(
+    () => toExchanges(foldTools(conversation.messages)),
+    [conversation.messages]
+  )
+  const lastExchangeId = exchanges.at(-1)?.id
 
   return (
-    <div
-      ref={scroller}
-      onScroll={(event) => {
-        const node = event.currentTarget
-        stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80
-      }}
-      className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3"
-    >
-      {blocks.length === 0 ? (
+    <ConversationTimeline
+      identity={session?.id ?? "acp"}
+      exchanges={exchanges}
+      streamingId={running ? lastExchangeId : undefined}
+      failedId={session?.status === "failed" ? lastExchangeId : undefined}
+      empty={
         <p className="pt-8 text-center text-ui leading-relaxed text-faint">
           The session is loaded. Anything you send continues it — same
           conversation, same working directory.
         </p>
-      ) : (
-        blocks.map((block, index) => <Block key={index} block={block} />)
-      )}
-      {running ? (
-        <div className="flex items-center gap-1.5 py-2 text-label text-faint">
-          <Loader2Icon className="size-3 animate-spin" />
-          working
-        </div>
-      ) : null}
-    </div>
+      }
+      footer={
+        <>
+          {conversation.plan.length > 0 ? (
+            <Plan entries={conversation.plan} />
+          ) : null}
+          {running ? (
+            <div className="flex items-center gap-1.5 py-2 text-label text-faint">
+              <Loader2Icon className="size-3 animate-spin" />
+              working
+            </div>
+          ) : null}
+        </>
+      }
+    />
   )
 }
 
-function Block({ block }: { block: AcpBlock }) {
-  switch (block.type) {
-    case "user":
-      return (
-        <div className="contain-turn my-3 rounded-lg bg-surface px-3 py-2">
-          <p className="pb-0.5 text-label font-medium text-faint">You</p>
-          <p className="text-ui leading-relaxed whitespace-pre-wrap text-foreground/95">{block.text}</p>
-        </div>
-      )
-    case "text":
-      return (
-        <p className="contain-turn my-2 text-ui leading-relaxed whitespace-pre-wrap text-foreground/90">
-          {block.text}
-        </p>
-      )
-    case "thinking":
-      return <Thinking text={block.text} />
-    case "tool":
-      return <Tool block={block} />
-    case "plan":
-      return (
-        <div className="contain-turn my-2 rounded-md border border-hairline/60 px-2.5 py-1.5">
-          <p className="pb-1 text-label font-medium text-faint">Plan</p>
-          {block.entries.map((entry, index) => (
-            <p key={index} className="flex items-center gap-1.5 py-px text-ui text-muted-foreground">
-              {entry.status === "completed" ? (
-                <CheckIcon className="size-3 text-positive/80" />
-              ) : entry.status === "in_progress" ? (
-                <Loader2Icon className="size-3 animate-spin text-faint" />
-              ) : (
-                <CircleIcon className="size-2.5 text-faint/60" />
-              )}
-              <span className={cn(entry.status === "completed" && "text-faint line-through")}>{entry.content}</span>
-            </p>
-          ))}
-        </div>
-      )
-  }
-}
-
-function Thinking({ text }: { text: string }) {
-  const [open, setOpen] = useState(false)
+function Plan({ entries }: { entries: AcpPlanEntry[] }) {
   return (
-    <div className="contain-turn my-1">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        className="flex items-center gap-1 text-label text-faint hover:text-muted-foreground"
-      >
-        <ChevronRightIcon className={cn("size-3 transition-transform duration-150", open && "rotate-90")} />
-        Thinking
-      </button>
-      {open ? (
-        <p className="mt-1 text-ui leading-relaxed whitespace-pre-wrap text-faint italic">{text}</p>
-      ) : null}
-    </div>
-  )
-}
-
-function Tool({ block }: { block: AcpBlock & { type: "tool" } }) {
-  const [open, setOpen] = useState(false)
-  const identity = block.toolKind ?? block.title
-  const output = isSubagentTool(identity)
-    ? subagentResultText(block.output)
-    : block.output
-  return (
-    <div className="contain-turn my-1 rounded-md border border-hairline/60">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center gap-1.5 px-2 py-1 text-left"
-      >
-        <ChevronRightIcon
-          className={cn(
-            "size-3 shrink-0 text-faint transition-transform duration-150",
-            open && "rotate-90"
+    <div className="contain-turn rounded-md border border-hairline/60 px-2.5 py-1.5">
+      <p className="pb-1 text-label font-medium text-faint">Plan</p>
+      {entries.map((entry, index) => (
+        <p
+          key={index}
+          className="flex items-center gap-1.5 py-px text-ui text-muted-foreground"
+        >
+          {entry.status === "completed" ? (
+            <CheckIcon className="size-3 text-positive/80" />
+          ) : entry.status === "in_progress" ? (
+            <Loader2Icon className="size-3 animate-spin text-faint" />
+          ) : (
+            <CircleIcon className="size-2.5 text-faint/60" />
           )}
-        />
-        <ToolGlyph name={identity} className="size-3.5 shrink-0 text-faint" />
-        <span className="shrink-0 text-ui font-medium text-foreground/90">
-          {toolLabel(identity)}
-        </span>
-        {block.title !== identity ? (
-          <span className="min-w-0 flex-1 truncate text-ui text-faint">
-            {block.title}
+          <span
+            className={cn(
+              entry.status === "completed" && "text-faint line-through"
+            )}
+          >
+            {entry.content}
           </span>
-        ) : (
-          <span className="min-w-0 flex-1" />
-        )}
-        {block.status === "completed" ? (
-          <CheckIcon className="size-3 shrink-0 text-positive/70" />
-        ) : block.status === "failed" ? (
-          <XIcon className="size-3 shrink-0 text-negative/80" />
-        ) : (
-          <Loader2Icon className="size-3 shrink-0 animate-spin text-faint" />
-        )}
-      </button>
-      {open && (block.input || output) ? (
-        <div className="max-h-72 overflow-y-auto border-t border-hairline/60">
-          {block.input ? (
-            <pre className="px-2 py-1.5 font-mono text-label leading-relaxed break-words whitespace-pre-wrap text-faint">
-              {block.input}
-            </pre>
-          ) : null}
-          {output ? (
-            <pre className="border-t border-hairline/60 px-2 py-1.5 font-mono text-label leading-relaxed break-words whitespace-pre-wrap text-faint">
-              {output}
-            </pre>
-          ) : null}
-        </div>
-      ) : null}
+        </p>
+      ))}
     </div>
   )
 }

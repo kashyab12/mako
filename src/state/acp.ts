@@ -9,6 +9,7 @@ import {
   threadsStore,
   withConversion,
 } from "@/state/threads"
+import type { AcpBlock } from "@/lib/acp-blocks"
 import type {
   AcpPermissionRequest,
   AcpPromptAttachment,
@@ -27,21 +28,6 @@ import type {
  * which is not a protocol limit but a UI decision: this panel is a focused
  * conversation, not a fleet console.
  */
-
-export type AcpBlock =
-  | { type: "user"; text: string }
-  | { type: "text"; text: string }
-  | { type: "thinking"; text: string }
-  | {
-      type: "tool"
-      id: string
-      title: string
-      toolKind?: string
-      status: string
-      input?: string
-      output?: string
-    }
-  | { type: "plan"; entries: Array<{ content: string; status: string }> }
 
 interface AcpState {
   session: AcpSessionState | null
