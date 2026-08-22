@@ -28,6 +28,7 @@ import {
   type Thread,
   type ThreadEntry,
   type ThreadRef,
+  type TurnUsage,
 } from "../format.js"
 import type {
   NativeFile,
@@ -67,6 +68,7 @@ interface ChatMessage {
   thinking?: ChatContent
   tool_calls?: ToolCall[]
   tool_call_id?: string
+  usage?: TurnUsage
 }
 
 interface DiscoveryRow {
@@ -87,6 +89,7 @@ interface MessageRow {
   rowId: number
   chatMessage?: string
   createdAt: StoredTimestamp
+  usage?: TurnUsage
 }
 
 interface MessageTranslator {
@@ -124,8 +127,11 @@ export class DevinCliProvider implements SessionProvider {
   displayName = "Devin"
   /** One store, many sessions: a db write means re-discover, not re-stat. */
   rescanRoot = true
+  rescanDebounceMs = 100
 
   private dir: string
+  private db: DatabaseSync | null = null
+  private dbIdentity: string | null = null
 
   constructor(home = homedir()) {
     this.dir = join(home, ".local", "share", "devin", "cli")
@@ -139,6 +145,23 @@ export class DevinCliProvider implements SessionProvider {
     return join(this.dir, "sessions.db")
   }
 
+  private async connection(): Promise<DatabaseSync | null> {
+    const info = await stat(this.dbPath()).catch(() => null)
+    if (!info) return null
+    const identity = `${info.dev}:${info.ino}`
+    if (this.db && this.dbIdentity === identity) return this.db
+    this.db?.close()
+    this.db = await openDatabase(this.dbPath())
+    this.dbIdentity = this.db ? identity : null
+    return this.db
+  }
+
+  private resetConnection(): void {
+    this.db?.close()
+    this.db = null
+    this.dbIdentity = null
+  }
+
   private lockPath(): string {
     return join(this.dir, "session_locks")
   }
@@ -147,7 +170,7 @@ export class DevinCliProvider implements SessionProvider {
     const info = await stat(this.dbPath()).catch(() => null)
     if (!info) return []
     const locked = await lockedSessionIds(this.lockPath())
-    const db = await openDatabase(this.dbPath())
+    const db = await this.connection()
     if (!db) return []
     try {
       const stored = db
@@ -174,16 +197,15 @@ export class DevinCliProvider implements SessionProvider {
       }
       return files
     } catch {
+      this.resetConnection()
       return []
-    } finally {
-      db.close()
     }
   }
 
   async peek(file: NativeFile): Promise<ThreadRef | null> {
     const id = idOf(file.path)
     if (!id) return null
-    const db = await openDatabase(this.dbPath())
+    const db = await this.connection()
     if (!db) return null
     try {
       const stored = db
@@ -207,9 +229,8 @@ export class DevinCliProvider implements SessionProvider {
         locked: file.locked,
       }
     } catch {
+      this.resetConnection()
       return null
-    } finally {
-      db.close()
     }
   }
 
@@ -226,7 +247,7 @@ export class DevinCliProvider implements SessionProvider {
       locked,
     })
     if (!ref) return null
-    const db = await openDatabase(this.dbPath())
+    const db = await this.connection()
     if (!db) return null
     try {
       const cursor = mainChainId(db, id)
@@ -235,9 +256,8 @@ export class DevinCliProvider implements SessionProvider {
       ref.bytes = cursor
       return { ref, entries: into.snapshot() }
     } catch {
+      this.resetConnection()
       return null
-    } finally {
-      db.close()
     }
   }
 
@@ -252,7 +272,7 @@ export class DevinCliProvider implements SessionProvider {
       },
       next: async (): Promise<SessionUpdate> => {
         if (!id) return unchangedUpdate(cursor)
-        const db = await openDatabase(this.dbPath())
+        const db = await this.connection()
         if (!db) return unchangedUpdate(cursor)
         try {
           if (previous === null) {
@@ -283,11 +303,16 @@ export class DevinCliProvider implements SessionProvider {
           }
           if (!appended) update.replaceFrom = shared
           return update
-        } finally {
-          db.close()
+        } catch {
+          this.resetConnection()
+          return unchangedUpdate(cursor)
         }
       },
     }
+  }
+
+  close(): void {
+    this.resetConnection()
   }
 }
 
@@ -306,22 +331,29 @@ function mainChainRows(
   leafId: number
 ): MessageRow[] {
   if (leafId <= 0) return []
+  const metadata = db
+    .prepare("PRAGMA table_info(message_nodes)")
+    .all()
+    .some((row) => row.name === "metadata")
+    ? "metadata"
+    : "NULL"
   const stored = db
     .prepare(
       `WITH RECURSIVE chain(
-         row_id, node_id, parent_node_id, chat_message, created_at, depth
+         row_id, node_id, parent_node_id, chat_message, metadata, created_at, depth
        ) AS (
-         SELECT row_id, node_id, parent_node_id, chat_message, created_at, 0
+         SELECT row_id, node_id, parent_node_id, chat_message, ${metadata}, created_at, 0
          FROM message_nodes
          WHERE session_id = ? AND node_id = ?
          UNION ALL
          SELECT m.row_id, m.node_id, m.parent_node_id, m.chat_message,
+                ${metadata === "metadata" ? "m.metadata" : "NULL"},
                 m.created_at, chain.depth + 1
          FROM message_nodes m
          JOIN chain ON m.node_id = chain.parent_node_id
          WHERE m.session_id = ?
        )
-       SELECT row_id, chat_message, created_at
+       SELECT row_id, chat_message, metadata, created_at
        FROM chain
        ORDER BY depth DESC`
     )
@@ -412,7 +444,16 @@ function translator(): MessageTranslator {
         }
         const text = contentText(message.content)
         if (text.trim()) blocks.push({ type: "text", text })
-        if (blocks.length > 0) sink.push({ kind: "assistant", at, blocks })
+        const usage = message.usage ?? row.usage
+        if (blocks.length > 0 || usage) {
+          const entry: Extract<ThreadEntry, { kind: "assistant" }> = {
+            kind: "assistant",
+            at,
+            blocks,
+          }
+          if (usage) entry.usage = usage
+          sink.push(entry)
+        }
         return
       }
       if (message.role === "tool") {
@@ -475,6 +516,33 @@ function parseMessageRow(fields: SqliteFields): MessageRow {
     rowId: isSqliteNumber(fields.row_id) ? fields.row_id : 0,
     chatMessage: sqliteText(fields.chat_message),
     createdAt: sqliteNumber(fields.created_at),
+    usage: parseUsage(sqliteText(fields.metadata)),
+  }
+}
+
+function usageFromMetadata(metadata: JsonValue | undefined): TurnUsage | undefined {
+  if (!isJsonObject(metadata) || !isJsonObject(metadata.metrics)) return undefined
+  const values = {
+    input: jsonNumber(metadata.metrics.input_tokens),
+    output: jsonNumber(metadata.metrics.output_tokens),
+    cacheRead: jsonNumber(metadata.metrics.cache_read_tokens),
+    cacheWrite: jsonNumber(metadata.metrics.cache_creation_tokens),
+  }
+  const usage = Object.fromEntries(
+    Object.entries(values).filter(
+      (entry): entry is [string, number] => entry[1] !== undefined
+    )
+  ) satisfies TurnUsage
+  return Object.keys(usage).length > 0 ? usage : undefined
+}
+
+function parseUsage(text: string | undefined): TurnUsage | undefined {
+  if (!text) return undefined
+  try {
+    const metadata: JsonValue = JSON.parse(text)
+    return usageFromMetadata(metadata)
+  } catch {
+    return undefined
   }
 }
 
@@ -488,6 +556,7 @@ function parseChatMessage(text: string): ChatMessage | null {
       thinking: parsed.thinking,
       tool_calls: parseToolCalls(parsed.tool_calls),
       tool_call_id: jsonText(parsed.tool_call_id),
+      usage: usageFromMetadata(parsed.metadata),
     }
   } catch {
     return null
@@ -525,6 +594,13 @@ function sqliteText(value: SQLOutputValue | undefined): string | undefined {
 
 function jsonText(value: JsonValue | undefined): string | undefined {
   return isTextValue(value) ? value : undefined
+}
+
+function jsonNumber(value: JsonValue | undefined): number | undefined {
+  return Object.prototype.toString.call(value) === "[object Number]" &&
+    Number.isFinite(Number(value))
+    ? Number(value)
+    : undefined
 }
 
 function sqliteNumber(value: SQLOutputValue | undefined): StoredTimestamp {
