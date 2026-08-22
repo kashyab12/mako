@@ -108,14 +108,11 @@ async function start(
   processChild.once("exit", () => {
     if (child !== processChild) return
     child = null
-    if (process.env.MAKO_CUA_SOCKET === nextSocket) {
-      delete process.env.MAKO_CUA_SOCKET
-    }
+    socketPath = null
     void unlink(nextSocket).catch(() => undefined)
   })
   try {
     await waitForSocket(nextSocket, processChild)
-    process.env.MAKO_CUA_SOCKET = nextSocket
     return nextSocket
   } catch (error) {
     processChild.kill("SIGTERM")
@@ -126,12 +123,15 @@ async function start(
   }
 }
 
+export function cuaEmbeddedSocket(): string | null {
+  return child && socketPath ? socketPath : null
+}
+
 export function stopCuaEmbedded(): void {
   const running = child
   const currentSocket = socketPath
   child = null
   socketPath = null
-  delete process.env.MAKO_CUA_SOCKET
   running?.kill("SIGTERM")
   if (currentSocket) void unlink(currentSocket).catch(() => undefined)
 }
