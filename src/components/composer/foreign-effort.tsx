@@ -20,7 +20,13 @@ interface TuningPatch {
 /** Identity-stable fallback so an untuned harness never re-renders the row. */
 const NO_TUNING = {}
 
-export function ForeignEffortPicker({ harness }: { harness: string }) {
+export function ForeignEffortPicker({
+  harness,
+  threadModel,
+}: {
+  harness: string
+  threadModel?: string
+}) {
   const [open, setOpen] = useState(false)
   const [profile, setProfile] = useState<HarnessProfile | null>(null)
   const chosen = useThreads((state) => state.composerTuning[harness] ?? NO_TUNING)
@@ -36,11 +42,17 @@ export function ForeignEffortPicker({ harness }: { harness: string }) {
       .catch(() => {})
   }, [harness])
 
-  const model = harnessModelByIdentity(profile ?? undefined, chosen.model)
+  const model = harnessModelByIdentity(
+    profile ?? undefined,
+    threadModel ?? chosen.model
+  )
   const options = model?.options ?? []
   if (options.length === 0) return null
 
-  const selected = chosen.options ?? {}
+  const variant = model?.variants?.find(
+    (candidate) => candidate.id === threadModel
+  )
+  const selected = variant?.values ?? chosen.options ?? {}
   const effort = options.find(
     (option) => option.kind === "select" && /effort|reason/i.test(`${option.id} ${option.label}`)
   )
