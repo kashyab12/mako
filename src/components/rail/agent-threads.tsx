@@ -1,7 +1,11 @@
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { harnessLabel } from "@/components/rail/harness-meta"
-import { workspaceName } from "@/lib/format"
+import { formatRelative, workspaceName } from "@/lib/format"
+import {
+  groupThreadFolders,
+  type ThreadFolder,
+} from "@/lib/thread-folders"
 import {
   threadStatus,
   threads,
@@ -56,7 +60,7 @@ const REST_ROWS = 3
 /** Each press of "More" reveals this many further rows. */
 const PAGE_ROWS = 5
 const PINNED_ROWS = 8
-const PROJECT_ROWS = 6
+const FOLDER_ROWS = 6
 /** Folders quiet longer than this start out collapsed. */
 const COLD_MS = 7 * 24 * 3600_000
 const LIVE_TIME_MS = 60_000
@@ -65,16 +69,6 @@ const INITIAL_TIME = Date.now()
 interface AgentActivity {
   harness: string
   count: number
-}
-
-interface Folder {
-  key: string
-  name: string
-  cwd: string | null
-  refs: ThreadRef[]
-  current: boolean
-  pinned: boolean
-  latest: string
 }
 
 function useLiveTime(): number {
@@ -94,7 +88,7 @@ export function AgentThreads() {
   const [jumpHints, setJumpHints] = useState(false)
   const [searching, setSearching] = useState(false)
   const [showAllPinned, setShowAllPinned] = useState(false)
-  const [showAllProjects, setShowAllProjects] = useState(false)
+  const [showAllFolders, setShowAllFolders] = useState(false)
   // Extra pages unfolded per folder — More reveals a handful at a time,
   // not the whole archive in one avalanche.
   const [pages, setPages] = useState<Record<string, number>>({})
@@ -196,58 +190,30 @@ export function AgentThreads() {
     return list
   }, [matched, pinned])
 
-  const folders = useMemo<Folder[]>(() => {
-    const set = new Set(pinned)
-    const byCwd = new Map<string, ThreadRef[]>()
-    for (const ref of matched) {
-      if (set.has(ref.path)) continue
-      const key = ref.cwd ?? ""
-      const list = byCwd.get(key)
-      if (list) list.push(ref)
-      else byCwd.set(key, [ref])
-    }
-    const byOrder = (a: ThreadRef, b: ThreadRef): number => {
-      if (sortBy === "name") return (a.title ?? "").localeCompare(b.title ?? "")
-      if (sortBy === "created") return (b.startedAt ?? "").localeCompare(a.startedAt ?? "")
-      return (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")
-    }
-    const pinnedSet = new Set(pinnedProjects)
-    const result: Folder[] = [...byCwd.entries()].map(([key, refs]) => {
-      refs.sort(byOrder)
-      return {
-        key: key || "~",
-        name: key ? workspaceName(key) : "Sessions",
-        cwd: key || null,
-        refs,
-        current: Boolean(cwd) && key === cwd,
-        pinned: Boolean(key) && pinnedSet.has(key),
-        latest: refs.reduce((top, ref) => ((ref.updatedAt ?? "") > top ? ref.updatedAt! : top), ""),
-      }
-    })
-    result.sort((a, b) => {
-      if (a.cwd === null || b.cwd === null) return a.cwd === null ? 1 : -1
-      if (a.current !== b.current) return a.current ? -1 : 1
-      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
-      if (a.pinned && b.pinned)
-        return pinnedProjects.indexOf(a.cwd) - pinnedProjects.indexOf(b.cwd)
-      if (sortBy === "name") return a.name.localeCompare(b.name)
-      return b.latest.localeCompare(a.latest)
-    })
-    return result
-  }, [cwd, matched, pinned, pinnedProjects, sortBy])
+  const folders = useMemo(
+    () =>
+      groupThreadFolders({
+        refs: matched,
+        currentCwd: cwd,
+        pinnedThreads: pinned,
+        pinnedFolders: pinnedProjects,
+        sortBy,
+      }),
+    [cwd, matched, pinned, pinnedProjects, sortBy]
+  )
 
   const searchActive = Boolean(deferred.trim())
   const shownPinned = showAllPinned ? held : held.slice(0, PINNED_ROWS)
   const hiddenPinned = held.length - shownPinned.length
-  const projects = folders.filter((folder) => folder.cwd !== null)
+  const workspaceFolders = folders.filter((folder) => folder.cwd !== null)
   const sessions = folders.find((folder) => folder.cwd === null)
-  const priorityProjects = projects.filter(
+  const priorityFolders = workspaceFolders.filter(
     (folder) => folder.current || folder.pinned
   ).length
-  const shownProjects = showAllProjects
-    ? projects
-    : projects.slice(0, Math.max(PROJECT_ROWS, priorityProjects))
-  const hiddenProjects = projects.length - shownProjects.length
+  const shownFolders = showAllFolders
+    ? workspaceFolders
+    : workspaceFolders.slice(0, Math.max(FOLDER_ROWS, priorityFolders))
+  const hiddenFolders = workspaceFolders.length - shownFolders.length
 
   useEffect(() => {
     const rows = rail.current?.querySelectorAll<HTMLElement>("[data-thread-row]")
@@ -255,7 +221,7 @@ export function AgentThreads() {
       if (index < 9) row.dataset.jumpIndex = String(index + 1)
       else delete row.dataset.jumpIndex
     })
-  }, [folders, held, jumpHints, matched, pages, showAllPinned, showAllProjects])
+  }, [folders, held, jumpHints, matched, pages, showAllPinned, showAllFolders])
 
   return (
     <div
@@ -350,7 +316,7 @@ export function AgentThreads() {
                 ) : null}
               </section>
             ) : null}
-            {shownProjects.map((folder) => (
+            {shownFolders.map((folder) => (
               <FolderSection
                 key={folder.key}
                 folder={folder}
@@ -373,13 +339,13 @@ export function AgentThreads() {
                 onPages={(next) => setPages((prev) => ({ ...prev, [folder.key]: next }))}
               />
             ))}
-            {hiddenProjects > 0 || showAllProjects ? (
+            {hiddenFolders > 0 || showAllFolders ? (
               <button
                 type="button"
-                onClick={() => setShowAllProjects((current) => !current)}
+                onClick={() => setShowAllFolders((current) => !current)}
                 className="mb-1 flex h-7 w-full items-center rounded-md px-1.5 text-left text-label text-faint transition-colors duration-100 hover:bg-fill-hover hover:text-muted-foreground"
               >
-                {showAllProjects ? "Fewer projects" : `${hiddenProjects} more projects`}
+                {showAllFolders ? "Fewer folders" : `${hiddenFolders} more folders`}
               </button>
             ) : null}
             {sessions ? (
@@ -597,7 +563,7 @@ function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter
   const [open, setOpen] = useState(false)
   const sortBy = usePrefs((prefs) => prefs.railSortBy)
   const scope = usePrefs((prefs) => prefs.railScope)
-  const on = filter.length > 0 || scope === "workspace" || (sortBy !== "recent" && sortBy !== "size")
+  const on = filter.length > 0 || scope === "workspace" || sortBy !== "recent"
 
   const section = "px-2 pt-2 pb-1 text-label font-medium text-faint/80"
   const row = (active: boolean) =>
@@ -720,7 +686,7 @@ function FolderSection({
   pages,
   onPages,
 }: {
-  folder: Folder
+  folder: ThreadFolder
   branch?: string
   now: number
   collapsed: boolean
@@ -744,6 +710,7 @@ function FolderSection({
       <div className="group/folder flex h-7 w-full items-center rounded-md transition-colors duration-100 hover:bg-fill-hover">
         <button
           type="button"
+          title={folder.cwd ?? folder.name}
           onClick={onToggle}
           className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch px-1.5 text-left"
         >
@@ -768,6 +735,11 @@ function FolderSection({
               {branch}
             </span>
           ) : null}
+          {folder.latest ? (
+            <span className="tabular shrink-0 text-label text-faint/60">
+              {formatRelative(folder.latest)}
+            </span>
+          ) : null}
           <span className="tabular text-label text-faint/60 opacity-0 transition-opacity duration-100 group-hover/folder:opacity-100">
             {folder.refs.length}
           </span>
@@ -781,7 +753,7 @@ function FolderSection({
         {onPin ? (
           <button
             type="button"
-            aria-label={folder.pinned ? "Unpin project" : "Pin project"}
+            aria-label={folder.pinned ? "Unpin folder" : "Pin folder"}
             onClick={onPin}
             className={cn(
               "mr-1 rounded p-0.5 text-faint transition-opacity duration-150 hover:text-foreground",
