@@ -85,7 +85,6 @@ electron/          main process — needs a restart
   automations.ts   saved prompts and their triggers; off until switched on
   crash.ts         local-only crash reports, plus the IPC breadcrumb trail
   github.ts        pull requests and checks, through the `gh` CLI
-  devserver.ts     the project's dev server: spawn, sniff its URL, kill its group
   updates.ts       the update feed; downloads on its own, never installs itself
   shared.ts        the wire contract between main and renderer
   preload.ts       the contextBridge surface
