@@ -20,7 +20,16 @@ export {
 } from "./format.js"
 export { SessionCatalog, type CatalogEvent } from "./catalog.js"
 export { SessionArchive } from "./archive.js"
-export { connectDaemon, daemonSocketPath, pingDaemon, PROTOCOL_VERSION, serveCatalog, type DaemonClient, type DaemonStats } from "./daemon.js"
+export {
+  connectDaemon,
+  daemonSocketPath,
+  pingDaemon,
+  PROTOCOL_VERSION,
+  serveCatalog,
+  type DaemonClient,
+  type DaemonEvent,
+  type DaemonStats,
+} from "./daemon.js"
 export {
   renderTranscript,
   renderTranscriptBundle,

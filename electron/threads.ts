@@ -28,6 +28,7 @@ import {
   type TranscriptBundle,
   type TranscriptOptions,
   type DaemonClient,
+  type DaemonEvent,
   type DaemonStats,
   type SessionCatalog,
   type Thread,
@@ -96,9 +97,30 @@ export function installThreads(send: (event: HostEvent) => void): void {
   })()
 }
 
+function applyDaemonEvent(event: DaemonEvent, announce: boolean): void {
+  if (event.event === "added" || event.event === "updated") {
+    mirror.set(event.ref.path, event.ref)
+    if (event.event === "added") bindLineage(event.ref)
+    if (announce) emit({ type: "thread-ref", ref: annotate(event.ref) })
+  } else if (event.event === "removed") {
+    mirror.delete(event.path)
+    if (announce) emit({ type: "thread-removed", path: event.path })
+  } else if (event.event === "entries" && announce) {
+    emit({
+      type: "thread-entries",
+      path: event.path,
+      entries: event.entries,
+      replace: event.replace,
+      replaceFrom: event.replaceFrom,
+    })
+  }
+}
+
 async function connectViaDaemon(): Promise<boolean> {
+  let client: DaemonClient | null = null
+  let stopEvents: (() => void) | null = null
   try {
-    const client = await connectDaemon()
+    client = await connectDaemon()
     if (client.stats.version < PROTOCOL_VERSION) {
       const pid = client.stats.pid
       await Promise.race([
@@ -123,28 +145,29 @@ async function connectViaDaemon(): Promise<boolean> {
     if (loginPid && loginPid !== client.stats.pid) {
       await stopDaemonLoginJob()
     }
-    daemon = client
-    mirror.clear()
-    for (const ref of await client.list()) mirror.set(ref.path, ref)
-    push()
-    client.onEvent((event) => {
-      if (event.event === "added" || event.event === "updated") {
-        mirror.set(event.ref.path, event.ref)
-        if (event.event === "added") bindLineage(event.ref)
-        emit({ type: "thread-ref", ref: annotate(event.ref) })
-      } else if (event.event === "removed") {
-        mirror.delete(event.path)
-        emit({ type: "thread-removed", path: event.path })
-      } else if (event.event === "entries") {
-        emit({
-          type: "thread-entries",
-          path: event.path,
-          entries: event.entries,
-          replace: event.replace,
-          replaceFrom: event.replaceFrom,
-        })
+
+    const pending: DaemonEvent[] = []
+    let hydrated = false
+    stopEvents = client.onEvent((event) => {
+      if (!hydrated) {
+        pending.push(event)
+        return
       }
+      applyDaemonEvent(event, true)
     })
+    const refs = await client.list()
+    mirror.clear()
+    for (const ref of refs) mirror.set(ref.path, ref)
+    for (const event of pending) applyDaemonEvent(event, false)
+    if (stopping) {
+      stopEvents()
+      client.close()
+      return false
+    }
+
+    daemon = client
+    hydrated = true
+    push()
     client.onClose(() => {
       // The daemon died underneath us; restart it before falling back locally.
       daemon = null
@@ -152,6 +175,9 @@ async function connectViaDaemon(): Promise<boolean> {
     })
     return true
   } catch {
+    stopEvents?.()
+    client?.close()
+    if (daemon === client) daemon = null
     return false
   }
 }
