@@ -1,6 +1,7 @@
 import { app } from "electron"
 import type { HostEvent, UpdateState } from "./shared.js"
 import { record } from "./crash.js"
+import { packagedDistribution } from "./distribution.js"
 
 /**
  * Updates.
@@ -35,6 +36,12 @@ let updater: Updater | null = null
 let state: UpdateState = { status: "idle", version: app.getVersion() }
 let emit: (event: HostEvent) => void = () => {}
 
+function updatesSupported(): boolean {
+  return (
+    app.isPackaged && packagedDistribution(app.getAppPath()) === "signed"
+  )
+}
+
 function publish(patch: Partial<UpdateState>) {
   state = { ...state, ...patch }
   emit({ type: "update", update: state })
@@ -47,13 +54,13 @@ export function updateState(): UpdateState {
 /**
  * Load the updater, once.
  *
- * Returns null in development and in any build without a publish feed, which
- * is not a failure — it is the normal case for someone running from a
- * checkout, and the UI reads it as "updates do not apply here".
+ * Returns null in development and unsigned builds, where Squirrel cannot
+ * authenticate an update as coming from the same publisher. The UI reads that
+ * as "updates do not apply here".
  */
 async function load(): Promise<Updater | null> {
   if (updater) return updater
-  if (!app.isPackaged) return null
+  if (!updatesSupported()) return null
   try {
     const module: UpdaterModule = await import("electron-updater")
     // The package is CJS; the default export is what carries `autoUpdater`.
@@ -131,7 +138,7 @@ function isString(
 
 export function installUpdates(send: (event: HostEvent) => void) {
   emit = send
-  if (!app.isPackaged) {
+  if (!updatesSupported()) {
     state = { status: "unsupported", version: app.getVersion() }
     return
   }
@@ -144,7 +151,7 @@ export function installUpdates(send: (event: HostEvent) => void) {
 export async function check(): Promise<UpdateState> {
   const auto = await load()
   if (!auto) {
-    publish({ status: app.isPackaged ? "current" : "unsupported" })
+    publish({ status: updatesSupported() ? "current" : "unsupported" })
     return state
   }
   try {

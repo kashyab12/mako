@@ -31,7 +31,6 @@ different tool.
 - Resumes sessions through their original CLI.
 - Moves conversations between supported agents using a deterministic transcript.
 - Shows changed files, diffs, commits, pull requests, context, and terminals.
-- Starts and previews development servers from project scripts.
 - Runs browser and computer-use tools locally.
 - Queues Slack requests while the Mac is offline, then runs them locally.
 
@@ -105,10 +104,21 @@ browser mode.
 
 ## Install
 
-### Download
+Mako currently ships for Apple-silicon Macs and is **not signed or notarized by
+Apple**. Read the [installer](scripts/install-macos.sh), then run:
 
-Download the ARM64 DMG from [GitHub Releases](https://github.com/kashyab12/mako/releases).
-Mako currently ships for Apple-silicon Macs only.
+```bash
+curl -fsSL https://github.com/kashyab12/mako/releases/latest/download/install-macos.sh | bash
+```
+
+The installer downloads the DMG and published checksum from GitHub, verifies the
+DMG before mounting it, copies only Mako into Applications, and removes
+quarantine only from that copied app. It does not disable Gatekeeper globally or
+change macOS security policy. See [macOS distribution](docs/macos-release.md)
+for the complete security disclosure and manual DMG instructions.
+
+Unsigned builds cannot safely authenticate automatic updates. Re-run the same
+installer command to update Mako.
 
 ### Run from source
 
@@ -167,12 +177,15 @@ npm run typecheck:all
 npm run package:mac
 ```
 
-`npm run package:mac` writes an ARM64 DMG and ZIP to `release/`. A `v*` tag runs
-the GitHub release workflow. A manual workflow run builds the same files and
-uploads them as an Actions artifact without creating a release.
+`npm run package:mac` writes the fixed-name DMG, ZIP, blockmaps, and updater
+metadata to `release/`. A `v*` tag verifies the package, copies the disclosed
+installer, writes checksums, and publishes the GitHub Release only after those
+checks pass. Until the project joins the Apple Developer Program, release notes
+and installation documentation explicitly identify builds as unsigned.
 
-Signing and notarization are enabled when the Apple and Developer ID secrets are
-present. Unsigned workflow builds are still available for testing.
+The same workflow automatically raises its bar to Developer ID, notarization,
+stapler, and Gatekeeper verification when all protected Apple credentials are
+configured. See [macOS distribution](docs/macos-release.md).
 
 ## Security
 

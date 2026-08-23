@@ -32,6 +32,7 @@
     "test:host": "tsx scripts/test-host-domains.ts",
     "test:mcp": "tsx scripts/test-mcp.ts",
     "test:performance": "tsx scripts/test-performance.ts",
+    "verify:mac-release": "tsx scripts/verify-macos-release.ts",
     "test:plugins": "tsx scripts/test-plugins.ts",
     "test:providers": "tsx scripts/test-providers.ts",
     "test:skills": "tsx scripts/test-skills.ts",
@@ -42,7 +43,7 @@
     "preview": "vite preview",
     "package": "npm run package:mac",
     "package:mac": "npm run build && electron-builder --mac dmg zip --arm64 --publish never",
-    "release": "npm run build && electron-builder --mac dmg zip --arm64 --publish always"
+    "release": "npm run package:mac"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.3.0",
@@ -106,6 +107,7 @@
   "build": {
     "appId": "dev.mako.app",
     "productName": "Mako",
+    "artifactName": "${productName}-${arch}.${ext}",
     "copyright": "Copyright © 2026 Verbiflow",
     "directories": {
       "output": "release",
@@ -117,14 +119,24 @@
       "mako-icons/_masters/desktop-light.png",
       "mako-icons/_masters/desktop-dark.png",
       "package.json",
-      "!**/*.map"
+      "!**/*.map",
+      {
+        "from": "packages/sessions",
+        "to": "node_modules/@mako/sessions",
+        "filter": [
+          "package.json",
+          "dist/**"
+        ]
+      }
     ],
     "extraMetadata": {
-      "main": "dist-electron/main.js"
+      "main": "dist-electron/main.js",
+      "makoDistribution": "unsigned"
     },
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "build/Mako.icns",
+      "identity": "-",
       "target": [
         {
           "target": "dmg",
@@ -140,9 +152,31 @@
         }
       ],
       "hardenedRuntime": true,
+      "notarize": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "dmg": {
+      "sign": true,
+      "title": "Mako ${version}",
+      "window": {
+        "width": 540,
+        "height": 380
+      },
+      "contents": [
+        {
+          "x": 140,
+          "y": 190,
+          "type": "file"
+        },
+        {
+          "x": 400,
+          "y": 190,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     },
     "linux": {
       "category": "Development",
@@ -159,7 +193,8 @@
       {
         "provider": "github",
         "owner": "kashyab12",
-        "repo": "mako"
+        "repo": "mako",
+        "releaseType": "release"
       }
     ]
   },
