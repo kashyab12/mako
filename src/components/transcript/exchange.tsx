@@ -330,7 +330,10 @@ function WorkSummary({
         <TriangleAlertIcon className="size-3" />
       ) : null}
       <ChevronRightIcon
-        className={cn("size-3 transition-transform duration-150", open && "rotate-90")}
+        className={cn(
+          "size-3 [transition:transform_150ms_var(--ease-out)]",
+          open && "rotate-90"
+        )}
       />
       {pieces.join(" · ")}
     </button>
@@ -410,7 +413,10 @@ function Thinking({ text, live }: { text: string; live: boolean }) {
         className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-ui text-faint transition-colors duration-100 hover:text-muted-foreground"
       >
         <ChevronRightIcon
-          className={cn("size-3 transition-transform duration-150", open && "rotate-90")}
+          className={cn(
+          "size-3 [transition:transform_150ms_var(--ease-out)]",
+          open && "rotate-90"
+        )}
         />
         <BrainIcon className="size-3" />
         <span className={cn(live && "shimmer")}>{live ? "Reasoning…" : "Reasoning"}</span>

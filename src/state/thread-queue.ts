@@ -28,6 +28,20 @@ export function appendOptimisticReply(ref: ThreadRef, prompt: string): boolean {
   return true
 }
 
+export function removeOptimisticReply(ref: ThreadRef, prompt: string): void {
+  const viewing = threadsStore.get().viewing
+  if (!viewing || viewing.ref.path !== ref.path) return
+  threadsStore.set({
+    viewing: {
+      ...viewing,
+      entries: viewing.entries.filter(
+        (entry) =>
+          entry.kind !== "user" || entry.echo !== true || entry.text !== prompt
+      ),
+    },
+  })
+}
+
 export function queueReply(ref: ThreadRef, prompt: string): void {
   // A busy thread queues instead of dropping: the message paints now (the
   // echo below) and goes out the moment the current run ends.

@@ -37,7 +37,7 @@ function Card({ item, onRemove }: { item: Attachment; onRemove: (id: string) => 
     <div
       title={`Attachment ${item.index} · ${item.name} · ${formatBytes(item.size)}`}
       className={cn(
-        "group relative flex h-14 animate-enter items-center gap-2 overflow-hidden rounded-lg",
+        "group relative flex h-14 items-center gap-2 overflow-hidden rounded-lg",
         "bg-raised pr-2.5 ring-1 ring-hairline backdrop-blur-sm",
         item.pending && "opacity-70"
       )}

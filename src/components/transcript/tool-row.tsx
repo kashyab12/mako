@@ -71,7 +71,8 @@ function LeadSlot({
   open: boolean
   icon?: ComponentType<{ className?: string }>
 }) {
-  const layer = "absolute inset-0 m-auto transition-[opacity,transform] duration-150"
+  const layer =
+    "absolute inset-0 m-auto [transition:opacity_150ms_var(--ease-out),transform_150ms_var(--ease-out)]"
   return (
     <span className="relative size-3.5 shrink-0">
       <Loader2Icon

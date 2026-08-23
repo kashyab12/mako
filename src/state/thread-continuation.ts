@@ -1,13 +1,14 @@
 import { getMako, hasBridge } from "@/lib/bridge"
 import type { ThreadRef } from "@/lib/types"
 import { prefsStore } from "@/state/prefs"
-import { appendOptimisticReply, queueReply } from "@/state/thread-queue"
+import {
+  appendOptimisticReply,
+  queueReply,
+  removeOptimisticReply,
+} from "@/state/thread-queue"
 import { applyThreadRun, threadStatus } from "@/state/thread-status"
 import { canResumeInteractively } from "@/state/thread-tuning"
-import {
-  isOptimisticEcho,
-  leaveViewerForLive,
-} from "@/state/thread-viewing"
+import { leaveViewerForLive } from "@/state/thread-viewing"
 import { threadsStore } from "@/state/thread-store"
 import { toast } from "sonner"
 
@@ -107,6 +108,9 @@ export const threadContinuationActions = {
       queueReply(ref, prompt)
       return true
     }
+    // Paint the message NOW. Provider startup, session translation, and the
+    // native tail all happen after the send is already visible.
+    const echoed = appendOptimisticReply(ref, prompt)
     if (
       canResumeInteractively(ref.harness) &&
       threadsStore.get().acpable.includes(ref.harness)
@@ -117,11 +121,6 @@ export const threadContinuationActions = {
       )
       if (resumed) return true
     }
-    // Paint the message NOW. The CLI takes a second to launch and the tail
-    // another moment to land; a reply that vanishes into that gap reads as
-    // a send that failed. The echo carries a flag so the real turn from the
-    // file replaces it instead of doubling it.
-    const echoed = appendOptimisticReply(ref, prompt)
     try {
       // The composer's tuning rides on the reply: pick a different model or
       // effort while a conversation is open and the next turn uses it.
@@ -134,22 +133,7 @@ export const threadContinuationActions = {
       return true
     } catch (error) {
       // The send failed: take the echo back out so the transcript stays true.
-      if (echoed) {
-        const current = threadsStore.get().viewing
-        if (current && current.ref.path === ref.path) {
-          threadsStore.set({
-            viewing: {
-              ...current,
-              entries: current.entries.filter(
-                (entry) =>
-                  !isOptimisticEcho(entry) ||
-                  entry.kind !== "user" ||
-                  entry.text !== prompt
-              ),
-            },
-          })
-        }
-      }
+      if (echoed) removeOptimisticReply(ref, prompt)
       toast.error(error instanceof Error ? error.message : String(error))
       return false
     }
@@ -162,6 +146,8 @@ export const threadContinuationActions = {
     prompt: string
   ): Promise<boolean> {
     if (!hasBridge()) return false
+    threadsStore.set({ composerHarness: harness })
+    const echoed = appendOptimisticReply(ref, prompt)
     try {
       const mode = prefsStore.get().conversionMode
       const result = await withConversion(ref.harness, harness, ref.title, () =>
@@ -175,20 +161,24 @@ export const threadContinuationActions = {
           return threadContinuationActions.reply(thread.ref, prompt)
         }
       } else if (result.kind === "prepared") {
-        threadsStore.set({ composerHarness: harness })
         const supportsLive = threadsStore.get().acpable.includes(harness)
         const ok = supportsLive
           ? await (await import("@/state/acp")).acp.startFresh(
               harness,
               result.cwd,
-              result.prompt
+              result.prompt,
+              [],
+              prompt
             )
           : await threadContinuationActions.startNew(harness, result.prompt)
         if (ok && supportsLive) leaveViewerForLive(harness)
+        if (!ok && echoed) removeOptimisticReply(ref, prompt)
         return ok
       }
+      if (echoed) removeOptimisticReply(ref, prompt)
       return false
     } catch (error) {
+      if (echoed) removeOptimisticReply(ref, prompt)
       toast.error(error instanceof Error ? error.message : String(error))
       return false
     }
@@ -213,7 +203,7 @@ export const threadContinuationActions = {
       const ok = supportsLive
         ? await (
             await import("@/state/acp")
-          ).acp.startFresh(harness, prepared.cwd, prepared.prompt)
+          ).acp.startFresh(harness, prepared.cwd, prepared.prompt, [], "")
         : await threadContinuationActions.startNew(harness, prepared.prompt)
       if (ok) {
         if (supportsLive) leaveViewerForLive(harness)
@@ -299,7 +289,7 @@ export const threadContinuationActions = {
       const ok = supportsLive
         ? await (
             await import("@/state/acp")
-          ).acp.startFresh(harness, result.cwd, result.prompt)
+          ).acp.startFresh(harness, result.cwd, result.prompt, [], "")
         : await threadContinuationActions.startNew(harness, result.prompt)
       if (ok) {
         if (supportsLive) leaveViewerForLive(harness)

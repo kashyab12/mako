@@ -37,6 +37,7 @@ interface AcpState {
   threadPath?: string
   /** Typed while the agent was working; sent the moment it goes quiet. */
   queued: { text: string; attachments: AcpPromptAttachment[] } | null
+  hiddenUserPrompt: string | null
 }
 
 type AcpStartOptions = NonNullable<
@@ -49,6 +50,7 @@ export const acpStore = createStore<AcpState>({
   permission: null,
   starting: false,
   queued: null,
+  hiddenUserPrompt: null,
 })
 export const useAcp = createHook(acpStore)
 
@@ -91,12 +93,25 @@ export function applyAcpUpdate(id: string, update: AcpUpdate) {
 }
 
 export function applyAcpUpdates(id: string, updates: AcpUpdate[]) {
-  const { session, blocks, threadPath } = acpStore.get()
+  const { session, blocks, threadPath, hiddenUserPrompt } = acpStore.get()
   if (!session || session.id !== id) return
-  acpStore.set({ blocks: reduceUpdates(blocks, updates) })
+  let hidden = false
+  const visible = hiddenUserPrompt
+    ? updates.filter((update) => {
+        if (!hidden && update.kind === "user" && update.text === hiddenUserPrompt) {
+          hidden = true
+          return false
+        }
+        return true
+      })
+    : updates
+  acpStore.set({
+    blocks: reduceUpdates(blocks, visible),
+    hiddenUserPrompt: hidden ? null : hiddenUserPrompt,
+  })
   if (!threadPath) return
-  for (let index = updates.length - 1; index >= 0; index -= 1) {
-    const update = updates[index]
+  for (let index = visible.length - 1; index >= 0; index -= 1) {
+    const update = visible[index]
     if (update.kind === "tool") {
       setThreadWorkDetail(threadPath, update.title)
       return
@@ -229,10 +244,19 @@ export const acp = {
       }
       if (canResume) options.resume = ref.nativeId
       const session = await getMako().acpStart(harness, ref.cwd ?? "", options)
-      acpStore.set({ session, starting: false, threadPath: ref.path })
+      acpStore.set({
+        session,
+        starting: false,
+        threadPath: ref.path,
+        hiddenUserPrompt: contextPrompt,
+      })
       if (contextPrompt) await getMako().acpPrompt(session.id, contextPrompt)
     } catch (error) {
-      acpStore.set({ starting: false })
+      acpStore.set({
+        starting: false,
+        blocks: [],
+        hiddenUserPrompt: null,
+      })
       toast.error(error instanceof Error ? error.message : String(error))
     }
   },
@@ -248,9 +272,10 @@ export const acp = {
     setThreadRunning(ref.path, true)
     acpStore.set({
       starting: true,
-      blocks: [],
+      blocks: [{ type: "user", text: prompt }],
       permission: null,
       threadPath: ref.path,
+      hiddenUserPrompt: null,
     })
     try {
       const session = await getMako().acpStart(ref.harness, ref.cwd ?? "", {
@@ -263,7 +288,12 @@ export const acp = {
       return true
     } catch {
       setThreadRunning(ref.path, false)
-      acpStore.set({ starting: false, threadPath: undefined })
+      acpStore.set({
+        starting: false,
+        blocks: [],
+        threadPath: undefined,
+        hiddenUserPrompt: null,
+      })
       return false
     }
   },
@@ -278,14 +308,16 @@ export const acp = {
     harness: string,
     cwd: string,
     prompt: string,
-    attachments: AcpPromptAttachment[] = []
+    attachments: AcpPromptAttachment[] = [],
+    displayPrompt = prompt
   ) {
     if (!hasBridge()) return false
     acpStore.set({
       starting: true,
-      blocks: [],
+      blocks: displayPrompt ? [{ type: "user", text: displayPrompt }] : [],
       permission: null,
       threadPath: undefined,
+      hiddenUserPrompt: displayPrompt === prompt ? null : prompt,
     })
     try {
       const session = await getMako().acpStart(harness, cwd, {
@@ -295,7 +327,11 @@ export const acp = {
       await getMako().acpPrompt(session.id, prompt, attachments)
       return true
     } catch (error) {
-      acpStore.set({ starting: false })
+      acpStore.set({
+        starting: false,
+        blocks: [],
+        hiddenUserPrompt: null,
+      })
       toast.error(error instanceof Error ? error.message : String(error))
       return false
     }
@@ -359,6 +395,7 @@ export const acp = {
       permission: null,
       queued: null,
       threadPath: undefined,
+      hiddenUserPrompt: null,
     })
   },
 }

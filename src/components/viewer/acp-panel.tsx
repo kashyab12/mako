@@ -58,11 +58,8 @@ export function AcpPanel() {
 
   if (starting) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center bg-surface">
-        <div className="flex items-center gap-2 text-ui text-faint">
-          <Loader2Icon className="size-4 animate-spin" />
-          Starting the agent…
-        </div>
+      <div className="animate-enter flex min-h-0 flex-1 flex-col bg-surface">
+        <Blocks starting />
       </div>
     )
   }
@@ -121,10 +118,10 @@ function ModePicker() {
   )
 }
 
-function Blocks() {
+function Blocks({ starting = false }: { starting?: boolean }) {
   const session = useAcp((state) => state.session)
   const blocks = useAcp((state) => state.blocks)
-  const running = session?.status === "running"
+  const running = starting || session?.status === "running"
   const conversation = useMemo(
     () => acpBlocksToMessages(blocks, running),
     [blocks, running]
@@ -147,10 +144,12 @@ function Blocks() {
             The session is loaded. Anything you send continues it — same
             conversation, same working directory.
           </p>
-          <AcpActivity plan={conversation.plan} running={running} />
+          <AcpActivity plan={conversation.plan} running={running} starting={starting} />
         </div>
       }
-      footer={<AcpActivity plan={conversation.plan} running={running} />}
+      footer={
+        <AcpActivity plan={conversation.plan} running={running} starting={starting} />
+      }
     />
   )
 }
@@ -158,9 +157,11 @@ function Blocks() {
 function AcpActivity({
   plan,
   running,
+  starting = false,
 }: {
   plan: AcpPlanEntry[]
   running: boolean
+  starting?: boolean
 }) {
   return (
     <>
@@ -168,7 +169,7 @@ function AcpActivity({
       {running ? (
         <div className="flex items-center gap-1.5 py-2 text-label text-faint">
           <Loader2Icon className="size-3 animate-spin" />
-          working
+          {starting ? "starting the agent" : "working"}
         </div>
       ) : null}
     </>
