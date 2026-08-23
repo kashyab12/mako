@@ -36,6 +36,7 @@ import {
   ListFilterIcon,
   MessagesSquareIcon,
   PinIcon,
+  PlusIcon,
   SearchIcon,
   XIcon,
 } from "lucide-react"
@@ -331,6 +332,9 @@ export function AgentThreads() {
                       ? collapsed.filter((entry) => entry !== key)
                       : [...collapsed, key]
                   )
+                }}
+                onNew={() => {
+                  if (folder.cwd) void actions.openTab({ cwd: folder.cwd })
                 }}
                 onPin={() => {
                   if (folder.cwd) togglePinnedProject(folder.cwd)
@@ -682,6 +686,7 @@ function FolderSection({
   now,
   collapsed,
   onToggle,
+  onNew,
   onPin,
   pages,
   onPages,
@@ -691,6 +696,7 @@ function FolderSection({
   now: number
   collapsed: boolean
   onToggle: () => void
+  onNew?: () => void
   onPin?: () => void
   pages: number
   onPages: (next: number) => void
@@ -750,6 +756,17 @@ function FolderSection({
             )}
           />
         </button>
+        {onNew ? (
+          <button
+            type="button"
+            aria-label={`New session in ${folder.name}`}
+            title={`New session in ${folder.name}`}
+            onClick={onNew}
+            className="pressable rounded p-0.5 text-faint transition-colors duration-100 hover:bg-background/40 hover:text-foreground"
+          >
+            <PlusIcon className="size-3" />
+          </button>
+        ) : null}
         {onPin ? (
           <button
             type="button"
