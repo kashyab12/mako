@@ -22,6 +22,7 @@ import { Chip, IconAction } from "@/components/ui/kit"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slot } from "@/extend/slot"
 import { mentionAt, replaceMention, type ActiveMention } from "@/lib/mentions"
+import { contextAccounting } from "@/lib/context-accounting"
 import { formatContextWindow, formatCost, formatTokens, textOf } from "@/lib/format"
 import {
   appendThreadReferences,
@@ -36,10 +37,11 @@ import {
 import { threads, threadsStore, useThreads } from "@/state/threads"
 import { acp, acpStore, useAcp } from "@/state/acp"
 import { draftText, rememberDraft } from "@/state/drafts"
+import { useProviders } from "@/state/providers"
 import { stage } from "@/state/stage"
 import { stageFile } from "@/state/workspace"
 import { cn } from "@/lib/utils"
-import type { AcpPromptAttachment, Harness } from "@/lib/types"
+import type { AcpPromptAttachment } from "@/lib/types"
 import {
   ArrowUpIcon,
   AtSignIcon,
@@ -686,21 +688,28 @@ function SendButton({ ready, steering, onSend }: SendButtonProps) {
  * selector, so streaming token counts wake this span and nothing else.
  */
 const ContextDial = memo(function ContextDial() {
-  const usage = useSession(
-    useCallback(
-      (state) => ({
-        percent: state.meta?.context?.percent ?? null,
-        tokens: state.meta?.context?.tokens ?? null,
-        window: state.meta?.context?.contextWindow ?? 0,
-        cost: state.meta?.cost ?? 0,
-      }),
-      []
-    ),
-    shallowEqual
-  )
-  const percent = Math.min(100, usage.percent ?? 0)
+  const meta = useSession((state) => state.meta)
+  const viewing = useThreads((state) => state.viewing)
+  const composerHarness = useThreads((state) => state.composerHarness)
+  const acpSession = useAcp((state) => state.session)
+  const acpStarting = useAcp((state) => state.starting)
+  const profiles = useProviders((state) => state.profiles)
+  const usage = contextAccounting({
+    meta,
+    viewing,
+    acpSession,
+    acpStarting,
+    composerHarness,
+    profiles,
+  })
+  const percent =
+    usage.kind === "exact" ? Math.min(100, usage.percent ?? 0) : 0
   const tone =
-    percent > 90 ? "text-negative" : percent > 72 ? "text-caution" : "text-muted-foreground"
+    percent > 90
+      ? "text-negative"
+      : percent > 72
+        ? "text-caution"
+        : "text-muted-foreground"
   const radius = 6.5
   const circumference = 2 * Math.PI * radius
   return (
@@ -737,22 +746,58 @@ const ContextDial = memo(function ContextDial() {
         </button>
       </TooltipTrigger>
       <TooltipContent side="top" className="flex-col items-stretch gap-1">
-        <span className="flex justify-between gap-4">
-          <span className="opacity-70">spent</span>
-          <span className="tabular">{formatCost(usage.cost)}</span>
-        </span>
-        <span className="flex justify-between gap-4">
-          <span className="opacity-70">context</span>
-          <span className="tabular">
-            {usage.window > 0 && usage.tokens != null
-              ? `${Math.round(percent)}% · ${formatTokens(usage.tokens)} of ${formatContextWindow(usage.window)}`
-              : "unknown until the next response"}
-          </span>
-        </span>
+        {usage.kind === "exact" ? (
+          <>
+            <Reading label="spent" value={formatCost(usage.cost)} />
+            <Reading
+              label="context"
+              value={
+                usage.window > 0 && usage.tokens != null
+                  ? `${Math.round(percent)}% · ${formatTokens(usage.tokens)} of ${formatContextWindow(usage.window)}`
+                  : "unknown until the next response"
+              }
+            />
+          </>
+        ) : usage.kind === "reported-input" ? (
+          <>
+            <Reading
+              label="session spend"
+              value={usage.cost == null ? "not reported" : formatCost(usage.cost)}
+            />
+            <Reading
+              label="last input"
+              value={
+                usage.lastInput == null
+                  ? "not reported"
+                  : formatTokens(usage.lastInput)
+              }
+            />
+            {usage.window > 0 ? (
+              <Reading
+                label="model window"
+                value={formatContextWindow(usage.window)}
+              />
+            ) : null}
+          </>
+        ) : (
+          <Reading
+            label="context"
+            value={`not reported by ${harnessTitle(usage.harness)} live sessions`}
+          />
+        )}
       </TooltipContent>
     </Tooltip>
   )
 })
+
+function Reading({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="flex justify-between gap-4">
+      <span className="opacity-70">{label}</span>
+      <span className="tabular">{value}</span>
+    </span>
+  )
+}
 
 function Banner({ text }: BannerProps) {
   return (
@@ -763,7 +808,7 @@ function Banner({ text }: BannerProps) {
   )
 }
 
-function harnessTitle(harness: Harness): string {
+function harnessTitle(harness: string): string {
   switch (harness) {
     case "claude":
       return "Claude Code"

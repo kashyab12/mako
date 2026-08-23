@@ -13,19 +13,24 @@ import {
 } from "../src/lib/tools.ts"
 import { threadStatus, threadsStore } from "../src/state/threads.ts"
 import {
+  appendOptimisticReply,
   bindQueuedReplySender,
   releaseQueuedReply,
+  removeOptimisticReply,
 } from "../src/state/thread-queue.ts"
 import {
   groupThreadFolders,
   threadFolderKey,
 } from "../src/lib/thread-folders.ts"
 import { acpBlocksToMessages } from "../src/lib/acp-blocks.ts"
+import { contextAccounting } from "../src/lib/context-accounting.ts"
 import { responseSections } from "../src/lib/exchanges.ts"
 import { pendingThreadInput } from "../src/lib/foreign-thread.ts"
 import { acpStore, applyAcpUpdates } from "../src/state/acp.ts"
 import type {
   ChatMessage,
+  HarnessProfile,
+  Thread,
   ThreadEntry,
   ThreadRef,
 } from "../src/lib/types.ts"
@@ -133,6 +138,7 @@ acpStore.set({
   permission: null,
   starting: false,
   queued: null,
+  hiddenUserPrompt: null,
 })
 applyAcpUpdates("acp-echo", [
   { kind: "user", text: "same prompt" },
@@ -141,7 +147,20 @@ applyAcpUpdates("acp-echo", [
 assert.deepEqual(acpStore.get().blocks, [
   { type: "user", text: "same prompt" },
 ])
-acpStore.set({ session: null, blocks: [] })
+acpStore.set({
+  blocks: [{ type: "user", text: "Visible question" }],
+  hiddenUserPrompt: "Read the generated transcript, then answer.",
+})
+applyAcpUpdates("acp-echo", [
+  { kind: "user", text: "Read the generated transcript, then answer." },
+  { kind: "text", text: "Ready" },
+])
+assert.deepEqual(acpStore.get().blocks, [
+  { type: "user", text: "Visible question" },
+  { type: "text", text: "Ready" },
+])
+assert.equal(acpStore.get().hiddenUserPrompt, null)
+acpStore.set({ session: null, blocks: [], hiddenUserPrompt: null })
 
 const interleavedResponse = [
   {
@@ -216,6 +235,81 @@ assert.equal(
   null
 )
 
+const usageThread: Thread = {
+  ref: {
+    harness: "claude",
+    nativeId: "usage",
+    path: "/usage",
+    model: "claude-opus",
+  },
+  entries: [
+    {
+      kind: "assistant",
+      model: "claude-opus",
+      usage: { input: 100, output: 20, cacheRead: 50, costUsd: 0.5 },
+      blocks: [],
+    },
+    {
+      kind: "assistant",
+      model: "claude-opus",
+      usage: { input: 180, output: 30, costUsd: 0.75 },
+      blocks: [],
+    },
+  ],
+}
+const usageProfiles = {
+  claude: {
+    id: "claude",
+    label: "Claude Code",
+    available: true,
+    transport: "acp",
+    models: [
+      {
+        id: "claude-opus",
+        label: "Claude Opus",
+        contextWindow: 200_000,
+        options: [],
+      },
+    ],
+    capabilities: [],
+  },
+} satisfies Record<string, HarnessProfile>
+assert.deepEqual(
+  contextAccounting({
+    viewing: usageThread,
+    acpSession: null,
+    acpStarting: false,
+    composerHarness: "claude",
+    profiles: usageProfiles,
+  }),
+  {
+    kind: "reported-input",
+    owner: "thread",
+    harness: "claude",
+    model: "claude-opus",
+    lastInput: 180,
+    window: 200_000,
+    cost: 1.25,
+    stats: {
+      input: 280,
+      output: 50,
+      cacheRead: 50,
+      cacheWrite: 0,
+      total: 380,
+    },
+  }
+)
+assert.equal(
+  contextAccounting({
+    viewing: usageThread,
+    acpSession: null,
+    acpStarting: true,
+    composerHarness: "claude",
+    profiles: usageProfiles,
+  }).kind,
+  "unavailable"
+)
+
 const folderRefs = [
   {
     harness: "opencode",
@@ -277,6 +371,12 @@ const queuedRef = {
   nativeId: "queued",
   path: "/queued",
 } satisfies ThreadRef
+threadsStore.set({ viewing: { ref: queuedRef, entries: [] } })
+assert.equal(appendOptimisticReply(queuedRef, "move now"), true)
+assert.equal(threadsStore.get().viewing?.entries.length, 1)
+removeOptimisticReply(queuedRef, "move now")
+assert.equal(threadsStore.get().viewing?.entries.length, 0)
+
 let queuedSend: { ref: ThreadRef; prompt: string } | null = null
 bindQueuedReplySender(async (ref, prompt) => {
   queuedSend = { ref, prompt }

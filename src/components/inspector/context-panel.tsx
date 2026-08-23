@@ -1,9 +1,13 @@
-import { memo, useCallback, useMemo, useState } from "react"
+import { memo, useMemo, useState } from "react"
 import { Chip, Eyebrow, ListCard } from "@/components/ui/kit"
+import { contextAccounting } from "@/lib/context-accounting"
 import { touchedFiles, type FileAction, type TouchedFile } from "@/lib/context-files"
 import { fileDir, fileName, formatContextWindow, formatCost, formatRate, formatTokens } from "@/lib/format"
 import { desktop } from "@/state/desktop"
-import { actions, shallowEqual, useSession } from "@/state/session"
+import { useAcp } from "@/state/acp"
+import { useProviders } from "@/state/providers"
+import { actions, useSession } from "@/state/session"
+import { useThreads } from "@/state/threads"
 import { cn } from "@/lib/utils"
 import type { SkillSummary } from "@/lib/types"
 import {
@@ -26,13 +30,21 @@ import {
  * column.
  */
 export function ContextPanel() {
+  const viewing = useThreads((state) => state.viewing)
+  const acpSession = useAcp((state) => state.session)
+  const acpStarting = useAcp((state) => state.starting)
+  const builtin = !viewing && !acpSession && !acpStarting
   return (
     <div className="h-full overflow-y-auto overscroll-contain [container-type:inline-size]">
       <div className="mx-auto flex w-full max-w-content flex-col gap-7 px-6 py-6">
         <Budget />
-        <Files />
-        <Skills />
-        <Tools />
+        {builtin ? (
+          <>
+            <Files />
+            <Skills />
+            <Tools />
+          </>
+        ) : null}
       </div>
     </div>
   )
@@ -43,41 +55,81 @@ export function ContextPanel() {
 /* ------------------------------------------------------------------ */
 
 function Budget() {
-  const model = useSession((state) => state.meta?.model)
-  const usage = useSession(
-    useCallback(
-      (state) => ({
-        percent: state.meta?.context?.percent ?? null,
-        tokens: state.meta?.context?.tokens ?? null,
-        window: state.meta?.context?.contextWindow ?? state.meta?.model?.contextWindow ?? 0,
-        cost: state.meta?.cost ?? 0,
-        stats: state.meta?.tokens,
-      }),
-      []
-    ),
-    shallowEqual
-  )
+  const meta = useSession((state) => state.meta)
+  const viewing = useThreads((state) => state.viewing)
+  const composerHarness = useThreads((state) => state.composerHarness)
+  const acpSession = useAcp((state) => state.session)
+  const acpStarting = useAcp((state) => state.starting)
+  const profiles = useProviders((state) => state.profiles)
+  const usage = contextAccounting({
+    meta,
+    viewing,
+    acpSession,
+    acpStarting,
+    composerHarness,
+    profiles,
+  })
+  const stats: Array<{ label: string; value: string }> = []
 
-  if (!model) return null
-  const percent = usage.percent ?? 0
-
-  const stats: Array<{ label: string; value: string }> = [
-    { label: "model", value: model.name },
-    { label: "price per Mtok", value: `${formatRate(model.cost.input)} in · ${formatRate(model.cost.output)} out` },
-    { label: "context window", value: formatContextWindow(usage.window) },
-    {
-      label: "in context now",
-      value: usage.tokens == null ? "unknown until the next response" : formatTokens(usage.tokens),
-    },
-    { label: "window used", value: usage.percent == null ? "—" : `${Math.round(percent)}%` },
-    { label: "spent", value: formatCost(usage.cost) },
-  ]
-  if (usage.stats && usage.stats.total > 0) {
+  if (usage.kind === "exact") {
+    if (!meta?.model) return null
     stats.push(
-      { label: "input tokens", value: formatTokens(usage.stats.input) },
-      { label: "output tokens", value: formatTokens(usage.stats.output) },
-      { label: "cache read", value: formatTokens(usage.stats.cacheRead) },
-      { label: "cache written", value: formatTokens(usage.stats.cacheWrite) }
+      { label: "model", value: meta.model.name },
+      {
+        label: "price per Mtok",
+        value: `${formatRate(meta.model.cost.input)} in · ${formatRate(meta.model.cost.output)} out`,
+      },
+      { label: "context window", value: formatContextWindow(usage.window) },
+      {
+        label: "in context now",
+        value:
+          usage.tokens == null
+            ? "unknown until the next response"
+            : formatTokens(usage.tokens),
+      },
+      {
+        label: "window used",
+        value:
+          usage.percent == null ? "—" : `${Math.round(usage.percent)}%`,
+      },
+      { label: "spent", value: formatCost(usage.cost) }
+    )
+  } else if (usage.kind === "reported-input") {
+    stats.push(
+      { label: "agent", value: profiles[usage.harness]?.label ?? usage.harness },
+      { label: "model", value: usage.model ?? "not reported" },
+      {
+        label: "model window",
+        value: usage.window > 0 ? formatContextWindow(usage.window) : "not reported",
+      },
+      {
+        label: "last reported input",
+        value:
+          usage.lastInput == null ? "not reported" : formatTokens(usage.lastInput),
+      },
+      {
+        label: "session spend",
+        value: usage.cost == null ? "not reported" : formatCost(usage.cost),
+      }
+    )
+  } else {
+    stats.push(
+      { label: "agent", value: profiles[usage.harness]?.label ?? usage.harness },
+      { label: "model", value: usage.model ?? "not reported" },
+      {
+        label: "context",
+        value: "not reported by this live protocol",
+      }
+    )
+  }
+
+  const tokenStats = usage.kind === "unavailable" ? null : usage.stats
+  if (tokenStats && tokenStats.total > 0) {
+    stats.push(
+      { label: "input tokens", value: formatTokens(tokenStats.input) },
+      { label: "output tokens", value: formatTokens(tokenStats.output) },
+      { label: "cache read", value: formatTokens(tokenStats.cacheRead) },
+      { label: "cache written", value: formatTokens(tokenStats.cacheWrite) }
     )
   }
 
@@ -91,7 +143,7 @@ function Budget() {
           </div>
         ))}
       </div>
-      {usage.stats && usage.stats.total > 0 ? <TokenMix stats={usage.stats} /> : null}
+      {tokenStats && tokenStats.total > 0 ? <TokenMix stats={tokenStats} /> : null}
     </section>
   )
 }
