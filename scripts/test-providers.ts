@@ -1,8 +1,27 @@
 import assert from "node:assert/strict"
+import type { SessionConfigOption } from "@agentclientprotocol/sdk"
+import { resolveAcpConfigValue } from "../electron/acp-config.ts"
 import type { ProviderAccountCapability } from "../electron/providers/account-capability.ts"
 import { providerHost } from "../electron/providers/index.ts"
 import type { NativeRunner } from "../electron/providers/native-runner.ts"
 import { ProviderRegistry } from "../electron/providers/registry.ts"
+
+const cursorModelOption = {
+  type: "select",
+  id: "model",
+  name: "Model",
+  currentValue: "claude-opus-5[thinking=true,context=300k,effort=high]",
+  options: [
+    {
+      value: "claude-opus-5[thinking=true,context=300k,effort=high]",
+      name: "claude-opus-5",
+    },
+  ],
+} satisfies SessionConfigOption
+assert.equal(
+  resolveAcpConfigValue(cursorModelOption, "claude-opus-5"),
+  "claude-opus-5[thinking=true,context=300k,effort=high]"
+)
 
 const providers = providerHost.profiles.list().map((loader) => loader.provider)
 assert.ok(providers.length > 0)

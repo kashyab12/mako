@@ -41,6 +41,7 @@ import {
   type SessionUpdate,
 } from "@agentclientprotocol/sdk"
 import { accountEnv } from "./accounts.js"
+import { resolveAcpConfigValue } from "./acp-config.js"
 import { normalizeAcpOptions } from "./harnesses.js"
 import { providerHost } from "./providers/index.js"
 import type { AcpTuning } from "./providers/acp-source.js"
@@ -392,7 +393,7 @@ async function applyInitialTuning(
       const response = await connection.setSessionConfigOption({
         sessionId,
         configId: model.id,
-        value: tuning.model,
+        value: resolveAcpConfigValue(model, tuning.model),
       })
       options = response.configOptions
     }
