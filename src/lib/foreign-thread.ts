@@ -27,7 +27,11 @@ export function pendingThreadInput(entries: ThreadEntry[]): string | null {
   return null
 }
 
-export function threadToMessages(entries: ThreadEntry[], indexStart = 0): ChatMessage[] {
+export function threadToMessages(
+  entries: ThreadEntry[],
+  indexStart = 0,
+  provider?: string
+): ChatMessage[] {
   const messages: ChatMessage[] = []
 
   for (let localIndex = 0; localIndex < entries.length; localIndex += 1) {
@@ -78,6 +82,7 @@ export function threadToMessages(entries: ThreadEntry[], indexStart = 0): ChatMe
       role: "assistant",
       blocks,
     }
+    if (provider) message.provider = provider
     if (entry.model) message.model = entry.model
     if (entry.at) message.timestamp = Date.parse(entry.at) || undefined
     messages.push(message)

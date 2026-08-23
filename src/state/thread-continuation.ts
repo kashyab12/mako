@@ -168,10 +168,11 @@ export const threadContinuationActions = {
               result.cwd,
               result.prompt,
               [],
-              prompt
+              prompt,
+              ref.path
             )
           : await threadContinuationActions.startNew(harness, result.prompt)
-        if (ok && supportsLive) leaveViewerForLive(harness)
+        if (ok && supportsLive && echoed) removeOptimisticReply(ref, prompt)
         if (!ok && echoed) removeOptimisticReply(ref, prompt)
         return ok
       }

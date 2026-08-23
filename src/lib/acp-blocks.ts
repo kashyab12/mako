@@ -27,7 +27,8 @@ export interface AcpConversation {
 
 export function acpBlocksToMessages(
   blocks: AcpBlock[],
-  running: boolean
+  running: boolean,
+  provider?: string
 ): AcpConversation {
   const messages: ChatMessage[] = []
   let plan: AcpPlanEntry[] = []
@@ -40,6 +41,7 @@ export function acpBlocksToMessages(
         role: "assistant",
         blocks: [],
       }
+      if (provider) assistant.provider = provider
       messages.push(assistant)
     }
     assistant.blocks.push(block)

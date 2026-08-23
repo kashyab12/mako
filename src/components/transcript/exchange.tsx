@@ -59,6 +59,9 @@ export const Exchange = memo(function Exchange({
     () => responseSections(exchange.response),
     [exchange.response]
   )
+  const provider = exchange.response.find(
+    (message) => message.provider && HARNESS_LABEL[message.provider]
+  )?.provider
   return (
     <article data-exchange={exchange.id} className="contain-turn scroll-mt-6">
       {exchange.prompt ? <Prompt message={exchange.prompt} /> : null}
@@ -69,6 +72,7 @@ export const Exchange = memo(function Exchange({
 
       {sections.length > 0 ? (
         <div className={cn("flex flex-col gap-2.5", exchange.prompt && "mt-3")}>
+          {provider ? <AgentByline provider={provider} /> : null}
           {sections.map((section, index) =>
             section.kind === "prose" ? (
               <Response key={section.id} message={section.message} showWork />
@@ -92,6 +96,15 @@ export const Exchange = memo(function Exchange({
     </article>
   )
 })
+
+function AgentByline({ provider }: { provider: string }) {
+  return (
+    <div className="flex items-center gap-1.5 text-label text-faint">
+      <HarnessIcon harness={provider} className="size-3.5" />
+      <span>{HARNESS_LABEL[provider] ?? provider}</span>
+    </div>
+  )
+}
 
 /* ------------------------------------------------------------------ */
 /* the prompt                                                          */
@@ -261,13 +274,11 @@ function WorkSection({
           }}
         />
       ) : null}
-      {messages.map((message) => (
-        <Response
-          key={message.id}
-          message={message}
-          showWork={!folded || showWork}
-        />
-      ))}
+      {!folded || showWork
+        ? messages.map((message) => (
+            <Response key={message.id} message={message} showWork />
+          ))
+        : null}
     </div>
   )
 }
@@ -374,6 +385,13 @@ function Response({
   }, [message.blocks])
 
   const blank = !thinking && !tools.length && !text && !message.error
+  const visible =
+    text ||
+    message.error ||
+    (showWork && tools.length > 0) ||
+    (showWork && showThinking && thinking) ||
+    (blank && message.streaming)
+  if (!visible) return null
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -414,9 +432,9 @@ function Thinking({ text, live }: { text: string; live: boolean }) {
       >
         <ChevronRightIcon
           className={cn(
-          "size-3 [transition:transform_150ms_var(--ease-out)]",
-          open && "rotate-90"
-        )}
+            "size-3 [transition:transform_150ms_var(--ease-out)]",
+            open && "rotate-90"
+          )}
         />
         <BrainIcon className="size-3" />
         <span className={cn(live && "shimmer")}>{live ? "Reasoning…" : "Reasoning"}</span>

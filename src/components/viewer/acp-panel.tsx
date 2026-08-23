@@ -8,8 +8,10 @@ import {
   type AcpPlanEntry,
 } from "@/lib/acp-blocks"
 import { toExchanges } from "@/lib/exchanges"
+import { threadToMessages } from "@/lib/foreign-thread"
 import { foldTools } from "@/lib/tools"
 import { acp, acpStore, useAcp } from "@/state/acp"
+import { useThreads } from "@/state/threads"
 import type { AcpPermissionRequest } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import {
@@ -121,20 +123,43 @@ function ModePicker() {
 function Blocks({ starting = false }: { starting?: boolean }) {
   const session = useAcp((state) => state.session)
   const blocks = useAcp((state) => state.blocks)
+  const threadPath = useAcp((state) => state.threadPath)
+  const composerHarness = useThreads((state) => state.composerHarness)
+  const viewed = useThreads((state) => state.viewing)
+  const history = viewed?.ref.path === threadPath ? viewed : null
   const running = starting || session?.status === "running"
+  const historyMessages = useMemo(
+    () =>
+      history
+        ? threadToMessages(
+            history.entries.filter(
+              (entry) => entry.kind !== "user" || entry.echo !== true
+            ),
+            0,
+            history.ref.harness
+          )
+        : [],
+    [history]
+  )
   const conversation = useMemo(
-    () => acpBlocksToMessages(blocks, running),
-    [blocks, running]
+    () =>
+      acpBlocksToMessages(
+        blocks,
+        running,
+        session?.harness ?? composerHarness
+      ),
+    [blocks, composerHarness, running, session?.harness]
   )
   const exchanges = useMemo(
-    () => toExchanges(foldTools(conversation.messages)),
-    [conversation.messages]
+    () =>
+      toExchanges(foldTools([...historyMessages, ...conversation.messages])),
+    [conversation.messages, historyMessages]
   )
   const lastExchangeId = exchanges.at(-1)?.id
 
   return (
     <ConversationTimeline
-      identity={session?.id ?? "acp"}
+      identity={`${history?.ref.path ?? "new"}:${session?.id ?? "starting"}`}
       exchanges={exchanges}
       streamingId={running ? lastExchangeId : undefined}
       failedId={session?.status === "failed" ? lastExchangeId : undefined}

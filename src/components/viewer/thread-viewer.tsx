@@ -113,7 +113,11 @@ function createExchangeBuilder() {
       entryIndex < entries.length;
       entryIndex += 1
     ) {
-      const fresh = threadToMessages([entries[entryIndex]!], entryIndex)
+      const fresh = threadToMessages(
+        [entries[entryIndex]!],
+        entryIndex,
+        thread.ref.harness
+      )
       for (const message of fresh) {
         if (message.role === "user") {
           next = [

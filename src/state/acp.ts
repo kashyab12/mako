@@ -255,6 +255,7 @@ export const acp = {
       acpStore.set({
         starting: false,
         blocks: [],
+        threadPath: undefined,
         hiddenUserPrompt: null,
       })
       toast.error(error instanceof Error ? error.message : String(error))
@@ -309,14 +310,15 @@ export const acp = {
     cwd: string,
     prompt: string,
     attachments: AcpPromptAttachment[] = [],
-    displayPrompt = prompt
+    displayPrompt = prompt,
+    threadPath?: string
   ) {
     if (!hasBridge()) return false
     acpStore.set({
       starting: true,
       blocks: displayPrompt ? [{ type: "user", text: displayPrompt }] : [],
       permission: null,
-      threadPath: undefined,
+      threadPath,
       hiddenUserPrompt: displayPrompt === prompt ? null : prompt,
     })
     try {
@@ -330,6 +332,7 @@ export const acp = {
       acpStore.set({
         starting: false,
         blocks: [],
+        threadPath: undefined,
         hiddenUserPrompt: null,
       })
       toast.error(error instanceof Error ? error.message : String(error))

@@ -25,7 +25,10 @@ import {
 import { acpBlocksToMessages } from "../src/lib/acp-blocks.ts"
 import { contextAccounting } from "../src/lib/context-accounting.ts"
 import { responseSections } from "../src/lib/exchanges.ts"
-import { pendingThreadInput } from "../src/lib/foreign-thread.ts"
+import {
+  pendingThreadInput,
+  threadToMessages,
+} from "../src/lib/foreign-thread.ts"
 import { acpStore, applyAcpUpdates } from "../src/state/acp.ts"
 import type {
   ChatMessage,
@@ -109,11 +112,21 @@ const acpConversation = acpBlocksToMessages(
       entries: [{ content: "Inspect", status: "completed" }],
     },
   ],
-  true
+  true,
+  "cursor"
 )
 assert.deepEqual(
   acpConversation.messages.map((message) => message.role),
   ["user", "assistant"]
+)
+assert.equal(acpConversation.messages[1]?.provider, "cursor")
+assert.equal(
+  threadToMessages(
+    [{ kind: "assistant", blocks: [{ type: "text", text: "Done" }] }],
+    0,
+    "devin"
+  )[0]?.provider,
+  "devin"
 )
 assert.deepEqual(
   acpConversation.messages[1]?.blocks.map((block) => block.type),
