@@ -173,7 +173,7 @@ function SessionTab({
     >
       <span
         className={cn(
-          "ml-2 size-1.5 shrink-0 rounded-full",
+          "ml-2 mr-1.5 size-1.5 shrink-0 rounded-full",
           session.status === "running"
             ? "bg-positive"
             : session.status === "interrupted"
