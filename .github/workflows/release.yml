@@ -14,9 +14,9 @@ jobs:
     environment:
       name: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || 'test' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
@@ -146,7 +146,7 @@ jobs:
               --clobber
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: Mako-macOS-arm64-${{ github.ref_name }}
           path: |
