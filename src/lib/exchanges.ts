@@ -1,4 +1,4 @@
-import type { ChatMessage } from "@/lib/types"
+import type { Block, ChatMessage } from "@/lib/types"
 import { textOf } from "@/lib/format"
 
 /**
@@ -20,6 +20,64 @@ export interface Exchange {
   /** Notes and separators that landed inside this exchange. */
   system: ChatMessage[]
   timestamp?: number
+}
+
+export type ResponseSection =
+  | { kind: "prose"; id: string; message: ChatMessage }
+  | { kind: "work"; id: string; messages: ChatMessage[] }
+
+export function responseSections(messages: ChatMessage[]): ResponseSection[] {
+  const sections: ResponseSection[] = []
+  let work: ChatMessage[] = []
+  let part = 0
+
+  const flushWork = () => {
+    const first = work[0]
+    if (!first) return
+    sections.push({ kind: "work", id: `work-${first.id}`, messages: work })
+    work = []
+  }
+  const splitMessage = (message: ChatMessage, blocks: Block[]) => ({
+    ...message,
+    id: `${message.id}-part-${part++}`,
+    blocks,
+    error: undefined,
+  })
+
+  for (const message of messages) {
+    const generated: ChatMessage[] = []
+    let workBlocks: Block[] = []
+    const flushMessageWork = () => {
+      if (workBlocks.length === 0) return
+      const split = splitMessage(message, workBlocks)
+      work.push(split)
+      generated.push(split)
+      workBlocks = []
+    }
+
+    for (const block of message.blocks) {
+      if (message.role === "assistant" && block.type === "text" && block.text) {
+        flushMessageWork()
+        flushWork()
+        const prose = splitMessage(message, [block])
+        generated.push(prose)
+        sections.push({ kind: "prose", id: prose.id, message: prose })
+      } else {
+        workBlocks.push(block)
+      }
+    }
+    flushMessageWork()
+    if (generated.length === 0 && message.error) {
+      flushWork()
+      const prose = splitMessage(message, [])
+      generated.push(prose)
+      sections.push({ kind: "prose", id: prose.id, message: prose })
+    }
+    const last = generated.at(-1)
+    if (last && message.error) last.error = message.error
+  }
+  flushWork()
+  return sections
 }
 
 export function toExchanges(messages: ChatMessage[]): Exchange[] {

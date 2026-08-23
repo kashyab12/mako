@@ -12,7 +12,10 @@ import {
 } from "@/state/threads"
 import type { Exchange as ExchangeData } from "@/lib/exchanges"
 import type { Thread } from "@/lib/types"
-import { threadToMessages } from "@/lib/foreign-thread"
+import {
+  pendingThreadInput,
+  threadToMessages,
+} from "@/lib/foreign-thread"
 import {
   ArrowRightLeftIcon,
   CheckIcon,
@@ -209,7 +212,10 @@ function SessionBar() {
   const locked =
     sessionStatus.kind === "external-open" ||
     sessionStatus.kind === "external-active"
-  const status = statusLabel(sessionStatus, thread.ref.archived === true)
+  const waitingForInput = pendingThreadInput(thread.entries) !== null
+  const status = waitingForInput
+    ? `Waiting for input in ${harnessLabel(thread.ref.harness)}`
+    : statusLabel(sessionStatus, thread.ref.archived === true)
   return (
     <div className="flex h-11 shrink-0 items-center gap-2 border-b border-hairline px-3.5">
       <HarnessIcon harness={thread.ref.harness} className="size-3.5" />
@@ -225,7 +231,7 @@ function SessionBar() {
           }
           className="flex items-center gap-1 truncate text-label text-faint"
         >
-          <SessionStatusIcon status={sessionStatus} />
+          <SessionStatusIcon status={sessionStatus} waiting={waitingForInput} />
           {status}
         </p>
       </div>
@@ -289,7 +295,15 @@ function statusLabel(status: ThreadStatus, archived: boolean): string {
   }
 }
 
-function SessionStatusIcon({ status }: { status: ThreadStatus }) {
+function SessionStatusIcon({
+  status,
+  waiting,
+}: {
+  status: ThreadStatus
+  waiting?: boolean
+}) {
+  if (waiting)
+    return <ShieldQuestionIcon className="size-3 shrink-0 text-caution" />
   switch (status.kind) {
     case "working":
       return <Loader2Icon className="size-3 shrink-0 animate-spin text-ember/80" />
@@ -329,11 +343,13 @@ function Conversation() {
   )
   if (!thread) return null
 
+  const waitingForInput = pendingThreadInput(thread.entries) !== null
   const live =
-    run?.status === "running" ||
-    status?.kind === "working" ||
-    status?.kind === "observed" ||
-    status?.kind === "external-active"
+    !waitingForInput &&
+    (run?.status === "running" ||
+      status?.kind === "working" ||
+      status?.kind === "observed" ||
+      status?.kind === "external-active")
   const lastExchangeId = exchanges.at(-1)?.id
   return (
     <ConversationTimeline
@@ -352,7 +368,15 @@ function Conversation() {
         </p>
       }
       footer={
-        live ? (
+        waitingForInput ? (
+          <div className="animate-enter flex items-center gap-2 px-0.5 text-ui text-caution">
+            <ShieldQuestionIcon className="size-3.5 shrink-0" />
+            <span>
+              Waiting for your answer in {harnessLabel(thread.ref.harness)}.
+              Reply in the client that owns this session.
+            </span>
+          </div>
+        ) : live ? (
           <div className="animate-enter flex items-center gap-2 px-0.5 text-ui">
             <HarnessIcon
               harness={thread.ref.harness}

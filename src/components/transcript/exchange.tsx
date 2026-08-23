@@ -12,7 +12,11 @@ import {
 import { formatTime, textOf } from "@/lib/format"
 import { parseAttachmentAppendix } from "@/lib/attachments"
 import { stripThreadReferenceAppendix } from "@/lib/thread-references"
-import { responseText, type Exchange as ExchangeData } from "@/lib/exchanges"
+import {
+  responseSections,
+  responseText,
+  type Exchange as ExchangeData,
+} from "@/lib/exchanges"
 import { actions, shallowEqual, useSession } from "@/state/session"
 import { threads, useThreads } from "@/state/threads"
 import { HARNESS_LABEL } from "@/components/rail/harness-meta"
@@ -51,10 +55,10 @@ export const Exchange = memo(function Exchange({
   interrupted?: boolean
   failed?: boolean
 }) {
-  const [workOpen, setWorkOpen] = useState(false)
-  const work = useMemo(() => summarizeWork(exchange), [exchange])
-  const folded = work.tools >= 3
-  const showWork = Boolean(streaming) || workOpen
+  const sections = useMemo(
+    () => responseSections(exchange.response),
+    [exchange.response]
+  )
   return (
     <article data-exchange={exchange.id} className="contain-turn scroll-mt-6">
       {exchange.prompt ? <Prompt message={exchange.prompt} /> : null}
@@ -63,27 +67,24 @@ export const Exchange = memo(function Exchange({
         <SystemNote key={message.id} message={message} />
       ))}
 
-      {exchange.response.length > 0 ? (
+      {sections.length > 0 ? (
         <div className={cn("flex flex-col gap-2.5", exchange.prompt && "mt-3")}>
-          {folded ? (
-            <WorkSummary
-              work={work}
-              live={Boolean(streaming)}
-              interrupted={Boolean(interrupted)}
-              failed={Boolean(failed)}
-              open={showWork}
-              onToggle={() => {
-                if (!streaming) setWorkOpen((value) => !value)
-              }}
-            />
-          ) : null}
-          {exchange.response.map((message) => (
-            <Response
-              key={message.id}
-              message={message}
-              showWork={!folded || showWork}
-            />
-          ))}
+          {sections.map((section, index) =>
+            section.kind === "prose" ? (
+              <Response key={section.id} message={section.message} showWork />
+            ) : (
+              <WorkSection
+                key={section.id}
+                messages={section.messages}
+                startedAt={index === 0 ? exchange.prompt?.timestamp : undefined}
+                live={Boolean(streaming && index === sections.length - 1)}
+                interrupted={Boolean(
+                  interrupted && index === sections.length - 1
+                )}
+                failed={Boolean(failed && index === sections.length - 1)}
+              />
+            )
+          )}
         </div>
       ) : null}
 
@@ -200,19 +201,21 @@ interface WorkSummaryData {
   duration?: number
 }
 
-function summarizeWork(exchange: ExchangeData): WorkSummaryData {
+function summarizeWork(
+  messages: ChatMessage[],
+  started?: number
+): WorkSummaryData {
   let tools = 0
   let agents = 0
   let failed = 0
-  for (const message of exchange.response) {
+  for (const message of messages) {
     const calls = pairTools(message.blocks)
     tools += calls.length
     agents += calls.filter(isSubagentLaunch).length
     agents = Math.max(agents, ...calls.map(reportedSubagentCount))
     failed += calls.filter((call) => call.isError).length
   }
-  const started = exchange.prompt?.timestamp
-  const completed = exchange.response.at(-1)?.timestamp
+  const completed = messages.at(-1)?.timestamp
   return {
     tools,
     agents,
@@ -222,6 +225,51 @@ function summarizeWork(exchange: ExchangeData): WorkSummaryData {
         ? completed - started
         : undefined,
   }
+}
+
+function WorkSection({
+  messages,
+  startedAt,
+  live,
+  interrupted,
+  failed,
+}: {
+  messages: ChatMessage[]
+  startedAt?: number
+  live: boolean
+  interrupted: boolean
+  failed: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const work = useMemo(
+    () => summarizeWork(messages, startedAt),
+    [messages, startedAt]
+  )
+  const folded = work.tools >= 3
+  const showWork = live || open
+  return (
+    <div className="flex flex-col gap-2.5">
+      {folded ? (
+        <WorkSummary
+          work={work}
+          live={live}
+          interrupted={interrupted}
+          failed={failed}
+          open={showWork}
+          onToggle={() => {
+            if (!live) setOpen((value) => !value)
+          }}
+        />
+      ) : null}
+      {messages.map((message) => (
+        <Response
+          key={message.id}
+          message={message}
+          showWork={!folded || showWork}
+        />
+      ))}
+    </div>
+  )
 }
 
 function WorkSummary({

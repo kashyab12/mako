@@ -21,8 +21,14 @@ import {
   threadFolderKey,
 } from "../src/lib/thread-folders.ts"
 import { acpBlocksToMessages } from "../src/lib/acp-blocks.ts"
+import { responseSections } from "../src/lib/exchanges.ts"
+import { pendingThreadInput } from "../src/lib/foreign-thread.ts"
 import { acpStore, applyAcpUpdates } from "../src/state/acp.ts"
-import type { ThreadRef } from "../src/lib/types.ts"
+import type {
+  ChatMessage,
+  ThreadEntry,
+  ThreadRef,
+} from "../src/lib/types.ts"
 
 assert.equal(
   clampCompanionWidth({ width: 520, available: 1400, min: 400 }),
@@ -136,6 +142,79 @@ assert.deepEqual(acpStore.get().blocks, [
   { type: "user", text: "same prompt" },
 ])
 acpStore.set({ session: null, blocks: [] })
+
+const interleavedResponse = [
+  {
+    id: "work-before",
+    role: "assistant",
+    blocks: [{ type: "toolCall", id: "one", name: "read" }],
+  },
+  {
+    id: "commentary",
+    role: "assistant",
+    blocks: [
+      { type: "toolCall", id: "two", name: "exec" },
+      { type: "text", text: "The catalog is healthy." },
+    ],
+  },
+  {
+    id: "work-after",
+    role: "assistant",
+    blocks: [{ type: "toolCall", id: "three", name: "read" }],
+  },
+] satisfies ChatMessage[]
+const interleavedSections = responseSections(interleavedResponse)
+assert.deepEqual(
+  interleavedSections.map((section) => section.kind),
+  ["work", "prose", "work"]
+)
+assert.equal(
+  interleavedSections[0]?.kind === "work"
+    ? interleavedSections[0].messages.length
+    : 0,
+  2
+)
+assert.equal(
+  interleavedSections[1]?.kind === "prose"
+    ? interleavedSections[1].message.blocks[0]?.text
+    : undefined,
+  "The catalog is healthy."
+)
+assert.equal(
+  interleavedSections[2]?.kind === "work"
+    ? interleavedSections[2].messages.length
+    : 0,
+  1
+)
+const waitingEntries: ThreadEntry[] = [
+  {
+    kind: "assistant",
+    blocks: [
+      {
+        type: "tool",
+        name: "ask_user_question",
+        input: '{"question":"Continue?"}',
+      },
+    ],
+  },
+]
+assert.equal(pendingThreadInput(waitingEntries), "ask_user_question")
+assert.equal(
+  pendingThreadInput([
+    {
+      kind: "assistant",
+      blocks: [
+        {
+          type: "tool",
+          name: "ask_user_question",
+          input: '{"question":"Continue?"}',
+          output: "Continue",
+        },
+      ],
+    },
+  ]),
+  null
+)
 
 const folderRefs = [
   {

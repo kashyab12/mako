@@ -1,5 +1,32 @@
 import type { Block, ChatMessage, ThreadEntry } from "@/lib/types"
 
+const INPUT_TOOLS = new Set([
+  "askquestion",
+  "askuserquestion",
+  "awaituserinput",
+  "humaninput",
+  "promptuser",
+  "question",
+  "requestuserinput",
+])
+
+function isInputTool(name: string): boolean {
+  return INPUT_TOOLS.has(name.toLowerCase().replace(/[^a-z0-9]/g, ""))
+}
+
+export function pendingThreadInput(entries: ThreadEntry[]): string | null {
+  for (let entryIndex = entries.length - 1; entryIndex >= 0; entryIndex -= 1) {
+    const entry = entries[entryIndex]
+    if (entry?.kind !== "assistant") continue
+    for (let blockIndex = entry.blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
+      const block = entry.blocks[blockIndex]
+      if (block?.type !== "tool" || !isInputTool(block.name)) continue
+      return block.output === undefined ? block.name : null
+    }
+  }
+  return null
+}
+
 export function threadToMessages(entries: ThreadEntry[], indexStart = 0): ChatMessage[] {
   const messages: ChatMessage[] = []
 
