@@ -332,11 +332,15 @@ export function Composer() {
               : await threads.reply(viewingRef, full)
             : await threads.moveAndSend(viewingRef, harness, full)
       } else if (liveSession) {
-        // Mod+Enter while the agent runs: stop the turn, then send — the
-        // live protocol's own interrupt. Plain Enter queues agent-side.
-        if (mode && liveSession.status === "running") acp.cancel()
-        await acp.send(full, acpAttachments)
-        ok = true
+        if (harness !== liveSession.harness) {
+          ok = await acp.handoff(harness, full)
+        } else {
+          // Mod+Enter while the agent runs: stop the turn, then send — the
+          // live protocol's own interrupt. Plain Enter queues agent-side.
+          if (mode && liveSession.status === "running") acp.cancel()
+          await acp.send(full, acpAttachments)
+          ok = true
+        }
       } else if (threadsStore.get().acpable.includes(harness)) {
         ok = await acp.startFresh(
           harness,

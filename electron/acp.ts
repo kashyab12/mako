@@ -285,6 +285,7 @@ export async function acpStart(
       await setLegacySessionModel(live, options.tuning.model)
     }
     update(live, {
+      nativeId: session.sessionId,
       status: "ready",
       modes:
         session.modes?.availableModes.map((mode) => ({

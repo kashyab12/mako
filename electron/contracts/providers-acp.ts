@@ -63,6 +63,7 @@ export interface HarnessProfile {
 
 export interface AcpSessionState {
   id: string
+  nativeId?: string
   harness: string
   cwd: string
   title?: string

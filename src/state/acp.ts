@@ -340,6 +340,52 @@ export const acp = {
     }
   },
 
+  async handoff(harness: string, prompt: string) {
+    const current = acpStore.get()
+    const session = current.session
+    if (!session || !hasBridge()) return false
+    acpStore.set({
+      blocks: [...current.blocks, { type: "user", text: prompt }],
+    })
+
+    const locate = (refs: ThreadRef[]) =>
+      refs.find((ref) =>
+        current.threadPath
+          ? ref.path === current.threadPath
+          : ref.harness === session.harness && ref.nativeId === session.nativeId
+      )
+
+    try {
+      let ref = locate(threadsStore.get().threads)
+      for (let attempt = 0; !ref && attempt < 20; attempt += 1) {
+        const catalog = await getMako().threads()
+        ref = locate(catalog.threads)
+        if (!ref) await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+      if (!ref) throw new Error("This live session is still being saved")
+      const thread = await getMako().openThread(ref.path)
+      if (!thread) throw new Error("This live session could not be read")
+
+      await getMako().acpClose(session.id)
+      threadsStore.set({ viewing: thread, run: null, composerHarness: harness })
+      acpStore.set({
+        session: null,
+        blocks: [],
+        permission: null,
+        starting: false,
+        queued: null,
+        threadPath: undefined,
+        hiddenUserPrompt: null,
+      })
+      const { threads } = await import("@/state/threads")
+      return threads.moveAndSend(thread.ref, harness, prompt)
+    } catch (error) {
+      acpStore.set({ blocks: current.blocks })
+      toast.error(error instanceof Error ? error.message : String(error))
+      return false
+    }
+  },
+
   async send(text: string, attachments: AcpPromptAttachment[] = []) {
     const { session } = acpStore.get()
     if (!session || !hasBridge()) return
