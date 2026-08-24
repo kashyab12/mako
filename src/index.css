@@ -131,8 +131,9 @@
   color-scheme: dark;
 
   /*
-   * Deep neutrals with the faintest warm cast — OpenCode's flat grey
-   * material, Superset's temperature, one ember accent. Four planes, not a
+   * OpenCode OC-2 uses #080808 / #161616 / #242424 with warm #f1ece8 text.
+   * Mako keeps that depth ladder but adds a restrained ember-brown cast so
+   * recessed chrome does not read as featureless black. Four planes, not a
    * continuous ramp:
    *
    *   shell    the window itself: titlebar, rail, chrome. Shadowless.
@@ -143,18 +144,18 @@
    *
    * Structural panes use borders for separation; overlays carry elevation.
    */
-  --shell: oklch(0.14 0.002 40);
-  --surface: oklch(0.222 0.002 45);
-  --raised: oklch(0.268 0.002 45);
-  --popover: oklch(0.238 0.002 45);
-  --foreground: oklch(0.93 0.002 50);
-  --muted-foreground: oklch(0.722 0.002 50);
-  --faint: oklch(0.548 0.002 50);
+  --shell: oklch(0.175 0.009 50);
+  --surface: oklch(0.222 0.006 50);
+  --raised: oklch(0.268 0.008 50);
+  --popover: oklch(0.238 0.007 50);
+  --foreground: oklch(0.93 0.01 60);
+  --muted-foreground: oklch(0.722 0.008 58);
+  --faint: oklch(0.61 0.007 55);
 
-  --hairline: oklch(0.93 0.004 50 / 10%);
-  --border: oklch(0.93 0.004 50 / 14%);
-  --input: oklch(0.93 0.004 50 / 17%);
-  --ring: oklch(0.93 0.004 50 / 34%);
+  --hairline: oklch(0.93 0.008 58 / 10%);
+  --border: oklch(0.93 0.008 58 / 14%);
+  --input: oklch(0.93 0.008 58 / 17%);
+  --ring: oklch(0.93 0.008 58 / 34%);
 
   /*
    * Interaction state is a tint of the text colour, never the accent and
@@ -209,7 +210,7 @@
   --primary-foreground: var(--shell);
   --secondary: var(--raised);
   --secondary-foreground: var(--foreground);
-  --muted: oklch(0.255 0.002 45);
+  --muted: oklch(0.255 0.007 50);
   --accent: var(--raised);
   --accent-foreground: var(--foreground);
 
