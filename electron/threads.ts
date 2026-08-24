@@ -41,7 +41,6 @@ import {
   daemonLoginProcess,
   refreshDaemonLoginJob,
   setDaemonLogin,
-  stopDaemonLoginJob,
 } from "./daemon-login.js"
 import type {
   HostEvent,
@@ -145,7 +144,8 @@ async function connectViaDaemon(): Promise<boolean> {
     }
     const loginPid = await daemonLoginProcess()
     if (loginPid && loginPid !== client.stats.pid) {
-      await stopDaemonLoginJob()
+      client.close()
+      return false
     }
 
     const pending: DaemonEvent[] = []
