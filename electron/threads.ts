@@ -32,6 +32,7 @@ import {
   type SessionCatalog,
   type Thread,
   type ThreadEntry,
+  type ThreadPage,
   type ThreadRef,
 } from "@mako/sessions"
 import { annotate, bindLineage, loadLineage } from "./lineage.js"
@@ -282,6 +283,17 @@ export function listThreads(
         .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
     : (catalog?.list(filter) ?? [])
   return refs.slice(0, LIST_CAP).map(annotate)
+}
+
+export async function pageThread(
+  path: string,
+  before?: number,
+  limit?: number
+): Promise<ThreadPage | null> {
+  const page = daemon
+    ? await daemon.page(path, before, limit)
+    : await (catalog?.page(path, before, limit) ?? null)
+  return page ? { ...page, ref: annotate(page.ref) } : null
 }
 
 export async function openThread(path: string): Promise<Thread | null> {

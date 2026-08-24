@@ -1,5 +1,5 @@
 import { getMako, hasBridge } from "@/lib/bridge"
-import type { ThreadEntry, ThreadRef } from "@/lib/types"
+import type { Thread, ThreadEntry, ThreadPage, ThreadRef } from "@/lib/types"
 import type {
   ThreadsState,
   ViewedThread,
@@ -32,7 +32,26 @@ const THREAD_CACHE_MAX = 4
 const THREAD_CACHE_BYTES = 24 * 1024 * 1024
 
 function estimatedThreadBytes(thread: ViewedThread): number {
-  return Math.max(thread.ref.bytes ?? 0, thread.entries.length * 4096)
+  return Math.min(thread.ref.bytes ?? 0, thread.entries.length * 4096)
+}
+
+export function viewedThread(thread: Thread): ViewedThread {
+  return {
+    ...thread,
+    pageStart: 0,
+    totalEntries: thread.entries.length,
+    hasEarlier: false,
+  }
+}
+
+function viewedPage(page: ThreadPage): ViewedThread {
+  return {
+    ref: page.ref,
+    entries: page.entries,
+    pageStart: page.start,
+    totalEntries: page.total,
+    hasEarlier: page.hasEarlier,
+  }
 }
 
 export function rememberThread(thread: ViewedThread) {
@@ -74,8 +93,14 @@ export function applyThreadEntries(
   const arrivedUserTexts = new Set(
     entries.filter((entry) => entry.kind === "user").map((entry) => entry.text)
   )
+  const absoluteReplaceFrom = replaceFrom ?? 0
+  const localReplaceFrom = Math.max(0, absoluteReplaceFrom - viewing.pageStart)
+  const incoming =
+    replace && absoluteReplaceFrom < viewing.pageStart
+      ? entries.slice(viewing.pageStart - absoluteReplaceFrom)
+      : entries
   const base = replace
-    ? viewing.entries.slice(0, replaceFrom ?? 0)
+    ? viewing.entries.slice(0, localReplaceFrom)
     : viewing.entries.filter(
         (entry) =>
           !isOptimisticEcho(entry) ||
@@ -83,11 +108,14 @@ export function applyThreadEntries(
       )
   const next: ViewedThread = {
     ...viewing,
-    entries: [...base, ...entries],
+    entries: [...base, ...incoming],
+    totalEntries: replace
+      ? viewing.pageStart + base.length + incoming.length
+      : viewing.totalEntries + incoming.length,
   }
   if (replace) {
     next.streamRevision = (viewing.streamRevision ?? 0) + 1
-    next.streamReplaceFrom = replaceFrom ?? 0
+    next.streamReplaceFrom = localReplaceFrom
   }
   threadsStore.set({ viewing: next })
   rememberThread(next)
@@ -121,11 +149,11 @@ export const threadViewingActions = {
       // byte offset. Following from the cached (stale) offset once replayed
       // the overlap into the viewer as duplicates.
       void getMako()
-        .openThread(ref.path)
+        .pageThread(ref.path)
         .then((fresh) => {
           if (!fresh) return
           const replaced: ViewedThread = {
-            ...fresh,
+            ...viewedPage(fresh),
             streamRevision: (cached.streamRevision ?? 0) + 1,
             streamReplaceFrom: 0,
           }
@@ -140,8 +168,9 @@ export const threadViewingActions = {
     }
     threadsStore.set({ viewingBusy: true })
     try {
-      const thread = await getMako().openThread(ref.path)
-      if (!thread) throw new Error("This session could not be read")
+      const page = await getMako().pageThread(ref.path)
+      if (!page) throw new Error("This session could not be read")
+      const thread = viewedPage(page)
       rememberThread(thread)
       const run = await getMako()
         .threadRun(ref.path)
@@ -163,6 +192,43 @@ export const threadViewingActions = {
       void getMako().followThread(ref.path, thread.ref.bytes ?? 0)
     } catch (error) {
       threadsStore.set({ viewingBusy: false })
+      toast.error(error instanceof Error ? error.message : String(error))
+    }
+  },
+
+  async loadEarlier() {
+    const viewing = threadsStore.get().viewing
+    if (!viewing || !viewing.hasEarlier || viewing.loadingEarlier || !hasBridge())
+      return
+    threadsStore.set({ viewing: { ...viewing, loadingEarlier: true } })
+    try {
+      const page = await getMako().pageThread(
+        viewing.ref.path,
+        viewing.pageStart
+      )
+      const current = threadsStore.get().viewing
+      if (!current || current.ref.path !== viewing.ref.path) return
+      if (!page) {
+        threadsStore.set({ viewing: { ...current, loadingEarlier: false } })
+        return
+      }
+      const next: ViewedThread = {
+        ...current,
+        ref: page.ref,
+        entries: [...page.entries, ...current.entries],
+        pageStart: page.start,
+        totalEntries: page.total,
+        hasEarlier: page.hasEarlier,
+        loadingEarlier: false,
+        streamRevision: (current.streamRevision ?? 0) + 1,
+        streamReplaceFrom: 0,
+      }
+      threadsStore.set({ viewing: next })
+      rememberThread(next)
+    } catch (error) {
+      const current = threadsStore.get().viewing
+      if (current?.ref.path === viewing.ref.path)
+        threadsStore.set({ viewing: { ...current, loadingEarlier: false } })
       toast.error(error instanceof Error ? error.message : String(error))
     }
   },

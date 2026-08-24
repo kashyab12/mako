@@ -50,6 +50,10 @@ export type ViewedThreadEntry =
 
 export interface ViewedThread extends Omit<Thread, "entries"> {
   entries: ViewedThreadEntry[]
+  pageStart: number
+  totalEntries: number
+  hasEarlier: boolean
+  loadingEarlier?: boolean
   streamRevision?: number
   streamReplaceFrom?: number
 }

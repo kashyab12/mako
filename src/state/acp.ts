@@ -10,6 +10,7 @@ import {
   withConversion,
 } from "@/state/threads"
 import type { AcpBlock } from "@/lib/acp-blocks"
+import { viewedThread } from "@/state/thread-viewing"
 import type {
   AcpPermissionRequest,
   AcpPromptAttachment,
@@ -367,7 +368,11 @@ export const acp = {
       if (!thread) throw new Error("This live session could not be read")
 
       await getMako().acpClose(session.id)
-      threadsStore.set({ viewing: thread, run: null, composerHarness: harness })
+      threadsStore.set({
+        viewing: viewedThread(thread),
+        run: null,
+        composerHarness: harness,
+      })
       acpStore.set({
         session: null,
         blocks: [],

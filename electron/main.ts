@@ -63,6 +63,7 @@ import {
   installThreads,
   listThreads,
   openThread,
+  pageThread,
   stopThreads,
   transcriptArtifactFor,
   transcriptInlineFor,
@@ -469,6 +470,11 @@ function bindIpc() {
   }))
   handle("mako:thread-open", (_e, path: string) => openThread(path))
   handle(
+    "mako:thread-page",
+    (_e, path: string, before?: number, limit?: number) =>
+      pageThread(path, before, limit)
+  )
+  handle(
     "mako:thread-contexts",
     async (_e, paths: string[], options?: ThreadContextOptions) =>
       Promise.all(
@@ -570,7 +576,9 @@ function bindIpc() {
     (_e, harness: AccountProvider, name: string) => accountUsage(harness, name)
   )
 
-  handle("mako:harness-profiles", () => harnessProfiles())
+  handle("mako:harness-profiles", (_event, force?: boolean) =>
+    harnessProfiles(force === true)
+  )
   handle("mako:harness-availability", async () =>
     Object.fromEntries(
       (await harnessProfiles()).map((profile) => [

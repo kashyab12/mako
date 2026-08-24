@@ -36,7 +36,13 @@ import { monitorEventLoopDelay } from "node:perf_hooks"
 import { dirname, join } from "node:path"
 import { StringDecoder } from "node:string_decoder"
 import type { SessionCatalog } from "./catalog.js"
-import type { Thread, ThreadEntry, ThreadOrigin, ThreadRef } from "./format.js"
+import type {
+  Thread,
+  ThreadEntry,
+  ThreadOrigin,
+  ThreadPage,
+  ThreadRef,
+} from "./format.js"
 
 export function daemonSocketPath(): string {
   if (process.platform === "win32") {
@@ -67,6 +73,7 @@ type DaemonRequestFrame =
   | { id: number; op: "ping" }
   | { id: number; op: "list"; cwd?: string; harness?: string }
   | { id: number; op: "open"; path: string }
+  | { id: number; op: "page"; path: string; before?: number; limit?: number }
   | { id: number; op: "follow"; path: string; fromByte: number }
   | { id: number; op: "unfollow"; path?: string }
   | { id: number; op: "retire" }
@@ -75,7 +82,7 @@ type DaemonResponseFrame =
   | {
       id: number
       ok: true
-      result: DaemonStats | ThreadRef[] | Thread | null
+      result: DaemonStats | ThreadRef[] | Thread | ThreadPage | null
     }
   | { id: number; ok: false; error: string }
 
@@ -112,17 +119,28 @@ interface OpenPending extends PendingBase {
   resolve: (thread: Thread | null) => void
 }
 
+interface PagePending extends PendingBase {
+  kind: "page"
+  resolve: (page: ThreadPage | null) => void
+}
+
 interface AckPending extends PendingBase {
   kind: "ack"
   resolve: () => void
 }
 
-type PendingRequest = PingPending | ListPending | OpenPending | AckPending
+type PendingRequest =
+  | PingPending
+  | ListPending
+  | OpenPending
+  | PagePending
+  | AckPending
 
 type ParsedDaemonResponse =
   | { kind: "ping"; pending: PingPending; result: DaemonStats }
   | { kind: "list"; pending: ListPending; result: ThreadRef[] }
   | { kind: "open"; pending: OpenPending; result: Thread | null }
+  | { kind: "page"; pending: PagePending; result: ThreadPage | null }
   | { kind: "ack"; pending: AckPending }
   | { kind: "error"; pending: PendingRequest; error: Error }
 
@@ -132,7 +150,7 @@ type ParsedDaemonResponse =
  * without it forever. Clients that see an older daemon retire it and let a
  * fresh one take the socket.
  */
-export const PROTOCOL_VERSION = 23
+export const PROTOCOL_VERSION = 24
 const MAX_CLIENTS = 64
 const MAX_REQUEST_FRAME_BYTES = 1024 * 1024
 const MAX_RESPONSE_FRAME_BYTES = 256 * 1024 * 1024
@@ -296,6 +314,13 @@ export async function serveCatalog(
               result: await catalog.open(frame.path),
             })
             return
+          case "page":
+            reply({
+              id: frame.id,
+              ok: true,
+              result: await catalog.page(frame.path, frame.before, frame.limit),
+            })
+            return
           case "follow": {
             const mine = follows.get(socket)
             mine?.get(frame.path)?.()
@@ -386,6 +411,7 @@ export interface DaemonClient {
   stats: DaemonStats
   list(filter?: { cwd?: string; harness?: string }): Promise<ThreadRef[]>
   open(path: string): Promise<Thread | null>
+  page(path: string, before?: number, limit?: number): Promise<ThreadPage | null>
   follow(path: string, fromByte: number): Promise<void>
   unfollow(path?: string): Promise<void>
   /** Ask the daemon to exit — used to replace an older vintage. */
@@ -448,6 +474,9 @@ export async function connectDaemon(
             response.pending.resolve(response.result)
             break
           case "open":
+            response.pending.resolve(response.result)
+            break
+          case "page":
             response.pending.resolve(response.result)
             break
           case "ack":
@@ -520,6 +549,18 @@ export async function connectDaemon(
       send({ id, op: "open", path })
     })
 
+  const requestPage = (
+    path: string,
+    before?: number,
+    limit?: number
+  ): Promise<ThreadPage | null> =>
+    new Promise((resolve, reject) => {
+      const id = nextId++
+      const timer = requestTimer(id, reject, Math.max(timeoutMs, 30_000))
+      pending.set(id, { kind: "page", resolve, reject, timer })
+      send({ id, op: "page", path, before, limit })
+    })
+
   const requestAck = (
     frame: (id: number) => DaemonRequestFrame
   ): Promise<void> =>
@@ -552,6 +593,7 @@ export async function connectDaemon(
       stats,
       list: requestList,
       open: requestOpen,
+      page: requestPage,
       follow: (path, fromByte) =>
         requestAck((id) => ({ id, op: "follow", path, fromByte })),
       unfollow: (path) => requestAck((id) => ({ id, op: "unfollow", path })),
@@ -602,6 +644,12 @@ function parseDaemonRequest(raw: string): DaemonRequestFrame | null {
       const path = readString(record, "path")
       return path ? { id, op, path } : null
     }
+    case "page": {
+      const path = readString(record, "path")
+      const before = readNumber(record, "before")
+      const limit = readNumber(record, "limit")
+      return path ? { id, op, path, before, limit } : null
+    }
     case "follow": {
       const path = readString(record, "path")
       const fromByte = readNumber(record, "fromByte")
@@ -644,6 +692,11 @@ function parseDaemonResponse(
       if (record.result === null) return { kind: "open", pending, result: null }
       const result = parseThread(record.result)
       return result ? { kind: "open", pending, result } : null
+    }
+    case "page": {
+      if (record.result === null) return { kind: "page", pending, result: null }
+      const result = parseThreadPage(record.result)
+      return result ? { kind: "page", pending, result } : null
     }
     case "ack":
       return record.result === null ? { kind: "ack", pending } : null
@@ -705,6 +758,22 @@ function parseThread(value: JsonValue | undefined): Thread | null {
   const ref = parseThreadRef(value.ref)
   const entries = parseArray(value.entries, parseThreadEntry)
   return ref && entries ? { ref, entries } : null
+}
+
+function parseThreadPage(value: JsonValue | undefined): ThreadPage | null {
+  if (!isJsonRecord(value)) return null
+  const ref = parseThreadRef(value.ref)
+  const entries = parseArray(value.entries, parseThreadEntry)
+  const start = readNumber(value, "start")
+  const total = readNumber(value, "total")
+  const hasEarlier = readBoolean(value, "hasEarlier")
+  return ref &&
+    entries &&
+    start !== undefined &&
+    total !== undefined &&
+    hasEarlier !== undefined
+    ? { ref, entries, start, total, hasEarlier }
+    : null
 }
 
 function parseThreadRef(value: JsonValue | undefined): ThreadRef | null {

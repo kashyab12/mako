@@ -38,6 +38,9 @@ export function ConversationTimeline({
   failedId,
   empty,
   footer,
+  hasEarlier = false,
+  loadingEarlier = false,
+  onLoadEarlier,
 }: {
   identity: string
   exchanges: ExchangeData[]
@@ -46,6 +49,9 @@ export function ConversationTimeline({
   failedId?: string
   empty: ReactNode
   footer?: ReactNode
+  hasEarlier?: boolean
+  loadingEarlier?: boolean
+  onLoadEarlier?: () => Promise<void>
 }) {
   const pane = useRef<HTMLDivElement>(null)
   const viewport = useRef<HTMLDivElement>(null)
@@ -121,17 +127,18 @@ export function ConversationTimeline({
     }
   }, [exchanges])
 
-  const showEarlier = useCallback(() => {
+  const showEarlier = useCallback(async () => {
     const node = viewport.current
     const before = node?.scrollHeight ?? 0
     const top = node?.scrollTop ?? 0
     pinned.current = false
-    setLimit((current) => current + MORE_TURNS)
+    if (hidden > 0) setLimit((current) => current + MORE_TURNS)
+    else await onLoadEarlier?.()
     requestAnimationFrame(() => {
       if (!node) return
       node.scrollTop = top + (node.scrollHeight - before)
     })
-  }, [])
+  }, [hidden, onLoadEarlier])
 
   const jump = useCallback((id: string) => {
     pinned.current = false
@@ -175,10 +182,11 @@ export function ConversationTimeline({
             key={identity}
             className="animate-thread mx-auto flex w-full max-w-content flex-col gap-7 px-6 py-6"
           >
-            {hidden > 0 ? (
+            {hidden > 0 || hasEarlier ? (
               <button
                 type="button"
-                onClick={showEarlier}
+                disabled={loadingEarlier}
+                onClick={() => void showEarlier()}
                 className={cn(
                   "pressable mx-auto flex h-7 items-center gap-1.5 rounded-full bg-raised px-3",
                   "text-ui text-muted-foreground ring-1 ring-hairline",
@@ -186,9 +194,13 @@ export function ConversationTimeline({
                 )}
               >
                 <ChevronUpIcon className="size-3" />
-                {hidden === 1
-                  ? "Show 1 earlier turn"
-                  : `Show ${Math.min(hidden, MORE_TURNS)} earlier turns`}
+                {loadingEarlier
+                  ? "Loading earlier turns…"
+                  : hidden === 1
+                    ? "Show 1 earlier turn"
+                    : hidden > 1
+                      ? `Show ${Math.min(hidden, MORE_TURNS)} earlier turns`
+                      : "Show earlier turns"}
               </button>
             ) : null}
             {shown.map((exchange) => (

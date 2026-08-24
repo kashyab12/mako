@@ -11,7 +11,7 @@ import {
   type ThreadStatus,
 } from "@/state/threads"
 import type { Exchange as ExchangeData } from "@/lib/exchanges"
-import type { Thread } from "@/lib/types"
+import type { ViewedThread } from "@/state/thread-state"
 import {
   pendingThreadInput,
   threadToMessages,
@@ -38,11 +38,6 @@ import {
  * while it is open; the header holds ownership and agent controls. X or Escape
  * gives the native chat back.
  */
-
-type ViewedThread = Thread & {
-  streamRevision?: number
-  streamReplaceFrom?: number
-}
 
 interface ExchangeCache {
   path: string | null
@@ -115,7 +110,7 @@ function createExchangeBuilder() {
     ) {
       const fresh = threadToMessages(
         [entries[entryIndex]!],
-        entryIndex,
+        thread.pageStart + entryIndex,
         thread.ref.harness
       )
       for (const message of fresh) {
@@ -366,6 +361,9 @@ function Conversation() {
           ? lastExchangeId
           : undefined
       }
+      hasEarlier={thread.hasEarlier}
+      loadingEarlier={thread.loadingEarlier}
+      onLoadEarlier={() => threads.loadEarlier()}
       empty={
         <p className="pt-12 text-center text-ui text-faint">
           This session has no readable conversation.

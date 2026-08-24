@@ -104,6 +104,14 @@ export interface Thread {
   entries: ThreadEntry[]
 }
 
+export interface ThreadPage {
+  ref: ThreadRef
+  entries: ThreadEntry[]
+  start: number
+  total: number
+  hasEarlier: boolean
+}
+
 /** First line of the first user turn — the default title for every harness. */
 export function titleFrom(text: string | undefined): string | undefined {
   if (!text) return undefined

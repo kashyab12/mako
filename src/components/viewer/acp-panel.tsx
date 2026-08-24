@@ -11,7 +11,7 @@ import { toExchanges } from "@/lib/exchanges"
 import { threadToMessages } from "@/lib/foreign-thread"
 import { foldTools } from "@/lib/tools"
 import { acp, acpStore, useAcp } from "@/state/acp"
-import { useThreads } from "@/state/threads"
+import { threads, useThreads } from "@/state/threads"
 import type { AcpPermissionRequest } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import {
@@ -135,7 +135,7 @@ function Blocks({ starting = false }: { starting?: boolean }) {
             history.entries.filter(
               (entry) => entry.kind !== "user" || entry.echo !== true
             ),
-            0,
+            history.pageStart,
             history.ref.harness
           )
         : [],
@@ -163,6 +163,9 @@ function Blocks({ starting = false }: { starting?: boolean }) {
       exchanges={exchanges}
       streamingId={running ? lastExchangeId : undefined}
       failedId={session?.status === "failed" ? lastExchangeId : undefined}
+      hasEarlier={history?.hasEarlier}
+      loadingEarlier={history?.loadingEarlier}
+      onLoadEarlier={history ? () => threads.loadEarlier() : undefined}
       empty={
         <div className="mx-auto flex w-full max-w-content flex-col gap-4 px-6 py-6">
           <p className="pt-8 text-center text-ui leading-relaxed text-faint">

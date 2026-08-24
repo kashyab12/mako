@@ -15,7 +15,7 @@ import { providers, useProviders } from "@/state/providers"
 import { cn } from "@/lib/utils"
 import { formatBytes, formatRelative } from "@/lib/format"
 import { usageWindowLabel } from "@/lib/usage-window"
-import { CheckIcon, XIcon } from "lucide-react"
+import { CheckIcon, RefreshCwIcon, XIcon } from "lucide-react"
 import { toast } from "sonner"
 
 /** How each provider is controlled on this machine. Providers are data, not
@@ -96,6 +96,16 @@ export function AgentsSection() {
             keep syncing when closed
           </label>
         ) : null}
+        <button
+          type="button"
+          aria-label="Refresh provider profiles"
+          onClick={() =>
+            void providers.loadAll(true).then(() => providers.loadStatus())
+          }
+          className="pressable flex size-6 shrink-0 items-center justify-center rounded-md hover:bg-fill-hover"
+        >
+          <RefreshCwIcon className="size-3" />
+        </button>
       </p>
       <ListCard>
         {harnesses.map((entry) => (

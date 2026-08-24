@@ -15,6 +15,7 @@ export {
   type Thread,
   type ThreadEntry,
   type ThreadOrigin,
+  type ThreadPage,
   type ThreadRef,
   type TurnUsage,
 } from "./format.js"

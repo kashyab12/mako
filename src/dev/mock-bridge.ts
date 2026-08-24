@@ -523,6 +523,23 @@ export function installMockBridge() {
         },
       ],
     }),
+    pageThread: async (path: string, before?: number, limit = 100) => {
+      const bridge = window.mako
+      if (!bridge) return null
+      const thread = await bridge.openThread(path)
+      if (!thread) return null
+      const total = thread.entries.length
+      const end = Math.min(total, before ?? total)
+      const size = Math.min(200, Math.max(1, limit))
+      const start = Math.max(0, end - size)
+      return {
+        ref: thread.ref,
+        entries: thread.entries.slice(start, end),
+        start,
+        total,
+        hasEarlier: start > 0,
+      }
+    },
     threadContexts: mockThreadContexts,
     accounts: async () => [
       {

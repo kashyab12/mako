@@ -82,6 +82,30 @@ function fileProvider(root, hooks = {}) {
   }
 }
 
+async function pagedTailIsBoundedAndComplete() {
+  const root = temp("paging")
+  const path = join(root, "session.jsonl")
+  await writeFile(
+    path,
+    Array.from({ length: 250 }, (_, index) => `entry-${index}`).join("\n") + "\n"
+  )
+  const catalog = new SessionCatalog([fileProvider(root)])
+  await catalog.scan()
+  const tail = await catalog.page(path)
+  assert.equal(tail.entries.length, 100)
+  assert.equal(tail.start, 150)
+  assert.equal(tail.total, 250)
+  assert.equal(tail.hasEarlier, true)
+  const middle = await catalog.page(path, tail.start)
+  const first = await catalog.page(path, middle.start)
+  assert.deepEqual(
+    [...first.entries, ...middle.entries, ...tail.entries].map((entry) => entry.text),
+    Array.from({ length: 250 }, (_, index) => `entry-${index}`)
+  )
+  assert.equal(first.hasEarlier, false)
+  catalog.stop()
+}
+
 async function concurrentRefreshRace() {
   const root = temp("race")
   const path = join(root, "session.jsonl")
@@ -693,6 +717,7 @@ async function entrySinkBoundsMutatedPayloads() {
 }
 
 const tests = [
+  ["bounded complete timeline paging", pagedTailIsBoundedAndComplete],
   ["concurrent AB/A refresh race", concurrentRefreshRace],
   ["tail cursor regression", cursorNeverRegresses],
   ["split tool result convergence", splitToolResultsConverge],

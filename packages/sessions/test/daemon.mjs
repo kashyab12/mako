@@ -17,6 +17,13 @@ const thread = {
   },
   entries: [{ kind: "user", text: "Still opens — café 中文 🦈" }],
 }
+const page = {
+  ref: thread.ref,
+  entries: thread.entries,
+  start: 0,
+  total: 1,
+  hasEarlier: false,
+}
 let deliverEntries
 const catalog = {
   list: () => [],
@@ -24,6 +31,7 @@ const catalog = {
     await new Promise((resolve) => setTimeout(resolve, 150))
     return thread
   },
+  page: async () => page,
   follow: (_path, _fromByte, listener) => {
     deliverEntries = listener
     return () => {
@@ -43,6 +51,7 @@ await assert.rejects(
 )
 const client = await connectDaemon(socketPath, 100)
 assert.deepEqual(await client.open(thread.ref.path), thread)
+assert.deepEqual(await client.page(thread.ref.path), page)
 const streamed = new Promise((resolve) => {
   client.onEvent((event) => {
     if (event.event === "entries") resolve(event)

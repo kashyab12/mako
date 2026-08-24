@@ -1,6 +1,11 @@
 import assert from "node:assert/strict"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
+import { z } from "zod"
 import { resolveAcpConfigValue } from "../electron/acp-config.ts"
+import { ProviderProfileCache } from "../electron/provider-profile-cache.ts"
 import type { ProviderAccountCapability } from "../electron/providers/account-capability.ts"
 import { providerHost } from "../electron/providers/index.ts"
 import type { NativeRunner } from "../electron/providers/native-runner.ts"
@@ -22,6 +27,31 @@ assert.equal(
   resolveAcpConfigValue(cursorModelOption, "claude-opus-5"),
   "claude-opus-5[thinking=true,context=300k,effort=high]"
 )
+
+const cacheDir = await mkdtemp(join(tmpdir(), "mako-provider-cache-"))
+const cachePath = join(cacheDir, "profiles.json")
+const cachedProfile = {
+  id: "cursor",
+  label: "Cursor",
+  available: true,
+  transport: "acp",
+  models: [],
+  capabilities: ["models"],
+} satisfies HarnessProfile
+try {
+  const firstCache = new ProviderProfileCache(cachePath)
+  await firstCache.put("cursor:default", cachedProfile)
+  await firstCache.put("cursor:other", cachedProfile)
+  const restartedCache = new ProviderProfileCache(cachePath)
+  assert.deepEqual(await restartedCache.get("cursor:default"), cachedProfile)
+  const cacheFileSchema = z.object({
+    snapshots: z.record(z.string(), z.unknown()),
+  })
+  const stored = cacheFileSchema.parse(JSON.parse(await readFile(cachePath, "utf8")))
+  assert.equal(Object.keys(stored.snapshots).length, 1)
+} finally {
+  await rm(cacheDir, { recursive: true, force: true })
+}
 
 const providers = providerHost.profiles.list().map((loader) => loader.provider)
 assert.ok(providers.length > 0)

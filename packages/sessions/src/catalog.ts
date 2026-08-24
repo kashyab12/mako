@@ -19,7 +19,13 @@
 import { existsSync, realpathSync, watch, type FSWatcher } from "node:fs"
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
-import type { Thread, ThreadEntry, ThreadOrigin, ThreadRef } from "./format.js"
+import type {
+  Thread,
+  ThreadEntry,
+  ThreadOrigin,
+  ThreadPage,
+  ThreadRef,
+} from "./format.js"
 import type {
   NativeFile,
   SessionFollower,
@@ -262,6 +268,22 @@ export class SessionCatalog {
     // The native store cannot answer — deleted, pruned, or gone with a
     // machine. The archive is exactly for this moment.
     return this.archive ? this.archive.read(path) : null
+  }
+
+  async page(path: string, before?: number, limit = 100): Promise<ThreadPage | null> {
+    const thread = await this.open(path, false)
+    if (!thread) return null
+    const total = thread.entries.length
+    const end = Math.min(total, Math.max(0, before ?? total))
+    const size = Math.min(200, Math.max(1, limit))
+    const start = Math.max(0, end - size)
+    return {
+      ref: thread.ref,
+      entries: thread.entries.slice(start, end),
+      start,
+      total,
+      hasEarlier: start > 0,
+    }
   }
 
   /* ------------------------------------------------------------ watching */

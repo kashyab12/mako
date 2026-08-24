@@ -36,9 +36,9 @@ function admit(profile: HarnessProfile): void {
 }
 
 export const providers = {
-  async loadAll(): Promise<void> {
+  async loadAll(force = false): Promise<void> {
     if (!hasBridge()) return
-    const profiles = await getMako().harnessProfiles().catch(() => [])
+    const profiles = await getMako().harnessProfiles(force).catch(() => [])
     for (const profile of profiles) admit(profile)
   },
 

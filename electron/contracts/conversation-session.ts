@@ -10,6 +10,7 @@ export type {
   Thread,
   ThreadEntry,
   ThreadOrigin,
+  ThreadPage,
   ThreadRef,
   TurnUsage,
 } from "@mako/sessions"

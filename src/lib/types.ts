@@ -12,6 +12,7 @@ export type {
   Harness,
   Thread,
   ThreadEntry,
+  ThreadPage,
   ThreadRef,
   ThreadRunState,
   TurnUsage,

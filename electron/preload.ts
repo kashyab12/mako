@@ -32,6 +32,7 @@ import type {
   ThreadContextOptions,
   ThreadFileContext,
   ThreadInlineContext,
+  ThreadPage,
   ThreadRef,
   ThreadRunState,
   StagedFile,
@@ -91,6 +92,8 @@ const api = {
     ),
   openThread: (path: string) =>
     invokeTrustedHost<Thread | null>("mako:thread-open", path),
+  pageThread: (path: string, before?: number, limit?: number) =>
+    invokeTrustedHost<ThreadPage | null>("mako:thread-page", path, before, limit),
   threadContexts,
   followThread: (path: string, fromByte: number) =>
     invokeTrustedHost<void>("mako:thread-follow", path, fromByte),
@@ -196,8 +199,8 @@ const api = {
     invokeTrustedHost<AccountUsage>("mako:account-usage", harness, name),
 
   /* The Agents settings section. */
-  harnessProfiles: () =>
-    invokeTrustedHost<HarnessProfile[]>("mako:harness-profiles"),
+  harnessProfiles: (force?: boolean) =>
+    invokeTrustedHost<HarnessProfile[]>("mako:harness-profiles", force),
   harnessAvailability: () =>
     invokeTrustedHost<Record<string, boolean>>("mako:harness-availability"),
   daemonStatus: () =>

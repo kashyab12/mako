@@ -8,7 +8,10 @@ import {
 } from "@/state/thread-queue"
 import { applyThreadRun, threadStatus } from "@/state/thread-status"
 import { canResumeInteractively } from "@/state/thread-tuning"
-import { leaveViewerForLive } from "@/state/thread-viewing"
+import {
+  leaveViewerForLive,
+  viewedThread,
+} from "@/state/thread-viewing"
 import { threadsStore } from "@/state/thread-store"
 import { toast } from "sonner"
 
@@ -156,7 +159,7 @@ export const threadContinuationActions = {
       if (result.kind === "emitted") {
         const thread = await getMako().openThread(result.path)
         if (thread) {
-          threadsStore.set({ viewing: thread, run: null })
+          threadsStore.set({ viewing: viewedThread(thread), run: null })
           void getMako().followThread(result.path, thread.ref.bytes ?? 0)
           return threadContinuationActions.reply(thread.ref, prompt)
         }
@@ -278,7 +281,7 @@ export const threadContinuationActions = {
       if (result.kind === "emitted") {
         const thread = await getMako().openThread(result.path)
         if (!thread) return false
-        threadsStore.set({ viewing: thread, run: null })
+        threadsStore.set({ viewing: viewedThread(thread), run: null })
         void getMako().followThread(result.path, thread.ref.bytes ?? 0)
         toast(`${label} session imported`, {
           description: "Reply below when you are ready to continue.",
