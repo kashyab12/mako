@@ -7,6 +7,9 @@ export interface DaemonInfo {
   pid: number
   startedAt: number
   sessions: number
+  rss?: number
+  heapUsed?: number
+  eventLoopP99Ms?: number
 }
 
 interface ProviderState {

@@ -13,7 +13,7 @@ import { HARNESS_LABEL } from "@/components/rail/harness-meta"
 import { setPref, usePrefs } from "@/state/prefs"
 import { providers, useProviders } from "@/state/providers"
 import { cn } from "@/lib/utils"
-import { formatRelative } from "@/lib/format"
+import { formatBytes, formatRelative } from "@/lib/format"
 import { usageWindowLabel } from "@/lib/usage-window"
 import { CheckIcon, XIcon } from "lucide-react"
 import { toast } from "sonner"
@@ -80,7 +80,7 @@ export function AgentsSection() {
         />
         <span className="min-w-0 flex-1">
           {daemon
-            ? `Sync daemon running — ${daemon.sessions} sessions watched, up since ${formatRelative(new Date(daemon.startedAt).toISOString())}, syncing even with the app closed`
+            ? `Sync daemon running — ${daemon.sessions} sessions watched · ${daemon.rss === undefined ? "memory unavailable" : `${formatBytes(daemon.rss)} RSS`} · ${daemon.eventLoopP99Ms === undefined ? "event-loop delay unavailable" : `${daemon.eventLoopP99Ms.toFixed(1)} ms event-loop p99`} · up since ${formatRelative(new Date(daemon.startedAt).toISOString())}`
             : "Sync daemon not running — the app is watching sessions itself while open"}
         </span>
         {loginStart !== null ? (

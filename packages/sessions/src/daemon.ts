@@ -32,6 +32,7 @@ import {
 } from "node:net"
 import { chmod, mkdir, open, readFile, unlink } from "node:fs/promises"
 import { homedir } from "node:os"
+import { monitorEventLoopDelay } from "node:perf_hooks"
 import { dirname, join } from "node:path"
 import { StringDecoder } from "node:string_decoder"
 import type { SessionCatalog } from "./catalog.js"
@@ -50,6 +51,9 @@ export interface DaemonStats {
   startedAt: number
   sessions: number
   version: number
+  rss?: number
+  heapUsed?: number
+  eventLoopP99Ms?: number
 }
 
 type JsonScalar = boolean | number | string | null
@@ -208,6 +212,8 @@ export async function serveCatalog(
   if (process.platform !== "win32") await unlink(socketPath).catch(() => {})
 
   const startedAt = Date.now()
+  const eventLoopDelay = monitorEventLoopDelay({ resolution: 20 })
+  eventLoopDelay.enable()
   const clients = new Set<Socket>()
   const follows = new Map<Socket, Map<string, () => void>>()
 
@@ -259,7 +265,8 @@ export async function serveCatalog(
     const handle = async (frame: DaemonRequestFrame) => {
       try {
         switch (frame.op) {
-          case "ping":
+          case "ping": {
+            const memory = process.memoryUsage()
             reply({
               id: frame.id,
               ok: true,
@@ -268,9 +275,13 @@ export async function serveCatalog(
                 startedAt,
                 sessions: catalog.list().length,
                 version: PROTOCOL_VERSION,
+                rss: memory.rss,
+                heapUsed: memory.heapUsed,
+                eventLoopP99Ms: Number(eventLoopDelay.percentile(99)) / 1_000_000,
               },
             })
             return
+          }
           case "list":
             reply({
               id: frame.id,
@@ -349,6 +360,7 @@ export async function serveCatalog(
   })
 
   server.once("close", () => {
+    eventLoopDelay.disable()
     stopEvents()
     void ownership.release()
     if (process.platform !== "win32") void unlink(socketPath).catch(() => {})
@@ -361,6 +373,7 @@ export async function serveCatalog(
     if (process.platform !== "win32") await chmod(socketPath, 0o600)
     return server
   } catch (error) {
+    eventLoopDelay.disable()
     stopEvents()
     await ownership.release()
     throw error
@@ -670,12 +683,21 @@ function parseDaemonStats(value: JsonValue | undefined): DaemonStats | null {
   const startedAt = readNumber(value, "startedAt")
   const sessions = readNumber(value, "sessions")
   const version = readNumber(value, "version")
-  return pid !== undefined &&
-    startedAt !== undefined &&
-    sessions !== undefined &&
-    version !== undefined
-    ? { pid, startedAt, sessions, version }
-    : null
+  if (
+    pid === undefined ||
+    startedAt === undefined ||
+    sessions === undefined ||
+    version === undefined
+  )
+    return null
+  const result: DaemonStats = { pid, startedAt, sessions, version }
+  const rss = readNumber(value, "rss")
+  const heapUsed = readNumber(value, "heapUsed")
+  const eventLoopP99Ms = readNumber(value, "eventLoopP99Ms")
+  if (rss !== undefined) result.rss = rss
+  if (heapUsed !== undefined) result.heapUsed = heapUsed
+  if (eventLoopP99Ms !== undefined) result.eventLoopP99Ms = eventLoopP99Ms
+  return result
 }
 
 function parseThread(value: JsonValue | undefined): Thread | null {
