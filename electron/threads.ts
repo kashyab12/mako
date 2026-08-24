@@ -82,8 +82,8 @@ export function installThreads(send: (event: HostEvent) => void): void {
       }
       if (await connectViaDaemon()) return
       await startDaemon()
-      for (let attempt = 0; attempt < 10; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 50))
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100))
         if (await connectViaDaemon()) return
       }
       await runLocalCatalog()
