@@ -4,7 +4,6 @@ import type { ThreadStatus } from "@/state/threads"
 import {
   CheckIcon,
   Loader2Icon,
-  LockKeyholeIcon,
   ShieldQuestionIcon,
   TriangleAlertIcon,
 } from "lucide-react"
@@ -31,7 +30,9 @@ export function ThreadStatusMark({
       return (
         <ShieldQuestionIcon
           className="size-3 shrink-0 text-caution"
-          aria-label={status.detail ? `Needs input: ${status.detail}` : "Needs input"}
+          aria-label={
+            status.detail ? `Needs input: ${status.detail}` : "Needs input"
+          }
         />
       )
     case "failed":
@@ -66,12 +67,6 @@ export function ThreadStatusMark({
         />
       )
     case "external-open":
-      return (
-        <LockKeyholeIcon
-          className="size-3 shrink-0 text-faint/70"
-          aria-label="Open in another app"
-        />
-      )
     case "idle":
       return updatedAt ? (
         <span className="tabular shrink-0 text-label text-faint">

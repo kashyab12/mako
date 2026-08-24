@@ -8,10 +8,7 @@ import {
 } from "@/state/thread-queue"
 import { applyThreadRun, threadStatus } from "@/state/thread-status"
 import { canResumeInteractively } from "@/state/thread-tuning"
-import {
-  leaveViewerForLive,
-  viewedThread,
-} from "@/state/thread-viewing"
+import { leaveViewerForLive, viewedThread } from "@/state/thread-viewing"
 import { threadsStore } from "@/state/thread-store"
 import { toast } from "sonner"
 
@@ -94,16 +91,13 @@ export const threadContinuationActions = {
   async reply(ref: ThreadRef, prompt: string): Promise<boolean> {
     if (!hasBridge()) return false
     const status = threadStatus(ref)
-    if (
-      status.kind === "observed" ||
-      status.kind === "external-open" ||
-      status.kind === "external-active"
-    ) {
-      const external = status.kind.startsWith("external-")
-      toast(external ? "Open in another app" : "Live activity detected", {
-        description: external
-          ? "That client owns this native session. Choose another agent to continue in a new thread."
-          : "Wait for this turn to settle, or choose another agent to continue in a new thread.",
+    if (status.kind === "external-open" || status.kind === "external-active") {
+      return threadContinuationActions.moveAndSend(ref, ref.harness, prompt)
+    }
+    if (status.kind === "observed") {
+      toast("Live activity detected", {
+        description:
+          "Wait for this turn to settle, or choose another agent to continue in a new thread.",
       })
       return false
     }
@@ -118,10 +112,9 @@ export const threadContinuationActions = {
       canResumeInteractively(ref.harness) &&
       threadsStore.get().acpable.includes(ref.harness)
     ) {
-      const resumed = await (await import("@/state/acp")).acp.resumeAndSend(
-        ref,
-        prompt
-      )
+      const resumed = await (
+        await import("@/state/acp")
+      ).acp.resumeAndSend(ref, prompt)
       if (resumed) return true
     }
     try {
@@ -166,7 +159,9 @@ export const threadContinuationActions = {
       } else if (result.kind === "prepared") {
         const supportsLive = threadsStore.get().acpable.includes(harness)
         const ok = supportsLive
-          ? await (await import("@/state/acp")).acp.startFresh(
+          ? await (
+              await import("@/state/acp")
+            ).acp.startFresh(
               harness,
               result.cwd,
               result.prompt,

@@ -12,15 +12,11 @@ import {
 } from "@/state/threads"
 import type { Exchange as ExchangeData } from "@/lib/exchanges"
 import type { ViewedThread } from "@/state/thread-state"
-import {
-  pendingThreadInput,
-  threadToMessages,
-} from "@/lib/foreign-thread"
+import { pendingThreadInput, threadToMessages } from "@/lib/foreign-thread"
 import {
   ArrowRightLeftIcon,
   CheckIcon,
   Loader2Icon,
-  LockKeyholeIcon,
   RadioIcon,
   ShieldQuestionIcon,
   TriangleAlertIcon,
@@ -208,13 +204,14 @@ function SessionBar() {
     thread ? threadStatus(thread.ref, state) : null
   )
   if (!thread || !sessionStatus) return null
-  const locked =
+  const openElsewhere =
     sessionStatus.kind === "external-open" ||
     sessionStatus.kind === "external-active"
   const waitingForInput = pendingThreadInput(thread.entries) !== null
+  const provider = harnessLabel(thread.ref.harness)
   const status = waitingForInput
-    ? `Waiting for input in ${harnessLabel(thread.ref.harness)}`
-    : statusLabel(sessionStatus, thread.ref.archived === true)
+    ? `Waiting for input in ${provider}`
+    : statusLabel(sessionStatus, thread.ref.archived === true, provider)
   return (
     <div className="flex h-11 shrink-0 items-center gap-2 border-b border-hairline px-3.5">
       <HarnessIcon harness={thread.ref.harness} className="size-3.5" />
@@ -222,25 +219,17 @@ function SessionBar() {
         <p className="truncate text-ui font-medium text-foreground/90">
           {thread.ref.title ?? "Untitled session"}
         </p>
-        <p
-          title={
-            locked
-              ? "This session is owned by another client. Its approvals stay there while Mako follows native updates."
-              : undefined
-          }
-          className="flex items-center gap-1 truncate text-label text-faint"
-        >
+        <p className="flex items-center gap-1 truncate text-label text-faint">
           <SessionStatusIcon status={sessionStatus} waiting={waitingForInput} />
           {status}
         </p>
       </div>
       <Action
         size="xs"
-        disabled={locked}
         aria-label={`Continue with ${harnessLabel(thread.ref.harness)}`}
         title={
-          locked
-            ? "This native session is owned by another app"
+          openElsewhere
+            ? `Starts a new ${harnessLabel(thread.ref.harness)} session here; the session open elsewhere stays unchanged`
             : `Resume with ${harnessLabel(thread.ref.harness)}`
         }
         onClick={() => {
@@ -254,9 +243,7 @@ function SessionBar() {
         size="xs"
         aria-label="Change the agent for the next message"
         title="Continue in a new session; this one stays unchanged"
-        onClick={() =>
-          window.dispatchEvent(new CustomEvent("mako:pick-agent"))
-        }
+        onClick={() => window.dispatchEvent(new CustomEvent("mako:pick-agent"))}
       >
         <ArrowRightLeftIcon />
         Change agent…
@@ -273,7 +260,11 @@ function SessionBar() {
   )
 }
 
-function statusLabel(status: ThreadStatus, archived: boolean): string {
+function statusLabel(
+  status: ThreadStatus,
+  archived: boolean,
+  provider: string
+): string {
   switch (status.kind) {
     case "working":
       return status.detail ?? "Working"
@@ -286,9 +277,9 @@ function statusLabel(status: ThreadStatus, archived: boolean): string {
     case "observed":
       return "Live activity"
     case "external-open":
-      return "Open in another app"
+      return `Open in ${provider}`
     case "external-active":
-      return "Live in another app"
+      return `Live in ${provider}`
     case "idle":
       return archived ? "Archived history" : "Ready to resume"
   }
@@ -305,7 +296,9 @@ function SessionStatusIcon({
     return <ShieldQuestionIcon className="size-3 shrink-0 text-caution" />
   switch (status.kind) {
     case "working":
-      return <Loader2Icon className="size-3 shrink-0 animate-spin text-ember/80" />
+      return (
+        <Loader2Icon className="size-3 shrink-0 animate-spin text-ember/80" />
+      )
     case "needs-permission":
       return <ShieldQuestionIcon className="size-3 shrink-0 text-caution" />
     case "failed":
@@ -313,10 +306,9 @@ function SessionStatusIcon({
     case "review":
       return <CheckIcon className="size-3 shrink-0 text-positive" />
     case "observed":
+    case "external-active":
       return <RadioIcon className="size-3 shrink-0" />
     case "external-open":
-    case "external-active":
-      return <LockKeyholeIcon className="size-3 shrink-0" />
     case "idle":
       return null
   }
@@ -382,7 +374,7 @@ function Conversation() {
           <div className="animate-enter flex items-center gap-2 px-0.5 text-ui">
             <HarnessIcon
               harness={thread.ref.harness}
-              className="size-3.5 animate-live"
+              className="animate-live size-3.5"
             />
             <span className="shimmer">
               {harnessLabel(thread.ref.harness)} is working…
@@ -393,4 +385,3 @@ function Conversation() {
     />
   )
 }
-
