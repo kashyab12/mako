@@ -15,18 +15,24 @@ import { MessageSquarePlusIcon, PencilIcon, Trash2Icon } from "lucide-react"
 
 /** The comment shown under a line, or the field for writing one. */
 export function Annotation({
+  workspace,
   path,
   line,
   side,
   comments,
 }: {
+  workspace: string
   path: string
   line: number
   side: "additions" | "deletions"
   comments: ReviewComment[]
 }) {
   const draft = useReview((state) => state.draft)
-  const editing = draft?.path === path && draft.line === line && draft.side === side
+  const editing =
+    draft?.workspace === workspace &&
+    draft.path === path &&
+    draft.line === line &&
+    draft.side === side
   const mine = comments.filter((comment) => comment.line === line && comment.side === side)
 
   return (
@@ -151,8 +157,12 @@ export function GutterAdd({ onClick }: { onClick: () => void }) {
  * a review usually wants a sentence of framing on top, and a button that sent
  * immediately would make adding one impossible.
  */
-export function ReviewBar() {
-  const comments = useReview((state) => state.comments)
+export function ReviewBar({ workspace }: { workspace: string }) {
+  const allComments = useReview((state) => state.comments)
+  const comments = useMemo(
+    () => allComments.filter((comment) => comment.workspace === workspace),
+    [allComments, workspace]
+  )
   const count = comments.length
   const files = useMemo(() => new Set(comments.map((comment) => comment.path)).size, [comments])
 
@@ -166,7 +176,7 @@ export function ReviewBar() {
       </span>
       <button
         type="button"
-        onClick={() => review.clear()}
+        onClick={() => review.clear(workspace)}
         className="pressable rounded px-1 text-label text-faint hover:text-foreground"
       >
         Discard
@@ -175,7 +185,7 @@ export function ReviewBar() {
         tone="solid"
         onClick={() => {
           window.dispatchEvent(new CustomEvent("mako:compose", { detail: composeReview(comments) }))
-          review.clear()
+          review.clear(workspace)
         }}
       >
         Send to the agent

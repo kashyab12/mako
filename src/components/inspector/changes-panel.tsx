@@ -63,7 +63,15 @@ const MARK = {
 } satisfies Record<GitFile["status"], StatusMark>
 
 export function ChangesPanel() {
+  const workspace = useSession(
+    (state) => state.meta?.cwd ?? state.git?.root ?? "no-workspace"
+  )
+  return <WorkspaceChanges key={workspace} />
+}
+
+function WorkspaceChanges() {
   const git = useSession((state) => state.git)
+  const workspace = git?.root ?? git?.cwd ?? ""
   const theme = usePrefs((prefs) => prefs.theme)
   const collapsed = usePrefs((prefs) => prefs.collapsedDirs)
   const selectedDiffs = usePrefs((prefs) => prefs.selectedDiffs)
@@ -152,8 +160,12 @@ export function ChangesPanel() {
   const allComments = useReview((state) => state.comments)
   const draft = useReview((state) => state.draft)
   const comments = useMemo(
-    () => allComments.filter((comment) => comment.path === path),
-    [allComments, path]
+    () =>
+      allComments.filter(
+        (comment) =>
+          comment.workspace === workspace && comment.path === path
+      ),
+    [allComments, path, workspace]
   )
 
   /**
@@ -173,9 +185,14 @@ export function ChangesPanel() {
       list.push({ lineNumber: line, side })
     }
     for (const comment of comments) add(comment.line, comment.side)
-    if (draft && draft.path === path) add(draft.line, draft.side)
+    if (
+      draft &&
+      draft.workspace === workspace &&
+      draft.path === path
+    )
+      add(draft.line, draft.side)
     return list
-  }, [comments, draft, path])
+  }, [comments, draft, path, workspace])
 
   const toggleDir = useCallback((key: string) => {
     // Read through the store rather than the hook value so the callback stays
@@ -355,6 +372,7 @@ export function ChangesPanel() {
               lineAnnotations={annotations}
               renderAnnotation={(annotation) => (
                 <Annotation
+                  workspace={workspace}
                   path={path ?? ""}
                   line={annotation.lineNumber}
                   side={annotation.side}
@@ -367,6 +385,7 @@ export function ChangesPanel() {
                     const hovered = getHoveredLine()
                     if (!hovered || !path) return
                     review.start({
+                      workspace,
                       path,
                       line: hovered.lineNumber,
                       side: hovered.side,
@@ -383,7 +402,7 @@ export function ChangesPanel() {
       ) : null}
 
       <CommitsSection onPickFile={pickCommitFile} onPickCommit={pickCommit} />
-      <ReviewBar />
+      <ReviewBar workspace={workspace} />
       <CommitBox staged={staged} total={files.length} />
       <PullRequestCard />
     </div>

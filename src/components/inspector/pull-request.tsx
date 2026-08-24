@@ -52,6 +52,7 @@ export function PullRequestCard() {
   const pull = useGitHub((state) => state.pull)
   const loading = useGitHub((state) => state.loading)
   const cached = useGitHub((state) => state.branch)
+  const cachedRoot = useGitHub((state) => state.root)
 
   const branch = useSession((state) => state.git?.branch)
   const ahead = useSession((state) => state.git?.ahead ?? 0)
@@ -79,10 +80,11 @@ export function PullRequestCard() {
 
   useEffect(() => {
     if (!root) return
-    if (cached !== branch) void github.refresh(branch)
-  }, [branch, cached, root])
+    if (cachedRoot !== root || cached !== branch)
+      void github.refresh(root, branch)
+  }, [branch, cached, cachedRoot, root])
 
-  if (!root || !status) return null
+  if (!root || cachedRoot !== root || !status) return null
 
   const onDefault = Boolean(status.defaultBranch && branch === status.defaultBranch)
   const unpublished = Boolean(branch) && !upstream
@@ -366,6 +368,7 @@ function ComposePull({
 
 /** An open pull request, in one line plus whatever CI has to say. */
 function PullSummary({ pull, loading }: { pull: Pull; loading: boolean }) {
+  const root = useGitHub((state) => state.root)
   const checks = useMemo(() => summarize(pull.checks), [pull.checks])
   const [merging, setMerging] = useState(false)
   const mergeBlocked =
@@ -435,7 +438,7 @@ function PullSummary({ pull, loading }: { pull: Pull; loading: boolean }) {
         <IconAction
           label="Refresh"
           size="xs"
-          onClick={() => void github.refresh(pull.head)}
+          onClick={() => root && void github.refresh(root, pull.head)}
           data-on={loading || undefined}
         >
           <RefreshCwIcon className={loading ? "animate-spin" : undefined} />

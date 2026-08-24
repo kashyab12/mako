@@ -17,6 +17,7 @@ export interface GitHubState {
   loading: boolean
   /** The branch the current `pull` was fetched for, so a switch invalidates it. */
   branch?: string
+  root?: string
   /** The signed-in user's avatar as a data URL, for the identity badge. */
   userAvatar?: string
 }
@@ -27,11 +28,30 @@ export const useGitHub = createHook(githubStore)
 let generation = 0
 
 export const github = {
-  /** Load status once; it does not change while the app is open. */
-  async ensureStatus() {
-    if (!hasBridge() || githubStore.get().status) return
+  async ensureStatus(root?: string) {
+    if (!hasBridge()) return
+    const current = githubStore.get()
+    if (current.status && (root === undefined || current.root === root)) return
+    const mine = ++generation
+    if (root !== undefined) {
+      githubStore.set({
+        root,
+        status: undefined,
+        pull: null,
+        branch: undefined,
+        loading: true,
+      })
+    }
     const status = await getMako().githubStatus().catch(() => undefined)
-    if (status) githubStore.set({ status })
+    if (mine !== generation) return
+    githubStore.set({
+      status,
+      root: root ?? current.root,
+      loading: false,
+      userAvatar: status?.authenticated
+        ? githubStore.get().userAvatar
+        : undefined,
+    })
     void github.ensureUserAvatar()
   },
 
@@ -44,19 +64,20 @@ export const github = {
     if (avatar) githubStore.set({ userAvatar: avatar })
   },
 
-  async refresh(branch?: string) {
+  async refresh(root: string, branch?: string) {
     if (!hasBridge()) return
-    await github.ensureStatus()
-    const status = githubStore.get().status
-    if (!status?.authenticated || !status.repo) {
-      githubStore.set({ pull: null, loading: false, branch, userAvatar: undefined })
+    await github.ensureStatus(root)
+    const status = githubStore.get()
+    if (status.root !== root) return
+    if (!status.status?.authenticated || !status.status.repo) {
+      githubStore.set({ pull: null, loading: false, branch, root })
       return
     }
     const mine = ++generation
     githubStore.set({ loading: true })
     const pull = await getMako().pullRequest().catch(() => null)
-    if (mine !== generation) return
-    githubStore.set({ pull, loading: false, branch })
+    if (mine !== generation || githubStore.get().root !== root) return
+    githubStore.set({ pull, loading: false, branch, root })
   },
 
   listBranches(): Promise<string[]> {
@@ -64,19 +85,23 @@ export const github = {
   },
 
   async create(options: { title: string; body: string; base?: string; draft?: boolean }) {
+    const root = githubStore.get().root
     const pull = await getMako().createPull(options)
-    githubStore.set({ pull })
+    if (githubStore.get().root === root) githubStore.set({ pull })
     return pull
   },
 
   async merge(strategy: "merge" | "squash" | "rebase") {
+    const root = githubStore.get().root
     const pull = await getMako().mergePull(strategy)
-    githubStore.set({ pull })
+    if (githubStore.get().root === root) githubStore.set({ pull })
     return pull
   },
 
   async rerun() {
+    const { root, branch } = githubStore.get()
+    if (!root) return
     await getMako().rerunChecks()
-    await github.refresh(githubStore.get().branch)
+    await github.refresh(root, branch)
   },
 }

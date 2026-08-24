@@ -16,6 +16,7 @@ import { createHook, createStore } from "@/state/store"
 
 export interface ReviewComment {
   id: string
+  workspace: string
   /** Workspace-relative, matching the diff's own paths. */
   path: string
   line: number
@@ -27,6 +28,7 @@ export interface ReviewComment {
 }
 
 export interface Draft {
+  workspace: string
   path: string
   line: number
   side: "additions" | "deletions"
@@ -79,6 +81,7 @@ function parseComment(value: JsonValue): ReviewComment | null {
   if (
     !isJsonObject(value) ||
     !isJsonString(value.id) ||
+    !isJsonString(value.workspace) ||
     !isJsonString(value.path) ||
     !isJsonNumber(value.line) ||
     !Number.isInteger(value.line) ||
@@ -90,6 +93,7 @@ function parseComment(value: JsonValue): ReviewComment | null {
   }
   return {
     id: value.id,
+    workspace: value.workspace,
     path: value.path,
     line: value.line,
     side: value.side,
@@ -110,8 +114,8 @@ function parseComments(value: JsonValue): ReviewComment[] {
 
 /**
  * Persisted, because losing a page of review notes to an accidental reload is
- * the kind of small disaster that stops people trusting a feature. Keyed by
- * nothing — they belong to the working tree, and the working tree is one thing.
+ * the kind of small disaster that stops people trusting a feature. The
+ * workspace key keeps identical relative paths in different projects apart.
  */
 function load(): ReviewComment[] {
   try {
@@ -171,7 +175,18 @@ export const review = {
     }
     reviewStore.set({
       comments: text
-        ? [...comments, { id: nextId(), path: draft.path, line: draft.line, side: draft.side, code: draft.code, body: text }]
+        ? [
+            ...comments,
+            {
+              id: nextId(),
+              workspace: draft.workspace,
+              path: draft.path,
+              line: draft.line,
+              side: draft.side,
+              code: draft.code,
+              body: text,
+            },
+          ]
         : comments,
       draft: undefined,
     })
@@ -179,7 +194,14 @@ export const review = {
 
   edit(comment: ReviewComment) {
     reviewStore.set({
-      draft: { path: comment.path, line: comment.line, side: comment.side, code: comment.code, id: comment.id },
+      draft: {
+        workspace: comment.workspace,
+        path: comment.path,
+        line: comment.line,
+        side: comment.side,
+        code: comment.code,
+        id: comment.id,
+      },
     })
   },
 
@@ -187,12 +209,23 @@ export const review = {
     reviewStore.set({ comments: reviewStore.get().comments.filter((c) => c.id !== id) })
   },
 
-  clear() {
-    reviewStore.set({ comments: [], draft: undefined })
+  clear(workspace?: string) {
+    reviewStore.set({
+      comments: workspace
+        ? reviewStore
+            .get()
+            .comments.filter((comment) => comment.workspace !== workspace)
+        : [],
+      draft: undefined,
+    })
   },
 
-  forFile(path: string): ReviewComment[] {
-    return reviewStore.get().comments.filter((comment) => comment.path === path)
+  forFile(workspace: string, path: string): ReviewComment[] {
+    return reviewStore
+      .get()
+      .comments.filter(
+        (comment) => comment.workspace === workspace && comment.path === path
+      )
   },
 }
 
