@@ -26,6 +26,7 @@ import {
 } from "../src/lib/thread-folders.ts"
 import { acpBlocksToMessages } from "../src/lib/acp-blocks.ts"
 import { contextAccounting } from "../src/lib/context-accounting.ts"
+import { runningTerminalForWorkspace } from "../src/state/terminal.ts"
 import { responseSections } from "../src/lib/exchanges.ts"
 import {
   pendingThreadInput,
@@ -35,6 +36,7 @@ import { acpStore, applyAcpUpdates } from "../src/state/acp.ts"
 import type {
   ChatMessage,
   HarnessProfile,
+  TerminalSession,
   Thread,
   ThreadEntry,
   ThreadRef,
@@ -42,6 +44,31 @@ import type {
 
 const css = readFileSync(new URL("../src/index.css", import.meta.url), "utf8")
 assert.doesNotMatch(css, /\binfinite\b/)
+
+const terminalSession = (
+  id: string,
+  cwd: string,
+  status: TerminalSession["status"]
+): TerminalSession => ({
+  id,
+  cwd,
+  status,
+  title: id,
+  createdAt: 1,
+  updatedAt: 1,
+  cols: 80,
+  rows: 24,
+  sequence: 0,
+})
+const restoredTerminals = [
+  terminalSession("dead-current", "/repo/a", "exited"),
+  terminalSession("live-other", "/repo/b", "running"),
+]
+assert.equal(runningTerminalForWorkspace(restoredTerminals, "/repo/a"), undefined)
+assert.equal(
+  runningTerminalForWorkspace(restoredTerminals, "/repo/b")?.id,
+  "live-other"
+)
 
 for (const id of ["perf-a", "perf-b", "perf-c"]) {
   writeCache(id, {

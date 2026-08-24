@@ -30,6 +30,8 @@ export const terminalStore = createStore<TerminalState>({
 let subscribers = 0
 let unsubscribe: (() => void) | undefined
 let resyncing = false
+let creatingWorkspace = false
+let desiredWorkspace: string | undefined
 let recentOutputCharacters = 0
 let recentOutputs: TerminalOutput[] = []
 const outputListeners = new Set<(output: TerminalOutput) => void>()
@@ -64,6 +66,15 @@ function clearRecentOutputs() {
 
 function sortSessions(sessions: TerminalSession[]) {
   return [...sessions].sort((left, right) => right.createdAt - left.createdAt)
+}
+
+export function runningTerminalForWorkspace(
+  sessions: TerminalSession[],
+  cwd: string
+) {
+  return sessions.find(
+    (session) => session.status === "running" && session.cwd === cwd
+  )
 }
 
 function upsert(session: TerminalSession) {
@@ -181,11 +192,10 @@ async function load() {
     const sessions = sortSessions(await getMako().terminalList())
     const current = terminalStore.get().activeId
     const held = sessions.find((session) => session.id === current)
-    const activeId =
-      (held?.status === "running" ? held.id : undefined) ??
-      sessions.find((session) => session.status === "running")?.id ??
-      held?.id ??
-      sessions[0]?.id
+    const activeId = desiredWorkspace
+      ? runningTerminalForWorkspace(sessions, desiredWorkspace)?.id
+      : (held?.status === "running" ? held.id : undefined) ??
+        sessions.find((session) => session.status === "running")?.id
     clearRecentOutputs()
     terminalStore.set({
       phase: "ready",
@@ -237,6 +247,27 @@ export const terminalActions = {
     return load()
   },
 
+  async ensureWorkspace(cwd: string, cols = 80, rows = 24) {
+    desiredWorkspace = cwd
+    if (terminalStore.get().phase !== "ready" || creatingWorkspace) return
+    creatingWorkspace = true
+    try {
+      while (desiredWorkspace) {
+        const target = desiredWorkspace
+        desiredWorkspace = undefined
+        const state = terminalStore.get()
+        const running = runningTerminalForWorkspace(state.sessions, target)
+        if (running) {
+          if (state.activeId !== running.id) terminalActions.activate(running.id)
+        } else {
+          await terminalActions.create(target, cols, rows)
+        }
+      }
+    } finally {
+      creatingWorkspace = false
+    }
+  },
+
   activate(sessionId: string) {
     if (terminalStore.get().activeId === sessionId) return
     clearRecentOutputs()
@@ -282,8 +313,10 @@ export const terminalActions = {
   },
 
   write(data: string) {
-    const { activeId } = terminalStore.get()
+    const { activeId, sessions } = terminalStore.get()
     if (!activeId) return
+    if (sessions.find((session) => session.id === activeId)?.status !== "running")
+      return
     void getMako()
       .terminalWrite(activeId, data)
       .catch((error) =>

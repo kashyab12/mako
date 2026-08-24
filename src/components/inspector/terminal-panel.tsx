@@ -48,6 +48,9 @@ export function TerminalPanel() {
   const active = sessions.find((session) => session.id === activeId)
 
   useEffect(() => terminalActions.mount(), [])
+  useEffect(() => {
+    if (cwd) void terminalActions.ensureWorkspace(cwd)
+  }, [cwd, phase])
 
   if (phase === "connecting" && sessions.length === 0) {
     return (
