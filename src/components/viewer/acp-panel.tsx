@@ -3,10 +3,7 @@ import { HarnessIcon } from "@/components/ui/provider-icon"
 import { SearchSelect } from "@/components/ui/search-select"
 import { harnessLabel } from "@/components/rail/harness-meta"
 import { ConversationTimeline } from "@/components/transcript/conversation-timeline"
-import {
-  acpBlocksToMessages,
-  type AcpPlanEntry,
-} from "@/lib/acp-blocks"
+import { acpBlocksToMessages, type AcpPlanEntry } from "@/lib/acp-blocks"
 import { toExchanges } from "@/lib/exchanges"
 import { threadToMessages } from "@/lib/foreign-thread"
 import { foldTools } from "@/lib/tools"
@@ -143,11 +140,7 @@ function Blocks({ starting = false }: { starting?: boolean }) {
   )
   const conversation = useMemo(
     () =>
-      acpBlocksToMessages(
-        blocks,
-        running,
-        session?.harness ?? composerHarness
-      ),
+      acpBlocksToMessages(blocks, running, session?.harness ?? composerHarness),
     [blocks, composerHarness, running, session?.harness]
   )
   const exchanges = useMemo(
@@ -172,11 +165,19 @@ function Blocks({ starting = false }: { starting?: boolean }) {
             The session is loaded. Anything you send continues it — same
             conversation, same working directory.
           </p>
-          <AcpActivity plan={conversation.plan} running={running} starting={starting} />
+          <AcpActivity
+            plan={conversation.plan}
+            running={running}
+            starting={starting}
+          />
         </div>
       }
       footer={
-        <AcpActivity plan={conversation.plan} running={running} starting={starting} />
+        <AcpActivity
+          plan={conversation.plan}
+          running={running}
+          starting={starting}
+        />
       }
     />
   )
@@ -243,7 +244,7 @@ function Plan({ entries }: { entries: AcpPlanEntry[] }) {
 function Permission() {
   const permission = useAcp((state) => state.permission)
   if (!permission) return null
-  if (permission.questions?.length)
+  if (permission.questions)
     return <QuestionPermission key={permission.id} permission={permission} />
   return (
     <div className="shrink-0 border-t border-hairline bg-surface/60 px-4 py-2.5">
@@ -294,9 +295,17 @@ function QuestionPermission({
   permission: AcpPermissionRequest
 }) {
   const questions = permission.questions ?? []
-  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [answers, setAnswers] = useState<Record<string, string[]>>(() =>
+    Object.fromEntries(
+      questions
+        .filter((question) => question.defaultValues?.length)
+        .map((question) => [question.id, question.defaultValues ?? []])
+    )
+  )
   const complete = questions.every(
-    (question) => answers[question.id]?.trim().length
+    (question) =>
+      question.required === false ||
+      answers[question.id]?.some((answer) => answer.trim().length > 0)
   )
   return (
     <div className="shrink-0 border-t border-hairline bg-surface/60 px-4 py-3">
@@ -315,40 +324,60 @@ function QuestionPermission({
             ) : null}
             {question.options.length ? (
               <div className="flex flex-wrap gap-1.5">
-                {question.options.map((option) => (
-                  <button
-                    key={option.label}
-                    type="button"
-                    title={option.description || undefined}
-                    onClick={() =>
-                      setAnswers((current) => ({
-                        ...current,
-                        [question.id]: option.label,
-                      }))
-                    }
-                    className={cn(
-                      "pressable rounded-md border px-2 py-1 text-label",
-                      answers[question.id] === option.label
-                        ? "border-foreground/20 bg-fill-selected text-foreground"
-                        : "border-hairline text-muted-foreground hover:bg-fill-hover hover:text-foreground"
-                    )}
-                  >
-                    {option.label}
-                  </button>
-                ))}
+                {question.options.map((option) => {
+                  const value = option.value ?? option.label
+                  const selected =
+                    answers[question.id]?.includes(value) === true
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      title={option.description || undefined}
+                      onClick={() =>
+                        setAnswers((current) => ({
+                          ...current,
+                          [question.id]:
+                            question.valueType === "string-array"
+                              ? selected
+                                ? (current[question.id] ?? []).filter(
+                                    (answer) => answer !== value
+                                  )
+                                : [...(current[question.id] ?? []), value]
+                              : [value],
+                        }))
+                      }
+                      className={cn(
+                        "pressable rounded-md border px-2 py-1 text-label",
+                        selected
+                          ? "border-foreground/20 bg-fill-selected text-foreground"
+                          : "border-hairline text-muted-foreground hover:bg-fill-hover hover:text-foreground"
+                      )}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
               </div>
             ) : null}
             {!question.options.length || question.allowOther ? (
               <input
-                type={question.isSecret ? "password" : "text"}
-                value={answers[question.id] ?? ""}
+                type={
+                  question.isSecret
+                    ? "password"
+                    : question.valueType === "number" ||
+                        question.valueType === "integer"
+                      ? "number"
+                      : "text"
+                }
+                step={question.valueType === "integer" ? 1 : undefined}
+                value={answers[question.id]?.[0] ?? ""}
                 placeholder={
                   question.options.length ? "Other answer" : "Type your answer"
                 }
                 onChange={(event) =>
                   setAnswers((current) => ({
                     ...current,
-                    [question.id]: event.target.value,
+                    [question.id]: [event.target.value],
                   }))
                 }
                 className="h-8 w-full rounded-md border border-hairline bg-surface px-2 text-ui text-foreground placeholder:text-faint focus:outline-none"
@@ -372,10 +401,12 @@ function QuestionPermission({
             acp.answerPermission(
               null,
               Object.fromEntries(
-                Object.entries(answers).map(([id, answer]) => [
-                  id,
-                  [answer.trim()],
-                ])
+                Object.entries(answers)
+                  .map(([id, values]) => [
+                    id,
+                    values.map((value) => value.trim()).filter(Boolean),
+                  ])
+                  .filter(([, values]) => values.length > 0)
               )
             )
           }
@@ -387,4 +418,3 @@ function QuestionPermission({
     </div>
   )
 }
-

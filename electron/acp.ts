@@ -12,7 +12,7 @@
  * This host keeps the protocol entirely on this side of the IPC boundary.
  * The renderer sees three things: a session (status, modes), a stream of
  * updates (text, thinking, tool calls, plan), and the occasional permission
- * request it must answer. Everything else — handshakes, schema versions,
+ * or structured-input request it must answer. Everything else — handshakes, schema versions,
  * process lifecycle — stays here.
  */
 
@@ -24,11 +24,18 @@ import { Readable, Writable } from "node:stream"
 import { app } from "electron"
 import {
   ClientSideConnection,
+  CreateElicitationRequest as ElicitationRequest,
+  ElicitationPropertySchema as ElicitationProperty,
+  MultiSelectItems as MultiSelect,
   ndJsonStream,
   PROTOCOL_VERSION,
   type Client,
   type ClientSideConnection as Connection,
   type ContentBlock,
+  type CreateElicitationRequest,
+  type CreateElicitationResponse,
+  type ElicitationContentValue,
+  type ElicitationPropertySchema,
   type LoadSessionRequest,
   type LoadSessionResponse,
   type McpServer,
@@ -49,7 +56,9 @@ import { discoverMcpRegistry } from "./mcp-registry.js"
 import { acpMcpServers } from "./mcp-runtime.js"
 import type { McpTransport } from "./shared.js"
 import type {
+  AcpInputQuestion,
   AcpPermissionRequest,
+  AcpPermissionResponse,
   AcpPromptAttachment,
   AcpSessionState,
   AcpUpdate,
@@ -96,7 +105,7 @@ interface Live {
   connection: Connection | null
   sessionId: string | null
   state: AcpSessionState
-  pendingPermissions: Map<string, (optionId: string | null) => void>
+  pendingPermissions: Map<string, (response: AcpPermissionResponse) => void>
   promptCapabilities: {
     image?: boolean
     audio?: boolean
@@ -112,6 +121,166 @@ let emit: (event: HostEvent) => void = () => {}
 
 export function bindAcp(send: (event: HostEvent) => void): void {
   emit = send
+}
+
+function elicitationOptions(
+  values: string[] | null | undefined,
+  titled:
+    | Array<{ const: string; title: string; description?: string | null }>
+    | null
+    | undefined
+): AcpInputQuestion["options"] {
+  if (titled)
+    return titled.map((option) => ({
+      label: option.title,
+      description: option.description ?? "",
+      value: option.const,
+    }))
+  return (values ?? []).map((value) => ({
+    label: value,
+    description: "",
+    value,
+  }))
+}
+
+function elicitationQuestion(
+  id: string,
+  property: ElicitationPropertySchema,
+  required: boolean
+): AcpInputQuestion | null {
+  if (ElicitationProperty.isString(property)) {
+    return {
+      id,
+      header: property.title ?? id,
+      question: property.description ?? property.title ?? id,
+      isSecret: false,
+      allowOther: !property.enum && !property.oneOf,
+      required,
+      valueType: "string",
+      options: elicitationOptions(property.enum, property.oneOf),
+      defaultValues: property.default ? [property.default] : undefined,
+    }
+  }
+  if (
+    ElicitationProperty.isNumber(property) ||
+    ElicitationProperty.isInteger(property)
+  ) {
+    return {
+      id,
+      header: property.title ?? id,
+      question: property.description ?? property.title ?? id,
+      isSecret: false,
+      allowOther: true,
+      required,
+      valueType: property.type,
+      options: [],
+      defaultValues:
+        property.default === null || property.default === undefined
+          ? undefined
+          : [String(property.default)],
+    }
+  }
+  if (ElicitationProperty.isBoolean(property)) {
+    return {
+      id,
+      header: property.title ?? id,
+      question: property.description ?? property.title ?? id,
+      isSecret: false,
+      allowOther: false,
+      required,
+      valueType: "boolean",
+      options: [
+        { label: "Yes", description: "", value: "true" },
+        { label: "No", description: "", value: "false" },
+      ],
+      defaultValues:
+        property.default === null || property.default === undefined
+          ? undefined
+          : [String(property.default)],
+    }
+  }
+  if (ElicitationProperty.isArray(property)) {
+    const options = MultiSelect.isTitled(property.items)
+      ? elicitationOptions(undefined, property.items.anyOf)
+      : MultiSelect.isString(property.items)
+        ? elicitationOptions(property.items.enum, undefined)
+        : []
+    if (options.length === 0) return null
+    return {
+      id,
+      header: property.title ?? id,
+      question: property.description ?? property.title ?? id,
+      isSecret: false,
+      allowOther: false,
+      required,
+      valueType: "string-array",
+      options,
+      defaultValues: property.default ?? undefined,
+    }
+  }
+  return null
+}
+
+function elicitationContent(
+  questions: AcpInputQuestion[],
+  answers: Record<string, string[]>
+): Record<string, ElicitationContentValue> | null {
+  const content: Record<string, ElicitationContentValue> = {}
+  for (const question of questions) {
+    const values = answers[question.id] ?? []
+    if (values.length === 0) {
+      if (question.required) return null
+      continue
+    }
+    if (question.valueType === "number" || question.valueType === "integer") {
+      const value = Number(values[0])
+      if (!Number.isFinite(value)) return null
+      if (question.valueType === "integer" && !Number.isInteger(value))
+        return null
+      content[question.id] = value
+    } else if (question.valueType === "boolean") {
+      content[question.id] = values[0] === "true"
+    } else if (question.valueType === "string-array") {
+      content[question.id] = values
+    } else {
+      content[question.id] = values[0] ?? ""
+    }
+  }
+  return content
+}
+
+async function requestElicitation(
+  live: Live,
+  params: CreateElicitationRequest
+): Promise<CreateElicitationResponse> {
+  if (!ElicitationRequest.isForm(params)) return { action: "cancel" }
+  const required = new Set(params.requestedSchema.required ?? [])
+  const questions = Object.entries(params.requestedSchema.properties ?? {})
+    .map(([id, property]) =>
+      elicitationQuestion(id, property, required.has(id))
+    )
+    .filter((question) => question !== null)
+  if (
+    questions.length !==
+    Object.keys(params.requestedSchema.properties ?? {}).length
+  )
+    return { action: "cancel" }
+  const requestId = `${live.id}-input-${live.pendingPermissions.size}-${Date.now()}`
+  const request: AcpPermissionRequest = {
+    id: requestId,
+    sessionId: live.id,
+    title: params.message,
+    options: [],
+    questions,
+  }
+  const response = await new Promise<AcpPermissionResponse>((resolve) => {
+    live.pendingPermissions.set(requestId, resolve)
+    emit({ type: "acp-permission", request })
+  })
+  live.pendingPermissions.delete(requestId)
+  if (response.kind !== "answers") return { action: "decline" }
+  const content = elicitationContent(questions, response.answers)
+  return content ? { action: "accept", content } : { action: "decline" }
 }
 
 export function acpState(id: string): AcpSessionState | null {
@@ -211,13 +380,17 @@ export async function acpStart(
           kind: option.kind,
         })),
       }
-      const chosen = await new Promise<string | null>((resolve) => {
+      const response = await new Promise<AcpPermissionResponse>((resolve) => {
         live.pendingPermissions.set(requestId, resolve)
         emit({ type: "acp-permission", request })
       })
       live.pendingPermissions.delete(requestId)
+      const chosen = response.kind === "choice" ? response.optionId : null
       if (chosen === null) return { outcome: { outcome: "cancelled" as const } }
       return { outcome: { outcome: "selected" as const, optionId: chosen } }
+    },
+    async unstable_createElicitation(params: CreateElicitationRequest) {
+      return requestElicitation(live, params)
     },
     async sessionUpdate(params: SessionNotification) {
       forward(live, params)
@@ -236,6 +409,7 @@ export async function acpStart(
       clientCapabilities: {
         fs: { readTextFile: false, writeTextFile: false },
         session: { configOptions: { boolean: {} } },
+        elicitation: { form: {} },
       },
     })
     live.promptCapabilities =
@@ -519,9 +693,9 @@ export async function acpPrompt(
 export function acpRespondPermission(
   id: string,
   requestId: string,
-  optionId: string | null
+  response: AcpPermissionResponse
 ): void {
-  sessions.get(id)?.pendingPermissions.get(requestId)?.(optionId)
+  sessions.get(id)?.pendingPermissions.get(requestId)?.(response)
 }
 
 export async function acpSetMode(id: string, modeId: string): Promise<void> {
@@ -541,7 +715,8 @@ export function acpClose(id: string): void {
   const live = sessions.get(id)
   if (!live) return
   update(live, { status: "closed" })
-  for (const resolve of live.pendingPermissions.values()) resolve(null)
+  for (const resolve of live.pendingPermissions.values())
+    resolve({ kind: "choice", optionId: null })
   live.child.kill()
   sessions.delete(id)
 }

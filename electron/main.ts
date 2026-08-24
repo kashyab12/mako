@@ -142,10 +142,7 @@ import {
 import { installGitIpc } from "./ipc/git.js"
 import { registerIpc as handle } from "./ipc/register.js"
 import { installSessionIpc } from "./ipc/session.js"
-import {
-  installWorkspaceIpc,
-  stopWorkspaceIpc,
-} from "./ipc/workspace.js"
+import { installWorkspaceIpc, stopWorkspaceIpc } from "./ipc/workspace.js"
 import type {
   AcpPermissionResponse,
   AcpPromptAttachment,
@@ -280,7 +277,8 @@ async function withHost<T>(
 
 async function createWindow() {
   nativeTheme.themeSource = "dark"
-  const icon = process.platform === "darwin" && app.isPackaged ? undefined : appIcon()
+  const icon =
+    process.platform === "darwin" && app.isPackaged ? undefined : appIcon()
   if (icon && process.platform === "darwin") app.dock?.setIcon(icon)
 
   const windowOptions: BrowserWindowConstructorOptions = {
@@ -448,10 +446,8 @@ function bindIpc() {
   handle("mako:create-pull", (_e, options: CreatePullOptions) =>
     withHost((h) => createPull(h.workspace, options))
   )
-  handle(
-    "mako:merge-pull",
-    (_e, strategy: "merge" | "squash" | "rebase") =>
-      withHost((h) => mergePull(h.workspace, strategy))
+  handle("mako:merge-pull", (_e, strategy: "merge" | "squash" | "rebase") =>
+    withHost((h) => mergePull(h.workspace, strategy))
   )
   handle("mako:rerun-checks", () => withHost((h) => rerunChecks(h.workspace)))
   handle("mako:repo-avatar", (_e, repo: string) =>
@@ -556,24 +552,19 @@ function bindIpc() {
   )
   /* Harness accounts: several logins per CLI, Orca-style isolated homes. */
   handle("mako:accounts", () => listAccounts())
-  handle(
-    "mako:account-capture",
-    (_e, harness: AccountHarness, name: string) =>
-      captureAccount(harness, name)
+  handle("mako:account-capture", (_e, harness: AccountHarness, name: string) =>
+    captureAccount(harness, name)
   )
   handle(
     "mako:account-select",
     (_e, harness: AccountHarness, name: string | null) =>
       selectAccount(harness, name)
   )
-  handle(
-    "mako:account-remove",
-    (_e, harness: AccountHarness, name: string) =>
-      removeAccount(harness, name)
+  handle("mako:account-remove", (_e, harness: AccountHarness, name: string) =>
+    removeAccount(harness, name)
   )
-  handle(
-    "mako:account-usage",
-    (_e, harness: AccountProvider, name: string) => accountUsage(harness, name)
+  handle("mako:account-usage", (_e, harness: AccountProvider, name: string) =>
+    accountUsage(harness, name)
   )
 
   handle("mako:harness-profiles", (_event, force?: boolean) =>
@@ -734,11 +725,7 @@ function bindIpc() {
     (_e, id: string, requestId: string, response: AcpPermissionResponse) =>
       id.startsWith("codex-app-")
         ? codexAppPermission(id, requestId, response)
-        : acpRespondPermission(
-            id,
-            requestId,
-            response.kind === "choice" ? response.optionId : null
-          )
+        : acpRespondPermission(id, requestId, response)
   )
   handle("mako:acp-mode", (_e, id: string, modeId: string) =>
     acpSetMode(id, modeId)
@@ -943,7 +930,8 @@ app.whenReady().then(async () => {
     join(__dirname, "terminal-daemon.js"),
     join(app.getPath("userData"), "terminal"),
     (event) => {
-      if (!window?.isDestroyed()) window?.webContents.send("mako:terminal-event", event)
+      if (!window?.isDestroyed())
+        window?.webContents.send("mako:terminal-event", event)
     }
   )
   powerMonitor.on("resume", emitTerminalWake)
@@ -960,8 +948,14 @@ app.whenReady().then(async () => {
     const profile = (await harnessProfiles()).find(
       (candidate) => candidate.available && resumable.has(candidate.id)
     )
-    if (!profile) throw new Error("No provider is available for this automation")
-    await startFresh(profile.id, cwd, prompt, resolveHarnessTuning(profile, undefined))
+    if (!profile)
+      throw new Error("No provider is available for this automation")
+    await startFresh(
+      profile.id,
+      cwd,
+      prompt,
+      resolveHarnessTuning(profile, undefined)
+    )
   })
   void ready().then((live) => {
     watchWorkspace(live.active.workspace)
