@@ -508,6 +508,7 @@
 }
 
 .animate-spin {
+  visibility: hidden;
   animation: none;
 }
 
