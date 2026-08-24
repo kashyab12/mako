@@ -10,7 +10,7 @@ const firstUser = "  user text stays verbatim  \n\nincluding edge whitespace  "
 
 const thread = {
   ref: {
-    harness: "pi",
+    harness: "codex",
     nativeId: "deterministic-transcript-test",
     path: "/tmp/session.jsonl",
     cwd: "/tmp/work",
@@ -50,7 +50,7 @@ const thread = {
 }
 
 const options = {
-  from: "Pi test harness",
+  from: "Codex test harness",
   instruction: "Continue exactly from the newest answer.",
   inlinePayloadLimit: 40,
   mainBudget: 100_000,

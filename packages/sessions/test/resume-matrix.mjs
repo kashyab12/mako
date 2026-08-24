@@ -27,9 +27,7 @@ import {
   emitCodexSession,
   emitCursorSession,
   emitGrokSession,
-  emitPiSession,
 } from "../dist/emit.js"
-import { PiProvider } from "../dist/providers/pi.js"
 import { ClaudeProvider } from "../dist/providers/claude.js"
 import { CodexProvider } from "../dist/providers/codex.js"
 import { CursorProvider } from "../dist/providers/cursor.js"
@@ -77,7 +75,6 @@ const source = {
 }
 
 const MATRIX = [
-  { name: "pi", emit: emitPiSession, provider: (home) => new PiProvider(home) },
   { name: "claude", emit: emitClaudeSession, provider: (home) => new ClaudeProvider(home) },
   { name: "codex", emit: emitCodexSession, provider: (home) => new CodexProvider(home) },
   { name: "grok", emit: emitGrokSession, provider: (home) => new GrokProvider(home) },

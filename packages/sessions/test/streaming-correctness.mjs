@@ -3,7 +3,6 @@ import {
   appendFile,
   mkdir,
   readFile,
-  rename,
   stat,
   writeFile,
 } from "node:fs/promises"
@@ -20,7 +19,6 @@ import { CursorProvider } from "../dist/providers/cursor.js"
 import { DevinLocalProvider } from "../dist/providers/devin-local.js"
 import { emitCursorSession } from "../dist/emit.js"
 import { GrokProvider } from "../dist/providers/grok.js"
-import { PiProvider } from "../dist/providers/pi.js"
 
 const scratch = []
 const temp = (name) => {
@@ -154,82 +152,6 @@ async function cursorNeverRegresses() {
   catalog.stop()
 }
 
-async function shrinkReplaces() {
-  const home = temp("shrink")
-  const dir = join(home, ".pi", "agent", "sessions", "project")
-  const path = join(dir, "thread.jsonl")
-  await mkdir(dir, { recursive: true })
-  const initial =
-    line({
-      type: "session",
-      id: "old-session",
-      timestamp: "2026-01-01T00:00:00Z",
-      cwd: "/old",
-    }) +
-    line({
-      type: "message",
-      timestamp: "2026-01-01T00:00:01Z",
-      message: { role: "user", content: "a much longer original prompt" },
-    }) +
-    line({
-      type: "message",
-      timestamp: "2026-01-01T00:00:02Z",
-      message: {
-        role: "assistant",
-        content: [{ type: "text", text: "a much longer original response" }],
-      },
-    })
-  await writeFile(path, initial)
-  const provider = new PiProvider(home)
-  const catalog = new SessionCatalog([provider])
-  await catalog.scan()
-  const updates = []
-  catalog.follow(path, Buffer.byteLength(initial), (entries, replaced) =>
-    updates.push({ entries, replaced })
-  )
-
-  const rewritten =
-    line({ type: "session", id: "new-session", cwd: "/new" }) +
-    line({ type: "message", message: { role: "user", content: "new" } })
-  assert.ok(Buffer.byteLength(rewritten) < Buffer.byteLength(initial))
-  await writeFile(path, rewritten)
-  await refresh(catalog, provider, path)
-
-  const full = await provider.read(path)
-  assert.equal(updates.length, 1)
-  assert.equal(updates[0].replaced, true)
-  assert.deepEqual(updates[0].entries, full.entries)
-  assert.equal(catalog.list()[0].nativeId, "new-session")
-
-  const replacementPath = `${path}.replacement`
-  const replacement =
-    line({ type: "session", id: "replacement-session", cwd: "/replacement" }) +
-    line({
-      type: "message",
-      message: {
-        role: "user",
-        content: "replacement prompt that is larger than the compacted file",
-      },
-    }) +
-    line({
-      type: "message",
-      message: {
-        role: "assistant",
-        content: [{ type: "text", text: "replacement response" }],
-      },
-    })
-  await writeFile(replacementPath, replacement)
-  await rename(replacementPath, path)
-  await refresh(catalog, provider, path)
-
-  const replacedFull = await provider.read(path)
-  assert.equal(updates.length, 2)
-  assert.equal(updates[1].replaced, true)
-  assert.deepEqual(updates[1].entries, replacedFull.entries)
-  assert.equal(catalog.list()[0].nativeId, "replacement-session")
-  catalog.stop()
-}
-
 const CASES = [
   {
     name: "claude",
@@ -336,58 +258,6 @@ const CASES = [
               type: "function_call_output",
               call_id: "tool-1",
               output: "done",
-            },
-          }),
-        ],
-      }
-    },
-  },
-  {
-    name: "pi",
-    setup: async () => {
-      const home = temp("pi")
-      const path = join(
-        home,
-        ".pi",
-        "agent",
-        "sessions",
-        "project",
-        "session.jsonl"
-      )
-      await mkdir(dirname(path), { recursive: true })
-      return {
-        provider: new PiProvider(home),
-        path,
-        batches: [
-          line({ type: "session", id: "pi-session", cwd: "/work" }) +
-            line({
-              type: "message",
-              timestamp: "2026-01-01T00:00:01Z",
-              message: { role: "user", content: "hello" },
-            }) +
-            line({
-              type: "message",
-              timestamp: "2026-01-01T00:00:02Z",
-              message: {
-                role: "assistant",
-                model: "model",
-                content: [
-                  {
-                    type: "toolCall",
-                    id: "tool-1",
-                    name: "bash",
-                    arguments: { command: "pwd" },
-                  },
-                ],
-              },
-            }),
-          line({
-            type: "message",
-            timestamp: "2026-01-01T00:00:03Z",
-            message: {
-              role: "toolResult",
-              toolCallId: "tool-1",
-              content: [{ type: "text", text: "done" }],
             },
           }),
         ],
@@ -533,61 +403,6 @@ async function midToolFollowConverges() {
     )
     assert.equal(update.reset, true, `${testCase.name} did not request a boundary reset`)
   }
-}
-
-async function catalogFollowConverges() {
-  const home = temp("catalog-convergence")
-  const dir = join(home, ".pi", "agent", "sessions", "project")
-  const path = join(dir, "session.jsonl")
-  await mkdir(dir, { recursive: true })
-  const initial =
-    line({ type: "session", id: "catalog-session", cwd: "/work" }) +
-    line({ type: "message", message: { role: "user", content: "hello" } })
-  await writeFile(path, initial)
-  const provider = new PiProvider(home)
-  const catalog = new SessionCatalog([provider])
-  await catalog.scan()
-  const opened = await catalog.open(path)
-  assert.ok(opened)
-  let incremental = structuredClone(opened.entries)
-  const updates = []
-  catalog.follow(path, opened.ref.bytes, (entries, replaced, replaceFrom) => {
-    updates.push({ entries, replaced, replaceFrom })
-    incremental = replaced
-      ? [...incremental.slice(0, replaceFrom ?? 0), ...entries]
-      : [...incremental, ...entries]
-  })
-
-  await appendFile(
-    path,
-    line({
-      type: "message",
-      message: {
-        role: "assistant",
-        content: [
-          { type: "toolCall", id: "tool-1", name: "bash", arguments: {} },
-        ],
-      },
-    })
-  )
-  await refresh(catalog, provider, path)
-  assert.deepEqual(incremental, (await provider.read(path)).entries)
-
-  await appendFile(
-    path,
-    line({
-      type: "message",
-      message: {
-        role: "toolResult",
-        toolCallId: "tool-1",
-        content: [{ type: "text", text: "done" }],
-      },
-    })
-  )
-  await refresh(catalog, provider, path)
-  assert.equal(updates.at(-1).replaced, true)
-  assert.deepEqual(incremental, (await provider.read(path)).entries)
-  catalog.stop()
 }
 
 async function peekChurn() {
@@ -880,10 +695,8 @@ async function entrySinkBoundsMutatedPayloads() {
 const tests = [
   ["concurrent AB/A refresh race", concurrentRefreshRace],
   ["tail cursor regression", cursorNeverRegresses],
-  ["shrink replacement", shrinkReplaces],
   ["split tool result convergence", splitToolResultsConverge],
   ["mid-tool follow convergence", midToolFollowConverges],
-  ["catalog full/follow convergence", catalogFollowConverges],
   ["peek-call churn", peekChurn],
   ["shared store rescan serialization", sharedStoreRescansSerialize],
   ["Codex lifecycle markers", codexLifecycleMarkersSurvive],

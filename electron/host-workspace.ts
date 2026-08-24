@@ -1,6 +1,6 @@
 import { copyFile, mkdir, open, readFile, readdir, stat, writeFile } from "node:fs/promises"
+import { homedir } from "node:os"
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path"
-import { getAgentDir } from "@earendil-works/pi-coding-agent"
 import type { FileContents, StagedFile, WorkspaceFile } from "./shared.js"
 import type { WorkspaceGit } from "./host-git.js"
 
@@ -113,7 +113,7 @@ export class WorkspaceFiles {
    * to.
    */
   async stage(name: string, base64: string): Promise<StagedFile> {
-    const dir = join(getAgentDir(), "attachments")
+    const dir = join(homedir(), ".mako", "attachments")
     await mkdir(dir, { recursive: true })
     // Keep the original name legible but collision-free, and never let a name
     // escape the directory it is written into.
@@ -132,7 +132,7 @@ export class WorkspaceFiles {
    * 270MB base64 string marshalled across the IPC boundary.
    */
   async stagePath(sourcePath: string): Promise<StagedFile> {
-    const dir = join(getAgentDir(), "attachments")
+    const dir = join(homedir(), ".mako", "attachments")
     await mkdir(dir, { recursive: true })
     const name = sourcePath.split("/").pop() ?? "attachment"
     const safe = name.replace(/[/\\]/g, "_").slice(0, 120) || "attachment"

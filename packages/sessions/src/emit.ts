@@ -15,9 +15,8 @@
  * known names), and a foreign session cannot satisfy Claude's rules with
  * Codex's tools. Text carries the same information and replays anywhere.
  *
- * Verified for all three targets on real data: Pi's SessionManager opens
- * the emitted file; Claude Code and Codex both resume emitted sessions and
- * answer questions about the history from memory.
+ * Verified through each owning reader, with live resume checks for Claude
+ * Code and Codex confirming that emitted history returns in model context.
  */
 
 import { randomUUID } from "node:crypto"
@@ -146,59 +145,6 @@ export async function emitClaudeSession(
   }
 
   const path = join(dir, `${sessionId}.jsonl`)
-  await writeFile(path, `${lines.join("\n")}\n`, "utf8")
-  return { sessionId, path }
-}
-
-/**
- * Write a thread into Pi's own store, openable as a native session — full
- * history in the transcript and in the next prompt's context, no handoff
- * preamble anywhere.
- */
-export async function emitPiSession(
-  thread: Thread,
-  options: EmitOptions = {}
-): Promise<EmitResult> {
-  const cwd = options.cwd ?? thread.ref.cwd ?? homedir()
-  const home = options.home ?? homedir()
-  const sessionId = randomUUID()
-  const startedAt = thread.ref.startedAt ?? new Date().toISOString()
-  const slug = `-${cwd.replace(/\//g, "-")}--`
-  const dir = join(home, ".pi", "agent", "sessions", slug)
-  await mkdir(dir, { recursive: true })
-
-  const lines: string[] = [
-    JSON.stringify({ type: "session", version: 3, id: sessionId, timestamp: startedAt, cwd }),
-  ]
-  let parentId: string | null = null
-  for (const message of flatten(thread.entries)) {
-    const id = randomUUID().slice(0, 8)
-    lines.push(
-      JSON.stringify({
-        type: "message",
-        id,
-        parentId,
-        timestamp: message.at ?? new Date().toISOString(),
-        message:
-          message.role === "user"
-            ? { role: "user", content: [{ type: "text", text: message.text }], timestamp: Date.parse(message.at ?? "") || Date.now() }
-            : {
-                role: "assistant",
-                content: [{ type: "text", text: message.text }],
-                api: "imported",
-                provider: "imported",
-                model: thread.ref.model ?? "imported",
-                usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-                stopReason: "stop",
-                timestamp: Date.parse(message.at ?? "") || Date.now(),
-              },
-      })
-    )
-    parentId = id
-  }
-
-  const stamp = startedAt.replace(/[:.]/g, "-")
-  const path = join(dir, `${stamp}_${sessionId}.jsonl`)
   await writeFile(path, `${lines.join("\n")}\n`, "utf8")
   return { sessionId, path }
 }

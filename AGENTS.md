@@ -5,10 +5,10 @@ are peer providers with provider-owned control and observation transports. No pr
 is privileged in public types, bridge names, UI language, continuation, or
 session handling.
 
-The `@earendil-works/pi-coding-agent` package is an internal implementation
-library for Mako's built-in runtime. Keep it behind `electron/host.ts`; never
-expose Pi as a provider, bridge, IPC namespace, message type, UI label, or
-"native" path.
+Mako has no embedded coding-agent runtime. `electron/host.ts` owns only the
+workspace and git boundary; every coding agent runs through a provider-owned
+process. Never expose Pi as a provider, bridge, IPC namespace, message type,
+UI label, or "native" path.
 
 `ignore/` is reference-only and gitignored: DeepSeek Harness, Pierre, T3 Code,
 ORCA, Codex, Zed, Superset, OpenCode, macOS Harness, CUA, and Browser Use.

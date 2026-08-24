@@ -29,7 +29,6 @@ import {
 import { installAutomation } from "./automation.js"
 import { check, installNow, installUpdates, updateState } from "./updates.js"
 import { usageSummary } from "./usage.js"
-import { getAgentDir } from "@earendil-works/pi-coding-agent"
 import {
   automationList,
   bindAutomations,
@@ -460,7 +459,7 @@ function bindIpc() {
   handle("mako:user-avatar", () => withHost((h) => userAvatar(h.workspace)))
 
   handle("mako:usage", () =>
-    usageSummary(join(getAgentDir(), "sessions"), homedir())
+    usageSummary(join(homedir(), ".mako", "sessions"), homedir())
   )
 
   /* Cross-harness threads: every agent's sessions on this machine. */
@@ -949,8 +948,12 @@ app.whenReady().then(async () => {
   bindAcp(emit)
   bindCodexApp(emit)
   bindAutomations(emit, async (cwd, prompt) => {
-    const live = await ready()
-    await live.runInBackground(cwd, prompt)
+    const resumable = new Set(resumableHarnesses())
+    const profile = (await harnessProfiles()).find(
+      (candidate) => candidate.available && resumable.has(candidate.id)
+    )
+    if (!profile) throw new Error("No provider is available for this automation")
+    await startFresh(profile.id, cwd, prompt, resolveHarnessTuning(profile, undefined))
   })
   void ready().then((live) => {
     watchWorkspace(live.active.workspace)
