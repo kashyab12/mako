@@ -53,6 +53,7 @@ export function PullRequestCard() {
   const loading = useGitHub((state) => state.loading)
   const cached = useGitHub((state) => state.branch)
   const cachedRoot = useGitHub((state) => state.root)
+  const statusRoot = useGitHub((state) => state.statusRoot)
 
   const branch = useSession((state) => state.git?.branch)
   const ahead = useSession((state) => state.git?.ahead ?? 0)
@@ -80,11 +81,16 @@ export function PullRequestCard() {
 
   useEffect(() => {
     if (!root) return
-    if (cachedRoot !== root || cached !== branch)
+    if (
+      cachedRoot !== root ||
+      statusRoot !== root ||
+      cached !== branch
+    )
       void github.refresh(root, branch)
-  }, [branch, cached, cachedRoot, root])
+  }, [branch, cached, cachedRoot, root, statusRoot])
 
-  if (!root || cachedRoot !== root || !status) return null
+  if (!root || cachedRoot !== root || statusRoot !== root || !status)
+    return null
 
   const onDefault = Boolean(status.defaultBranch && branch === status.defaultBranch)
   const unpublished = Boolean(branch) && !upstream

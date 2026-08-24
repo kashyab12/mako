@@ -18,6 +18,7 @@ export interface GitHubState {
   /** The branch the current `pull` was fetched for, so a switch invalidates it. */
   branch?: string
   root?: string
+  statusRoot?: string
   /** The signed-in user's avatar as a data URL, for the identity badge. */
   userAvatar?: string
 }
@@ -25,34 +26,57 @@ export interface GitHubState {
 export const githubStore = createStore<GitHubState>({ loading: false })
 export const useGitHub = createHook(githubStore)
 
-let generation = 0
+let statusGeneration = 0
+let pullGeneration = 0
+let statusLoad: Promise<void> | null = null
+let statusLoadRoot: string | undefined
 
 export const github = {
   async ensureStatus(root?: string) {
     if (!hasBridge()) return
     const current = githubStore.get()
-    if (current.status && (root === undefined || current.root === root)) return
-    const mine = ++generation
+    if (
+      current.status &&
+      (root === undefined || current.statusRoot === root)
+    )
+      return
+    if (statusLoad && (root === undefined || statusLoadRoot === root))
+      return statusLoad
+    const mine = ++statusGeneration
     if (root !== undefined) {
+      pullGeneration += 1
       githubStore.set({
         root,
-        status: undefined,
         pull: null,
         branch: undefined,
         loading: true,
       })
     }
-    const status = await getMako().githubStatus().catch(() => undefined)
-    if (mine !== generation) return
-    githubStore.set({
-      status,
-      root: root ?? current.root,
-      loading: false,
-      userAvatar: status?.authenticated
-        ? githubStore.get().userAvatar
-        : undefined,
-    })
-    void github.ensureUserAvatar()
+    statusLoadRoot = root
+    statusLoad = getMako()
+      .githubStatus()
+      .then((status) => {
+        if (mine !== statusGeneration) return
+        githubStore.set({
+          status,
+          statusRoot: root,
+          root: root ?? current.root,
+          loading: false,
+          userAvatar: status.authenticated
+            ? githubStore.get().userAvatar
+            : undefined,
+        })
+        void github.ensureUserAvatar()
+      })
+      .catch(() => {
+        if (mine === statusGeneration) githubStore.set({ loading: false })
+      })
+      .finally(() => {
+        if (mine !== statusGeneration) return
+        statusLoad = null
+        statusLoadRoot = undefined
+      })
+    return statusLoad
   },
 
   /** Best effort and quiet: no avatar means a monogram, never a toast. */
@@ -68,15 +92,15 @@ export const github = {
     if (!hasBridge()) return
     await github.ensureStatus(root)
     const status = githubStore.get()
-    if (status.root !== root) return
+    if (status.root !== root || status.statusRoot !== root) return
     if (!status.status?.authenticated || !status.status.repo) {
       githubStore.set({ pull: null, loading: false, branch, root })
       return
     }
-    const mine = ++generation
+    const mine = ++pullGeneration
     githubStore.set({ loading: true })
     const pull = await getMako().pullRequest().catch(() => null)
-    if (mine !== generation || githubStore.get().root !== root) return
+    if (mine !== pullGeneration || githubStore.get().root !== root) return
     githubStore.set({ pull, loading: false, branch, root })
   },
 

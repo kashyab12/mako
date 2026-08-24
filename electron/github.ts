@@ -1,7 +1,9 @@
 import { app } from "electron"
 import { execFile } from "node:child_process"
-import { mkdir, readFile, writeFile } from "node:fs/promises"
-import { join } from "node:path"
+import { constants } from "node:fs"
+import { access, mkdir, readFile, writeFile } from "node:fs/promises"
+import { homedir } from "node:os"
+import { delimiter, isAbsolute, join } from "node:path"
 import { promisify } from "node:util"
 import type { JsonObject, JsonValue } from "./codex-app-json.js"
 import type {
@@ -29,9 +31,44 @@ const run = promisify(execFile)
 /** Ceilings so a hung `gh` cannot hold a panel open forever. */
 const TIMEOUT = 15_000
 const MAX_BUFFER = 8 * 1024 * 1024
+let executablePromise: Promise<string> | null = null
+
+async function githubExecutable(): Promise<string> {
+  executablePromise ??= (async () => {
+    const configured = process.env.GH_PATH
+    const candidates = configured
+      ? [configured]
+      : [
+          ...(process.env.PATH ?? "")
+            .split(delimiter)
+            .filter(Boolean)
+            .map((directory) => join(directory, "gh")),
+          join(homedir(), ".local", "bin", "gh"),
+          "/opt/homebrew/bin/gh",
+          "/usr/local/bin/gh",
+        ]
+    for (const candidate of candidates) {
+      if (!isAbsolute(candidate)) continue
+      try {
+        await access(candidate, constants.X_OK)
+        return candidate
+      } catch {
+        continue
+      }
+    }
+    throw new Error("GitHub CLI was not found")
+  })()
+  const pending = executablePromise
+  try {
+    return await pending
+  } catch (error) {
+    if (executablePromise === pending) executablePromise = null
+    throw error
+  }
+}
 
 async function gh(cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await run("gh", args, {
+  const { stdout } = await run(await githubExecutable(), args, {
     cwd,
     timeout: TIMEOUT,
     maxBuffer: MAX_BUFFER,
@@ -90,7 +127,10 @@ function parseGitHubRepository(value: JsonValue): GitHubRepository | null {
  */
 export async function githubStatus(cwd: string): Promise<GitHubStatus> {
   try {
-    await run("gh", ["--version"], { cwd, timeout: TIMEOUT })
+    await run(await githubExecutable(), ["--version"], {
+      cwd,
+      timeout: TIMEOUT,
+    })
   } catch {
     return { installed: false, authenticated: false }
   }
