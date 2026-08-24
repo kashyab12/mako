@@ -7,7 +7,9 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 import { DAEMON_NODE_ARGS } from "../electron/daemon-command.ts"
 import { distributionFromMetadata } from "../electron/distribution.ts"
+import { AgentHost } from "../electron/host.ts"
 import { WorkspaceGit } from "../electron/host-git.ts"
+import type { HostEvent } from "../electron/shared.ts"
 import { searchWorkspace } from "../electron/host-search.ts"
 import { WorkspaceFiles } from "../electron/host-workspace.ts"
 import { workspacePreviewPath } from "../electron/workspace-preview.ts"
@@ -35,6 +37,14 @@ async function initializeRepo(path: string) {
   await git(path, "init", "-b", "main")
   await git(path, "config", "user.name", "Mako Test")
   await git(path, "config", "user.email", "mako@example.test")
+}
+
+async function waitFor(predicate: () => boolean) {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (predicate()) return
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  assert.fail("Timed out waiting for a workspace event")
 }
 
 assert.equal(
@@ -135,6 +145,45 @@ try {
   assert.deepEqual(secondFiles.map((file) => file.path), ["second.txt"])
   assert.equal((await workspaceGit.status()).root, await realpath(secondRepo))
   assert.equal(secondFiles.some((file) => file.path === "renamed.txt"), false)
+
+  const hostEvents: HostEvent[] = []
+  const host = new AgentHost("watch-test", (event) => hostEvents.push(event))
+  try {
+    await host.start(firstRepo)
+    hostEvents.length = 0
+    await writeFile(join(firstRepo, "watch-first.txt"), "first\n")
+    await waitFor(() =>
+      hostEvents.some(
+        (event) =>
+          event.type === "git" &&
+          event.git.cwd === firstRepo &&
+          event.git.files.some((file) => file.path === "watch-first.txt")
+      )
+    )
+
+    await host.setCwd(secondRepo)
+    hostEvents.length = 0
+    await writeFile(join(firstRepo, "after-switch.txt"), "stale\n")
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    assert.equal(
+      hostEvents.some(
+        (event) => event.type === "git" && event.git.cwd === firstRepo
+      ),
+      false
+    )
+    hostEvents.length = 0
+    await writeFile(join(secondRepo, "watch-second.txt"), "second\n")
+    await waitFor(() =>
+      hostEvents.some(
+        (event) =>
+          event.type === "git" &&
+          event.git.cwd === secondRepo &&
+          event.git.files.some((file) => file.path === "watch-second.txt")
+      )
+    )
+  } finally {
+    await host.dispose()
+  }
 } finally {
   await rm(directory, { recursive: true, force: true })
 }

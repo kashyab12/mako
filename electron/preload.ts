@@ -276,7 +276,7 @@ const api = {
   openSession: (path: string) =>
     invokeTrustedHost<SessionState>("mako:open-session", path),
   newSession: () => invokeTrustedHost<SessionState>("mako:new-session"),
-  setCwd: (cwd: string) => invokeTrustedHost<SessionState>("mako:set-cwd", cwd),
+  setCwd: (cwd: string) => invokeTrustedHost<TabSnapshot>("mako:set-cwd", cwd),
   setName: (name: string) => invokeTrustedHost<void>("mako:set-name", name),
 
   prompt: (

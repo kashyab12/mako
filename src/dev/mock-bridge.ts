@@ -134,7 +134,10 @@ export function installMockBridge() {
     listSessions: async () => sessions(),
     openSession: async () => ({ meta, messages: MESSAGES, tree: TREE }),
     newSession: async () => ({ meta, messages: [], tree: [] }),
-    setCwd: async () => ({ meta, messages: MESSAGES, tree: TREE }),
+    setCwd: async (cwd: string) => {
+      meta = { ...meta, cwd }
+      return mockTab("tab-1")
+    },
     setName: async (name: string) => update({ sessionName: name }),
     prompt: async () => {
       update({ isStreaming: true, isIdle: false })

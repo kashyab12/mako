@@ -397,6 +397,7 @@ function bindIpc() {
     withHost,
     platform: process.platform,
     sourceRoot: isDev ? app.getAppPath() : undefined,
+    onWorkspaceChanged: watchWorkspace,
   })
 
   installWorkspaceIpc({ withHost, emit })

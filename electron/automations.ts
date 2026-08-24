@@ -383,7 +383,7 @@ export async function fireAutomation(
  */
 export async function watchWorkspace(cwd: string) {
   stopWatching()
-  runtime = {
+  const current: Runtime = {
     cwd,
     watcher: null,
     timers: new Map(),
@@ -391,11 +391,13 @@ export async function watchWorkspace(cwd: string) {
     inFlight: new Set(),
     head: null,
   }
+  runtime = current
   await loadAutomations(cwd)
+  if (runtime !== current) return
 
   try {
-    runtime.watcher = watch(cwd, { recursive: true }, (_event, filename) => {
-      if (!filename || !runtime) return
+    current.watcher = watch(cwd, { recursive: true }, (_event, filename) => {
+      if (!filename || runtime !== current) return
       const path = relative(cwd, join(cwd, filename.toString()))
         .split(sep)
         .join("/")
@@ -407,8 +409,8 @@ export async function watchWorkspace(cwd: string) {
           continue
         // Debounced per automation: a save that touches four matching files is
         // one event, not four.
-        clearTimeout(runtime.timers.get(automation.id))
-        runtime.timers.set(
+        clearTimeout(current.timers.get(automation.id))
+        current.timers.set(
           automation.id,
           setTimeout(
             () => void fireAutomation(automation.id, "files"),

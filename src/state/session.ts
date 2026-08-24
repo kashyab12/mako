@@ -8,6 +8,7 @@ import type {
   SessionMeta,
   SessionState,
   SessionSummary,
+  TabSnapshot,
   ThinkingLevel,
   TreeNode,
 } from "@/lib/types"
@@ -141,6 +142,7 @@ function absorb(id: string, event: HostEvent) {
       writeCache(id, { tree: event.tree })
       break
     case "git":
+      if (entry.meta?.cwd !== event.git.cwd) return
       writeCache(id, { git: event.git })
       break
     case "capabilities":
@@ -201,6 +203,7 @@ function applyToActive(event: HostEvent) {
       store.set({ tree: event.tree })
       break
     case "git":
+      if (store.get().meta?.cwd !== event.git.cwd) return
       store.set({ git: event.git })
       // The agent just wrote something. If it wrote the file you happen to be
       // reading, the version on screen is now wrong — and a stale file is
@@ -342,6 +345,25 @@ function adoptState(next: SessionState) {
       { unread: false }
     )
   }
+}
+
+function adoptSnapshot(next: TabSnapshot) {
+  store.set({
+    meta: next.session.meta,
+    messages: reconcileMessages(store.get().messages, next.session.messages),
+    tree: next.session.tree,
+    stream: null,
+    git: next.git,
+    capabilities: next.capabilities,
+  })
+  writeCache(next.id, {
+    meta: next.session.meta,
+    messages: next.session.messages,
+    tree: next.session.tree,
+    git: next.git,
+    capabilities: next.capabilities,
+  })
+  refresh(next.id, cacheOf(next.id), { unread: false })
 }
 
 export const actions = {
@@ -599,7 +621,8 @@ export const actions = {
   async openWorkspace(folder: string) {
     const next = await guard(() => getMako().setCwd(folder))
     if (!next) return
-    adoptState(next)
+    adoptSnapshot(next)
+    viewer.close()
     void actions.refreshSessions(folder)
     void actions.refreshModels()
   },
@@ -680,8 +703,9 @@ export const actions = {
   },
 
   async refreshGit() {
+    const workspace = store.get().meta?.cwd
     const git = await guard(() => getMako().gitStatus())
-    if (git) store.set({ git })
+    if (git && store.get().meta?.cwd === workspace) store.set({ git })
   },
 
   copy(text: string) {

@@ -1,10 +1,7 @@
 import { ipcMain } from "electron"
 import type { AgentHost } from "../host.js"
 import type { HostPool } from "../pool.js"
-import type {
-  BootPayload,
-  ThinkingLevel,
-} from "../shared.js"
+import type { BootPayload, TabSnapshot, ThinkingLevel } from "../shared.js"
 import { registerIpc } from "./register.js"
 
 export interface SessionIpcContext {
@@ -14,6 +11,7 @@ export interface SessionIpcContext {
   ): Promise<TResult>
   platform: NodeJS.Platform
   sourceRoot?: string
+  onWorkspaceChanged?(cwd: string): void | Promise<void>
 }
 
 export function installSessionIpc(context: SessionIpcContext): void {
@@ -39,16 +37,24 @@ export function installSessionIpc(context: SessionIpcContext): void {
     "mako:open-tab",
     async (_event, options?: { cwd?: string; sessionPath?: string }) => {
       const live = await ready()
-      return live.open(options ?? {})
+      const opened = await live.open(options ?? {})
+      await context.onWorkspaceChanged?.(opened.session.meta.cwd)
+      return opened
     }
   )
   registerIpc("mako:close-tab", async (_event, id: string) => {
     const live = await ready()
-    return live.close(id)
+    const previous = live.activeId
+    const result = await live.close(id)
+    if (live.activeId !== previous)
+      await context.onWorkspaceChanged?.(live.active.workspace)
+    return result
   })
   registerIpc("mako:activate-tab", async (_event, id: string) => {
     const live = await ready()
-    return live.activate(id)
+    const changed = live.activate(id)
+    if (changed) await context.onWorkspaceChanged?.(live.active.workspace)
+    return changed
   })
 
   registerIpc(
@@ -69,9 +75,15 @@ export function installSessionIpc(context: SessionIpcContext): void {
     })
   )
   registerIpc("mako:set-cwd", (_event, cwd: string) =>
-    withHost(async (host) => {
+    withHost(async (host): Promise<TabSnapshot> => {
       await host.setCwd(cwd)
-      return host.state()
+      await context.onWorkspaceChanged?.(cwd)
+      return {
+        id: host.id,
+        session: host.state(),
+        git: await host.gitStatus(),
+        capabilities: host.capabilities(),
+      }
     })
   )
   registerIpc("mako:set-name", (_event, name: string) =>

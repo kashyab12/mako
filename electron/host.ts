@@ -1,3 +1,4 @@
+import { watch, type FSWatcher } from "node:fs"
 import { homedir } from "node:os"
 import { WorkspaceGit } from "./host-git.js"
 import { searchWorkspace } from "./host-search.js"
@@ -33,6 +34,9 @@ export class AgentHost {
   private readonly workspaceGit: WorkspaceGit
   private readonly workspaceFiles: WorkspaceFiles
   private foreground = true
+  private workspaceWatcher: FSWatcher | null = null
+  private workspaceWatcherGeneration = 0
+  private gitRefreshTimer: NodeJS.Timeout | null = null
   private sessionId = crypto.randomUUID()
   private sessionName: string | undefined
 
@@ -60,8 +64,11 @@ export class AgentHost {
     if (this.foreground === value) return
     this.foreground = value
     if (value) {
+      this.startWorkspaceWatcher()
       this.pushState()
       void this.pushGit()
+    } else {
+      this.stopWorkspaceWatcher()
     }
   }
 
@@ -71,8 +78,47 @@ export class AgentHost {
   }
 
   private setWorkspace(cwd: string): void {
+    this.stopWorkspaceWatcher()
     this.workspaceGit.setCwd(cwd)
     this.workspaceFiles.setCwd(cwd)
+    if (this.foreground) this.startWorkspaceWatcher()
+  }
+
+  private startWorkspaceWatcher(): void {
+    if (this.workspaceWatcher) return
+    const generation = ++this.workspaceWatcherGeneration
+    try {
+      this.workspaceWatcher = watch(
+        this.workspace,
+        { recursive: true },
+        (_event, filename) => {
+          if (this.workspaceWatcherGeneration !== generation) return
+          const path = filename?.toString() ?? ""
+          if (
+            /(^|\/)(node_modules|dist|dist-electron|release|build|out|\.next|coverage|\.turbo)(\/|$)/.test(
+              path
+            )
+          )
+            return
+          if (this.gitRefreshTimer) clearTimeout(this.gitRefreshTimer)
+          this.gitRefreshTimer = setTimeout(() => {
+            this.gitRefreshTimer = null
+            if (this.workspaceWatcherGeneration === generation)
+              void this.pushGit()
+          }, 180)
+        }
+      )
+    } catch {
+      this.workspaceWatcher = null
+    }
+  }
+
+  private stopWorkspaceWatcher(): void {
+    this.workspaceWatcherGeneration += 1
+    this.workspaceWatcher?.close()
+    this.workspaceWatcher = null
+    if (this.gitRefreshTimer) clearTimeout(this.gitRefreshTimer)
+    this.gitRefreshTimer = null
   }
 
   meta(): SessionMeta {
@@ -320,7 +366,9 @@ export class AgentHost {
     }
   }
 
-  async dispose(): Promise<void> {}
+  async dispose(): Promise<void> {
+    this.stopWorkspaceWatcher()
+  }
 }
 
 export const COMMIT_PROMPT = `You are an expert at writing Git commits. Your job is to write a short clear commit message that summarizes the changes.
