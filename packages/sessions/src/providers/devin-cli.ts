@@ -127,7 +127,7 @@ export class DevinCliProvider implements SessionProvider {
   displayName = "Devin"
   /** One store, many sessions: a db write means re-discover, not re-stat. */
   rescanRoot = true
-  rescanDebounceMs = 100
+  rescanDebounceMs = 500
 
   private dir: string
   private db: DatabaseSync | null = null

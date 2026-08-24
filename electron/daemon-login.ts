@@ -8,9 +8,9 @@
  * the daemon's own single-instance check makes that safe alongside the app
  * spawning it too — whoever starts first wins, everyone else exits quietly.
  *
- * The plist pins the current binary path, so a moved or updated app should
- * re-save the toggle; the settings surface re-writes it on enable, which in
- * practice is every time someone flips it after an update.
+ * The plist pins the binary path and Node flags. Startup compares the desired
+ * definition with the installed one and refreshes it only when an update moved
+ * the app or changed the daemon runtime contract.
  */
 
 import { execFile } from "node:child_process"
@@ -20,6 +20,7 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { app } from "electron"
+import { DAEMON_NODE_ARGS } from "./daemon-command.js"
 
 const run = promisify(execFile)
 
@@ -31,6 +32,33 @@ function plistPath(): string {
 
 function daemonScript(): string {
   return join(app.getAppPath(), "node_modules", "@mako", "sessions", "dist", "daemon-main.js")
+}
+
+function daemonPlist(script = daemonScript()): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>${LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${process.execPath}</string>
+${DAEMON_NODE_ARGS.map((argument) => `    <string>${argument}</string>`).join("\n")}
+    <string>${script}</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>ELECTRON_RUN_AS_NODE</key><string>1</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key><false/>
+  </dict>
+  <key>ProcessType</key><string>Background</string>
+</dict>
+</plist>
+`
 }
 
 /** The user said no, once, explicitly. Recorded so the default stays off. */
@@ -47,7 +75,8 @@ export async function ensureDaemonLoginDefault(): Promise<void> {
   if (process.platform !== "darwin") return
   try {
     if (existsSync(optOutPath())) return
-    if (await daemonLoginEnabled()) return
+    const current = await readFile(plistPath(), "utf8").catch(() => null)
+    if (current === daemonPlist()) return
     await setDaemonLogin(true)
   } catch {
     // A failed install stays quiet; the settings toggle still works.
@@ -105,29 +134,7 @@ export async function setDaemonLogin(enabled: boolean): Promise<void> {
   const script = daemonScript()
   if (!existsSync(script)) throw new Error("The daemon script is missing from this build")
 
-  const plist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>${LABEL}</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>${process.execPath}</string>
-    <string>${script}</string>
-  </array>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>ELECTRON_RUN_AS_NODE</key><string>1</string>
-  </dict>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key>
-  <dict>
-    <key>SuccessfulExit</key><false/>
-  </dict>
-  <key>ProcessType</key><string>Background</string>
-</dict>
-</plist>
-`
+  const plist = daemonPlist(script)
   await mkdir(join(homedir(), "Library", "LaunchAgents"), { recursive: true })
   await writeFile(plistPath(), plist, "utf8")
   // Re-bootstrap so a re-save (after an app update moved the binary) takes.

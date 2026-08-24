@@ -22,6 +22,13 @@ import {
   serveCatalog,
   type DaemonClaim,
 } from "./daemon.js"
+
+/** Return transient scan capacity after a quiet beat; retained catalog data is tiny. */
+function collectIdleHeap(): void {
+  if (process.memoryUsage().heapTotal < 32 * 1024 * 1024) return
+  void global.gc?.({ type: "major", flavor: "last-resort", execution: "async" })
+}
+
 async function main(): Promise<void> {
   const dir = join(homedir(), ".mako")
   await mkdir(dir, { recursive: true, mode: 0o700 })
@@ -58,7 +65,21 @@ async function main(): Promise<void> {
     return
   }
 
+  let collectionTimer: ReturnType<typeof setTimeout> | undefined
+  const scheduleCollection = () => {
+    if (collectionTimer) clearTimeout(collectionTimer)
+    collectionTimer = setTimeout(collectIdleHeap, 1_000)
+    collectionTimer.unref?.()
+  }
+  const stopCollectionEvents = catalog.onEvent(scheduleCollection)
+  const collectionFallback = setInterval(collectIdleHeap, 60_000)
+  collectionFallback.unref?.()
+  scheduleCollection()
+
   const stop = () => {
+    if (collectionTimer) clearTimeout(collectionTimer)
+    clearInterval(collectionFallback)
+    stopCollectionEvents()
     catalog.stop()
     const timer = setTimeout(() => process.exit(0), 500)
     timer.unref?.()

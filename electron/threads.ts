@@ -37,6 +37,7 @@ import {
 } from "@mako/sessions"
 import { annotate, bindLineage, loadLineage } from "./lineage.js"
 import { providerHost } from "./providers/index.js"
+import { DAEMON_NODE_ARGS } from "./daemon-command.js"
 import {
   daemonLoginEnabled,
   daemonLoginProcess,
@@ -237,7 +238,7 @@ function spawnDaemon(): void {
   )
   if (!existsSync(script)) return
   try {
-    const child = spawn(process.execPath, [script], {
+    const child = spawn(process.execPath, [...DAEMON_NODE_ARGS, script], {
       env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
       detached: true,
       stdio: "ignore",

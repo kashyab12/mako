@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
+import { DAEMON_NODE_ARGS } from "../electron/daemon-command.ts"
 import { distributionFromMetadata } from "../electron/distribution.ts"
 import { WorkspaceGit } from "../electron/host-git.ts"
 import { searchWorkspace } from "../electron/host-search.ts"
@@ -12,6 +13,7 @@ import { WorkspaceFiles } from "../electron/host-workspace.ts"
 import { workspacePreviewPath } from "../electron/workspace-preview.ts"
 
 const execFileAsync = promisify(execFile)
+assert.deepEqual(DAEMON_NODE_ARGS, ["--expose-gc", "--max-old-space-size=128"])
 assert.equal(
   distributionFromMetadata('{"makoDistribution":"signed"}'),
   "signed"

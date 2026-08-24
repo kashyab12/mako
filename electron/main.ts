@@ -177,9 +177,10 @@ const isDev = !app.isPackaged && !process.env.MAKO_PROD
  *
  * A raw square PNG is not a macOS icon: the system draws it exactly as given,
  * so it renders with hard corners and no margin — visibly larger and squarer
- * than everything beside it. `build/Mako.icns` carries Apple's icon grid
- * (824 of 1024, 185.4pt corner radius, transparent margin) and is preferred
- * wherever it is present; the PNG is only a fallback.
+ * than everything beside it. Packaged macOS uses the bundle icon directly;
+ * decoding another copy here retains tens of megabytes of CoreGraphics image
+ * backing for no visual change. The explicit image is only for development and
+ * platforms whose windows need one.
  */
 function appIcon() {
   const candidates = [
@@ -279,7 +280,7 @@ async function withHost<T>(
 
 async function createWindow() {
   nativeTheme.themeSource = "dark"
-  const icon = appIcon()
+  const icon = process.platform === "darwin" && app.isPackaged ? undefined : appIcon()
   if (icon && process.platform === "darwin") app.dock?.setIcon(icon)
 
   const windowOptions: BrowserWindowConstructorOptions = {
