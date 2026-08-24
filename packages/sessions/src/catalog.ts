@@ -659,11 +659,11 @@ export class SessionCatalog {
   }
 
   private emit(event: CatalogEvent): void {
-    // Every added or grown session is also recorded in the archive — the
-    // copy that survives the native store. Lazy read, throttled inside.
+    // Archive once the writer releases its lock. Re-translating a giant live
+    // conversation on every checkpoint competes with the agent writing it.
     if (this.archive && (event.type === "added" || event.type === "updated")) {
       const ref = event.ref
-      if (!ref.archived)
+      if (!ref.archived && !ref.locked)
         this.archive.note(ref, () => this.open(ref.path, false))
     }
     for (const listener of this.listeners) listener(event)
