@@ -16,6 +16,7 @@
  * exist as a file.
  */
 
+import { createHash } from "node:crypto"
 import { readFile, readdir, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
@@ -276,17 +277,16 @@ export class DevinCliProvider implements SessionProvider {
         if (!db) return unchangedUpdate(cursor)
         try {
           if (previous === null) {
-            previous = translatedMainChain(db, id, cursor).map((entry) =>
-              JSON.stringify(entry)
-            )
+            previous = translatedMainChain(db, id, cursor).map(entryDigest)
           }
           const nextCursor = mainChainId(db, id)
           if (nextCursor === cursor) return unchangedUpdate(cursor)
           const current = translatedMainChain(db, id, nextCursor)
+          const signatures = current.map(entryDigest)
           let shared = 0
           while (
             shared < previous.length &&
-            previous[shared] === JSON.stringify(current[shared])
+            previous[shared] === signatures[shared]
           ) {
             shared += 1
           }
@@ -294,7 +294,7 @@ export class DevinCliProvider implements SessionProvider {
           const entries = appended
             ? current.slice(previous.length)
             : current.slice(shared)
-          previous = current.map((entry) => JSON.stringify(entry))
+          previous = signatures
           cursor = nextCursor
           const update: SessionUpdate = {
             entries: structuredClone(entries),
@@ -369,6 +369,39 @@ function translatedMainChain(
   const into = translator()
   for (const row of mainChainRows(db, sessionId, leafId)) into.push(row)
   return into.snapshot()
+}
+
+function entryDigest(entry: ThreadEntry): string {
+  const hash = createHash("sha256")
+  const add = (value: string | number | boolean | undefined) => {
+    hash.update(String(value ?? ""))
+    hash.update("\0")
+  }
+  add(entry.kind)
+  add(entry.at)
+  if (entry.kind === "user") add(entry.text)
+  else if (entry.kind === "event") {
+    add(entry.label)
+    add(entry.detail)
+  } else {
+    add(entry.model)
+    add(entry.usage?.input)
+    add(entry.usage?.output)
+    add(entry.usage?.cacheRead)
+    add(entry.usage?.cacheWrite)
+    add(entry.usage?.costUsd)
+    for (const block of entry.blocks) {
+      add(block.type)
+      if (block.type === "text" || block.type === "thinking") add(block.text)
+      else {
+        add(block.name)
+        add(block.input)
+        add(block.output)
+        add(block.error)
+      }
+    }
+  }
+  return hash.digest("base64url")
 }
 
 async function lockedSessionIds(path: string): Promise<Set<string>> {
