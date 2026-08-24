@@ -49,6 +49,7 @@ ${DAEMON_NODE_ARGS.map((argument) => `    <string>${argument}</string>`).join("\
   <key>EnvironmentVariables</key>
   <dict>
     <key>ELECTRON_RUN_AS_NODE</key><string>1</string>
+    <key>MAKO_DAEMON_VERSION</key><string>${app.getVersion()}</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key>
