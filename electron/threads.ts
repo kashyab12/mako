@@ -12,7 +12,6 @@
  * it can inherit the conversation, and that is what this hands over.
  */
 
-import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
 import { mkdir, writeFile } from "node:fs/promises"
@@ -37,11 +36,10 @@ import {
 } from "@mako/sessions"
 import { annotate, bindLineage, loadLineage } from "./lineage.js"
 import { providerHost } from "./providers/index.js"
-import { DAEMON_NODE_ARGS } from "./daemon-command.js"
 import {
   daemonLoginEnabled,
   daemonLoginProcess,
-  ensureDaemonLoginDefault,
+  refreshDaemonLoginJob,
   setDaemonLogin,
   stopDaemonLoginJob,
 } from "./daemon-login.js"
@@ -76,9 +74,12 @@ export function installThreads(send: (event: HostEvent) => void): void {
   void (async () => {
     try {
       await loadLineage()
-      // Sync should simply be on: the LaunchAgent installs itself the first
-      // time, and only an explicit opt-out in settings keeps it off.
-      await ensureDaemonLoginDefault()
+      // Watch locally unless the user chose to keep syncing while Mako is closed.
+      await refreshDaemonLoginJob()
+      if (!(await daemonLoginEnabled())) {
+        await runLocalCatalog()
+        return
+      }
       if (await connectViaDaemon()) return
       await startDaemon()
       for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -185,6 +186,10 @@ async function connectViaDaemon(): Promise<boolean> {
 
 function recoverDaemon(): Promise<void> {
   recoveringDaemon ??= (async () => {
+    if (!(await daemonLoginEnabled())) {
+      await runLocalCatalog()
+      return
+    }
     await startDaemon()
     for (let attempt = 0; attempt < 10; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)))
@@ -220,33 +225,7 @@ function processIsAlive(pid: number): boolean {
 }
 
 async function startDaemon(): Promise<void> {
-  if (await daemonLoginEnabled()) {
-    await setDaemonLogin(true)
-    return
-  }
-  spawnDaemon()
-}
-
-function spawnDaemon(): void {
-  const script = join(
-    app.getAppPath(),
-    "node_modules",
-    "@mako",
-    "sessions",
-    "dist",
-    "daemon-main.js"
-  )
-  if (!existsSync(script)) return
-  try {
-    const child = spawn(process.execPath, [...DAEMON_NODE_ARGS, script], {
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
-      detached: true,
-      stdio: "ignore",
-    })
-    child.unref()
-  } catch {
-    // The local catalog covers it.
-  }
+  await setDaemonLogin(true)
 }
 
 async function runLocalCatalog(): Promise<void> {

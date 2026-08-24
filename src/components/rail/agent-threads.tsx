@@ -85,6 +85,7 @@ function useLiveTime(): number {
 
 export function AgentThreads() {
   const rail = useRef<HTMLDivElement>(null)
+  const topFade = useRef<HTMLSpanElement>(null)
   const [query, setQuery] = useState("")
   const [jumpHints, setJumpHints] = useState(false)
   const [searching, setSearching] = useState(false)
@@ -260,8 +261,20 @@ export function AgentThreads() {
       <ActiveAgents activity={activity} />
 
       <div className="scroll-fade-scope flex min-h-0 flex-1 flex-col">
-      <span aria-hidden className="scroll-fade-top [--fade-from:var(--shell)]" />
-      <div className="scroll-fade-scroller min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3">
+        <span
+          ref={topFade}
+          aria-hidden
+          className="scroll-fade-top [--fade-from:var(--shell)]"
+        />
+        <div
+          onScroll={(event) =>
+            topFade.current?.toggleAttribute(
+              "data-scrolled",
+              event.currentTarget.scrollTop > 0.5
+            )
+          }
+          className="scroll-fade-scroller min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3"
+        >
         {!loaded && matched.length === 0 ? (
           <RailSkeleton />
         ) : matched.length === 0 ? (

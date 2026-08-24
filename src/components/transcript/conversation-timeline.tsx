@@ -49,6 +49,7 @@ export function ConversationTimeline({
 }) {
   const pane = useRef<HTMLDivElement>(null)
   const viewport = useRef<HTMLDivElement>(null)
+  const topFade = useRef<HTMLSpanElement>(null)
   const pinned = useRef(true)
   const [showJump, setShowJump] = useState(false)
   const [activeTurn, setActiveTurn] = useState<string | null>(null)
@@ -67,6 +68,7 @@ export function ConversationTimeline({
   const onScroll = useCallback(() => {
     const node = viewport.current
     if (!node) return
+    topFade.current?.toggleAttribute("data-scrolled", node.scrollTop > 0.5)
     const distance = node.scrollHeight - node.scrollTop - node.clientHeight
     const atBottom = distance < NEAR_BOTTOM
     pinned.current = atBottom
@@ -159,7 +161,7 @@ export function ConversationTimeline({
 
   return (
     <div ref={pane} className="scroll-fade-scope relative flex min-h-0 flex-1 flex-col">
-      <span aria-hidden className="scroll-fade-top" />
+      <span ref={topFade} aria-hidden className="scroll-fade-top" />
       <div
         ref={viewport}
         onScroll={onScroll}

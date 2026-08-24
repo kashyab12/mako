@@ -71,18 +71,31 @@ export const tabsStore = createStore<TabsState>({
 export const useTabs = createHook(tabsStore)
 
 const cache = new Map<string, TabCache>()
+const MAX_BACKGROUND_CACHES = 2
+
+function rememberCache(id: string, entry: TabCache): void {
+  cache.delete(id)
+  cache.set(id, entry)
+  while (cache.size > MAX_BACKGROUND_CACHES) {
+    const oldest = cache.keys().next().value
+    if (!oldest) break
+    cache.delete(oldest)
+  }
+}
 
 export function cacheOf(id: string): TabCache {
   let entry = cache.get(id)
   if (!entry) {
     entry = emptyCache()
-    cache.set(id, entry)
+    rememberCache(id, entry)
+  } else {
+    rememberCache(id, entry)
   }
   return entry
 }
 
 export function writeCache(id: string, patch: Partial<TabCache>) {
-  cache.set(id, { ...cacheOf(id), ...patch })
+  rememberCache(id, { ...cacheOf(id), ...patch })
 }
 
 export function dropCache(id: string) {
@@ -162,22 +175,19 @@ function sameTab(left: TabInfo, right: TabInfo): boolean {
 
 export function hydrate(snapshots: TabSnapshot[], activeId: string) {
   cache.clear()
-  for (const snapshot of snapshots) {
-    cache.set(snapshot.id, {
+  const tabs = snapshots.map((snapshot) => {
+    const entry: TabCache = {
       meta: snapshot.session.meta,
       messages: snapshot.session.messages,
       stream: null,
       tree: snapshot.session.tree,
       git: snapshot.git,
       capabilities: snapshot.capabilities,
-    })
-  }
-  tabsStore.set({
-    tabs: snapshots.map((snapshot) =>
-      infoFrom(snapshot.id, cacheOf(snapshot.id))
-    ),
-    activeId,
+    }
+    if (snapshot.id !== activeId) rememberCache(snapshot.id, entry)
+    return infoFrom(snapshot.id, entry)
   })
+  tabsStore.set({ tabs, activeId })
 }
 
 export function addTab(snapshot: TabSnapshot, { activate = true } = {}) {
@@ -189,7 +199,8 @@ export function addTab(snapshot: TabSnapshot, { activate = true } = {}) {
     git: snapshot.git,
     capabilities: snapshot.capabilities,
   }
-  cache.set(snapshot.id, entry)
+  if (activate) dropCache(snapshot.id)
+  else rememberCache(snapshot.id, entry)
   const { tabs, activeId } = tabsStore.get()
   if (tabs.some((tab) => tab.id === snapshot.id)) {
     refresh(snapshot.id, entry)

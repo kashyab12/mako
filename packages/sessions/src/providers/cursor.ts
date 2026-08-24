@@ -270,7 +270,7 @@ export class CursorProvider implements SessionProvider {
   harness = "cursor" as const
   displayName = "Cursor"
   rescanRoot = true
-  rescanDebounceMs = 100
+  rescanDebounceMs = 250
   private root: string
 
   constructor(home = homedir()) {

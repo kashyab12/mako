@@ -302,8 +302,8 @@ async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      // The transcript is long-lived; keep the renderer warm when hidden.
-      backgroundThrottling: false,
+      // Agent processes live in the host; a hidden renderer can sleep safely.
+      backgroundThrottling: true,
     },
   }
   if (icon) windowOptions.icon = icon

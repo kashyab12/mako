@@ -67,16 +67,15 @@ function optOutPath(): string {
 }
 
 /**
- * Sync-at-login defaults ON: the first boot installs the LaunchAgent
- * quietly, and only an explicit settings opt-out (which writes a marker)
- * keeps it off from then on.
+ * Session sync runs inside the app by default. An existing login job is an
+ * explicit always-on choice and is refreshed when its command changes.
  */
-export async function ensureDaemonLoginDefault(): Promise<void> {
+export async function refreshDaemonLoginJob(): Promise<void> {
   if (process.platform !== "darwin") return
   try {
     if (existsSync(optOutPath())) return
     const current = await readFile(plistPath(), "utf8").catch(() => null)
-    if (current === daemonPlist()) return
+    if (!current || current === daemonPlist()) return
     await setDaemonLogin(true)
   } catch {
     // A failed install stays quiet; the settings toggle still works.

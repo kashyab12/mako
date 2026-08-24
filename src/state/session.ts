@@ -17,6 +17,7 @@ import { prefsStore } from "@/state/prefs"
 import {
   addTab,
   cacheOf,
+  dropCache,
   hydrate,
   patchTab,
   refresh,
@@ -439,6 +440,7 @@ export const actions = {
       git: next.git,
       capabilities: next.capabilities ?? empty,
     })
+    dropCache(id)
     window.dispatchEvent(new CustomEvent("mako:close-settings"))
     await guard(() => getMako().activateTab(id))
     if (next.meta?.cwd) void actions.refreshSessions(next.meta.cwd)
@@ -490,6 +492,7 @@ export const actions = {
       git: next.git,
       capabilities: next.capabilities ?? empty,
     })
+    dropCache(result.activeId)
     patchTab(result.activeId, { unread: false })
     if (next.meta?.cwd) void actions.refreshSessions(next.meta.cwd)
   },

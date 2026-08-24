@@ -93,7 +93,7 @@ export function AgentsSection() {
               }}
               className="size-3 accent-current"
             />
-            start at login
+            keep syncing when closed
           </label>
         ) : null}
       </p>

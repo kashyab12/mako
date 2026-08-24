@@ -467,60 +467,12 @@
   }
 }
 
-@keyframes mako-pulse {
-  0%,
-  100% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-/*
- * Loading placeholders.
- *
- * A pulsing grey block is a shrug: it says "something is coming" and nothing
- * about what. These mirror the shape of the row they stand in for — a title
- * line and a shorter meta line — and sweep a highlight across rather than
- * blinking, which reads as progress instead of as a stutter. The sweep is a
- * background-position animation on a promoted layer, so it composites without
- * touching layout.
- */
+/* Loading placeholders mirror the rows they stand in for without moving. */
 .skeleton {
   position: relative;
   overflow: hidden;
   border-radius: var(--radius-sm);
   background: color-mix(in oklch, var(--foreground) 7%, transparent);
-}
-
-.skeleton::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    color-mix(in oklch, var(--foreground) 9%, transparent) 45%,
-    transparent
-  );
-  transform: translateX(-100%);
-  animation: mako-skeleton 1.6s ease-in-out infinite;
-}
-
-@keyframes mako-skeleton {
-  to {
-    transform: translateX(100%);
-  }
-}
-
-@keyframes mako-sweep {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
 }
 
 .animate-enter {
@@ -552,7 +504,11 @@
 }
 
 .animate-live {
-  animation: mako-pulse 1.5s ease-in-out infinite;
+  opacity: 0.72;
+}
+
+.animate-spin {
+  animation: none;
 }
 
 /*
@@ -582,33 +538,11 @@
 }
 
 .shimmer {
-  background: linear-gradient(90deg, var(--faint) 0%, var(--foreground) 45%, var(--faint) 90%);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: mako-sweep 2.2s linear infinite;
-}
-
-/*
- * Per-character shimmer for streaming labels. Each glyph carries its own
- * copy of the animation offset by --i; the delays are *negative*, so on the
- * very first frame every character is already mid-animation — the label
- * never has a cold start.
- */
-@keyframes mako-shimmer-char {
-  0%,
-  100% {
-    color: var(--faint);
-  }
-  50% {
-    color: var(--foreground);
-  }
+  color: var(--muted-foreground);
 }
 
 .shimmer-chars > span {
-  animation: mako-shimmer-char 1.4s linear infinite;
-  animation-delay: calc(var(--i, 0) * -70ms);
+  color: var(--muted-foreground);
 }
 
 /*
@@ -638,18 +572,11 @@
 }
 
 /*
- * Scroll-driven edge fades: the top edge appears the instant anything is
- * scrolled past it, with zero JS and no scroll listeners. The overlays are
- * siblings rather than masks so `content-visibility` on the rows beneath
- * is never disturbed. Browsers without scroll timelines simply show no fade.
+ * Edge fades are toggled by the existing scroll handlers. Chromium otherwise
+ * recomputes scroll-driven animation styles every frame while nothing moves.
  */
 .scroll-fade-scope {
   position: relative;
-  timeline-scope: --scroll-fade;
-}
-
-.scroll-fade-scroller {
-  scroll-timeline: --scroll-fade y;
 }
 
 .scroll-fade-top {
@@ -662,18 +589,8 @@
   background: linear-gradient(to bottom, var(--fade-from, var(--surface)), transparent);
 }
 
-@supports (animation-timeline: scroll()) {
-  @keyframes mako-fade-edge {
-    to {
-      visibility: visible;
-    }
-  }
-
-  .scroll-fade-top {
-    animation: mako-fade-edge steps(1, end) both;
-    animation-timeline: --scroll-fade;
-    animation-range: 0 0.5px;
-  }
+.scroll-fade-top[data-scrolled] {
+  visibility: visible;
 }
 
 /*

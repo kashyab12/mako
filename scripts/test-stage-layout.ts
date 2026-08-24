@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import {
   clampCompanionWidth,
   clampDockHeight,
@@ -12,6 +13,7 @@ import {
   toolLabel,
 } from "../src/lib/tools.ts"
 import { threadStatus, threadsStore } from "../src/state/threads.ts"
+import { cacheOf, dropCache, writeCache } from "../src/state/tabs.ts"
 import {
   appendOptimisticReply,
   bindQueuedReplySender,
@@ -37,6 +39,17 @@ import type {
   ThreadEntry,
   ThreadRef,
 } from "../src/lib/types.ts"
+
+const css = readFileSync(new URL("../src/index.css", import.meta.url), "utf8")
+assert.doesNotMatch(css, /\binfinite\b/)
+
+for (const id of ["perf-a", "perf-b", "perf-c"]) {
+  writeCache(id, {
+    messages: [{ id, role: "user", blocks: [{ type: "text", text: id }] }],
+  })
+}
+assert.deepEqual(cacheOf("perf-a").messages, [])
+for (const id of ["perf-a", "perf-b", "perf-c"]) dropCache(id)
 
 assert.equal(
   clampCompanionWidth({ width: 520, available: 1400, min: 400 }),

@@ -83,7 +83,7 @@ export class OpenCodeProvider implements SessionProvider {
   harness = "opencode" as const
   displayName = "OpenCode"
   rescanRoot = true
-  rescanDebounceMs = 100
+  rescanDebounceMs = 250
 
   private root: string
   private snapshots = new Map<string, Snapshot>()

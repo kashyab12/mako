@@ -15,19 +15,15 @@ export {
   type OpenCodeInstallation,
 } from "./providers/opencode/installation.js"
 
-const cache = new Map<string, { at: number; profile: HarnessProfile }>()
+const cache = new Map<string, HarnessProfile>()
 
 export async function harnessProfile(harness: string): Promise<HarnessProfile> {
   const loader = providerHost.profiles.get(harness)
   if (!loader) return unknownProviderProfile(harness, "Unknown provider")
   const env = await accountEnv(harness, process.env)
   const key = `${harness}:${loader.cacheKey(env)}`
-  const now = Date.now()
-  for (const [cachedKey, cached] of cache) {
-    if (now - cached.at >= 30_000) cache.delete(cachedKey)
-  }
   const held = cache.get(key)
-  if (held) return held.profile
+  if (held) return held
   let profile: HarnessProfile
   try {
     profile = await loader.load(env)
@@ -37,7 +33,7 @@ export async function harnessProfile(harness: string): Promise<HarnessProfile> {
       error instanceof Error ? error.message : String(error)
     )
   }
-  cache.set(key, { at: Date.now(), profile })
+  cache.set(key, profile)
   return profile
 }
 
