@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import type { ReactNode, WheelEvent as ReactWheelEvent } from "react"
 import {
   useCallback,
   useEffect,
@@ -23,7 +23,37 @@ const NEAR_BOTTOM = 96
  * hundreds of synchronous Markdown parses for a large session.
  */
 const INITIAL_TURNS = 30
-const MORE_TURNS = 50
+const MORE_TURNS = 30
+
+interface ScrollAnchor {
+  exchangeId?: string
+  exchangeOffset?: number
+  scrollHeight: number
+  scrollTop: number
+  shown: number
+}
+
+function holdPrependedHeights(node: HTMLDivElement, exchangeId?: string) {
+  if (!exchangeId) return
+  for (const element of node.querySelectorAll("[data-exchange]")) {
+    if (element.getAttribute("data-exchange") === exchangeId) break
+    element.setAttribute("data-preserve-height", "")
+  }
+}
+
+function preserveScrollAnchor(node: HTMLDivElement, snapshot: ScrollAnchor) {
+  const anchor = snapshot.exchangeId
+    ? node.querySelector(`[data-exchange="${CSS.escape(snapshot.exchangeId)}"]`)
+    : null
+  if (anchor && snapshot.exchangeOffset !== undefined) {
+    const offset =
+      anchor.getBoundingClientRect().top - node.getBoundingClientRect().top
+    node.scrollTop += offset - snapshot.exchangeOffset
+  } else {
+    node.scrollTop =
+      snapshot.scrollTop + (node.scrollHeight - snapshot.scrollHeight)
+  }
+}
 
 /**
  * The provider-neutral conversation scroller. It follows a stream only while
@@ -57,16 +87,21 @@ export function ConversationTimeline({
   const viewport = useRef<HTMLDivElement>(null)
   const topFade = useRef<HTMLSpanElement>(null)
   const pinned = useRef(true)
+  const lastScrollTop = useRef(0)
+  const restore = useRef<ScrollAnchor | null>(null)
   const [showJump, setShowJump] = useState(false)
   const [activeTurn, setActiveTurn] = useState<string | null>(null)
   const [limit, setLimit] = useState(INITIAL_TURNS)
   const hidden = Math.max(0, exchanges.length - limit)
   const shown = hidden > 0 ? exchanges.slice(hidden) : exchanges
+  const isEmpty = exchanges.length === 0
 
   const scrollToEnd = useCallback((behavior: ScrollBehavior = "auto") => {
     const node = viewport.current
     if (!node) return
+    restore.current = null
     node.scrollTo({ top: node.scrollHeight, behavior })
+    lastScrollTop.current = node.scrollHeight
     pinned.current = true
     setShowJump(false)
   }, [])
@@ -75,10 +110,21 @@ export function ConversationTimeline({
     const node = viewport.current
     if (!node) return
     topFade.current?.toggleAttribute("data-scrolled", node.scrollTop > 0.5)
+    const movingUp = node.scrollTop < lastScrollTop.current - 0.5
     const distance = node.scrollHeight - node.scrollTop - node.clientHeight
     const atBottom = distance < NEAR_BOTTOM
-    pinned.current = atBottom
+    pinned.current = !movingUp && atBottom
+    lastScrollTop.current = node.scrollTop
     setShowJump((current) => (current === !atBottom ? current : !atBottom))
+  }, [])
+
+  const onWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
+    restore.current = null
+    if (event.deltaY < 0) pinned.current = false
+  }, [])
+
+  const onPointerDown = useCallback(() => {
+    restore.current = null
   }, [])
 
   useEffect(() => {
@@ -86,10 +132,21 @@ export function ConversationTimeline({
     if (!node) return
     const observer = new IntersectionObserver(
       (entries) => {
+        for (const entry of entries) {
+          if (
+            entry.isIntersecting &&
+            entry.target.hasAttribute("data-preserve-height")
+          ) {
+            requestAnimationFrame(() =>
+              entry.target.removeAttribute("data-preserve-height")
+            )
+          }
+        }
         const visible = entries
           .filter((entry) => entry.isIntersecting)
-          .sort((left, right) =>
-            left.boundingClientRect.top - right.boundingClientRect.top
+          .sort(
+            (left, right) =>
+              left.boundingClientRect.top - right.boundingClientRect.top
           )[0]
         const id = visible?.target.getAttribute("data-exchange")
         if (id) setActiveTurn(id)
@@ -103,44 +160,69 @@ export function ConversationTimeline({
   }, [shown.length])
 
   useLayoutEffect(() => {
+    restore.current = null
     pinned.current = true
     const node = viewport.current
-    if (node) node.scrollTop = node.scrollHeight
+    if (!node) return
+    node.scrollTop = node.scrollHeight
+    lastScrollTop.current = node.scrollTop
   }, [identity])
 
   useEffect(() => {
     const node = viewport.current
     if (!node) return
     const pin = () => {
-      if (pinned.current) node.scrollTop = node.scrollHeight
+      if (!pinned.current) {
+        if (restore.current) {
+          preserveScrollAnchor(node, restore.current)
+          lastScrollTop.current = node.scrollTop
+        }
+        return
+      }
+      node.scrollTop = node.scrollHeight
+      lastScrollTop.current = node.scrollTop
     }
     pin()
     const grown = new ResizeObserver(pin)
     if (node.firstElementChild) grown.observe(node.firstElementChild)
     return () => grown.disconnect()
-  }, [identity, shown.length])
+  }, [identity, isEmpty])
 
   useLayoutEffect(() => {
-    if (pinned.current && exchanges.length > 0) {
-      const node = viewport.current
-      if (node) node.scrollTop = node.scrollHeight
-    }
-  }, [exchanges])
+    const snapshot = restore.current
+    const node = viewport.current
+    if (!snapshot || !node || loadingEarlier) return
+    if (snapshot.shown === shown.length) return
+    holdPrependedHeights(node, snapshot.exchangeId)
+    preserveScrollAnchor(node, snapshot)
+    lastScrollTop.current = node.scrollTop
+  }, [loadingEarlier, shown.length])
 
   const showEarlier = useCallback(async () => {
     const node = viewport.current
-    const before = node?.scrollHeight ?? 0
-    const top = node?.scrollTop ?? 0
+    if (!node) return
+    const viewportTop = node.getBoundingClientRect().top
+    const anchor = Array.from(node.querySelectorAll("[data-exchange]")).find(
+      (element) => element.getBoundingClientRect().bottom > viewportTop + 1
+    )
+    restore.current = {
+      exchangeId: anchor?.getAttribute("data-exchange") ?? undefined,
+      exchangeOffset: anchor
+        ? anchor.getBoundingClientRect().top - viewportTop
+        : undefined,
+      scrollHeight: node.scrollHeight,
+      scrollTop: node.scrollTop,
+      shown: shown.length,
+    }
     pinned.current = false
+    node.setAttribute("data-preserve-scroll", "")
     if (hidden > 0) setLimit((current) => current + MORE_TURNS)
     else await onLoadEarlier?.()
-    requestAnimationFrame(() => {
-      if (!node) return
-      node.scrollTop = top + (node.scrollHeight - before)
-    })
-  }, [hidden, onLoadEarlier])
+    requestAnimationFrame(() => node.removeAttribute("data-preserve-scroll"))
+  }, [hidden, onLoadEarlier, shown.length])
 
   const jump = useCallback((id: string) => {
+    restore.current = null
     pinned.current = false
     viewport.current
       ?.querySelector(`[data-exchange="${CSS.escape(id)}"]`)
@@ -163,15 +245,19 @@ export function ConversationTimeline({
     return () => window.removeEventListener("keydown", onKey)
   }, [activeTurn, shown, jump])
 
-  const isEmpty = exchanges.length === 0
   const showNavigator = !isEmpty && shown.length >= 3
 
   return (
-    <div ref={pane} className="scroll-fade-scope relative flex min-h-0 flex-1 flex-col">
+    <div
+      ref={pane}
+      className="scroll-fade-scope relative flex min-h-0 flex-1 flex-col"
+    >
       <span ref={topFade} aria-hidden className="scroll-fade-top" />
       <div
         ref={viewport}
+        onPointerDown={onPointerDown}
         onScroll={onScroll}
+        onWheel={onWheel}
         style={{ paddingInlineEnd: showNavigator ? NAVIGATOR_WIDTH : 0 }}
         className="scroll-fade-scroller group/transcript min-h-0 flex-1 overflow-y-auto overscroll-contain"
       >
