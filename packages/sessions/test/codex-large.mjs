@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdtemp, mkdir, open, rm } from "node:fs/promises"
+import { mkdtemp, mkdir, open, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { CodexProvider } from "../dist/providers/codex.js"
@@ -26,6 +26,31 @@ assert.equal(thread.entries[0]?.kind, "event")
 assert.match(thread.entries[0]?.detail ?? "", /most recent 64 MB/)
 assert.ok(thread.entries.some((entry) => entry.kind === "user" && entry.text === "Recent prompt"))
 assert.ok(!thread.entries.some((entry) => entry.kind === "user" && entry.text === "First prompt"))
+
+const childPath = join(sessions, "rollout-subagent.jsonl")
+await writeFile(
+  childPath,
+  line("session_meta", {
+    id: "child-rollout",
+    session_id: "parent-session",
+    parent_thread_id: "parent-session",
+    thread_source: "subagent",
+    cwd: home,
+  }) +
+    line("session_meta", {
+      id: "parent-session",
+      session_id: "parent-session",
+      thread_source: "user",
+      cwd: home,
+    })
+)
+const childInfo = await stat(childPath)
+const child = await new CodexProvider(home).peek({
+  path: childPath,
+  bytes: childInfo.size,
+  mtimeMs: childInfo.mtimeMs,
+})
+assert.equal(child, null)
 await rm(home, { recursive: true, force: true })
 
 console.log("Large Codex checks clean: gigabyte rollouts translate from a bounded recent window.")

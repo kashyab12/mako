@@ -67,6 +67,7 @@ interface CodexSessionMeta extends CodexRolloutBase {
   id: string
   cwd?: string
   startedAt?: string
+  threadSource?: string
 }
 
 interface CodexTurnContext extends CodexRolloutBase {
@@ -261,6 +262,7 @@ function parseCodexRolloutLine(raw: string): CodexRolloutEvent | null {
         id: String(payload?.["id"] ?? payload?.["session_id"] ?? ""),
         cwd: stringValue(payload?.["cwd"]),
         startedAt: stringValue(payload?.["timestamp"]),
+        threadSource: stringValue(payload?.["thread_source"]),
       }
     case "turn_context":
       return {
@@ -350,8 +352,9 @@ export class CodexProvider implements SessionProvider {
       const event = parseCodexRolloutLine(raw)
       if (!event) return spent < budget
       if (event.kind === "session_meta") {
+        if (sawMeta) return spent < budget
         sawMeta = true
-        if (!event.id) return false
+        if (!event.id || event.threadSource === "subagent") return false
         ref = {
           harness: this.harness,
           nativeId: event.id,

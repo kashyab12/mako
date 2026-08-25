@@ -105,11 +105,30 @@ export function applyThreadRemoved(path: string) {
   applyThreads(threadsStore.get().threads.filter((entry) => entry.path !== path))
 }
 
-export function applyThreads(list: ThreadRef[]) {
-  threadsStore.set({ threads: list, loaded: true })
-  const candidate = takePendingThread(list, knownPaths)
+export function uniqueThreadRefs(list: ThreadRef[]) {
+  const byIdentity = new Map<string, ThreadRef>()
+  for (const ref of list) {
+    const key = `${ref.harness}:${ref.nativeId}`
+    const held = byIdentity.get(key)
+    if (
+      !held ||
+      (held.archived && !ref.archived) ||
+      (held.archived === ref.archived &&
+        (ref.updatedAt ?? "") > (held.updatedAt ?? ""))
+    )
+      byIdentity.set(key, ref)
+  }
+  return [...byIdentity.values()].sort((left, right) =>
+    (right.updatedAt ?? "").localeCompare(left.updatedAt ?? "")
+  )
+}
+
+export function applyThreads(list: ThreadRef[], loaded = true) {
+  const unique = uniqueThreadRefs(list)
+  threadsStore.set({ threads: unique, loaded })
+  const candidate = takePendingThread(unique, knownPaths)
   if (candidate) void threadViewingActions.view(candidate)
-  knownPaths = new Set(list.map((ref) => ref.path))
+  knownPaths = new Set(unique.map((ref) => ref.path))
 }
 
 let focusRefetch = false
@@ -144,13 +163,8 @@ const threadCatalogActions = {
     // An engine one vintage older answers with a bare array; treat it as
     // ready rather than spinning forever against the shape difference.
     const result = normalizeThreadCatalog(raw)
-    threadsStore.set({
-      threads: result.threads,
-      loaded: result.ready,
-      resumable,
-      targets,
-      acpable,
-    })
+    threadsStore.set({ resumable, targets, acpable })
+    applyThreads(result.threads, result.ready)
     // The catalog scans for a moment at boot, and its "here is the list"
     // push can fire while the window is still loading — a lossy first
     // handshake. Retrying until the host says ready is what makes the rail

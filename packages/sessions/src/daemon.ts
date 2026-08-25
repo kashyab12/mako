@@ -150,7 +150,7 @@ type ParsedDaemonResponse =
  * without it forever. Clients that see an older daemon retire it and let a
  * fresh one take the socket.
  */
-export const PROTOCOL_VERSION = 24
+export const PROTOCOL_VERSION = 25
 const MAX_CLIENTS = 64
 const MAX_REQUEST_FRAME_BYTES = 1024 * 1024
 const MAX_RESPONSE_FRAME_BYTES = 256 * 1024 * 1024
