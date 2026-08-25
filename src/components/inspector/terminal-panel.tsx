@@ -24,7 +24,7 @@ import {
   type TerminalWriter,
 } from "@/lib/terminal-writer"
 import { prefsStore, setPref, usePrefs } from "@/state/prefs"
-import { useSession } from "@/state/session"
+import { useWorkspaceFocus } from "@/components/stage/workspace-focus-context"
 import { createHook } from "@/state/store"
 import { viewer } from "@/state/viewer"
 import {
@@ -39,7 +39,7 @@ import type { TerminalSession } from "@/lib/types"
 const useTerminal = createHook(terminalStore)
 
 export function TerminalPanel() {
-  const cwd = useSession((state) => state.meta?.cwd)
+  const { cwd } = useWorkspaceFocus()
   const phase = useTerminal((state) => state.phase)
   const sessions = useTerminal((state) => state.sessions)
   const activeId = useTerminal((state) => state.activeId)

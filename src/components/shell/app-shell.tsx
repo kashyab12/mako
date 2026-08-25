@@ -14,6 +14,7 @@ import { useDeskCommands } from "@/desk/use-desk-commands"
 import { actions, store, useSession } from "@/state/session"
 import { bindTheme, prefsStore, setPref, usePrefs } from "@/state/prefs"
 import { PlugZapIcon } from "lucide-react"
+import { WorkspaceFocusProvider } from "@/components/stage/workspace-focus"
 
 export function AppShell() {
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -83,7 +84,8 @@ export function AppShell() {
 
   return (
     <TooltipProvider delayDuration={350}>
-      <div className="relative flex h-svh flex-col overflow-hidden bg-shell text-foreground">
+      <WorkspaceFocusProvider>
+        <div className="relative flex h-svh flex-col overflow-hidden bg-shell text-foreground">
         <TitleBar />
         <div className="relative z-10 flex min-h-0 flex-1">
           {railOpen ? (
@@ -138,8 +140,9 @@ export function AppShell() {
         }}
         onSectionChange={setSettingsSection}
       />
-      <Guide />
-      <ConversionOverlay />
+        <Guide />
+        <ConversionOverlay />
+      </WorkspaceFocusProvider>
     </TooltipProvider>
   )
 }

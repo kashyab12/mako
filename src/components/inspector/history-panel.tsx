@@ -2,8 +2,13 @@ import { memo, useCallback, useMemo } from "react"
 import { Blank } from "@/components/ui/kit"
 import { Slot } from "@/extend/slot"
 import { checkpointsOf, type Checkpoint } from "@/lib/thread"
-import { formatRelative } from "@/lib/format"
+import { formatRelative, textOf } from "@/lib/format"
+import { acpBlocksToMessages } from "@/lib/acp-blocks"
+import { toExchanges } from "@/lib/exchanges"
 import { actions, useSession } from "@/state/session"
+import { threads, useThreads } from "@/state/threads"
+import type { ViewedThread } from "@/state/thread-state"
+import { useAcp } from "@/state/acp"
 import { cn } from "@/lib/utils"
 import {
   ChevronLeftIcon,
@@ -26,10 +31,39 @@ import {
  */
 export function HistoryPanel() {
   const tree = useSession((state) => state.tree)
-
+  const viewing = useThreads((state) => state.viewing)
+  const acpSession = useAcp((state) => state.session)
+  const acpBlocks = useAcp((state) => state.blocks)
   const checkpoints = useMemo(() => checkpointsOf(tree), [tree])
+  const liveTurns = useMemo(() => {
+    if (!acpSession) return []
+    const conversation = acpBlocksToMessages(
+      acpBlocks,
+      acpSession.status === "running",
+      acpSession.harness
+    )
+    return toExchanges(conversation.messages)
+      .filter((exchange) => exchange.prompt)
+      .map((exchange) => ({
+        id: exchange.id,
+        text: textOf(exchange.prompt?.blocks ?? []),
+        reply: exchange.response
+          .map((message) => textOf(message.blocks))
+          .filter(Boolean)
+          .join("\n"),
+      }))
+  }, [acpBlocks, acpSession])
   const rewind = useCallback((id: string) => void actions.navigate(id), [])
   const branch = useCallback((id: string) => void actions.fork(id), [])
+
+  if (viewing)
+    return (
+      <ThreadHistory
+        thread={viewing}
+        liveTurns={acpSession ? liveTurns : []}
+      />
+    )
+  if (acpSession) return <LiveHistory turns={liveTurns} />
 
   return (
     <div className="h-full min-h-0 overflow-y-auto overscroll-contain">
@@ -51,6 +85,161 @@ export function HistoryPanel() {
             />
           ))}
         </div>
+      )}
+    </div>
+  )
+}
+
+interface HistoryTurn {
+  id: string
+  text: string
+  reply?: string
+  at?: string
+  entryIndex?: number
+}
+
+type ThreadTurn = HistoryTurn & { entryIndex: number }
+
+function LiveHistory({ turns }: { turns: HistoryTurn[] }) {
+  return (
+    <div className="h-full min-h-0 overflow-y-auto overscroll-contain">
+      {turns.length === 0 ? (
+        <Blank
+          icon={<HistoryIcon />}
+          title="No turns yet"
+          body="Messages from this live agent will appear here as the conversation grows."
+        />
+      ) : (
+        <TurnCards turns={turns} />
+      )}
+    </div>
+  )
+}
+
+function turnsOf(thread: ViewedThread): ThreadTurn[] {
+  const turns: ThreadTurn[] = []
+  for (let index = 0; index < thread.entries.length; index += 1) {
+    const entry = thread.entries[index]
+    if (entry?.kind !== "user") continue
+    let end = index
+    let reply: string | undefined
+    for (let next = index + 1; next < thread.entries.length; next += 1) {
+      const candidate = thread.entries[next]
+      if (!candidate || candidate.kind === "user") break
+      end = next
+      if (candidate.kind === "assistant" && !reply) {
+        reply = candidate.blocks.find((block) => block.type === "text")?.text
+      }
+    }
+    turns.push({
+      id: `thread-turn-${thread.pageStart + index}`,
+      text: entry.text,
+      reply,
+      at: entry.at,
+      entryIndex: thread.pageStart + end,
+    })
+  }
+  return turns
+}
+
+function TurnCards({
+  turns,
+  start = 0,
+  onBranch,
+}: {
+  turns: HistoryTurn[]
+  start?: number
+  onBranch?: (turn: HistoryTurn) => void
+}) {
+  return (
+    <div className="px-2.5 py-2.5">
+      {turns.map((turn, index) => (
+        <div
+          key={turn.id}
+          className="contain-turn relative ml-6 mb-1.5 rounded-xl px-2.5 py-2 ring-1 ring-transparent hover:bg-fill-hover hover:ring-hairline [contain-intrinsic-size:auto_68px]"
+        >
+          <span className="tabular absolute top-2.5 -left-[19px] flex size-[15px] items-center justify-center rounded-full bg-surface text-label font-semibold text-faint ring-1 ring-hairline">
+            {start + index + 1}
+          </span>
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1">
+              <p className="line-clamp-2 text-ui leading-snug text-foreground/90">
+                {turn.text || "Empty message"}
+              </p>
+              {turn.reply ? (
+                <p className="mt-1 flex items-start gap-1 text-label leading-snug text-faint">
+                  <CornerDownRightIcon className="mt-[3px] size-2.5 shrink-0 opacity-70" />
+                  <span className="line-clamp-1 min-w-0">{turn.reply}</span>
+                </p>
+              ) : null}
+            </div>
+            {turn.at ? (
+              <span className="tabular shrink-0 text-label text-faint">
+                {formatRelative(turn.at)}
+              </span>
+            ) : null}
+            {onBranch && turn.entryIndex !== undefined ? (
+              <button
+                type="button"
+                title="Branch from this turn into a new session"
+                onClick={() => onBranch(turn)}
+                className="pressable flex h-5 shrink-0 items-center gap-1 rounded-md px-1.5 text-label text-faint ring-1 ring-hairline hover:text-foreground"
+              >
+                <GitBranchPlusIcon className="size-2.5" />
+                Branch
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ThreadHistory({
+  thread,
+  liveTurns,
+}: {
+  thread: ViewedThread
+  liveTurns: Array<Pick<ThreadTurn, "id" | "text" | "reply">>
+}) {
+  const turns = useMemo(() => turnsOf(thread), [thread])
+  const pending = liveTurns.filter(
+    (turn, index) => index > 0 || turn.text !== turns.at(-1)?.text
+  )
+  return (
+    <div className="h-full min-h-0 overflow-y-auto overscroll-contain">
+      {thread.hasEarlier ? (
+        <button
+          type="button"
+          disabled={thread.loadingEarlier}
+          onClick={() => void threads.loadEarlier()}
+          className="pressable mx-3 mt-3 rounded-md border border-hairline px-2 py-1 text-label text-muted-foreground hover:bg-fill-hover hover:text-foreground disabled:opacity-50"
+        >
+          {thread.loadingEarlier ? "Loading earlier turns…" : "Show earlier turns"}
+        </button>
+      ) : null}
+      {turns.length === 0 && pending.length === 0 ? (
+        <Blank
+          icon={<HistoryIcon />}
+          title="No readable turns"
+          body="This provider session has no user turns in its loaded history."
+        />
+      ) : (
+        <>
+          <TurnCards
+            turns={turns}
+            onBranch={(turn) => {
+              if (turn.entryIndex === undefined) return
+              void threads.forkAt(
+                thread.ref,
+                turn.entryIndex,
+                thread.ref.harness
+              )
+            }}
+          />
+          <TurnCards turns={pending} start={turns.length} />
+        </>
       )}
     </div>
   )

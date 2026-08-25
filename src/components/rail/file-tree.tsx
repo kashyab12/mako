@@ -7,6 +7,7 @@ import { useWorkspaceFiles } from "@/state/files"
 import { prefsStore, setPref, usePrefs } from "@/state/prefs"
 import { viewer, useViewer } from "@/state/viewer"
 import { cn } from "@/lib/utils"
+import { useWorkspaceFocus } from "@/components/stage/workspace-focus-context"
 import { ChevronRightIcon, FileIcon, FolderIcon, FolderOpenIcon, SearchIcon, XIcon } from "lucide-react"
 
 const ROW_HEIGHT = 24
@@ -27,9 +28,10 @@ const MAX_MATCHES = 400
  * already know the name.
  */
 export function FileTree() {
+  const focus = useWorkspaceFocus()
   const [query, setQuery] = useState("")
   const deferred = useDeferredValue(query)
-  const files = useWorkspaceFiles(true)
+  const files = useWorkspaceFiles(focus.ready, focus.cwd)
   const openDirs = usePrefs((prefs) => prefs.openDirs)
   const active = useViewer((state) => state.path)
   const scroller = useRef<HTMLDivElement>(null)
@@ -80,6 +82,16 @@ export function FileTree() {
     },
     [files]
   )
+
+  if (!focus.ready) {
+    return (
+      <Blank
+        icon={<FolderIcon />}
+        title="Loading project"
+        body={focus.cwd ?? "Resolving the focused conversation workspace."}
+      />
+    )
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">

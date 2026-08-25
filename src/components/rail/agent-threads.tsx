@@ -12,6 +12,7 @@ import {
   useThreads,
 } from "@/state/threads"
 import { actions, shallowEqual, useSession } from "@/state/session"
+import { useWorkspaceFocus } from "@/components/stage/workspace-focus-context"
 import {
   prefsStore,
   setPref,
@@ -106,8 +107,9 @@ export function AgentThreads() {
   const collapsed = usePrefs((prefs) => prefs.collapsedGroups)
   const scope = usePrefs((prefs) => prefs.railScope)
   const sortBy = usePrefs((prefs) => prefs.railSortBy)
-  const cwd = useSession((state) => state.meta?.cwd)
+  const { cwd, ready: workspaceReady } = useWorkspaceFocus()
   const branch = useSession((state) => state.git?.branch)
+  const focusedBranch = workspaceReady ? branch : undefined
   const now = useLiveTime()
 
   useEffect(() => {
@@ -334,7 +336,7 @@ export function AgentThreads() {
               <FolderSection
                 key={folder.key}
                 folder={folder}
-                branch={folder.current ? branch : undefined}
+                branch={folder.current ? focusedBranch : undefined}
                 now={now}
                 collapsed={collapsed.includes(`ws:${folder.key}`)}
                 onToggle={() => {

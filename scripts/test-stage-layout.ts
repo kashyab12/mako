@@ -12,7 +12,11 @@ import {
   subagentResultText,
   toolLabel,
 } from "../src/lib/tools.ts"
-import { threadStatus, threadsStore } from "../src/state/threads.ts"
+import {
+  threadStatus,
+  threadsStore,
+  uniqueThreadRefs,
+} from "../src/state/threads.ts"
 import { cacheOf, dropCache, writeCache } from "../src/state/tabs.ts"
 import {
   appendOptimisticReply,
@@ -27,6 +31,7 @@ import {
 import { acpBlocksToMessages } from "../src/lib/acp-blocks.ts"
 import { contextAccounting } from "../src/lib/context-accounting.ts"
 import { runningTerminalForWorkspace } from "../src/state/terminal.ts"
+import { workspaceFocusOf } from "../src/components/stage/workspace-focus-context.ts"
 import { responseSections } from "../src/lib/exchanges.ts"
 import {
   pendingThreadInput,
@@ -44,6 +49,57 @@ import type {
 
 const css = readFileSync(new URL("../src/index.css", import.meta.url), "utf8")
 assert.doesNotMatch(css, /\binfinite\b/)
+
+assert.deepEqual(
+  workspaceFocusOf({
+    sessionCwd: "/repo/mako",
+    sessionTitle: "Mako",
+    viewing: {
+      path: "/sessions/arca.jsonl",
+      cwd: "/repo/arca",
+      title: "Arca audit",
+    },
+  }),
+  {
+    cwd: "/repo/arca",
+    title: "Arca audit",
+    identity: "thread:/sessions/arca.jsonl",
+    ready: false,
+  }
+)
+assert.deepEqual(
+  workspaceFocusOf({
+    sessionCwd: "/repo/arca",
+    viewing: { path: "/sessions/arca.jsonl", cwd: "/repo/arca" },
+    live: { id: "live-1", cwd: "/repo/arca", title: "Live arca" },
+    liveThreadPath: "/sessions/arca.jsonl",
+  }),
+  {
+    cwd: "/repo/arca",
+    title: "Live arca",
+    identity: "live:live-1",
+    ready: true,
+  }
+)
+
+const duplicateThreadBase: ThreadRef = {
+  harness: "codex",
+  nativeId: "parent-session",
+  path: "/sessions/parent.jsonl",
+  cwd: "/repo/arca",
+  updatedAt: "2026-08-25T01:00:00.000Z",
+}
+assert.deepEqual(
+  uniqueThreadRefs([
+    duplicateThreadBase,
+    {
+      ...duplicateThreadBase,
+      path: "/sessions/subagent.jsonl",
+      updatedAt: "2026-08-25T01:01:00.000Z",
+    },
+  ]).map((ref) => `${ref.harness}:${ref.nativeId}`),
+  ["codex:parent-session"]
+)
 
 const terminalSession = (
   id: string,

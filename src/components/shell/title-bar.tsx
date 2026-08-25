@@ -10,6 +10,7 @@ import { MakoMark } from "@/components/ui/mako-mark"
 import { TitleBarStatus } from "@/components/shell/title-bar-status"
 import { workspaceName } from "@/lib/format"
 import { search } from "@/state/search"
+import { useWorkspaceFocus } from "@/components/stage/workspace-focus-context"
 import { cn } from "@/lib/utils"
 import {
   PanelLeftIcon,
@@ -33,8 +34,7 @@ import {
  * traffic-light inset, and the title recentres over the full width.
  */
 export function TitleBar() {
-  const name = useSession((state) => state.meta?.sessionName)
-  const cwd = useSession((state) => state.meta?.cwd)
+  const { cwd, title: name } = useWorkspaceFocus()
   const streaming = useSession((state) => state.meta?.isStreaming ?? false)
   const railOpen = usePrefs((prefs) => prefs.railOpen)
   const railWidth = usePrefs((prefs) => prefs.railWidth)

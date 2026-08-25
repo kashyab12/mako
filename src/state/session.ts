@@ -72,6 +72,7 @@ export interface SessionStore {
 }
 
 const empty: Capabilities = { tools: [], commands: [], skills: [] }
+let workspaceGeneration = 0
 
 export const store = createStore<SessionStore>({
   phase: "booting",
@@ -619,8 +620,9 @@ export const actions = {
 
   /** Point the agent at a folder by path, without a dialog. */
   async openWorkspace(folder: string) {
+    const mine = ++workspaceGeneration
     const next = await guard(() => getMako().setCwd(folder))
-    if (!next) return
+    if (!next || mine !== workspaceGeneration) return
     adoptSnapshot(next)
     viewer.close()
     void actions.refreshSessions(folder)

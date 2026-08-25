@@ -136,7 +136,7 @@ export function installMockBridge() {
     newSession: async () => ({ meta, messages: [], tree: [] }),
     setCwd: async (cwd: string) => {
       meta = { ...meta, cwd }
-      return mockTab("tab-1")
+      return { ...mockTab("tab-1"), git: { ...GIT, cwd, root: cwd } }
     },
     setName: async (name: string) => update({ sessionName: name }),
     prompt: async () => {

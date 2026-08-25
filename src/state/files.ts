@@ -1,7 +1,7 @@
-import { useEffect, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useSyncExternalStore } from "react"
 import { getMako, hasBridge } from "@/lib/bridge"
 import type { WorkspaceFile } from "@/lib/types"
-import { store } from "@/state/session"
+import { useSession } from "@/state/session"
 
 /**
  * The workspace file index, loaded lazily.
@@ -13,7 +13,8 @@ import { store } from "@/state/session"
 
 let files: WorkspaceFile[] = []
 let loadedFor: string | null = null
-let inFlight: Promise<void> | null = null
+let loadGeneration = 0
+let inFlightFor: string | null = null
 const listeners = new Set<() => void>()
 
 function publish() {
@@ -21,23 +22,30 @@ function publish() {
 }
 
 function load(cwd: string) {
-  if (inFlight || loadedFor === cwd || !hasBridge()) return
-  inFlight = getMako()
+  if (inFlightFor === cwd || loadedFor === cwd || !hasBridge()) return
+  const mine = ++loadGeneration
+  inFlightFor = cwd
+  void getMako()
     .listFiles()
     .then((next) => {
+      if (mine !== loadGeneration) return
       files = next
       loadedFor = cwd
       publish()
     })
     .catch(() => {
+      if (mine !== loadGeneration) return
       files = []
+      publish()
     })
     .finally(() => {
-      inFlight = null
+      if (mine === loadGeneration) inFlightFor = null
     })
 }
 
 export function invalidateWorkspaceFiles() {
+  loadGeneration += 1
+  inFlightFor = null
   loadedFor = null
   files = []
   publish()
@@ -47,15 +55,23 @@ const subscribe = (listener: () => void) => {
   listeners.add(listener)
   return () => listeners.delete(listener)
 }
-const snapshot = () => files
+const EMPTY_FILES: WorkspaceFile[] = []
 
 /** `active` gates the fetch, so merely rendering the composer costs nothing. */
-export function useWorkspaceFiles(active: boolean): WorkspaceFile[] {
-  const cwd = store.get().meta?.cwd
+export function useWorkspaceFiles(
+  active: boolean,
+  focusedCwd?: string
+): WorkspaceFile[] {
+  const sessionCwd = useSession((state) => state.meta?.cwd)
+  const cwd = focusedCwd ?? sessionCwd
 
   useEffect(() => {
     if (active && cwd) load(cwd)
   }, [active, cwd])
 
+  const snapshot = useCallback(
+    () => (cwd && loadedFor === cwd ? files : EMPTY_FILES),
+    [cwd]
+  )
   return useSyncExternalStore(subscribe, snapshot, snapshot)
 }

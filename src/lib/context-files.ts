@@ -42,7 +42,8 @@ export function touchedFiles(messages: ChatMessage[]): TouchedFile[] {
             : null
       if (!action) continue
 
-      const path = primaryArgument(block.arguments)
+      const path =
+        primaryArgument(block.arguments) || String(block.arguments ?? "")
       // `grep`/`find` carry a pattern in the primary slot; only keep things
       // that look like a path so the list stays about files.
       if (!path || !looksLikePath(path)) continue

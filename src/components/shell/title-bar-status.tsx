@@ -4,6 +4,7 @@ import { stage } from "@/state/stage"
 import { workspaceName } from "@/lib/format"
 import { HotIndicator } from "@/components/shell/hot-indicator"
 import { updates, useUpdates } from "@/state/updates"
+import { useWorkspaceFocus } from "@/components/stage/workspace-focus-context"
 import {
   ArrowUpCircleIcon,
   FolderIcon,
@@ -48,7 +49,7 @@ function ConnectionPill() {
 }
 
 function ProjectContext() {
-  const cwd = useSession((state) => state.meta?.cwd)
+  const { cwd, ready } = useWorkspaceFocus()
   const branch = useSession((state) => state.git?.branch)
   const changed = useSession((state) => state.git?.files.length ?? 0)
   if (!cwd) return null
@@ -63,7 +64,7 @@ function ProjectContext() {
         <FolderIcon className="size-3" />
         <span className="max-w-[9rem] truncate">{workspaceName(cwd)}</span>
       </button>
-      {branch ? (
+      {ready && branch ? (
         <>
           <span aria-hidden className="text-faint/50">/</span>
           <button

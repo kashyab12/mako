@@ -3,12 +3,15 @@ import { Chip, Eyebrow, ListCard } from "@/components/ui/kit"
 import { contextAccounting } from "@/lib/context-accounting"
 import { touchedFiles, type FileAction, type TouchedFile } from "@/lib/context-files"
 import { fileDir, fileName, formatContextWindow, formatCost, formatRate, formatTokens } from "@/lib/format"
-import { desktop } from "@/state/desktop"
+import { threadToMessages } from "@/lib/foreign-thread"
+import { acpBlocksToMessages } from "@/lib/acp-blocks"
 import { useAcp } from "@/state/acp"
 import { useProviders } from "@/state/providers"
 import { actions, useSession } from "@/state/session"
 import { useThreads } from "@/state/threads"
 import { cn } from "@/lib/utils"
+import { viewer } from "@/state/viewer"
+import { useWorkspaceFocus } from "@/components/stage/workspace-focus-context"
 import type { SkillSummary } from "@/lib/types"
 import {
   BookOpenIcon,
@@ -38,9 +41,9 @@ export function ContextPanel() {
     <div className="h-full overflow-y-auto overscroll-contain [container-type:inline-size]">
       <div className="mx-auto flex w-full max-w-content flex-col gap-7 px-6 py-6">
         <Budget />
+        <Files />
         {builtin ? (
           <>
-            <Files />
             <Skills />
             <Tools />
           </>
@@ -108,7 +111,7 @@ function Budget() {
           usage.lastInput == null ? "not reported" : formatTokens(usage.lastInput),
       },
       {
-        label: "session spend",
+        label: "loaded history spend",
         value: usage.cost == null ? "not reported" : formatCost(usage.cost),
       }
     )
@@ -143,7 +146,16 @@ function Budget() {
           </div>
         ))}
       </div>
-      {tokenStats && tokenStats.total > 0 ? <TokenMix stats={tokenStats} /> : null}
+      {tokenStats && tokenStats.total > 0 ? (
+        <TokenMix
+          stats={tokenStats}
+          label={
+            usage.owner === "thread"
+              ? "token mix in loaded history"
+              : "token mix this session"
+          }
+        />
+      ) : null}
     </section>
   )
 }
@@ -162,14 +174,16 @@ const MIX = [
 
 function TokenMix({
   stats,
+  label,
 }: {
   stats: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number }
+  label: string
 }) {
   const total = stats.input + stats.output + stats.cacheRead + stats.cacheWrite
   if (total <= 0) return null
   return (
     <div className="flex flex-col gap-2">
-      <div className="text-label text-faint">token mix this session</div>
+      <div className="text-label text-faint">{label}</div>
       <div className="flex h-2 w-full overflow-hidden rounded-full bg-raised">
         {MIX.map((segment) => (
           <span
@@ -209,19 +223,42 @@ const FILE_TONE = {
 } satisfies Record<FileAction, string>
 
 function Files() {
-  const messages = useSession((state) => state.messages)
+  const nativeMessages = useSession((state) => state.messages)
   const changed = useSession((state) => state.git?.files)
-
+  const viewing = useThreads((state) => state.viewing)
+  const acpSession = useAcp((state) => state.session)
+  const acpBlocks = useAcp((state) => state.blocks)
+  const focus = useWorkspaceFocus()
+  const messages = useMemo(() => {
+    const history = viewing
+      ? threadToMessages(
+          viewing.entries,
+          viewing.pageStart,
+          viewing.ref.harness
+        )
+      : []
+    const live = acpSession
+      ? acpBlocksToMessages(
+          acpBlocks,
+          acpSession.status === "running",
+          acpSession.harness
+        ).messages
+      : []
+    return history.length > 0 || live.length > 0
+      ? [...history, ...live]
+      : nativeMessages
+  }, [acpBlocks, acpSession, nativeMessages, viewing])
+  const visibleChanges = focus.ready ? changed : undefined
   const files = useMemo(() => touchedFiles(messages), [messages])
   const stats = useMemo(() => {
     const map = new Map<string, { insertions: number; deletions: number }>()
-    for (const file of changed ?? []) {
+    for (const file of visibleChanges ?? []) {
       map.set(file.path, { insertions: file.insertions, deletions: file.deletions })
     }
     return map
-  }, [changed])
+  }, [visibleChanges])
 
-  if (files.length === 0) return null
+  if (!focus.ready || files.length === 0) return null
 
   return (
     <Section title="Files in play" count={files.length}>
@@ -246,7 +283,7 @@ const FileRow = memo(function FileRow({
     <button
       type="button"
       title={`${file.path} · ${file.action}${file.count > 1 ? ` ${file.count}×` : ""}`}
-      onClick={() => void desktop.revealPath(file.path)}
+      onClick={() => void viewer.open(file.path)}
       className="contain-turn flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors duration-100 hover:bg-fill-hover [contain-intrinsic-size:auto_30px]"
     >
       <Icon className={cn("size-3 shrink-0", FILE_TONE[file.action])} />

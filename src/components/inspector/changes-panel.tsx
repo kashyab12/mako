@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils"
 import { prefsStore, setPref, togglePref, usePrefs } from "@/state/prefs"
 import { viewer } from "@/state/viewer"
 import type { GitDiff, GitFile } from "@/lib/types"
+import { useWorkspaceFocus } from "@/components/stage/workspace-focus-context"
 import {
   CheckCircle2Icon,
   ChevronRightIcon,
@@ -63,10 +64,17 @@ const MARK = {
 } satisfies Record<GitFile["status"], StatusMark>
 
 export function ChangesPanel() {
-  const workspace = useSession(
-    (state) => state.meta?.cwd ?? state.git?.root ?? "no-workspace"
-  )
-  return <WorkspaceChanges key={workspace} />
+  const focus = useWorkspaceFocus()
+  if (!focus.ready) {
+    return (
+      <Blank
+        icon={<RefreshCwIcon />}
+        title="Loading project"
+        body={focus.cwd ?? "Resolving the focused conversation workspace."}
+      />
+    )
+  }
+  return <WorkspaceChanges key={focus.identity} />
 }
 
 function WorkspaceChanges() {
