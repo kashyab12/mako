@@ -3,7 +3,7 @@ import { devinExecutable } from "./executable.js"
 
 export const devinAcpSource: ProviderAcpSource = {
   provider: "devin",
-  available: () => true,
+  available: () => devinExecutable() !== null,
   async launch() {
     return {
       command: devinExecutable() ?? "devin",

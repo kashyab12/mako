@@ -5,6 +5,10 @@ import { StringDecoder } from "node:string_decoder"
 import { app } from "electron"
 import { accountEnv } from "./accounts.js"
 import { discoverMcpRegistry } from "./mcp-registry.js"
+import {
+  environmentForExecutable,
+  resolveExecutable,
+} from "./executable.js"
 import { codexMcpConfig, mergeCodexConfig } from "./mcp-runtime.js"
 import {
   clearTurnServerRequests,
@@ -91,9 +95,11 @@ export async function codexAppStart(
   const workingDir = cwd && existsSync(cwd) ? cwd : homedir()
   const mcpSnapshot = await discoverMcpRegistry(workingDir, app.getAppPath())
   const env = await accountEnv("codex", process.env)
-  const child = spawn("codex", ["app-server"], {
+  const executable = resolveExecutable("codex", env)
+  if (!executable) throw new Error("Codex is not installed")
+  const child = spawn(executable, ["app-server"], {
     cwd: workingDir,
-    env,
+    env: environmentForExecutable(executable, env),
     shell: false,
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,

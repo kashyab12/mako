@@ -53,6 +53,10 @@ import { normalizeAcpOptions } from "./harnesses.js"
 import { providerHost } from "./providers/index.js"
 import type { AcpTuning } from "./providers/acp-source.js"
 import { discoverMcpRegistry } from "./mcp-registry.js"
+import {
+  environmentForExecutable,
+  resolveExecutable,
+} from "./executable.js"
 import { acpMcpServers } from "./mcp-runtime.js"
 import type { McpTransport } from "./shared.js"
 import type {
@@ -323,11 +327,13 @@ export async function acpStart(
   delete env.CLAUDECODE
   delete env.CLAUDE_CODE_ENTRYPOINT
   spec.configureEnvironment(env)
+  const executable = resolveExecutable(spec.command, env)
+  if (!executable) throw new Error(`${harness} is not installed`)
 
-  const child = spawn(spec.command, spec.args, {
+  const child = spawn(executable, spec.args, {
     cwd: workingDir,
     stdio: ["pipe", "pipe", "pipe"],
-    env,
+    env: environmentForExecutable(executable, env),
   })
 
   const live: Live = {

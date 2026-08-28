@@ -32,15 +32,27 @@ import type {
   NativeRunOptions,
 } from "./providers/native-runner.js"
 import type { HostEvent, ThreadRunState } from "./shared.js"
+import {
+  environmentForExecutable,
+  resolveExecutable,
+} from "./executable.js"
 
 export type FreshOptions = NativeRunOptions
 
+function availableNativeRunners() {
+  return providerHost.nativeRunners
+    .list()
+    .filter(
+      (runner) => resolveExecutable(runner.fresh("", {}).command) !== null
+    )
+}
+
 export function resumableHarnesses(): string[] {
-  return providerHost.nativeRunners.list().map((runner) => runner.provider)
+  return availableNativeRunners().map((runner) => runner.provider)
 }
 
 export function freshHarnesses(): string[] {
-  return providerHost.nativeRunners.list().map((runner) => runner.provider)
+  return availableNativeRunners().map((runner) => runner.provider)
 }
 
 export interface NativeRunResult {
@@ -165,10 +177,12 @@ async function launch(
   const cwd = workingDir && existsSync(workingDir) ? workingDir : homedir()
   // The selected account decides who pays for this run.
   const env = await accountEnv(harness, process.env)
-  const child = spawn(command, args, {
+  const executable = resolveExecutable(command, env)
+  if (!executable) throw new Error(`${harness} is not installed`)
+  const child = spawn(executable, args, {
     cwd,
     stdio: ["ignore", "pipe", "pipe"],
-    env,
+    env: environmentForExecutable(executable, env),
   })
 
   const state: ThreadRunState = { path: key, harness, status: "running" }

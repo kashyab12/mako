@@ -54,6 +54,7 @@ import {
 } from "./github.js"
 import { HostPool } from "./pool.js"
 import { listExternalEditors, openInExternalEditor } from "./editors.js"
+import { resolveExecutable } from "./executable.js"
 import { workspacePreviewPath } from "./workspace-preview.js"
 import {
   daemonStatus,
@@ -681,7 +682,10 @@ function bindIpc() {
   )
 
   /* Interactive foreign agents over ACP. */
-  handle("mako:acp-harnesses", () => ["codex", ...acpHarnesses()])
+  handle("mako:acp-harnesses", () => [
+    ...(resolveExecutable("codex") ? ["codex"] : []),
+    ...acpHarnesses(),
+  ])
   handle(
     "mako:acp-start",
     async (

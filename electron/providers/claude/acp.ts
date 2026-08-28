@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs"
-import { homedir } from "node:os"
 import { join } from "node:path"
+import { resolveExecutable } from "../../executable.js"
 import type { ProviderAcpSource } from "../acp-source.js"
 
 function adapterPath(appPath: string): string {
@@ -16,7 +16,9 @@ function adapterPath(appPath: string): string {
 
 export const claudeAcpSource: ProviderAcpSource = {
   provider: "claude",
-  available: (appPath) => existsSync(adapterPath(appPath)),
+  available: (appPath) =>
+    existsSync(adapterPath(appPath)) &&
+    resolveExecutable(process.env.CLAUDE_CODE_EXECUTABLE ?? "claude") !== null,
   async launch(options) {
     const script = adapterPath(options.appPath)
     if (!existsSync(script)) return null
@@ -29,8 +31,8 @@ export const claudeAcpSource: ProviderAcpSource = {
           env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"
         }
         if (!env.CLAUDE_CODE_EXECUTABLE) {
-          const installed = join(homedir(), ".local", "bin", "claude")
-          if (existsSync(installed)) env.CLAUDE_CODE_EXECUTABLE = installed
+          const installed = resolveExecutable("claude", env)
+          if (installed) env.CLAUDE_CODE_EXECUTABLE = installed
         }
       },
     }

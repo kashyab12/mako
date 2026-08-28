@@ -1,11 +1,10 @@
 import { app } from "electron"
 import { execFile } from "node:child_process"
-import { constants } from "node:fs"
-import { access, mkdir, readFile, writeFile } from "node:fs/promises"
-import { homedir } from "node:os"
-import { delimiter, isAbsolute, join } from "node:path"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { join } from "node:path"
 import { promisify } from "node:util"
 import type { JsonObject, JsonValue } from "./codex-app-json.js"
+import { resolveExecutable } from "./executable.js"
 import type {
   PullRequest,
   GitHubStatus,
@@ -31,40 +30,10 @@ const run = promisify(execFile)
 /** Ceilings so a hung `gh` cannot hold a panel open forever. */
 const TIMEOUT = 15_000
 const MAX_BUFFER = 8 * 1024 * 1024
-let executablePromise: Promise<string> | null = null
-
 async function githubExecutable(): Promise<string> {
-  executablePromise ??= (async () => {
-    const configured = process.env.GH_PATH
-    const candidates = configured
-      ? [configured]
-      : [
-          ...(process.env.PATH ?? "")
-            .split(delimiter)
-            .filter(Boolean)
-            .map((directory) => join(directory, "gh")),
-          join(homedir(), ".local", "bin", "gh"),
-          "/opt/homebrew/bin/gh",
-          "/usr/local/bin/gh",
-        ]
-    for (const candidate of candidates) {
-      if (!isAbsolute(candidate)) continue
-      try {
-        await access(candidate, constants.X_OK)
-        return candidate
-      } catch {
-        continue
-      }
-    }
-    throw new Error("GitHub CLI was not found")
-  })()
-  const pending = executablePromise
-  try {
-    return await pending
-  } catch (error) {
-    if (executablePromise === pending) executablePromise = null
-    throw error
-  }
+  const executable = resolveExecutable(process.env.GH_PATH ?? "gh")
+  if (!executable) throw new Error("GitHub CLI was not found")
+  return executable
 }
 
 async function gh(cwd: string, args: string[]): Promise<string> {

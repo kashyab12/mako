@@ -1,10 +1,21 @@
 import assert from "node:assert/strict"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
 import { z } from "zod"
 import { resolveAcpConfigValue } from "../electron/acp-config.ts"
+import {
+  environmentForExecutable,
+  resolveExecutable,
+} from "../electron/executable.ts"
 import { ProviderProfileCache } from "../electron/provider-profile-cache.ts"
 import type { ProviderAccountCapability } from "../electron/providers/account-capability.ts"
 import { providerHost } from "../electron/providers/index.ts"
@@ -27,6 +38,32 @@ assert.equal(
   resolveAcpConfigValue(cursorModelOption, "claude-opus-5"),
   "claude-opus-5[thinking=true,context=300k,effort=high]"
 )
+
+const executableHome = await mkdtemp(join(tmpdir(), "mako-executable-"))
+try {
+  const bin = join(
+    executableHome,
+    ".nvm",
+    "versions",
+    "node",
+    "v24.19.0",
+    "bin"
+  )
+  const codex = join(bin, "codex")
+  await mkdir(bin, { recursive: true })
+  await writeFile(codex, "#!/bin/sh\nexit 0\n")
+  await chmod(codex, 0o755)
+  assert.equal(
+    resolveExecutable("codex", { PATH: "/usr/bin:/bin" }, executableHome),
+    codex
+  )
+  assert.equal(
+    environmentForExecutable(codex, { PATH: "/usr/bin:/bin" }).PATH,
+    `${bin}:/usr/bin:/bin`
+  )
+} finally {
+  await rm(executableHome, { recursive: true, force: true })
+}
 
 const cacheDir = await mkdtemp(join(tmpdir(), "mako-provider-cache-"))
 const cachePath = join(cacheDir, "profiles.json")

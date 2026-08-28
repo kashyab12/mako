@@ -55,14 +55,14 @@ const profileSchema = z.object({
 })
 const entrySchema = z.object({ hash: z.string(), savedAt: z.number() })
 const fileSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(2),
   entries: z.record(z.string(), entrySchema),
   snapshots: z.record(z.string(), profileSchema),
 })
 
 type CacheFile = z.infer<typeof fileSchema>
 
-const EMPTY: CacheFile = { version: 1, entries: {}, snapshots: {} }
+const EMPTY: CacheFile = { version: 2, entries: {}, snapshots: {} }
 const MAX_ENTRIES = 64
 
 function cachePath(): string {

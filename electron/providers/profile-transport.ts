@@ -2,6 +2,10 @@ import { spawn } from "node:child_process"
 import { readFile } from "node:fs/promises"
 import { StringDecoder } from "node:string_decoder"
 import type { JsonObject } from "../codex-app-json.js"
+import {
+  environmentForExecutable,
+  resolveExecutable,
+} from "../executable.js"
 
 interface RpcOutbound {
   id?: number
@@ -29,8 +33,13 @@ export function runDiscovery(
   env: NodeJS.ProcessEnv,
   input?: string
 ): Promise<string> {
+  const executable = resolveExecutable(command, env)
+  if (!executable) return Promise.reject(new Error(`${command} is not installed`))
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { env, stdio: ["pipe", "pipe", "pipe"] })
+    const child = spawn(executable, args, {
+      env: environmentForExecutable(executable, env),
+      stdio: ["pipe", "pipe", "pipe"],
+    })
     const stdoutDecoder = new StringDecoder("utf8")
     const stderrDecoder = new StringDecoder("utf8")
     let stdout = ""
@@ -70,8 +79,13 @@ export function streamRequest<TMessage, TResult>(
   env: NodeJS.ProcessEnv,
   pick: (value: TMessage) => TResult | undefined
 ): Promise<TResult> {
+  const executable = resolveExecutable(command, env)
+  if (!executable) return Promise.reject(new Error(`${command} is not installed`))
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { env, stdio: ["pipe", "pipe", "pipe"] })
+    const child = spawn(executable, args, {
+      env: environmentForExecutable(executable, env),
+      stdio: ["pipe", "pipe", "pipe"],
+    })
     const decoder = new StringDecoder("utf8")
     let buffer = ""
     let settled = false
@@ -114,8 +128,13 @@ export function rpcRequest<TResult>(
   env: NodeJS.ProcessEnv,
   jsonrpc: boolean
 ): Promise<TResult> {
+  const executable = resolveExecutable(command, env)
+  if (!executable) return Promise.reject(new Error(`${command} is not installed`))
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { env, stdio: ["pipe", "pipe", "pipe"] })
+    const child = spawn(executable, args, {
+      env: environmentForExecutable(executable, env),
+      stdio: ["pipe", "pipe", "pipe"],
+    })
     const decoder = new StringDecoder("utf8")
     let buffer = ""
     let initialized = false
