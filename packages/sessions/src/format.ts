@@ -129,6 +129,9 @@ export function userTextFrom(text: string | undefined): string | undefined {
   if (
     /^<(?:skill|rules|available_skills|recommended_plugins|environment_context|user_instructions|system_info|system_instruction|app-context|multi_agent_mode|additional_metadata|task-notification|command-name|command-message|local-command|system-reminder)(?:\s|>)/i.test(
       first
+    ) ||
+    /^(?:before doing anything else,\s*)?read\s+\S*(?:\.mako\/transcripts|\/tmp\/[^\s]*transcript)/i.test(
+      first
     )
   )
     return undefined

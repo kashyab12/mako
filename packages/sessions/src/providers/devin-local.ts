@@ -229,9 +229,16 @@ export class DevinLocalProvider implements SessionProvider {
         skim.push(line)
         return budget > 0
       })
-      const first = skim.done().find((entry) => entry.kind === "user")
+      const entries = skim.done()
+      const first = entries.find((entry) => entry.kind === "user")
       if (!ref.title && skim.title) ref.title = titleFrom(skim.title)
-      if (!ref.title && first?.kind === "user") ref.title = titleFrom(first.text)
+      if (!ref.title) {
+        for (const entry of entries) {
+          if (entry.kind !== "user") continue
+          ref.title = titleFrom(entry.text)
+          if (ref.title) break
+        }
+      }
       if (!ref.startedAt && first?.at) ref.startedAt = first.at
     }
     return ref

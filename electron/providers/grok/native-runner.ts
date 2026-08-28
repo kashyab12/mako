@@ -18,7 +18,7 @@ export const grokNativeRunner: NativeRunner = {
   fastMode: "supported",
   resume(id, prompt, options) {
     return {
-      command: "agent",
+      command: "grok",
       args: [
         "-p",
         prompt,
@@ -31,7 +31,7 @@ export const grokNativeRunner: NativeRunner = {
   },
   fresh(prompt, options) {
     return {
-      command: "agent",
+      command: "grok",
       args: [
         "-p",
         prompt,

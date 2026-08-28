@@ -724,7 +724,7 @@ export class SessionCatalog {
       for (const [path, entry] of this.byPath) entries[path] = entry
       await writeFile(
         this.cachePath,
-        JSON.stringify({ version: 3, entries }),
+        JSON.stringify({ version: 4, entries }),
         "utf8"
       )
     } catch {
@@ -736,7 +736,7 @@ export class SessionCatalog {
 function parseCache(raw: string): Map<string, CacheEntry> | null {
   try {
     const value: JsonValue = JSON.parse(raw)
-    if (!isJsonRecord(value) || readNumber(value, "version") !== 3) return null
+    if (!isJsonRecord(value) || readNumber(value, "version") !== 4) return null
     const stored = value.entries
     if (!isJsonRecord(stored)) return null
     const entries = new Map<string, CacheEntry>()

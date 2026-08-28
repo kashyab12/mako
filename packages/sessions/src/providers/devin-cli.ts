@@ -216,12 +216,20 @@ export class DevinCliProvider implements SessionProvider {
         .get(id)
       if (!stored) return null
       const row = parseSessionRow(stored)
+      let title = titleFrom(row.title)
+      if (!title) {
+        for (const entry of translatedMainChain(db, id, mainChainId(db, id))) {
+          if (entry.kind !== "user") continue
+          title = titleFrom(entry.text)
+          if (title) break
+        }
+      }
       return {
         harness: this.harness,
         nativeId: id,
         path: file.path,
         cwd: row.workingDirectory,
-        title: titleFrom(row.title),
+        title,
         model: row.model,
         modelProvider: "devin",
         startedAt: isoOf(row.createdAt),

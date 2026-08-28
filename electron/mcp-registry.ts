@@ -1,9 +1,7 @@
 import { execFile } from "node:child_process"
 import { createHash } from "node:crypto"
-import { constants } from "node:fs"
-import { access, readFile } from "node:fs/promises"
-import { homedir } from "node:os"
-import { delimiter, isAbsolute, join } from "node:path"
+import { readFile } from "node:fs/promises"
+import { join } from "node:path"
 import { promisify } from "node:util"
 import { z } from "zod"
 import { accountEnv, selectedAccount } from "./accounts.js"
@@ -11,6 +9,10 @@ import { providerHost } from "./providers/index.js"
 import type { ProviderMcpSource } from "./providers/mcp-source.js"
 import { backendConnectionCredentials } from "./backend-connection.js"
 import { cuaEmbeddedSocket } from "./cua-embedded.js"
+import {
+  environmentForExecutable,
+  resolveExecutable,
+} from "./executable.js"
 import type { JsonObject, JsonValue } from "./codex-app-json.js"
 import type {
   McpProvider,
@@ -334,23 +336,7 @@ async function findExecutable(
   command: string,
   env: NodeJS.ProcessEnv
 ): Promise<string | null> {
-  const candidates = isAbsolute(command)
-    ? [command]
-    : [
-        ...(env.PATH ?? "").split(delimiter).filter(Boolean),
-        join(homedir(), ".local", "bin"),
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
-      ].map((directory) => join(directory, command))
-  for (const candidate of candidates) {
-    try {
-      await access(candidate, constants.X_OK)
-      return candidate
-    } catch {
-      continue
-    }
-  }
-  return null
+  return resolveExecutable(command, env)
 }
 
 async function canExecute(
@@ -419,11 +405,12 @@ async function readCliDefinitions(
 ): Promise<McpDiscoveredDefinition[]> {
   if (!route.readsCli || !route.command) return []
   const command = route.command
-  if (!(await canExecute(command, route.env))) return []
+  const executable = await findExecutable(command, route.env)
+  if (!executable) return []
   try {
-    const { stdout } = await run(command, ["mcp", "list", "--json"], {
+    const { stdout } = await run(executable, ["mcp", "list", "--json"], {
       cwd: route.cwd,
-      env: route.env,
+      env: environmentForExecutable(executable, route.env),
       timeout: 8_000,
       maxBuffer: MAX_CLI_OUTPUT,
       windowsHide: true,

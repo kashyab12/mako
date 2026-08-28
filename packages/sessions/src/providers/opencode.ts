@@ -158,7 +158,9 @@ export class OpenCodeProvider implements SessionProvider {
       )
       if (!row) return null
       const model = modelFromSession(row) ?? latestModel(database, kind, row.id)
-      return refFrom(row, file.path, file.bytes, model)
+      const ref = refFrom(row, file.path, file.bytes, model)
+      ref.title ??= firstUserTitle(database, kind, row.id)
+      return ref
     } catch {
       return null
     } finally {
@@ -193,6 +195,7 @@ export class OpenCodeProvider implements SessionProvider {
         latestModel(database, kind, row.id) ??
         modelFromEntries(entries)
       const ref = refFrom(row, path, row.revision, model)
+      ref.title ??= firstUserTitle(database, kind, row.id)
       database.exec("COMMIT")
       this.snapshots.set(path, {
         revision: row.revision,
@@ -465,6 +468,41 @@ function refFrom(
     active: row.active,
   }
   return ref
+}
+
+function firstUserTitle(
+  database: DatabaseSync,
+  kind: StoreKind,
+  sessionId: string
+): string | undefined {
+  try {
+    const rows =
+      kind === "current"
+        ? database
+            .prepare(
+              "SELECT data FROM session_message WHERE session_id = ? AND type = 'user' ORDER BY seq, id LIMIT 20"
+            )
+            .all(sessionId)
+        : database
+            .prepare(
+              `SELECT p.data FROM message m JOIN part p ON p.message_id = m.id
+               WHERE m.session_id = ?
+                 AND json_extract(m.data, '$.role') = 'user'
+                 AND json_extract(p.data, '$.type') = 'text'
+                 AND COALESCE(json_extract(p.data, '$.synthetic'), 0) != 1
+                 AND COALESCE(json_extract(p.data, '$.ignored'), 0) != 1
+               ORDER BY m.time_created, m.id, p.id LIMIT 20`
+            )
+            .all(sessionId)
+    for (const row of rows) {
+      const data = parseObject(sqliteText(row.data))
+      const title = titleFrom(data ? jsonText(data.text) : undefined)
+      if (title) return title
+    }
+  } catch {
+    return undefined
+  }
+  return undefined
 }
 
 function latestModel(

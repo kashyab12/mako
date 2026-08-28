@@ -76,7 +76,6 @@ try {
     join(legacyDir, "summary.json"),
     JSON.stringify({
       info: { id: "legacy-session", cwd: "/old" },
-      session_summary: "Legacy fallback",
       current_model_id: "legacy-model",
     })
   )
@@ -104,6 +103,9 @@ try {
     updatedAt: "2026-01-01T00:10:00.000Z",
     bytes: 0,
   })
+  const legacyFile = discovered.find((file) => file.path === legacyPath)
+  assert.ok(legacyFile)
+  assert.equal((await provider.peek(legacyFile))?.title, "legacy prompt")
 
   const firstBatch =
     notification(

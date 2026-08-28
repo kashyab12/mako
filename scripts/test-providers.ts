@@ -199,7 +199,7 @@ assert.deepEqual(
 
 const grok = providerHost.nativeRunners.get("grok")!
 assert.deepEqual(grok.resume("session", "continue", { effort: "high" }), {
-  command: "agent",
+  command: "grok",
   args: [
     "-p",
     "continue",

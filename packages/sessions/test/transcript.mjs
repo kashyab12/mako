@@ -37,6 +37,12 @@ Update the first and last email links.`),
 )
 assert.equal(titleFrom("<skill>\n<name>verbiflow</name>"), undefined)
 assert.equal(titleFrom("<recommended_plugins>\ninternal list"), undefined)
+assert.equal(
+  titleFrom(
+    "Before doing anything else, read /Users/test/.mako/transcripts/abc/transcript.md in full."
+  ),
+  undefined
+)
 assert.equal(userTextFrom("<div>\nVisible HTML prompt"), "<div>\nVisible HTML prompt")
 assert.equal(titleFrom("<div>\nVisible HTML prompt"), "Visible HTML prompt")
 assert.equal(titleFrom("[Image #1]"), undefined)

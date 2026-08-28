@@ -446,12 +446,27 @@ export class GrokProvider implements SessionProvider {
     if (!raw) return null
     const summary = parseSummary(raw)
     if (!summary) return null
+    let title = titleFrom(summary.title)
+    if (!title) {
+      const into = createTranslator(file.path)()
+      let spent = 0
+      await readLines(file.path, 0, (line) => {
+        spent += line.length + 1
+        into.push(line)
+        return spent < 8 * 1024 * 1024
+      })
+      for (const entry of into.done()) {
+        if (entry.kind !== "user") continue
+        title = titleFrom(entry.text)
+        if (title) break
+      }
+    }
     return {
       harness: this.harness,
       nativeId: summary.id,
       path: file.path,
       cwd: summary.cwd,
-      title: titleFrom(summary.title),
+      title,
       model: summary.model,
       startedAt: summary.createdAt,
       updatedAt: summary.updatedAt ?? new Date(file.mtimeMs).toISOString(),
