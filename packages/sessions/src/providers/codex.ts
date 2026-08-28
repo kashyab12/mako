@@ -21,9 +21,11 @@
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { stat } from "node:fs/promises"
+import type { SQLOutputValue } from "node:sqlite"
 import {
   clip,
   titleFrom,
+  userTextFrom,
   EntrySink,
   type EntryBlock,
   type Thread,
@@ -41,14 +43,6 @@ import {
 } from "../jsonl.js"
 import type { NativeFile, SessionProvider } from "./types.js"
 
-/**
- * Injections Codex writes as user-role messages that no user typed: context
- * blocks wrapped in a snake_case tag (`<environment_context>`,
- * `<user_instructions>`, `<recommended_plugins>`, …) and the attachment
- * manifest. The tag rule requires an underscore so pasted HTML that opens
- * with `<div>` is still a real prompt.
- */
-const INJECTED = /^(?:<[a-z]+(?:_[a-z0-9]+)+>|# Files mentioned by the user:)/i
 const MAX_TRANSLATED_BYTES = 64 * 1024 * 1024
 
 type JsonScalar = boolean | number | string | null
@@ -68,6 +62,12 @@ interface CodexSessionMeta extends CodexRolloutBase {
   cwd?: string
   startedAt?: string
   threadSource?: string
+}
+
+interface CodexThreadMetadata {
+  title?: string
+  cwd?: string
+  updatedAt?: string
 }
 
 interface CodexTurnContext extends CodexRolloutBase {
@@ -306,13 +306,86 @@ function parseCodexRolloutLine(raw: string): CodexRolloutEvent | null {
   }
 }
 
+function sqliteText(value: SQLOutputValue | undefined): string | undefined {
+  return Object.prototype.toString.call(value) === "[object String]"
+    ? String(value)
+    : undefined
+}
+
+function sqliteNumber(value: SQLOutputValue | undefined): number | undefined {
+  if (Object.prototype.toString.call(value) !== "[object Number]")
+    return undefined
+  const number = Number(value)
+  return Number.isFinite(number) ? number : undefined
+}
+
 export class CodexProvider implements SessionProvider {
   harness = "codex" as const
   displayName = "Codex"
   private root: string
+  private metadataPath: string
+  private metadataMtime = -1
+  private metadata = new Map<string, CodexThreadMetadata>()
+  private metadataLoad: Promise<Map<string, CodexThreadMetadata>> | null = null
 
   constructor(home = homedir()) {
     this.root = join(home, ".codex", "sessions")
+    this.metadataPath = join(home, ".codex", "state_5.sqlite")
+  }
+
+  private async threadMetadata(): Promise<Map<string, CodexThreadMetadata>> {
+    const [info, wal] = await Promise.all([
+      stat(this.metadataPath).catch(() => null),
+      stat(`${this.metadataPath}-wal`).catch(() => null),
+    ])
+    if (!info) return this.metadata
+    const mtime = Math.max(info.mtimeMs, wal?.mtimeMs ?? 0)
+    if (mtime === this.metadataMtime) return this.metadata
+    if (this.metadataLoad) return this.metadataLoad
+    this.metadataLoad = (async () => {
+      const sqlite = await import("node:sqlite").catch(() => null)
+      if (!sqlite) return this.metadata
+      const database = new sqlite.DatabaseSync(this.metadataPath, {
+        readOnly: true,
+      })
+      try {
+        const rows = database
+          .prepare(
+            "SELECT id, name, title, cwd, updated_at_ms FROM threads WHERE thread_source IS NULL OR thread_source != 'subagent'"
+          )
+          .all()
+        const metadata = new Map<string, CodexThreadMetadata>()
+        for (const row of rows) {
+          const id = sqliteText(row.id)
+          if (!id) continue
+          const updatedAtMs = sqliteNumber(row.updated_at_ms)
+          const storedTitle = sqliteText(row.title)
+          const conciseTitle =
+            storedTitle &&
+            !storedTitle.includes("\n") &&
+            storedTitle.length <= 80
+              ? titleFrom(storedTitle)
+              : undefined
+          metadata.set(id, {
+            title: titleFrom(sqliteText(row.name)) ?? conciseTitle,
+            cwd: sqliteText(row.cwd),
+            updatedAt: updatedAtMs
+              ? new Date(updatedAtMs).toISOString()
+              : undefined,
+          })
+        }
+        this.metadata = metadata
+        this.metadataMtime = mtime
+        return metadata
+      } catch {
+        return this.metadata
+      } finally {
+        database.close()
+      }
+    })().finally(() => {
+      this.metadataLoad = null
+    })
+    return this.metadataLoad
   }
 
   roots(): string[] {
@@ -343,6 +416,7 @@ export class CodexProvider implements SessionProvider {
    * ever making a changed gigabyte file cost a gigabyte.
    */
   async peek(file: NativeFile): Promise<ThreadRef | null> {
+    const metadata = await this.threadMetadata()
     const budget = 8 * 1024 * 1024
     let spent = 0
     let sawMeta = false
@@ -355,13 +429,16 @@ export class CodexProvider implements SessionProvider {
         if (sawMeta) return spent < budget
         sawMeta = true
         if (!event.id || event.threadSource === "subagent") return false
+        const details = metadata.get(event.id)
         ref = {
           harness: this.harness,
           nativeId: event.id,
           path: file.path,
-          cwd: event.cwd,
+          cwd: details?.cwd ?? event.cwd,
+          title: details?.title,
           startedAt: event.startedAt ?? event.at,
-          updatedAt: new Date(file.mtimeMs).toISOString(),
+          updatedAt:
+            details?.updatedAt ?? new Date(file.mtimeMs).toISOString(),
           bytes: file.bytes,
         }
         return spent < budget
@@ -373,9 +450,7 @@ export class CodexProvider implements SessionProvider {
       }
       if (
         !ref.title &&
-        (event.kind === "user_message_event" ||
-          event.kind === "user_response") &&
-        !INJECTED.test(event.text.trimStart())
+        (event.kind === "user_message_event" || event.kind === "user_response")
       ) {
         ref.title = titleFrom(event.text)
       }
@@ -461,12 +536,14 @@ function translator(): CodexTranslator {
           assistant.usage = usage
         }
         return
-      case "user_response":
-        if (INJECTED.test(event.text.trimStart()) || !event.text.trim()) return
+      case "user_response": {
+        const text = userTextFrom(event.text)
+        if (!text) return
         assistant = null
         started = true
-        sink.push({ kind: "user", at: event.at, text: event.text })
+        sink.push({ kind: "user", at: event.at, text })
         return
+      }
       case "assistant_response":
         if (!event.text) return
         if (!started) needsReset = true

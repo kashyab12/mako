@@ -445,7 +445,7 @@ function refFrom(
   revision: number,
   model: { id?: string; provider?: string } | null
 ): ThreadRef {
-  const title = titleFrom(row.title) ?? titleFrom(row.projectName) ?? row.title
+  const title = titleFrom(row.title) ?? titleFrom(row.projectName)
   const modelId =
     model?.id && model.provider && !model.id.includes("/")
       ? `${model.provider}/${model.id}`

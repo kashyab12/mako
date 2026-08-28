@@ -112,12 +112,71 @@ export interface ThreadPage {
   hasEarlier: boolean
 }
 
-/** First line of the first user turn — the default title for every harness. */
-export function titleFrom(text: string | undefined): string | undefined {
+export function userTextFrom(text: string | undefined): string | undefined {
   if (!text) return undefined
-  const line = text.trimStart().split("\n", 1)[0]?.trim()
-  if (!line) return undefined
-  return line.length > 120 ? `${line.slice(0, 119)}…` : line
+  const lines = text.trim().split("\n")
+  const firstAt = lines.findIndex((line) => line.trim())
+  const first = lines[firstAt]?.trim()
+  if (!first) return undefined
+  if (/^<user_query>$/i.test(first)) {
+    const content = lines
+      .slice(firstAt + 1)
+      .filter((line) => !/^<\/user_query>$/i.test(line.trim()))
+      .join("\n")
+      .trim()
+    return content || undefined
+  }
+  if (
+    /^<(?:skill|rules|available_skills|recommended_plugins|environment_context|user_instructions|system_info|system_instruction|app-context|multi_agent_mode|additional_metadata|task-notification|command-name|command-message|local-command|system-reminder)(?:\s|>)/i.test(
+      first
+    )
+  )
+    return undefined
+
+  const requestAt = lines.findIndex((line) =>
+    /^#{1,6}\s*(?:my\s+request|request)\s*:?\s*$/i.test(line.trim())
+  )
+  if (requestAt >= 0) {
+    const request = lines.slice(requestAt + 1).join("\n").trim()
+    return request || undefined
+  }
+  if (/^#{1,6}\s*files?\s+mentioned\s+by\s+the\s+user\s*:?$/i.test(first))
+    return undefined
+  if (/^\[(?:image|attachment|file)(?:\s+#?\d+)?\]$/i.test(first)) {
+    const request = lines.slice(firstAt + 1).join("\n").trim()
+    return request || undefined
+  }
+  return text.trim()
+}
+
+/** First genuine request line — never an injected envelope or attachment label. */
+export function titleFrom(text: string | undefined): string | undefined {
+  const genuine = userTextFrom(text)
+  if (!genuine) return undefined
+  const candidates = genuine.split("\n")
+  for (const raw of candidates) {
+    let line = raw.trim()
+    if (!line || /^```|^---$|^<\/?[a-z][\w-]*(?:\s[^>]*)?>$/i.test(line))
+      continue
+    const link = /^\[([^\]]+)]\((https?:\/\/[^)]+)\)\s*$/i.exec(line)
+    if (link) {
+      if (/^https?:\/\//i.test(link[1] ?? "")) continue
+      line = link[1]?.trim() ?? ""
+    }
+    if (
+      !line ||
+      /^https?:\/\/\S+$/i.test(line) ||
+      /^!\[[^\]]*]\([^)]+\)$/.test(line)
+    )
+      continue
+    line = line
+      .replace(/^#{1,6}\s+/, "")
+      .replace(/^>\s+/, "")
+      .trim()
+    if (!line) continue
+    return line.length > 120 ? `${line.slice(0, 119)}…` : line
+  }
+  return undefined
 }
 
 /** Clip tool payloads: catalogues and handoffs need shape, not megabytes. */

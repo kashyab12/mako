@@ -2,12 +2,37 @@ import assert from "node:assert/strict"
 import { mkdtemp, mkdir, open, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { CodexProvider } from "../dist/providers/codex.js"
 
 const home = await mkdtemp(join(tmpdir(), "mako-codex-large-"))
 const sessions = join(home, ".codex", "sessions")
 const path = join(sessions, "rollout.jsonl")
 await mkdir(sessions, { recursive: true })
+const metadata = new DatabaseSync(join(home, ".codex", "state_5.sqlite"))
+metadata.exec(`
+  CREATE TABLE threads (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    title TEXT,
+    first_user_message TEXT,
+    cwd TEXT,
+    updated_at_ms INTEGER,
+    thread_source TEXT
+  )
+`)
+metadata
+  .prepare(
+    "INSERT INTO threads (id, title, first_user_message, cwd, updated_at_ms, thread_source) VALUES (?, ?, ?, ?, ?, 'user')"
+  )
+  .run(
+    "wrapped",
+    "Update sequence links",
+    "Investigate duplicate email synchronization carefully.",
+    home,
+    Date.parse("2026-08-20T00:00:00.000Z")
+  )
+metadata.close()
 const handle = await open(path, "w")
 const line = (type, payload) => JSON.stringify({ timestamp: "2026-08-19T00:00:00Z", type, payload }) + "\n"
 await handle.write(line("session_meta", { id: "large", cwd: home }))
@@ -26,6 +51,34 @@ assert.equal(thread.entries[0]?.kind, "event")
 assert.match(thread.entries[0]?.detail ?? "", /most recent 64 MB/)
 assert.ok(thread.entries.some((entry) => entry.kind === "user" && entry.text === "Recent prompt"))
 assert.ok(!thread.entries.some((entry) => entry.kind === "user" && entry.text === "First prompt"))
+
+const wrappedPath = join(sessions, "rollout-wrapped.jsonl")
+await writeFile(
+  wrappedPath,
+  line("session_meta", { id: "wrapped", cwd: home }) +
+    line("response_item", {
+      type: "message",
+      role: "user",
+      content: [{ text: "<recommended_plugins>\ninternal" }],
+    }) +
+    line("response_item", {
+      type: "message",
+      role: "user",
+      content: [
+        {
+          text: "# Files mentioned by the user:\n\n## report.csv: /tmp/report.csv\n\n## My request:\nInvestigate duplicate email synchronization carefully.",
+        },
+      ],
+    }) +
+    line("turn_context", { model: "gpt-5.6-sol" })
+)
+const wrappedInfo = await stat(wrappedPath)
+const wrapped = await new CodexProvider(home).peek({
+  path: wrappedPath,
+  bytes: wrappedInfo.size,
+  mtimeMs: wrappedInfo.mtimeMs,
+})
+assert.equal(wrapped?.title, "Update sequence links")
 
 const childPath = join(sessions, "rollout-subagent.jsonl")
 await writeFile(

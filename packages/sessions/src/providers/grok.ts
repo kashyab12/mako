@@ -14,6 +14,7 @@ import { basename, dirname, join } from "node:path"
 import { readdir, readFile, stat } from "node:fs/promises"
 import {
   clip,
+  titleFrom,
   EntrySink,
   type EntryBlock,
   type Thread,
@@ -450,7 +451,7 @@ export class GrokProvider implements SessionProvider {
       nativeId: summary.id,
       path: file.path,
       cwd: summary.cwd,
-      title: summary.title,
+      title: titleFrom(summary.title),
       model: summary.model,
       startedAt: summary.createdAt,
       updatedAt: summary.updatedAt ?? new Date(file.mtimeMs).toISOString(),

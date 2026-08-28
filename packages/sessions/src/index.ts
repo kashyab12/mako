@@ -9,6 +9,7 @@
 
 export {
   titleFrom,
+  userTextFrom,
   clip,
   type EntryBlock,
   type Harness,

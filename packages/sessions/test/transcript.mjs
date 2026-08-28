@@ -1,12 +1,47 @@
 import assert from "node:assert/strict"
 
-import { renderTranscript, renderTranscriptBundle } from "../dist/index.js"
+import {
+  renderTranscript,
+  renderTranscriptBundle,
+  titleFrom,
+  userTextFrom,
+} from "../dist/index.js"
 
 const at = (minute) => `2026-02-03T04:${String(minute).padStart(2, "0")}:00.000Z`
 const longInput = `{"path":"/tmp/work","query":"${"needle-".repeat(20)}"}`
 const longOutput = `first line\n${"complete-output-".repeat(30)}\nlast line`
 const fenceText = "Fence proof follows:\n```````\nthis must remain content\n```````"
 const firstUser = "  user text stays verbatim  \n\nincluding edge whitespace  "
+
+const attachedRequest = `
+# Files mentioned by the user:
+
+## report.csv: /tmp/report.csv
+
+## My request:
+Investigate duplicate email synchronization carefully.
+`
+assert.equal(
+  userTextFrom(attachedRequest),
+  "Investigate duplicate email synchronization carefully."
+)
+assert.equal(
+  titleFrom(attachedRequest),
+  "Investigate duplicate email synchronization carefully."
+)
+assert.equal(
+  titleFrom(`[https://example.test/a](https://example.test/a)
+
+Update the first and last email links.`),
+  "Update the first and last email links."
+)
+assert.equal(titleFrom("<skill>\n<name>verbiflow</name>"), undefined)
+assert.equal(titleFrom("<recommended_plugins>\ninternal list"), undefined)
+assert.equal(userTextFrom("<div>\nVisible HTML prompt"), "<div>\nVisible HTML prompt")
+assert.equal(titleFrom("<div>\nVisible HTML prompt"), "Visible HTML prompt")
+assert.equal(titleFrom("[Image #1]"), undefined)
+assert.equal(titleFrom("[Image #1]\nWhy is this layout clipped?"), "Why is this layout clipped?")
+assert.equal(titleFrom("## PE/VC campaign discussion"), "PE/VC campaign discussion")
 
 const thread = {
   ref: {

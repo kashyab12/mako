@@ -221,7 +221,7 @@ export class DevinCliProvider implements SessionProvider {
         nativeId: id,
         path: file.path,
         cwd: row.workingDirectory,
-        title: row.title ? (titleFrom(row.title) ?? row.title) : undefined,
+        title: titleFrom(row.title),
         model: row.model,
         modelProvider: "devin",
         startedAt: isoOf(row.createdAt),

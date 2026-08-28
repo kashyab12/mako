@@ -321,7 +321,10 @@ export class CursorProvider implements SessionProvider {
       if (!meta) return null
       // "New Agent" is the placeholder Cursor writes before a session is
       // named; the first real prompt makes a better title than that.
-      const named = meta.name && meta.name !== "New Agent" ? meta.name : undefined
+      const named =
+        meta.name && meta.name !== "New Agent"
+          ? titleFrom(meta.name)
+          : undefined
       const ref: ThreadRef = {
         harness: this.harness,
         nativeId: meta.agentId ?? dirname(file.path).split("/").pop() ?? "",

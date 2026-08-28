@@ -212,7 +212,7 @@ export class DevinLocalProvider implements SessionProvider {
       nativeId: rawId.split("/").pop() ?? rawId,
       path: file.path,
       cwd: meta?.cwd,
-      title: meta?.title ? (titleFrom(meta.title) ?? meta.title) : undefined,
+      title: titleFrom(meta?.title),
       model: meta?.model,
       modelProvider: "devin",
       startedAt: meta?.createdAt,
@@ -230,7 +230,7 @@ export class DevinLocalProvider implements SessionProvider {
         return budget > 0
       })
       const first = skim.done().find((entry) => entry.kind === "user")
-      if (!ref.title && skim.title) ref.title = titleFrom(skim.title) ?? skim.title
+      if (!ref.title && skim.title) ref.title = titleFrom(skim.title)
       if (!ref.title && first?.kind === "user") ref.title = titleFrom(first.text)
       if (!ref.startedAt && first?.at) ref.startedAt = first.at
     }
@@ -245,7 +245,7 @@ export class DevinLocalProvider implements SessionProvider {
     const into = translator()
     await readLines(path, 0, into.push)
     const entries = into.done()
-    if (!ref.title && into.title) ref.title = titleFrom(into.title) ?? into.title
+    if (!ref.title && into.title) ref.title = titleFrom(into.title)
     return { ref, entries }
   }
 
