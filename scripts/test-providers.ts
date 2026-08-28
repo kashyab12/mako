@@ -246,6 +246,8 @@ const grokAcp = await providerHost.acpSources.get("grok")!.launch({
   execPath: process.execPath,
   tuning: { effort: "high" },
 })
+assert.equal(providerHost.profiles.get("grok")?.label, "Grok")
+assert.equal(grokAcp?.command, "grok")
 assert.deepEqual(grokAcp?.args, [
   "agent",
   "--no-leader",

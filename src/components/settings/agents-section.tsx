@@ -24,7 +24,7 @@ const HOW = new Map([
   ["claude", "claude CLI"],
   ["codex", "codex CLI"],
   ["cursor", "cursor-agent CLI"],
-  ["grok", "grok CLI"],
+  ["grok", "Grok"],
   ["devin", "devin CLI / Zed / IDE"],
   ["opencode", "OpenCode 2 / OpenCode / ACP"],
 ])

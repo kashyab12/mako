@@ -1,5 +1,5 @@
 /**
- * Grok CLI ("agent") sessions.
+ * Grok sessions.
  *
  * Modern sessions keep their authoritative live transcript in `updates.jsonl`:
  * ACP-style `session/update` notifications plus private
