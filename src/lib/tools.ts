@@ -174,6 +174,7 @@ export function pairTools(blocks: Block[]): ToolCall[] {
     if (existing) {
       existing.result = block.text
       existing.isError = block.isError
+      existing.isCanceled = block.isCanceled
       existing.pending = false
     } else {
       order.push(id)
@@ -182,12 +183,89 @@ export function pairTools(blocks: Block[]): ToolCall[] {
         name: block.name ?? "tool",
         result: block.text,
         isError: block.isError,
+        isCanceled: block.isCanceled,
         pending: false,
       })
     }
   }
 
   return order.map((id) => byId.get(id)!).filter(Boolean)
+}
+
+export interface ToolWorkSummary {
+  tools: number
+  changedFiles: number
+  commands: number
+  reads: number
+  searches: number
+  skills: number
+  agents: number
+  plans: number
+  other: number
+  failed: number
+}
+
+export function summarizeToolWork(calls: ToolCall[]): ToolWorkSummary {
+  const changedFiles = new Set<string>()
+  let unlocatedChanges = 0
+  let commands = 0
+  let reads = 0
+  let searches = 0
+  let skills = 0
+  let agents = 0
+  let plans = 0
+  let other = 0
+  let failed = 0
+  for (const call of calls) {
+    const name = call.name.toLowerCase()
+    if (call.isError) failed += 1
+    if (isSubagentLaunch(call)) {
+      agents += 1
+      continue
+    }
+    if (["edit", "multiedit", "apply_patch", "write"].includes(name)) {
+      const path = primaryArgument(call.arguments)
+      if (path) changedFiles.add(path)
+      else unlocatedChanges += 1
+    } else if (["bash", "shell", "exec_command"].includes(name)) {
+      commands += 1
+    } else if (["read", "readfile", "read_file"].includes(name)) {
+      reads += 1
+    } else if (
+      [
+        "grep",
+        "rg",
+        "find",
+        "glob",
+        "webfetch",
+        "websearch",
+        "web_search",
+        "toolsearch",
+      ].includes(name)
+    ) {
+      searches += 1
+    } else if (name === "skill") {
+      skills += 1
+    } else if (
+      ["todowrite", "createplan", "taskcreate", "taskupdate"].includes(name)
+    ) {
+      plans += 1
+    } else {
+      other += 1
+    }
+  }
+  return {
+    tools: calls.length,
+    changedFiles: changedFiles.size + unlocatedChanges,
+    commands,
+    reads,
+    searches,
+    skills,
+    agents,
+    plans,
+    other,
+    failed,
+  }
 }
 
 /** The one argument worth putting on a collapsed row. */

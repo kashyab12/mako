@@ -5,7 +5,7 @@ import { touchedFiles, type FileAction, type TouchedFile } from "@/lib/context-f
 import { fileDir, fileName, formatContextWindow, formatCost, formatRate, formatTokens } from "@/lib/format"
 import { threadToMessages } from "@/lib/foreign-thread"
 import { acpBlocksToMessages } from "@/lib/acp-blocks"
-import { useAcp } from "@/state/acp"
+import { activeAcp, activeLiveAcp, useAcp } from "@/state/acp"
 import { useProviders } from "@/state/providers"
 import { actions, useSession } from "@/state/session"
 import { useThreads } from "@/state/threads"
@@ -32,10 +32,12 @@ import {
  * into cards — because this renders on a full card now, not in a 400px
  * column.
  */
+const EMPTY_BLOCKS: never[] = []
+
 export function ContextPanel() {
   const viewing = useThreads((state) => state.viewing)
-  const acpSession = useAcp((state) => state.session)
-  const acpStarting = useAcp((state) => state.starting)
+  const acpSession = useAcp((state) => activeLiveAcp(state)?.session ?? null)
+  const acpStarting = useAcp((state) => activeAcp(state)?.kind === "starting")
   const builtin = !viewing && !acpSession && !acpStarting
   return (
     <div className="h-full overflow-y-auto overscroll-contain [container-type:inline-size]">
@@ -61,8 +63,8 @@ function Budget() {
   const meta = useSession((state) => state.meta)
   const viewing = useThreads((state) => state.viewing)
   const composerHarness = useThreads((state) => state.composerHarness)
-  const acpSession = useAcp((state) => state.session)
-  const acpStarting = useAcp((state) => state.starting)
+  const acpSession = useAcp((state) => activeLiveAcp(state)?.session ?? null)
+  const acpStarting = useAcp((state) => activeAcp(state)?.kind === "starting")
   const profiles = useProviders((state) => state.profiles)
   const usage = contextAccounting({
     meta,
@@ -226,8 +228,8 @@ function Files() {
   const nativeMessages = useSession((state) => state.messages)
   const changed = useSession((state) => state.git?.files)
   const viewing = useThreads((state) => state.viewing)
-  const acpSession = useAcp((state) => state.session)
-  const acpBlocks = useAcp((state) => state.blocks)
+  const acpSession = useAcp((state) => activeLiveAcp(state)?.session ?? null)
+  const acpBlocks = useAcp((state) => activeAcp(state)?.blocks ?? EMPTY_BLOCKS)
   const focus = useWorkspaceFocus()
   const messages = useMemo(() => {
     const history = viewing

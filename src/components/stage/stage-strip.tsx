@@ -1,7 +1,7 @@
 import { IconAction } from "@/components/ui/kit"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { MakoMark } from "@/components/ui/mako-mark"
-import { useAcp } from "@/state/acp"
+import { activeAcp, useAcp } from "@/state/acp"
 import { useSession } from "@/state/session"
 import { useThreads } from "@/state/threads"
 import { AGENT_TAB_ID, viewer, useViewer } from "@/state/viewer"
@@ -22,18 +22,19 @@ export function StageStrip({
   const split = useViewer((state) => state.split)
   const hasSecondPane = useViewer((state) => state.panes.length === 2)
   const viewing = useThreads((state) => state.viewing?.ref)
-  const live = useAcp((state) => state.session)
-  const liveThreadPath = useAcp((state) => state.threadPath)
+  const liveHarness = useAcp((state) => activeAcp(state)?.harness)
+  const liveTitle = useAcp((state) => activeAcp(state)?.title)
+  const liveThreadPath = useAcp((state) => activeAcp(state)?.threadPath)
   const nativeTitle = useSession((state) => state.meta?.sessionName)
 
   if (!pane) return null
   const canSplit = pane.activeId !== AGENT_TAB_ID
   const viewingOwnsAgent = Boolean(
-    viewing && (!live || viewing.path !== liveThreadPath)
+    viewing && (!liveHarness || viewing.path !== liveThreadPath)
   )
-  const agentHarness = viewingOwnsAgent ? viewing?.harness : live?.harness
+  const agentHarness = viewingOwnsAgent ? viewing?.harness : liveHarness
   const agentTitle =
-    (viewingOwnsAgent ? viewing?.title : live?.title) ?? nativeTitle ?? "Agent"
+    (viewingOwnsAgent ? viewing?.title : liveTitle) ?? nativeTitle ?? "Agent"
 
   return (
     <div className="flex h-10 shrink-0 items-center border-b border-hairline bg-shell">

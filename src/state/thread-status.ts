@@ -86,9 +86,11 @@ export function markObserved(path: string) {
 
 /** A native run started, finished, or failed, on any thread. */
 export function setThreadRunning(path: string, active: boolean) {
+  const current = threadsStore.get().working[path]
+  if (Boolean(current) === active) return
   if (active) clearObserved(path)
   const working = { ...threadsStore.get().working }
-  if (active) working[path] ??= { kind: "working", since: Date.now() }
+  if (active) working[path] = { kind: "working", since: Date.now() }
   else delete working[path]
   threadsStore.set({ working })
 }
@@ -108,6 +110,8 @@ export function setThreadAttention(
   path: string,
   attention: AttentionByPath[string] | null
 ) {
+  const current = threadsStore.get().attention[path]
+  if (!current && !attention) return
   const next = { ...threadsStore.get().attention }
   if (attention) next[path] = attention
   else delete next[path]

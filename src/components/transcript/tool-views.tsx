@@ -210,7 +210,13 @@ export function SubagentBody({ call }: ToolViewProps) {
       /(?:working|running) in the background|state="running"/i.test(
         call.result ?? ""
       ))
-  const status = call.isError ? "Failed" : stillRunning ? "Running" : "Completed"
+  const status = call.isError
+    ? "Failed"
+    : call.isCanceled
+      ? "Canceled"
+      : stillRunning
+        ? "Running"
+        : "Completed"
 
   return (
     <div className="flex flex-col gap-2 px-2.5 py-2">
@@ -220,9 +226,11 @@ export function SubagentBody({ call }: ToolViewProps) {
             "size-1.5 rounded-full",
             call.isError
               ? "bg-removed"
-              : stillRunning
-                ? "animate-live bg-ember"
-                : "bg-added"
+              : call.isCanceled
+                ? "bg-foreground/25"
+                : stillRunning
+                  ? "animate-live bg-ember"
+                  : "bg-added"
           )}
         />
         <span className="text-muted-foreground">{status}</span>
@@ -253,6 +261,28 @@ export function SubagentBody({ call }: ToolViewProps) {
   )
 }
 
+export function SkillBody({ call }: ToolViewProps) {
+  const name =
+    argAt(call.arguments, "skill") ??
+    argAt(call.arguments, "name") ??
+    "Skill"
+  return (
+    <div className="space-y-2 px-2.5 py-2">
+      <div className="flex items-center gap-1.5 text-ui text-foreground/90">
+        <BookOpenIcon className="size-3.5 text-faint" />
+        <span className="font-medium">{name}</span>
+      </div>
+      {call.isCanceled ? (
+        <p className="text-ui text-faint">canceled</p>
+      ) : call.result ? (
+        <Output text={call.result} dense isError={call.isError} />
+      ) : (
+        <p className="shimmer text-ui text-faint">loading instructions…</p>
+      )}
+    </div>
+  )
+}
+
 export function BashBody({ call }: ToolViewProps) {
   const command = argAt(call.arguments, "command") ?? ""
   return (
@@ -261,7 +291,9 @@ export function BashBody({ call }: ToolViewProps) {
         <span className="shrink-0 text-muted-foreground select-none">$</span>
         <span className="whitespace-pre-wrap">{command}</span>
       </div>
-      {call.result ? (
+      {call.isCanceled ? (
+        <p className="text-ui text-faint">canceled</p>
+      ) : call.result ? (
         <Output text={call.result} isError={call.isError} />
       ) : (
         <p className="shimmer text-ui">running…</p>

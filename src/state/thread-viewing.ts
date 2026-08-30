@@ -129,6 +129,12 @@ export const threadViewingActions = {
   /** Open a foreign session read-only, translated to the canonical shape. */
   async view(ref: ThreadRef) {
     if (!hasBridge()) return
+    const { acp, acpStore, activeAcp } = await import("@/state/acp")
+    const activated = acp.activateThread(ref.path)
+    if (!activated) acp.deactivate()
+    const liveHarness = activated
+      ? (activeAcp(acpStore.get())?.harness ?? ref.harness)
+      : ref.harness
     const generation = ++viewingGeneration
     markThreadReviewed(ref.path)
     const cached = threadCache.get(ref.path)
@@ -142,7 +148,7 @@ export const threadViewingActions = {
         opening: null,
         viewingBusy: false,
         run: null,
-        composerHarness: cached.ref.harness,
+        composerHarness: liveHarness,
       })
       void getMako()
         .threadRun(ref.path)
@@ -198,7 +204,7 @@ export const threadViewingActions = {
         opening: null,
         viewingBusy: false,
         run,
-        composerHarness: thread.ref.harness,
+        composerHarness: liveHarness,
       })
       // Live from here: the agent writing this session — in whatever app —
       // keeps appending, and those entries belong on screen.

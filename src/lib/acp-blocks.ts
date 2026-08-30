@@ -75,14 +75,22 @@ export function acpBlocksToMessages(
           },
           index
         )
-        if (block.output !== undefined || block.status === "failed") {
+        const failed = block.status === "failed"
+        const canceled = /cancel/i.test(block.status)
+        const finished =
+          block.output !== undefined ||
+          failed ||
+          canceled ||
+          /complete|done/i.test(block.status)
+        if (finished) {
           append(
             {
               type: "toolResult",
               id: block.id,
               name,
-              text: block.output ?? block.title,
-              isError: block.status === "failed",
+              text: block.output ?? (failed ? block.title : ""),
+              isError: failed,
+              isCanceled: canceled,
             },
             index
           )

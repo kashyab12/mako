@@ -5,9 +5,10 @@ import { FileChip, SkillChip, ThreadChip } from "@/components/composer/reference
 import { Slot } from "@/extend/slot"
 import { tokenize } from "@/lib/mentions"
 import {
-  isSubagentLaunch,
   pairTools,
   reportedSubagentCount,
+  summarizeToolWork,
+  type ToolWorkSummary,
 } from "@/lib/tools"
 import { formatTime, textOf } from "@/lib/format"
 import { parseAttachmentAppendix } from "@/lib/attachments"
@@ -207,10 +208,7 @@ function Prompt({ message }: { message: ChatMessage }) {
 /* the response                                                        */
 /* ------------------------------------------------------------------ */
 
-interface WorkSummaryData {
-  tools: number
-  agents: number
-  failed: number
+interface WorkSummaryData extends ToolWorkSummary {
   duration?: number
 }
 
@@ -218,21 +216,16 @@ function summarizeWork(
   messages: ChatMessage[],
   started?: number
 ): WorkSummaryData {
-  let tools = 0
-  let agents = 0
-  let failed = 0
-  for (const message of messages) {
-    const calls = pairTools(message.blocks)
-    tools += calls.length
-    agents += calls.filter(isSubagentLaunch).length
-    agents = Math.max(agents, ...calls.map(reportedSubagentCount))
-    failed += calls.filter((call) => call.isError).length
-  }
+  const calls = messages.flatMap((message) => pairTools(message.blocks))
+  const summary = summarizeToolWork(calls)
+  const agents = Math.max(
+    summary.agents,
+    ...calls.map(reportedSubagentCount)
+  )
   const completed = messages.at(-1)?.timestamp
   return {
-    tools,
+    ...summary,
     agents,
-    failed,
     duration:
       started !== undefined && completed !== undefined && completed >= started
         ? completed - started
@@ -299,6 +292,28 @@ function WorkSummary({
   onToggle: () => void
 }) {
   const elapsed = work.duration !== undefined ? formatDuration(work.duration) : undefined
+  const activity = [
+    work.changedFiles > 0
+      ? `${work.changedFiles} file${work.changedFiles === 1 ? "" : "s"} changed`
+      : null,
+    work.commands > 0
+      ? `${work.commands} command${work.commands === 1 ? "" : "s"}`
+      : null,
+    work.reads > 0 ? `${work.reads} read${work.reads === 1 ? "" : "s"}` : null,
+    work.searches > 0
+      ? `${work.searches} search${work.searches === 1 ? "" : "es"}`
+      : null,
+    work.skills > 0 ? `${work.skills} skill${work.skills === 1 ? "" : "s"}` : null,
+    work.agents > 0
+      ? `${work.agents} background agent${work.agents === 1 ? "" : "s"}`
+      : null,
+    work.plans > 0 ? `${work.plans} plan update${work.plans === 1 ? "" : "s"}` : null,
+    work.other > 0 ? `${work.other} other` : null,
+  ].filter((piece): piece is string => piece !== null)
+  const hiddenActions = activity.slice(4).reduce((count, piece) => {
+    const amount = Number.parseInt(piece, 10)
+    return count + (Number.isNaN(amount) ? 0 : amount)
+  }, 0)
   const pieces = [
     live
       ? "Working"
@@ -313,19 +328,17 @@ function WorkSummary({
           : elapsed
             ? `Worked for ${elapsed}`
             : "Work log",
-    work.agents > 0
-      ? `${work.agents} background agent${work.agents === 1 ? "" : "s"}`
-      : null,
-    `${work.tools} tools`,
+    ...(activity.length > 0 ? activity.slice(0, 4) : [`${work.tools} tools`]),
+    hiddenActions > 0 ? `${hiddenActions} more` : null,
     work.failed > 0 ? `${work.failed} failed` : null,
-  ].filter(Boolean)
+  ].filter((piece): piece is string => piece !== null)
   return (
     <button
       type="button"
       onClick={onToggle}
       aria-expanded={open}
       className={cn(
-        "pressable flex h-7 w-fit items-center gap-1.5 rounded-md bg-raised px-2 text-label transition-colors duration-100 hover:text-muted-foreground",
+        "pressable flex h-7 max-w-full items-center gap-1.5 rounded-md bg-raised px-2 text-label transition-colors duration-100 hover:text-muted-foreground",
         interrupted
           ? "text-caution"
           : failed
@@ -346,7 +359,7 @@ function WorkSummary({
           open && "rotate-90"
         )}
       />
-      {pieces.join(" · ")}
+      <span className="truncate">{pieces.join(" · ")}</span>
     </button>
   )
 }
@@ -423,11 +436,16 @@ function Response({
 
 function Thinking({ text, live }: { text: string; live: boolean }) {
   const [open, setOpen] = useState(false)
+  const trimmed = text.trim()
+  const lastLine = trimmed.slice(trimmed.lastIndexOf("\n") + 1)
+  const summary = lastLine.length > 120 ? `…${lastLine.slice(-119)}` : lastLine
   return (
     <div className="rounded-md bg-foreground/[0.045]">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-label={`${live ? "Reasoning in progress" : "Reasoning"}${summary ? `: ${summary}` : ""}`}
         className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-ui text-faint transition-colors duration-100 hover:text-muted-foreground"
       >
         <ChevronRightIcon
@@ -437,7 +455,12 @@ function Thinking({ text, live }: { text: string; live: boolean }) {
           )}
         />
         <BrainIcon className="size-3" />
-        <span className={cn(live && "shimmer")}>{live ? "Reasoning…" : "Reasoning"}</span>
+        <span className={cn("shrink-0", live && "shimmer")}>
+          {live ? "Reasoning…" : "Reasoning"}
+        </span>
+        {!open && summary ? (
+          <span className="min-w-0 flex-1 truncate text-faint/70">{summary}</span>
+        ) : null}
       </button>
       {open ? (
         <p className="border-t border-hairline px-2.5 py-2 text-ui leading-[1.65] whitespace-pre-wrap text-muted-foreground">

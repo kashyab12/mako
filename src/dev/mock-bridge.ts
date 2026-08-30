@@ -5,6 +5,7 @@ import type {
 } from "../../electron/shared.ts"
 import type {
   Automation,
+  AcpSessionState,
   BootPayload,
   HostEvent,
   SessionMeta,
@@ -114,6 +115,8 @@ export function installMockBridge() {
   // so a new tab is another view of the same fixture. Enough to lay out the
   // strip against, not enough to pretend it is the real thing.
   let tabCount = 1
+  let acpCount = 0
+  const acpSessions = new Map<string, AcpSessionState>()
   const mockTab = (id: string) => ({
     id,
     session: { meta, messages: MESSAGES, tree: TREE },
@@ -797,23 +800,75 @@ export function installMockBridge() {
       "devin",
     ],
     acpHarnesses: async () => ["claude", "cursor", "grok", "devin"],
-    acpStart: async (harness: string, cwd: string) => ({
-      id: "acp-1",
-      harness,
-      cwd,
-      status: "ready" as const,
-      modes: [
-        { id: "default", name: "Always Ask" },
-        { id: "acceptEdits", name: "Accept Edits" },
-      ],
-      currentMode: "default",
-      configOptions: [],
-    }),
-    acpPrompt: async () => {},
+    acpStart: async (harness: string, cwd: string) => {
+      const session: AcpSessionState = {
+        id: `acp-${++acpCount}`,
+        nativeId: `mock-${harness}-${acpCount}`,
+        harness,
+        cwd,
+        status: "ready",
+        modes: [
+          { id: "default", name: "Always Ask" },
+          { id: "acceptEdits", name: "Accept Edits" },
+        ],
+        currentMode: "default",
+        configOptions: [],
+      }
+      acpSessions.set(session.id, session)
+      return session
+    },
+    acpPrompt: async (id: string, text: string) => {
+      const session = acpSessions.get(id)
+      if (!session) throw new Error("Mock ACP session is closed")
+      const running: AcpSessionState = { ...session, status: "running" }
+      acpSessions.set(id, running)
+      emit({ type: "acp-session", session: running })
+      emit({ type: "acp-update", id, update: { kind: "user", text } })
+      window.setTimeout(() => {
+        const current = acpSessions.get(id)
+        if (current?.status !== "running") return
+        emit({
+          type: "acp-update",
+          id,
+          update: { kind: "text", text: `Finished: ${text}` },
+        })
+        const ready: AcpSessionState = {
+          ...current,
+          status: "ready",
+          lastStop: "end_turn",
+        }
+        acpSessions.set(id, ready)
+        emit({ type: "acp-session", session: ready })
+      }, 1_200)
+    },
     acpPermission: async () => {},
-    acpSetMode: async () => {},
-    acpCancel: async () => {},
-    acpClose: async () => {},
+    acpSetMode: async (id: string, modeId: string) => {
+      const session = acpSessions.get(id)
+      if (!session) return
+      const next = { ...session, currentMode: modeId }
+      acpSessions.set(id, next)
+      emit({ type: "acp-session", session: next })
+    },
+    acpCancel: async (id: string) => {
+      const session = acpSessions.get(id)
+      if (!session) return
+      const next: AcpSessionState = {
+        ...session,
+        status: "ready",
+        lastStop: "canceled",
+      }
+      acpSessions.set(id, next)
+      emit({ type: "acp-session", session: next })
+    },
+    acpClose: async (id: string) => {
+      const session = acpSessions.get(id)
+      if (!session) return
+      emit({
+        type: "acp-session",
+        session: { ...session, status: "closed" },
+      })
+      acpSessions.delete(id)
+    },
     continueTargets: async () => ["codex", "claude", "cursor", "grok", "devin"],
     continueThreadWith: async (path: string, harness: string) => {
       void path

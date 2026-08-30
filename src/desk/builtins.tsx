@@ -19,6 +19,7 @@ import { TerminalDockToggle } from "@/components/stage/terminal-dock-toggle"
 import {
   BashBody,
   EditBody,
+  SkillBody,
   SubagentBody,
   WriteBody,
 } from "@/components/transcript/tool-views"
@@ -93,7 +94,7 @@ export function installBuiltins(): () => void {
         body: BashBody,
       })
     ),
-    ...["edit", "Edit", "multiedit", "MultiEdit"].map((name) =>
+    ...["edit", "Edit", "multiedit", "MultiEdit", "apply_patch"].map((name) =>
       registerToolView(name, {
         summary: (call: ToolCall) => {
           const edits = editsOf(call)
@@ -101,6 +102,7 @@ export function installBuiltins(): () => void {
           return edits.length > 1 ? `${path} · ${edits.length} edits` : path
         },
         body: EditBody,
+        openPath: (call: ToolCall) => primaryArgument(call.arguments) || undefined,
       })
     ),
     ...["write", "Write"].map((name) =>
@@ -108,6 +110,7 @@ export function installBuiltins(): () => void {
         summary: (call: ToolCall) =>
           `${primaryArgument(call.arguments)} · ${countLines(argAt(call.arguments, "content"))} lines`,
         body: WriteBody,
+        openPath: (call: ToolCall) => primaryArgument(call.arguments) || undefined,
       })
     ),
     ...["read", "Read", "ReadFile", "read_file"].map((name) =>
@@ -116,6 +119,7 @@ export function installBuiltins(): () => void {
           const path = primaryArgument(call.arguments)
           return path ? fileName(path) : ""
         },
+        openPath: (call: ToolCall) => primaryArgument(call.arguments) || undefined,
       })
     ),
     ...["grep", "Grep", "rg", "find", "Glob", "glob"].map((name) =>
@@ -146,6 +150,7 @@ export function installBuiltins(): () => void {
           argAt(call.arguments, "skill") ??
           argAt(call.arguments, "name") ??
           primaryArgument(call.arguments),
+        body: SkillBody,
       })
     ),
     ...[

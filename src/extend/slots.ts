@@ -85,6 +85,7 @@ export interface ToolCall {
   arguments?: unknown
   result?: string
   isError?: boolean
+  isCanceled?: boolean
   pending: boolean
 }
 
@@ -98,6 +99,8 @@ export interface ToolView {
   summary?: (call: ToolCall) => ReactNode
   /** Body shown when the row is expanded. Falls back to raw output. */
   body?: ComponentType<ToolViewProps>
+  /** A file this call can open directly from its collapsed row. */
+  openPath?: (call: ToolCall) => string | undefined
   /** Overrides the default wrench glyph. */
   icon?: ComponentType<{ className?: string }>
 }

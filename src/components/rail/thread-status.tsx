@@ -23,7 +23,7 @@ export function ThreadStatusMark({
           className="flex shrink-0 items-center gap-1 text-label text-ember/80"
         >
           <Loader2Icon className="size-3 animate-spin" />
-          <span>Working</span>
+          <span className="max-w-24 truncate">{status.detail ?? "Working"}</span>
           <Elapsed since={status.since} />
         </span>
       )

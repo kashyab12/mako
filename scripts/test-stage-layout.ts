@@ -10,6 +10,7 @@ import {
   isSubagentLaunch,
   subagentResultId,
   subagentResultText,
+  summarizeToolWork,
   toolLabel,
 } from "../src/lib/tools.ts"
 import {
@@ -45,7 +46,14 @@ import {
   pendingThreadInput,
   threadToMessages,
 } from "../src/lib/foreign-thread.ts"
-import { acpStore, applyAcpUpdates } from "../src/state/acp.ts"
+import {
+  acp,
+  acpStore,
+  applyAcpPermission,
+  applyAcpSession,
+  applyAcpUpdates,
+  type LiveAcpConversation,
+} from "../src/state/acp.ts"
 import type {
   ChatMessage,
   HarnessProfile,
@@ -234,6 +242,30 @@ assert.equal(
 )
 assert.equal(toolLabel("exec_command"), "Shell")
 assert.equal(toolLabel("TaskUpdate"), "Update task")
+assert.deepEqual(
+  summarizeToolWork([
+    { id: "edit-a", name: "edit", arguments: { file_path: "src/a.ts" }, pending: false },
+    { id: "edit-a-2", name: "write", arguments: { path: "src/a.ts" }, pending: false },
+    { id: "shell", name: "exec_command", pending: false },
+    { id: "read", name: "read", pending: false },
+    { id: "search", name: "grep", pending: false },
+    { id: "skill", name: "skill", pending: false },
+    { id: "agent", name: "run_subagent", pending: false },
+    { id: "plan", name: "TodoWrite", pending: false, isError: true },
+  ]),
+  {
+    tools: 8,
+    changedFiles: 1,
+    commands: 1,
+    reads: 1,
+    searches: 1,
+    skills: 1,
+    agents: 1,
+    plans: 1,
+    other: 0,
+    failed: 1,
+  }
+)
 
 const acpConversation = acpBlocksToMessages(
   [
@@ -278,8 +310,35 @@ assert.equal(acpConversation.messages[1]?.streaming, true)
 assert.deepEqual(acpConversation.plan, [
   { content: "Inspect", status: "completed" },
 ])
+const canceledTool = acpBlocksToMessages(
+  [
+    {
+      type: "tool",
+      id: "tool-canceled",
+      title: "Run command",
+      toolKind: "exec_command",
+      status: "canceled",
+    },
+  ],
+  false
+)
+assert.equal(
+  canceledTool.messages[0]?.blocks.find(
+    (block) => block.type === "toolResult"
+  )?.isCanceled,
+  true
+)
 
-acpStore.set({
+const acpEcho = {
+  kind: "live",
+  key: "acp-echo",
+  draftKey: "draft-echo",
+  harness: "grok",
+  cwd: "/repo",
+  blocks: [],
+  hiddenUserPrompt: null,
+  createdAt: 1,
+  updatedAt: 1,
   session: {
     id: "acp-echo",
     harness: "grok",
@@ -289,33 +348,164 @@ acpStore.set({
     currentMode: null,
     configOptions: [],
   },
-  blocks: [],
   permission: null,
-  starting: false,
+  sending: false,
+  canceling: false,
   queued: [],
-  hiddenUserPrompt: null,
+} satisfies LiveAcpConversation
+acpStore.set({
+  activeKey: acpEcho.key,
+  conversations: { [acpEcho.key]: acpEcho },
+  bufferedUpdates: {},
+  bufferedPermissions: {},
 })
 applyAcpUpdates("acp-echo", [
   { kind: "user", text: "same prompt" },
   { kind: "user", text: "same prompt" },
 ])
-assert.deepEqual(acpStore.get().blocks, [
+assert.deepEqual(acpStore.get().conversations[acpEcho.key]?.blocks, [
   { type: "user", text: "same prompt" },
 ])
 acpStore.set({
-  blocks: [{ type: "user", text: "Visible question" }],
-  hiddenUserPrompt: "Read the generated transcript, then answer.",
+  conversations: {
+    [acpEcho.key]: {
+      ...acpStore.get().conversations[acpEcho.key]!,
+      blocks: [{ type: "user", text: "Visible question" }],
+      hiddenUserPrompt: "Read the generated transcript, then answer.",
+    },
+  },
 })
 applyAcpUpdates("acp-echo", [
   { kind: "user", text: "Read the generated transcript, then answer." },
   { kind: "text", text: "Ready" },
 ])
-assert.deepEqual(acpStore.get().blocks, [
+assert.deepEqual(acpStore.get().conversations[acpEcho.key]?.blocks, [
   { type: "user", text: "Visible question" },
   { type: "text", text: "Ready" },
 ])
-assert.equal(acpStore.get().hiddenUserPrompt, null)
-acpStore.set({ session: null, blocks: [], hiddenUserPrompt: null })
+assert.equal(
+  acpStore.get().conversations[acpEcho.key]?.hiddenUserPrompt,
+  null
+)
+
+const backgroundA = {
+  ...acpEcho,
+  key: "acp-background-a",
+  draftKey: "draft-background-a",
+  threadPath: "/background-a",
+  blocks: [],
+  session: {
+    ...acpEcho.session,
+    id: "acp-background-a",
+    harness: "claude",
+    status: "running",
+  },
+} satisfies LiveAcpConversation
+const backgroundB = {
+  ...acpEcho,
+  key: "acp-background-b",
+  draftKey: "draft-background-b",
+  threadPath: "/background-b",
+  blocks: [],
+  session: {
+    ...acpEcho.session,
+    id: "acp-background-b",
+    harness: "codex",
+    status: "running",
+  },
+} satisfies LiveAcpConversation
+threadsStore.set({ working: {}, attention: {} })
+acpStore.set({
+  activeKey: backgroundB.key,
+  conversations: {
+    [backgroundA.key]: backgroundA,
+    [backgroundB.key]: backgroundB,
+  },
+  bufferedUpdates: {},
+  bufferedPermissions: {},
+})
+const stableBackgroundB = acpStore.get().conversations[backgroundB.key]
+applyAcpUpdates(backgroundA.key, [{ kind: "text", text: "Background token" }])
+assert.deepEqual(acpStore.get().conversations[backgroundA.key]?.blocks, [
+  { type: "text", text: "Background token" },
+])
+assert.equal(
+  acpStore.get().conversations[backgroundB.key],
+  stableBackgroundB,
+  "a background token must not replace the active conversation object"
+)
+applyAcpPermission({
+  id: "permission-a",
+  sessionId: backgroundA.key,
+  title: "Run tests",
+  options: [{ optionId: "allow", name: "Allow" }],
+})
+assert.equal(
+  acpStore.get().conversations[backgroundA.key]?.kind === "live"
+    ? acpStore.get().conversations[backgroundA.key]?.permission?.id
+    : undefined,
+  "permission-a"
+)
+assert.equal(threadsStore.get().attention["/background-a"]?.kind, "needs-permission")
+assert.equal(acpStore.get().activeKey, backgroundB.key)
+assert.equal(acp.activateThread("/background-a"), true)
+assert.equal(acpStore.get().activeKey, backgroundA.key)
+assert.equal(threadsStore.get().attention["/background-a"]?.kind, "needs-permission")
+acpStore.set({ activeKey: backgroundB.key })
+const queuedA = acpStore.get().conversations[backgroundA.key]
+if (!queuedA || queuedA.kind !== "live") throw new Error("missing background A")
+acpStore.set({
+  conversations: {
+    ...acpStore.get().conversations,
+    [backgroundA.key]: {
+      ...queuedA,
+      permission: null,
+      queued: [{ text: "Keep me", attachments: [] }],
+    },
+  },
+})
+applyAcpSession({ ...backgroundA.session, status: "ready" })
+await Promise.resolve()
+await Promise.resolve()
+const restoredA = acpStore.get().conversations[backgroundA.key]
+assert.equal(
+  restoredA?.kind === "live" ? restoredA.queued[0]?.text : undefined,
+  "Keep me",
+  "a failed background queue drain must restore the prompt"
+)
+if (restoredA?.kind === "live") {
+  acpStore.set({
+    conversations: {
+      ...acpStore.get().conversations,
+      [backgroundA.key]: {
+        ...restoredA,
+        session: { ...restoredA.session, status: "running" },
+        queued: [],
+      },
+    },
+  })
+}
+applyAcpSession({ ...backgroundA.session, status: "ready" })
+assert.equal(threadsStore.get().attention["/background-a"]?.kind, "review")
+assert.equal(acpStore.get().activeKey, backgroundB.key)
+acpStore.set({
+  activeKey: null,
+  conversations: {},
+  bufferedUpdates: {},
+  bufferedPermissions: {},
+})
+threadsStore.set({ working: {}, attention: {} })
+applyAcpPermission({
+  id: "permission-before-promotion",
+  sessionId: "acp-not-promoted",
+  title: "Choose access",
+  options: [],
+})
+assert.equal(
+  acpStore.get().bufferedPermissions["acp-not-promoted"]?.id,
+  "permission-before-promotion"
+)
+acpStore.set({ bufferedPermissions: {} })
 
 const interleavedResponse = [
   {
@@ -541,6 +731,16 @@ assert.deepEqual(
 )
 assert.deepEqual(
   groupThreadFolders({
+    refs: [folderRefs[1]!],
+    currentCwd: "/repo/packages/unknown",
+    pinnedThreads: [],
+    pinnedFolders: ["/repo/"],
+    sortBy: "recent",
+  }).map((folder) => ({ cwd: folder.cwd, current: folder.current, pinned: folder.pinned })),
+  [{ cwd: "/repo", current: true, pinned: true }]
+)
+assert.deepEqual(
+  groupThreadFolders({
     refs: folderRefs,
     currentCwd: "/repo",
     pinnedThreads: [],
@@ -550,6 +750,20 @@ assert.deepEqual(
   })[0]?.refs.map((ref) => ref.path),
   ["/one", "/two"]
 )
+const activeFolders = groupThreadFolders({
+  refs: [
+    { ...folderRefs[0]!, path: "/quiet", cwd: "/quiet", workspace: "/quiet", updatedAt: "2026-08-30T12:00:00Z" },
+    { ...folderRefs[1]!, path: "/live", cwd: "/live", workspace: "/live", updatedAt: "2026-08-29T12:00:00Z" },
+  ],
+  pinnedThreads: [],
+  pinnedFolders: [],
+  priorities: { "/live": 2 },
+  activity: { "/live": { running: true } },
+  sortBy: "recent",
+})
+assert.equal(activeFolders[0]?.cwd, "/live")
+assert.equal(activeFolders[0]?.running, 1)
+assert.equal(activeFolders[0]?.priority, 2)
 assert.ok(
   threadStatusPriority({ kind: "needs-permission", since: 1 }) >
     threadStatusPriority({ kind: "working", since: 1 })

@@ -171,6 +171,7 @@ export async function codexAppStart(
     if (replayUpdates.length > 0)
       emit({ type: "acp-updates", id: live.id, updates: replayUpdates })
     updateState(live, {
+      nativeId: response.thread.id,
       status: "ready",
       cwd: live.cwd,
       error: undefined,

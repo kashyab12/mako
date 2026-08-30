@@ -120,8 +120,28 @@ interface Live {
 }
 
 const sessions = new Map<string, Live>()
+const STARTUP_TIMEOUT_MS = 20_000
 let counter = 0
 let emit: (event: HostEvent) => void = () => {}
+
+function startupStep<Value>(work: Promise<Value>, harness: string): Promise<Value> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${harness} did not start within 20 seconds`)),
+      STARTUP_TIMEOUT_MS
+    )
+    work.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error: Error) => {
+        clearTimeout(timer)
+        reject(error)
+      }
+    )
+  })
+}
 
 export function bindAcp(send: (event: HostEvent) => void): void {
   emit = send
@@ -410,14 +430,17 @@ export async function acpStart(
   live.connection = connection
 
   try {
-    const initialized = await connection.initialize({
-      protocolVersion: PROTOCOL_VERSION,
-      clientCapabilities: {
-        fs: { readTextFile: false, writeTextFile: false },
-        session: { configOptions: { boolean: {} } },
-        elicitation: { form: {} },
-      },
-    })
+    const initialized = await startupStep(
+      connection.initialize({
+        protocolVersion: PROTOCOL_VERSION,
+        clientCapabilities: {
+          fs: { readTextFile: false, writeTextFile: false },
+          session: { configOptions: { boolean: {} } },
+          elicitation: { form: {} },
+        },
+      }),
+      harness
+    )
     live.promptCapabilities =
       initialized.agentCapabilities?.promptCapabilities ?? {}
     const mcpCapabilities = initialized.agentCapabilities?.mcpCapabilities
@@ -429,25 +452,31 @@ export async function acpStart(
       : []
     const session = options.resume
       ? parseLoadedAcpSession(
-          await connection.loadSession(
-            loadSessionRequest(
-              options.resume,
-              workingDir,
-              harness,
-              options.tuning,
-              live.mcpServers
-            )
+          await startupStep(
+            connection.loadSession(
+              loadSessionRequest(
+                options.resume,
+                workingDir,
+                harness,
+                options.tuning,
+                live.mcpServers
+              )
+            ),
+            harness
           ),
           options.resume
         )
       : parseNewAcpSession(
-          await connection.newSession(
-            newSessionRequest(
-              workingDir,
-              harness,
-              options.tuning,
-              live.mcpServers
-            )
+          await startupStep(
+            connection.newSession(
+              newSessionRequest(
+                workingDir,
+                harness,
+                options.tuning,
+                live.mcpServers
+              )
+            ),
+            harness
           )
         )
     live.sessionId = session.sessionId
@@ -644,7 +673,7 @@ async function setLegacySessionModel(
   )
 }
 
-/** Send the next message. Resolves when the turn ends; updates stream meanwhile. */
+/** Send the next message. Resolves when the provider accepts the turn. */
 export async function acpPrompt(
   id: string,
   text: string,
@@ -655,6 +684,8 @@ export async function acpPrompt(
     throw new Error("This interactive session is not running")
   if (live.state.status === "running")
     throw new Error("The agent is already working")
+  const connection = live.connection
+  const sessionId = live.sessionId
   update(live, { status: "running" })
   emit({ type: "acp-update", id, update: { kind: "user", text } })
   const prompt: ContentBlock[] = [{ type: "text", text }]
@@ -679,8 +710,8 @@ export async function acpPrompt(
       })
     }
   }
-  const turn = live.connection
-    .prompt({ sessionId: live.sessionId, prompt })
+  const turn = Promise.resolve()
+    .then(() => connection.prompt({ sessionId, prompt }))
     .then((result) => {
       update(live, { status: "ready", lastStop: result.stopReason })
     })

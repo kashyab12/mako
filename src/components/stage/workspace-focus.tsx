@@ -3,7 +3,7 @@ import {
   WorkspaceFocusContext,
   workspaceFocusOf,
 } from "@/components/stage/workspace-focus-context"
-import { useAcp } from "@/state/acp"
+import { activeAcp, useAcp } from "@/state/acp"
 import { actions, useSession } from "@/state/session"
 import { useThreads } from "@/state/threads"
 
@@ -13,13 +13,18 @@ export function WorkspaceFocusProvider({ children }: { children: ReactNode }) {
   const viewing = useThreads(
     (state) => state.opening ?? state.viewing?.ref
   )
-  const live = useAcp((state) => state.session)
-  const liveThreadPath = useAcp((state) => state.threadPath)
+  const liveId = useAcp((state) => activeAcp(state)?.key)
+  const liveCwd = useAcp((state) => activeAcp(state)?.cwd)
+  const liveTitle = useAcp((state) => activeAcp(state)?.title)
+  const liveThreadPath = useAcp((state) => activeAcp(state)?.threadPath)
   const focus = workspaceFocusOf({
     sessionCwd,
     sessionTitle,
     viewing,
-    live: live ?? undefined,
+    live:
+      liveId && liveCwd
+        ? { id: liveId, cwd: liveCwd, title: liveTitle }
+        : undefined,
     liveThreadPath,
   })
 

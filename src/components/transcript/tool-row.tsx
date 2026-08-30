@@ -3,7 +3,16 @@ import { useToolView, type ToolCall } from "@/extend/slots"
 import { primaryArgument, toolLabel } from "@/lib/tools"
 import { cn } from "@/lib/utils"
 import { usePrefs } from "@/state/prefs"
-import { ChevronRightIcon, CircleAlertIcon, CheckIcon, CopyIcon, Loader2Icon } from "lucide-react"
+import { viewer } from "@/state/viewer"
+import {
+  ChevronRightIcon,
+  CircleAlertIcon,
+  CheckIcon,
+  CopyIcon,
+  FileTextIcon,
+  Loader2Icon,
+  XIcon,
+} from "lucide-react"
 import { ToolGlyph } from "@/components/transcript/tool-views"
 
 /**
@@ -17,6 +26,7 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
   const view = useToolView(call.name)
 
   const summary = view?.summary?.(call) ?? primaryArgument(call.arguments)
+  const openPath = view?.openPath?.(call)
   const Body = view?.body
 
   return (
@@ -27,20 +37,33 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
         open && "border-border"
       )}
     >
-      <button
-        type="button"
-        data-open={open || undefined}
-        data-pending={call.pending || undefined}
-        onClick={() => setOpen((value) => !value)}
-        className="group/tool flex w-full items-center gap-2 px-2 py-1.5 text-left transition-colors duration-100 hover:bg-fill-hover"
-      >
-        <LeadSlot call={call} open={open} icon={view?.icon} />
-        <span className="shrink-0 text-ui font-medium text-foreground/90">
-          {toolLabel(call.name)}
-        </span>
-        <span className="min-w-0 flex-1 truncate font-mono text-ui text-faint">{summary}</span>
-        <Status call={call} />
-      </button>
+      <div className="group/tool flex items-center">
+        <button
+          type="button"
+          data-open={open || undefined}
+          data-pending={call.pending || undefined}
+          onClick={() => setOpen((value) => !value)}
+          className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left transition-colors duration-100 hover:bg-fill-hover"
+        >
+          <LeadSlot call={call} open={open} icon={view?.icon} />
+          <span className="shrink-0 text-ui font-medium text-foreground/90">
+            {toolLabel(call.name)}
+          </span>
+          <span className="min-w-0 flex-1 truncate font-mono text-ui text-faint">{summary}</span>
+          <Status call={call} />
+        </button>
+        {openPath ? (
+          <button
+            type="button"
+            title={`Open ${openPath}`}
+            aria-label={`Open ${openPath}`}
+            onClick={() => void viewer.open(openPath)}
+            className="pressable mr-1 rounded p-1 text-faint opacity-0 transition-opacity duration-100 group-hover/tool:opacity-100 focus:opacity-100 hover:text-foreground"
+          >
+            <FileTextIcon className="size-3" />
+          </button>
+        ) : null}
+      </div>
 
       {open ? (
         <div className="border-t border-hairline">
@@ -128,6 +151,14 @@ function Status({ call }: { call: ToolCall }) {
       </span>
     )
   }
+  if (call.isCanceled) {
+    return (
+      <span className="flex shrink-0 items-center gap-1 text-label text-faint">
+        <XIcon className="size-3" />
+        canceled
+      </span>
+    )
+  }
   return null
 }
 
@@ -147,7 +178,9 @@ function DefaultBody({ call, dense }: { call: ToolCall; dense: boolean }) {
           </pre>
         </CopyableBlock>
       ) : null}
-      {call.result ? (
+      {call.isCanceled ? (
+        <p className="text-ui text-faint">canceled</p>
+      ) : call.result ? (
         <Output text={call.result} dense={dense} isError={call.isError} />
       ) : (
         <p className="shimmer text-ui">waiting for result…</p>

@@ -15,6 +15,7 @@ import {
   useThreads,
 } from "@/state/threads"
 import { actions, shallowEqual, useSession } from "@/state/session"
+import { activeAcp, useAcp } from "@/state/acp"
 import { useWorkspaceFocus } from "@/components/stage/workspace-focus-context"
 import {
   prefsStore,
@@ -29,6 +30,12 @@ import { Blank } from "@/components/ui/kit"
 import { formatChord } from "@/extend/commands"
 import { DraftThreads } from "@/components/rail/draft-threads"
 import { ThreadStatusMark } from "@/components/rail/thread-status"
+import {
+  ActiveAgents,
+  FolderActivity,
+  RailSkeleton,
+  type AgentActivity,
+} from "@/components/rail/rail-activity"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import {
   CheckIcon,
@@ -70,11 +77,6 @@ const FOLDER_ROWS = 6
 const COLD_MS = 7 * 24 * 3600_000
 const LIVE_TIME_MS = 60_000
 const INITIAL_TIME = Date.now()
-
-interface AgentActivity {
-  harness: string
-  count: number
-}
 
 function useLiveTime(): number {
   const [now, setNow] = useState(INITIAL_TIME)
@@ -190,14 +192,32 @@ export function AgentThreads() {
     )
   }, [all, cwd, deferred, filter, scope])
 
-  const priorities = useMemo(() => {
+  const { priorities, threadActivity } = useMemo(() => {
     const state = { ...threadsStore.get(), attention, observed, working }
-    return Object.fromEntries(
-      matched.map((ref) => [
-        ref.path,
-        threadStatusPriority(threadStatus(ref, state)),
-      ])
-    )
+    const nextPriorities: Record<string, number> = {}
+    const nextActivity: Record<
+      string,
+      {
+        running?: boolean
+        needsInput?: boolean
+        failed?: boolean
+        unread?: boolean
+        active?: boolean
+      }
+    > = {}
+    for (const ref of matched) {
+      const status = threadStatus(ref, state)
+      nextPriorities[ref.path] = threadStatusPriority(status)
+      nextActivity[ref.path] = {
+        running: Boolean(working[ref.path]),
+        needsInput: status.kind === "needs-permission",
+        failed: status.kind === "failed",
+        unread: status.kind === "review" && status.unread,
+        active:
+          status.kind === "observed" || status.kind === "external-active",
+      }
+    }
+    return { priorities: nextPriorities, threadActivity: nextActivity }
   }, [attention, matched, observed, working])
 
   const held = useMemo(() => {
@@ -215,9 +235,10 @@ export function AgentThreads() {
         pinnedThreads: pinned,
         pinnedFolders: pinnedProjects,
         priorities,
+        activity: threadActivity,
         sortBy,
       }),
-    [cwd, matched, pinned, pinnedProjects, priorities, sortBy]
+    [cwd, matched, pinned, pinnedProjects, priorities, sortBy, threadActivity]
   )
 
   const searchActive = Boolean(deferred.trim())
@@ -410,37 +431,6 @@ export function AgentThreads() {
 }
 
 /**
- * The catalog warming up, drawn as the thing it is about to become: two
- * folder groups, a few rows each. Bars breathe together on one slow pulse
- * and stagger their widths so the shape reads as content, not as stripes.
- */
-function RailSkeleton() {
-  const widths = [72, 54, 63, 78, 48]
-  return (
-    <div className="pt-1" aria-hidden>
-      {[0, 1].map((group) => (
-        <div key={group} className="pb-2">
-          <div className="flex h-7 items-center gap-1.5 px-1.5">
-            <span className="skeleton size-3.5" />
-            <span className="skeleton h-2.5" style={{ width: group === 0 ? 64 : 88 }} />
-          </div>
-          {widths.slice(0, group === 0 ? 4 : 3).map((width, row) => (
-            <div key={row} className="flex h-7 items-center gap-2 pl-[26px] pr-2">
-              <span className="skeleton size-3 rounded-full" />
-              <span
-                className="skeleton h-2.5"
-                style={{ width: `${width}%`, opacity: 1 - (group * 4 + row) * 0.09 }}
-              />
-              <span className="skeleton ml-auto h-2 w-6 opacity-60" />
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-/**
  * The mark a session wears while it is attached — running in a background
  * tab of this window. The old tab strip carried these; the rail does now.
  * A leaf with its own narrow selector: a background tab's progress repaints
@@ -492,22 +482,6 @@ const Attached = memo(function Attached({ path }: { path: string }) {
   )
 })
 
-function ActiveAgents({ activity }: { activity: AgentActivity[] }) {
-  if (activity.length === 0) return null
-  return (
-    <div className="flex h-7 items-center gap-2 overflow-x-auto px-3 text-label text-faint">
-      {activity.map((entry) => (
-        <span key={entry.harness} className="flex shrink-0 items-center gap-1.5">
-          <HarnessIcon harness={entry.harness} className="size-3" />
-          <span>{harnessLabel(entry.harness)}</span>
-          <span className="size-1.5 animate-live rounded-full bg-current" />
-          {entry.count > 1 ? <span>{entry.count} active</span> : <span>active</span>}
-        </span>
-      ))}
-    </div>
-  )
-}
-
 /**
  * The rail's one header line: an eyebrow, and two glyphs that expand into
  * search and the provider filter only when wanted. While searching, the whole
@@ -546,6 +520,7 @@ function RailHeader({
             }
           }}
           placeholder="Search every thread"
+          aria-label="Search every thread"
           className="h-7 min-w-0 flex-1 bg-transparent px-1.5 text-ui text-foreground placeholder:text-faint focus:outline-none"
         />
         <button
@@ -733,8 +708,12 @@ function FolderSection({
   // A cold folder starts closed, a warm one open; the stored flag means
   // "the user flipped this one from its default", so both kinds remember.
   const cold =
-    !folder.current && folder.latest !== "" && now - Date.parse(folder.latest) > COLD_MS
+    !folder.current &&
+    !folder.priority &&
+    folder.latest !== "" &&
+    now - Date.parse(folder.latest) > COLD_MS
   const closed = collapsed ? !cold : cold
+  const contentId = `folder-${folder.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`
 
   const lead = folder.current ? LEAD_ROWS : REST_ROWS
   const visible = folder.refs.slice(0, lead + pages * PAGE_ROWS)
@@ -746,6 +725,8 @@ function FolderSection({
         <button
           type="button"
           title={folder.cwd ?? folder.name}
+          aria-expanded={!closed}
+          aria-controls={contentId}
           onClick={onToggle}
           className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch px-1.5 text-left"
         >
@@ -770,7 +751,8 @@ function FolderSection({
               {branch}
             </span>
           ) : null}
-          {folder.latest ? (
+          <FolderActivity folder={folder} />
+          {!folder.priority && folder.latest ? (
             <span className="tabular shrink-0 text-label text-faint/60">
               {formatRelative(folder.latest)}
             </span>
@@ -813,6 +795,7 @@ function FolderSection({
         ) : null}
       </div>
       <div
+        id={contentId}
         className={cn(
           "grid transition-[grid-template-rows] duration-200 ease-out",
           closed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
@@ -868,6 +851,7 @@ const ThreadRow = memo(function ThreadRow({
   const selectedPath = useThreads(
     (state) => state.opening?.path ?? state.viewing?.ref.path
   )
+  const livePath = useAcp((state) => activeAcp(state)?.threadPath)
 
   const open = () => {
     void threads.view(ref)
@@ -876,7 +860,8 @@ const ThreadRow = memo(function ThreadRow({
   // One selection at a time: while a thread is open in the viewer, IT is
   // the selection — the native tab keeps its state but not its highlight,
   // because two lit rows read as a broken click.
-  const lit = selectedPath ? selectedPath === ref.path : active
+  const focusedPath = selectedPath ?? livePath
+  const lit = focusedPath ? focusedPath === ref.path : active
 
   return (
     <button

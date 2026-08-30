@@ -73,6 +73,7 @@ export interface Block {
   arguments?: unknown
   mimeType?: string
   isError?: boolean
+  isCanceled?: boolean
 }
 
 export interface ChatMessage {

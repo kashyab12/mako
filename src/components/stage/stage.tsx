@@ -13,7 +13,7 @@ import {
 import { stage, useStage } from "@/state/stage"
 import { useTabs } from "@/state/tabs"
 import { useThreads } from "@/state/threads"
-import { useAcp } from "@/state/acp"
+import { activeAcp, useAcp } from "@/state/acp"
 import { prefsStore, setPref, usePrefs } from "@/state/prefs"
 import {
   clampCompanionWidth,
@@ -325,8 +325,8 @@ const CompanionBody = memo(function CompanionBody({
 function ConversationSurface() {
   const viewingPath = useThreads((state) => state.viewing?.ref.path)
   const viewing = useThreads((state) => Boolean(state.viewing) || state.viewingBusy)
-  const live = useAcp((state) => Boolean(state.session) || state.starting)
-  const liveThreadPath = useAcp((state) => state.threadPath)
+  const live = useAcp((state) => activeAcp(state) !== null)
+  const liveThreadPath = useAcp((state) => activeAcp(state)?.threadPath)
   if (viewing && (!live || viewingPath !== liveThreadPath)) return <ThreadViewer />
   if (live) return <AcpPanel />
   return <Transcript />

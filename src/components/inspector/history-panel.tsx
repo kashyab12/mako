@@ -8,7 +8,7 @@ import { toExchanges } from "@/lib/exchanges"
 import { actions, useSession } from "@/state/session"
 import { threads, useThreads } from "@/state/threads"
 import type { ViewedThread } from "@/state/thread-state"
-import { useAcp } from "@/state/acp"
+import { activeAcp, activeLiveAcp, useAcp } from "@/state/acp"
 import { cn } from "@/lib/utils"
 import {
   ChevronLeftIcon,
@@ -29,11 +29,13 @@ import {
  * collapses into a stepper — the same moment, a different continuation —
  * because indentation is what made the raw graph unreadable.
  */
+const EMPTY_BLOCKS: never[] = []
+
 export function HistoryPanel() {
   const tree = useSession((state) => state.tree)
   const viewing = useThreads((state) => state.viewing)
-  const acpSession = useAcp((state) => state.session)
-  const acpBlocks = useAcp((state) => state.blocks)
+  const acpSession = useAcp((state) => activeLiveAcp(state)?.session ?? null)
+  const acpBlocks = useAcp((state) => activeAcp(state)?.blocks ?? EMPTY_BLOCKS)
   const checkpoints = useMemo(() => checkpointsOf(tree), [tree])
   const liveTurns = useMemo(() => {
     if (!acpSession) return []

@@ -45,6 +45,8 @@ import {
 import {
   acp,
   acpStore,
+  activeAcp,
+  activeLiveAcp,
   applyAcpPermission,
   applyAcpSession,
   applyAcpUpdate,
@@ -89,11 +91,14 @@ export { shallowEqual }
 
 export function currentTurnRunning(): boolean {
   const acpState = acpStore.get()
+  const active = activeAcp(acpState)
+  const live = activeLiveAcp(acpState)
   return composerTurnRunning({
     builtinRunning: store.get().meta?.isStreaming ?? false,
-    livePresent: Boolean(acpState.session),
-    liveRunning: acpState.session?.status === "running",
-    liveThreadPath: acpState.threadPath,
+    livePresent: Boolean(active),
+    liveRunning:
+      active?.kind === "starting" || live?.session.status === "running",
+    liveThreadPath: active?.threadPath,
     viewingPath: threadsStore.get().viewing?.ref.path,
     viewingRunning: threadsStore.get().run?.status === "running",
   })
@@ -232,9 +237,11 @@ function applyToActive(event: HostEvent) {
       break
     case "threads":
       applyThreads(event.threads)
+      acp.bindThreads(event.threads)
       break
     case "thread-ref":
       applyThreadRef(event.ref)
+      acp.bindThreads([event.ref])
       break
     case "thread-removed":
       applyThreadRemoved(event.path)
@@ -462,6 +469,9 @@ export const actions = {
       })
     }
     const next = cacheOf(id)
+    threads.closeViewer()
+    if (!next.meta?.sessionFile || !acp.activateThread(next.meta.sessionFile))
+      acp.deactivate()
     tabsStore.set({ activeId: id })
     patchTab(id, { unread: false })
     store.set({
@@ -493,6 +503,12 @@ export const actions = {
     }
     const tab = await guard(() => getMako().openTab(options))
     if (!tab) return false
+    threads.closeViewer()
+    if (
+      !tab.session.meta.sessionFile ||
+      !acp.activateThread(tab.session.meta.sessionFile)
+    )
+      acp.deactivate()
     addTab(tab)
     window.dispatchEvent(new CustomEvent("mako:close-settings"))
     store.set({
@@ -514,7 +530,20 @@ export const actions = {
     stage.drop(id)
     if (result.opened) addTab(result.opened)
     if (!wasActive) return
-    const next = cacheOf(result.activeId)
+    threads.closeViewer()
+    const opened = result.opened?.id === result.activeId ? result.opened : null
+    const next = opened
+      ? {
+          meta: opened.session.meta,
+          messages: opened.session.messages,
+          stream: null,
+          tree: opened.session.tree,
+          git: opened.git,
+          capabilities: opened.capabilities,
+        }
+      : cacheOf(result.activeId)
+    if (!next.meta?.sessionFile || !acp.activateThread(next.meta.sessionFile))
+      acp.deactivate()
     store.set({
       meta: next.meta,
       messages: next.messages,
@@ -560,15 +589,18 @@ export const actions = {
   },
 
   async stopCurrentTurn() {
-    const live = acpStore.get().session
-    const liveThreadPath = acpStore.get().threadPath
+    const active = activeAcp(acpStore.get())
+    const live = activeLiveAcp(acpStore.get())
     const viewing = threadsStore.get().viewing?.ref
     const viewingOwnsComposer = Boolean(
-      viewing && (!live || viewing.path !== liveThreadPath)
+      viewing &&
+      active?.kind !== "starting" &&
+      (!active || viewing.path !== active.threadPath)
     )
     if (viewingOwnsComposer && viewing)
       return threads.abortReply(viewing)
-    if (live?.status === "running") return acp.cancel()
+    if (active?.kind === "starting") return acp.close()
+    if (live?.session.status === "running") return acp.cancel()
     if (store.get().meta?.isStreaming) {
       await actions.abort()
       return true
@@ -581,19 +613,7 @@ export const actions = {
   },
 
   async newConversationIn(folder = store.get().meta?.cwd) {
-    const acpState = acpStore.get()
-    const live = acpState.session
-    if (acpState.starting) {
-      toast.error("Wait for the active conversation to start")
-      return false
-    }
-    if (live?.status === "running") {
-      toast.error("Stop the active conversation before starting another", {
-        action: { label: "Stop", onClick: () => acp.cancel() },
-      })
-      return false
-    }
-    if (live) acp.close()
+    acp.deactivate()
     threads.closeViewer()
     viewer.close()
     stage.close()
@@ -622,6 +642,8 @@ export const actions = {
       .tabs.find((tab) => sessionFileOf(tab.id) === path)
     if (existing) return actions.switchTab(existing.id)
     if (inNewTab) return actions.openTab({ sessionPath: path })
+    acp.deactivate()
+    threads.closeViewer()
     // Picking a thread means "show me that thread" — so any full-window view
     // standing in front of the transcript steps aside first.
     window.dispatchEvent(new CustomEvent("mako:close-settings"))

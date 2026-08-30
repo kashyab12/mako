@@ -35,7 +35,13 @@ import {
   useSession,
 } from "@/state/session"
 import { threads, threadsStore, useThreads } from "@/state/threads"
-import { acp, acpStore, useAcp } from "@/state/acp"
+import {
+  acp,
+  acpStore,
+  activeAcp,
+  activeLiveAcp,
+  useAcp,
+} from "@/state/acp"
 import { draftText, rememberDraft } from "@/state/drafts"
 import { useProviders } from "@/state/providers"
 import { stage } from "@/state/stage"
@@ -102,11 +108,13 @@ function toAcpPromptAttachment(item: Attachment): AcpPromptAttachment {
 }
 
 const isMac = navigator.platform.startsWith("Mac")
+const EMPTY_QUEUE: never[] = []
 
 export function Composer() {
   const sessionId = useSession((state) => state.meta?.sessionId)
   const viewingPath = useThreads((state) => state.viewing?.ref.path)
-  const draftKey = sessionId ?? viewingPath ?? "new"
+  const liveDraftKey = useAcp((state) => activeAcp(state)?.draftKey)
+  const draftKey = liveDraftKey ?? viewingPath ?? sessionId ?? "new"
   const status = useSession(
     useCallback(
       (state) => ({
@@ -294,8 +302,10 @@ export function Composer() {
       // conversation starts through that provider's richest live protocol.
       // Attachments ride as staged file paths so every local CLI reads the
       // same bytes without base64 crossing IPC.
-      const liveSession = acpStore.get().session
-      const liveThreadPath = acpStore.get().threadPath
+      const activeConversation = activeAcp(acpStore.get())
+      const live = activeLiveAcp(acpStore.get())
+      const liveSession = live?.session
+      const liveThreadPath = activeConversation?.threadPath
       const viewingRef = threadsStore.get().viewing?.ref
       const viewingOwnsComposer = Boolean(
         viewingRef && viewingRef.path !== liveThreadPath
@@ -332,6 +342,7 @@ export function Composer() {
         attachments: attachments.detach(),
       }
       update("")
+      draftRef.current = ""
       setMention(null)
       let ok: boolean
       if (viewingRef && (!liveSession || viewingOwnsComposer)) {
@@ -345,13 +356,22 @@ export function Composer() {
               ? await threads.interruptAndSend(viewingRef, full)
               : await threads.reply(viewingRef, full)
             : await threads.moveAndSend(viewingRef, harness, full)
-      } else if (liveSession) {
-        if (harness !== liveSession.harness) {
-          ok = await acp.handoff(harness, full)
+      } else if (activeConversation) {
+        if (harness !== activeConversation.harness) {
+          if (liveSession) ok = await acp.handoff(harness, full)
+          else {
+            acp.deactivate()
+            ok = await acp.startFresh(
+              harness,
+              meta?.cwd ?? activeConversation.cwd,
+              full,
+              acpAttachments
+            )
+          }
         } else {
           // Mod+Enter while the agent runs: stop the turn, then send — the
           // live protocol's own interrupt. Plain Enter queues agent-side.
-          if (mode && liveSession.status === "running") acp.cancel()
+          if (mode && liveSession?.status === "running") acp.cancel()
           ok = await acp.send(full, acpAttachments)
         }
       } else if (threadsStore.get().acpable.includes(harness)) {
@@ -368,11 +388,16 @@ export function Composer() {
       else {
         rememberDraft(submittedDraftKey, restorableDraft.text)
         const currentDraftKey =
-          sessionStore.get().meta?.sessionId ??
+          activeAcp(acpStore.get())?.draftKey ??
           threadsStore.get().viewing?.ref.path ??
+          sessionStore.get().meta?.sessionId ??
           "new"
-        if (currentDraftKey === submittedDraftKey)
-          setDraft(restorableDraft.text)
+        const currentText = draftRef.current.trim()
+          ? `${restorableDraft.text}\n\n${draftRef.current}`
+          : restorableDraft.text
+        rememberDraft(currentDraftKey, currentText)
+        draftRef.current = currentText
+        setDraft(currentText)
         attachments.reattach(restorableDraft.attachments)
       }
       return
@@ -463,10 +488,22 @@ export function Composer() {
   }
 
   const busy = status.streaming || status.compacting
-  const liveHarness = useAcp((state) => state.session?.harness ?? null)
-  const liveRunning = useAcp((state) => state.session?.status === "running")
-  const stopping = useAcp((state) => state.canceling)
-  const liveThreadPath = useAcp((state) => state.threadPath)
+  const liveHarness = useAcp(
+    (state) => activeAcp(state)?.harness ?? null
+  )
+  const liveRunning = useAcp((state) => {
+    const active = activeAcp(state)
+    return (
+      active?.kind === "starting" || active?.session.status === "running"
+    )
+  })
+  const liveStarting = useAcp(
+    (state) => activeAcp(state)?.kind === "starting"
+  )
+  const stopping = useAcp(
+    (state) => activeLiveAcp(state)?.canceling ?? false
+  )
+  const liveThreadPath = useAcp((state) => activeAcp(state)?.threadPath)
   const routedHarness = useThreads(
     (state) => state.viewing?.ref.harness ?? null
   )
@@ -493,9 +530,11 @@ export function Composer() {
   )
   const newHarness = useThreads((state) => state.composerHarness)
   const placeholder = liveOwnsComposer && liveHarness
-    ? liveRunning
-      ? `${harnessTitle(liveHarness)} is working — Enter queues your message`
-      : `Reply — ${harnessTitle(liveHarness)} answers live`
+    ? liveStarting
+      ? `${harnessTitle(liveHarness)} is starting — Enter queues your message`
+      : liveRunning
+        ? `${harnessTitle(liveHarness)} is working — Enter queues your message`
+        : `Reply — ${harnessTitle(liveHarness)} answers live`
     : routedHarness
       ? newHarness !== routedHarness
         ? `Reply — moves this conversation to ${harnessTitle(newHarness)}`
@@ -736,8 +775,8 @@ const ContextDial = memo(function ContextDial() {
   const meta = useSession((state) => state.meta)
   const viewing = useThreads((state) => state.viewing)
   const composerHarness = useThreads((state) => state.composerHarness)
-  const acpSession = useAcp((state) => state.session)
-  const acpStarting = useAcp((state) => state.starting)
+  const acpSession = useAcp((state) => activeLiveAcp(state)?.session ?? null)
+  const acpStarting = useAcp((state) => activeAcp(state)?.kind === "starting")
   const profiles = useProviders((state) => state.profiles)
   const usage = contextAccounting({
     meta,
@@ -888,21 +927,24 @@ function ComposerRouting() {
       : 0
   )
   const harness = useThreads((state) => state.composerHarness)
-  const live = useAcp((state) => state.session)
-  const liveThreadPath = useAcp((state) => state.threadPath)
-  const queued = useAcp((state) => state.queued)
+  const activeHarness = useAcp((state) => activeAcp(state)?.harness)
+  const activeKind = useAcp((state) => activeAcp(state)?.kind)
+  const liveThreadPath = useAcp((state) => activeAcp(state)?.threadPath)
+  const queued = useAcp((state) => activeAcp(state)?.queued ?? EMPTY_QUEUE)
   const [modelChangedFor, setModelChangedFor] = useState<string | null>(null)
   const moving = Boolean(viewing && harness !== viewing.harness)
   const modelContext = `${viewing?.path ?? "new"}:${harness}`
   const threadModel =
     !moving && modelChangedFor !== modelContext ? viewing?.model : undefined
 
-  if (live && (!viewing || viewing.path === liveThreadPath)) {
+  if (activeHarness && (!viewing || viewing.path === liveThreadPath)) {
     return (
       <span className="flex h-7 items-center gap-1.5 rounded-md bg-raised px-2 text-ui text-foreground/85">
-        <HarnessIcon harness={live.harness} className="size-3.5" />
-        {harnessTitle(live.harness)}
-        <span className="text-label text-faint">live</span>
+        <HarnessIcon harness={activeHarness} className="size-3.5" />
+        {harnessTitle(activeHarness)}
+        <span className="text-label text-faint">
+          {activeKind === "starting" ? "starting" : "live"}
+        </span>
         {queued.length > 0 ? (
           <button
             type="button"

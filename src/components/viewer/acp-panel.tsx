@@ -7,7 +7,7 @@ import { acpBlocksToMessages, type AcpPlanEntry } from "@/lib/acp-blocks"
 import { toExchanges } from "@/lib/exchanges"
 import { threadToMessages } from "@/lib/foreign-thread"
 import { foldTools } from "@/lib/tools"
-import { acp, acpStore, useAcp } from "@/state/acp"
+import { acp, acpStore, activeAcp, activeLiveAcp, useAcp } from "@/state/acp"
 import { threads, useThreads } from "@/state/threads"
 import type { AcpPermissionRequest } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -17,6 +17,7 @@ import {
   CircleIcon,
   Loader2Icon,
   ShieldQuestionIcon,
+  TriangleAlertIcon,
   XIcon,
 } from "lucide-react"
 
@@ -33,12 +34,14 @@ import {
  * agent's own modes.
  */
 
+const EMPTY_QUEUE: never[] = []
+
 export function AcpPanel() {
-  const session = useAcp((state) => state.session)
-  const starting = useAcp((state) => state.starting)
+  const session = useAcp((state) => activeLiveAcp(state)?.session ?? null)
+  const starting = useAcp((state) => activeAcp(state)?.kind === "starting")
 
   useEffect(() => {
-    if (!session) return
+    if (!session && !starting) return
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return
       if (event.key === "Escape") {
@@ -46,14 +49,15 @@ export function AcpPanel() {
         // Permission prompts consume Escape first; otherwise the same muscle
         // memory as the native transcript stops a running turn. Only an idle
         // Escape closes the session.
-        if (acpStore.get().permission) acp.answerPermission(null)
-        else if (acpStore.get().session?.status === "running") acp.cancel()
+        const live = activeLiveAcp(acpStore.get())
+        if (live?.permission) acp.answerPermission(null)
+        else if (live?.session.status === "running") acp.cancel()
         else acp.close()
       }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [session])
+  }, [session, starting])
 
   if (starting) {
     return (
@@ -101,11 +105,11 @@ export function AcpPanel() {
  * forever.
  */
 function LiveStatus() {
-  const session = useAcp((state) => state.session)
-  const permission = useAcp((state) => state.permission)
-  const canceling = useAcp((state) => state.canceling)
-  const sending = useAcp((state) => state.sending)
-  const queued = useAcp((state) => state.queued)
+  const session = useAcp((state) => activeLiveAcp(state)?.session ?? null)
+  const permission = useAcp((state) => activeLiveAcp(state)?.permission ?? null)
+  const canceling = useAcp((state) => activeLiveAcp(state)?.canceling ?? false)
+  const sending = useAcp((state) => activeLiveAcp(state)?.sending ?? false)
+  const queued = useAcp((state) => activeLiveAcp(state)?.queued ?? EMPTY_QUEUE)
   if (!session) return null
   const label = permission
     ? "Needs input"
@@ -139,7 +143,7 @@ function LiveStatus() {
 }
 
 function ModePicker() {
-  const session = useAcp((state) => state.session)
+  const session = useAcp((state) => activeLiveAcp(state)?.session ?? null)
   if (!session || session.modes.length === 0) return null
   return (
     <SearchSelect
@@ -157,9 +161,9 @@ function ModePicker() {
 }
 
 function Blocks({ starting = false }: { starting?: boolean }) {
-  const session = useAcp((state) => state.session)
-  const blocks = useAcp((state) => state.blocks)
-  const threadPath = useAcp((state) => state.threadPath)
+  const session = useAcp((state) => activeLiveAcp(state)?.session ?? null)
+  const blocks = useAcp((state) => activeAcp(state)?.blocks ?? EMPTY_QUEUE)
+  const threadPath = useAcp((state) => activeAcp(state)?.threadPath)
   const composerHarness = useThreads((state) => state.composerHarness)
   const viewed = useThreads((state) => state.viewing)
   const history = viewed?.ref.path === threadPath ? viewed : null
@@ -177,15 +181,22 @@ function Blocks({ starting = false }: { starting?: boolean }) {
         : [],
     [history]
   )
+  const historyExchanges = useMemo(
+    () => toExchanges(foldTools(historyMessages)),
+    [historyMessages]
+  )
   const conversation = useMemo(
     () =>
       acpBlocksToMessages(blocks, running, session?.harness ?? composerHarness),
     [blocks, composerHarness, running, session?.harness]
   )
+  const liveExchanges = useMemo(
+    () => toExchanges(foldTools(conversation.messages)),
+    [conversation.messages]
+  )
   const exchanges = useMemo(
-    () =>
-      toExchanges(foldTools([...historyMessages, ...conversation.messages])),
-    [conversation.messages, historyMessages]
+    () => [...historyExchanges, ...liveExchanges],
+    [historyExchanges, liveExchanges]
   )
   const lastExchangeId = exchanges.at(-1)?.id
 
@@ -245,30 +256,56 @@ function AcpActivity({
 }
 
 function Plan({ entries }: { entries: AcpPlanEntry[] }) {
+  const completed = entries.filter((entry) => entry.status === "completed").length
   return (
     <div className="contain-turn rounded-md border border-hairline/60 px-2.5 py-1.5">
-      <p className="pb-1 text-label font-medium text-faint">Plan</p>
-      {entries.map((entry, index) => (
-        <p
-          key={index}
-          className="flex items-center gap-1.5 py-px text-ui text-muted-foreground"
-        >
-          {entry.status === "completed" ? (
-            <CheckIcon className="size-3 text-positive/80" />
-          ) : entry.status === "in_progress" ? (
-            <Loader2Icon className="size-3 animate-spin text-faint" />
-          ) : (
-            <CircleIcon className="size-2.5 text-faint/60" />
-          )}
-          <span
-            className={cn(
-              entry.status === "completed" && "text-faint line-through"
-            )}
-          >
-            {entry.content}
-          </span>
-        </p>
-      ))}
+      <p className="flex items-center justify-between gap-3 pb-1 text-label text-faint">
+        <span className="font-medium">Plan</span>
+        <span className="tabular">{completed}/{entries.length} complete</span>
+      </p>
+      <ul aria-label="Agent plan">
+        {entries.map((entry, index) => {
+          const failed = entry.status === "failed"
+          const canceled = /cancel/i.test(entry.status)
+          const status =
+            entry.status === "completed"
+              ? "completed"
+              : entry.status === "in_progress"
+                ? "in progress"
+                : failed
+                  ? "failed"
+                  : canceled
+                    ? "canceled"
+                    : "not started"
+          return (
+            <li
+              key={`${entry.content}-${index}`}
+              aria-label={`${status}: ${entry.content}`}
+              className="flex items-center gap-1.5 py-px text-ui text-muted-foreground"
+            >
+              {entry.status === "completed" ? (
+                <CheckIcon aria-hidden className="size-3 text-positive/80" />
+              ) : entry.status === "in_progress" ? (
+                <Loader2Icon aria-hidden className="size-3 animate-spin text-faint" />
+              ) : failed ? (
+                <TriangleAlertIcon aria-hidden className="size-3 text-negative" />
+              ) : canceled ? (
+                <XIcon aria-hidden className="size-3 text-faint" />
+              ) : (
+                <CircleIcon aria-hidden className="size-2.5 text-faint/60" />
+              )}
+              <span
+                className={cn(
+                  entry.status === "completed" && "text-faint line-through",
+                  failed && "text-negative"
+                )}
+              >
+                {entry.content}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }
@@ -281,7 +318,7 @@ function Plan({ entries }: { entries: AcpPlanEntry[] }) {
  * not an alert.
  */
 function Permission() {
-  const permission = useAcp((state) => state.permission)
+  const permission = useAcp((state) => activeLiveAcp(state)?.permission ?? null)
   if (!permission) return null
   if (permission.questions)
     return <QuestionPermission key={permission.id} permission={permission} />

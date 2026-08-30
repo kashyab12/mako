@@ -74,6 +74,7 @@ export const TurnNavigator = memo(function TurnNavigator({
               key={exchange.id}
               type="button"
               aria-label={promptLabel(exchange)}
+              aria-current={active ? "true" : undefined}
               onMouseEnter={() => setHovered(exchange.id)}
               onClick={() => onJump(exchange.id)}
               className="group/tick flex h-[7px] items-center justify-end"
