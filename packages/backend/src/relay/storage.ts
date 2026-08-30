@@ -6,11 +6,15 @@ import { z } from "zod"
 import { readRelayEnv } from "../config/env"
 import {
   RelayCompletionSchema,
+  RelayHarnessSchema,
   RelayJobPayloadSchema,
   RelayLeaseSchema,
   type RelayCompletion,
   type RelayJobPayload,
   type RelayLease,
+  type RelayProgress,
+  type RemoteAttachment,
+  type RemoteOrigin,
   type WorkerHeartbeat,
 } from "./types"
 
@@ -22,8 +26,21 @@ interface RelayJobEntity extends TableEntity {
   result?: string
   resultHarness?: string
   resultModel?: string
+  resultProgressFailed?: boolean
+  resultStatus?: string
   status: "queued" | "claimed" | "completed" | "delivered" | "failed"
   threadPath?: string
+  targetDeviceId?: string
+  streamTs?: string
+  streamClosed?: boolean
+  streamedChars?: number
+  lastProgressSequence?: number
+  control?: "stop"
+  uploadedArtifactKeys?: string
+  originProvider: string
+  originTenantId: string
+  originConversationId: string
+  originThreadId: string
   updatedAt: string
   workerId?: string
 }
@@ -47,6 +64,7 @@ interface RelayWorkerEntity extends TableEntity {
 }
 
 const AzureErrorSchema = z.object({ statusCode: z.number().int() }).passthrough()
+const UploadedArtifactKeysSchema = z.array(z.string().min(1).max(128)).max(20)
 
 let clients:
   | {
@@ -105,8 +123,71 @@ function threadPartition(payload: RelayJobPayload): string {
   return `${provider}:${tenantId}:${conversationId}`
 }
 
+function originFilter(origin: RemoteOrigin): string {
+  return [
+    "PartitionKey eq 'jobs'",
+    `originProvider eq '${escapeFilter(origin.provider)}'`,
+    `originTenantId eq '${escapeFilter(origin.tenantId)}'`,
+    `originConversationId eq '${escapeFilter(origin.conversationId)}'`,
+    `originThreadId eq '${escapeFilter(origin.threadId)}'`,
+  ].join(" and ")
+}
+
+async function anotherJobIsRunning(
+  origin: RemoteOrigin,
+  jobId: string
+): Promise<boolean> {
+  const filter = `${originFilter(origin)} and status eq 'claimed'`
+  for await (const entity of relayClients().jobs.listEntities<RelayJobEntity>({
+    queryOptions: { filter },
+  })) {
+    if (entity.rowKey !== jobId) return true
+  }
+  return false
+}
+
+export function applyRelayThreadMapping(
+  payload: RelayJobPayload,
+  mapping: Pick<
+    RelayThreadEntity,
+    "effort" | "fast" | "harness" | "model" | "threadPath"
+  > | null
+): RelayJobPayload {
+  if (payload.kind !== "new" || payload.forceNew || !mapping) return payload
+  return {
+    kind: "resume",
+    attachments: payload.attachments,
+    origin: payload.origin,
+    selection: {
+      effort: payload.selection.effort ?? mapping.effort,
+      fast: payload.selection.fast ?? mapping.fast,
+      harness:
+        payload.selection.harness ?? RelayHarnessSchema.parse(mapping.harness),
+      model: payload.selection.model ?? mapping.model,
+    },
+    text: payload.text,
+    threadPath: mapping.threadPath,
+  }
+}
+
+async function enqueueJobMessage(jobId: string): Promise<void> {
+  let failure: Error | null = null
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await relayClients().queue.sendMessage(jobId, { messageTimeToLive: -1 })
+      return
+    } catch (error) {
+      failure = error instanceof Error ? error : new Error(String(error))
+      if (attempt < 2)
+        await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt))
+    }
+  }
+  throw failure ?? new Error("Relay queue rejected the job")
+}
+
 export async function enqueueRelayJob(
-  payload: z.input<typeof RelayJobPayloadSchema>
+  payload: z.input<typeof RelayJobPayloadSchema>,
+  targetDeviceId?: string
 ): Promise<{
   created: boolean
   jobId: string
@@ -118,8 +199,13 @@ export async function enqueueRelayJob(
     partitionKey: "jobs",
     rowKey: jobId,
     createdAt: now,
+    originProvider: parsed.origin.provider,
+    originTenantId: parsed.origin.tenantId,
+    originConversationId: parsed.origin.conversationId,
+    originThreadId: parsed.origin.threadId,
     payload: JSON.stringify(parsed),
     status: "queued",
+    targetDeviceId,
     updatedAt: now,
   }
   try {
@@ -130,8 +216,13 @@ export async function enqueueRelayJob(
     }
     throw error
   }
-  await relayClients().queue.sendMessage(jobId, { messageTimeToLive: -1 })
-  return { created: true, jobId }
+  try {
+    await enqueueJobMessage(jobId)
+    return { created: true, jobId }
+  } catch (error) {
+    await relayClients().jobs.deleteEntity("jobs", jobId).catch(() => undefined)
+    throw error
+  }
 }
 
 export async function heartbeatWorker({
@@ -151,6 +242,24 @@ export async function heartbeatWorker({
     version: heartbeat.version,
   }
   await relayClients().workers.upsertEntity(entity, "Replace")
+}
+
+export async function workerById(
+  teamId: string,
+  deviceId: string
+): Promise<RelayWorkerEntity | null> {
+  try {
+    const worker = await relayClients().workers.getEntity<RelayWorkerEntity>(
+      `workers:${teamId}`,
+      deviceId
+    )
+    return Date.parse(worker.lastSeenAt) >= Date.now() - 45_000
+      ? worker
+      : null
+  } catch (error) {
+    if (error instanceof Error && statusCode(error) === 404) return null
+    throw error
+  }
 }
 
 export async function activeWorker(teamId: string): Promise<RelayWorkerEntity | null> {
@@ -191,6 +300,15 @@ export async function leaseRelayJob({
   const jobId = z.uuid().parse(message.messageText)
   const entity = await relayClients().jobs.getEntity<RelayJobEntity>("jobs", jobId)
   const payload = RelayJobPayloadSchema.parse(JSON.parse(entity.payload))
+  if (entity.targetDeviceId && entity.targetDeviceId !== deviceId) {
+    await relayClients().queue.updateMessage(
+      message.messageId,
+      message.popReceipt,
+      jobId,
+      5
+    )
+    return { kind: "empty" }
+  }
   if (
     entity.status === "completed" &&
     entity.result &&
@@ -207,7 +325,9 @@ export async function leaseRelayJob({
         messageId: message.messageId,
         model: entity.resultModel,
         popReceipt: message.popReceipt,
+        progressFailed: entity.resultProgressFailed,
         result: entity.result,
+        status: entity.resultStatus,
         threadPath: entity.threadPath,
       }),
       lease: {
@@ -221,6 +341,20 @@ export async function leaseRelayJob({
     await relayClients().queue.deleteMessage(message.messageId, message.popReceipt)
     return { kind: "empty" }
   }
+  if (await anotherJobIsRunning(payload.origin, jobId)) {
+    await relayClients().queue.updateMessage(
+      message.messageId,
+      message.popReceipt,
+      jobId,
+      5
+    )
+    return { kind: "empty" }
+  }
+  const mapping =
+    payload.kind === "new" && !payload.forceNew
+      ? await readThreadMapping(payload.origin)
+      : null
+  const executablePayload = applyRelayThreadMapping(payload, mapping)
   const updated: RelayJobEntity = {
     ...entity,
     status: "claimed",
@@ -235,7 +369,7 @@ export async function leaseRelayJob({
     lease: RelayLeaseSchema.parse({
       jobId,
       messageId: message.messageId,
-      payload,
+      payload: executablePayload,
       popReceipt: message.popReceipt,
     }),
   }
@@ -276,27 +410,33 @@ export async function recordRelayCompletion(
     parsed.jobId
   )
   const payload = RelayJobPayloadSchema.parse(JSON.parse(entity.payload))
-  if (entity.status === "completed" && entity.workerId === parsed.deviceId) {
+  if (
+    (entity.status === "completed" || entity.status === "delivered") &&
+    entity.workerId === parsed.deviceId
+  )
     return payload
-  }
   if (entity.status !== "claimed" || entity.workerId !== parsed.deviceId) {
     throw new Error("Relay job is not claimed by this device")
   }
-  const updated: RelayJobEntity = {
-    ...entity,
-    result: parsed.result,
-    resultEffort: parsed.effort,
-    resultFast: parsed.fast,
-    resultHarness: parsed.harness,
-    resultModel: parsed.model,
-    status: "completed",
-    threadPath: parsed.threadPath,
-    updatedAt: new Date().toISOString(),
-    workerId: parsed.deviceId,
-  }
-  await relayClients().jobs.updateEntity(updated, "Replace", {
-    etag: entity.etag,
-  })
+  await relayClients().jobs.updateEntity(
+    {
+      partitionKey: "jobs",
+      rowKey: parsed.jobId,
+      result: parsed.result,
+      resultEffort: parsed.effort,
+      resultFast: parsed.fast,
+      resultHarness: parsed.harness,
+      resultModel: parsed.model,
+      resultProgressFailed: parsed.progressFailed,
+      resultStatus: parsed.status,
+      status: "completed",
+      threadPath: parsed.threadPath,
+      updatedAt: new Date().toISOString(),
+      workerId: parsed.deviceId,
+    },
+    "Merge",
+    { etag: entity.etag }
+  )
   return payload
 }
 
@@ -331,11 +471,12 @@ export async function markRelayDelivered({
   }
   await relayClients().jobs.updateEntity(
     {
-      ...entity,
+      partitionKey: "jobs",
+      rowKey: completion.jobId,
       status: "delivered",
       updatedAt: new Date().toISOString(),
     },
-    "Replace",
+    "Merge",
     { etag: entity.etag }
   )
   await relayClients().queue.deleteMessage(
@@ -344,19 +485,291 @@ export async function markRelayDelivered({
   )
 }
 
-export async function readThreadMapping({
-  channel,
-  teamId,
-  threadTs,
+export interface RelayDeliveryState {
+  payload: RelayJobPayload
+  status: RelayJobEntity["status"]
+  streamClosed: boolean
+  streamTs?: string
+  streamedChars: number
+}
+
+export async function relayDeliveryState(
+  jobId: string
+): Promise<RelayDeliveryState> {
+  const entity = await relayClients().jobs.getEntity<RelayJobEntity>("jobs", jobId)
+  return {
+    payload: RelayJobPayloadSchema.parse(JSON.parse(entity.payload)),
+    status: entity.status,
+    streamClosed: entity.streamClosed ?? false,
+    streamTs: entity.streamTs,
+    streamedChars: entity.streamedChars ?? 0,
+  }
+}
+
+export async function recordRelayStream({
+  deviceId,
+  jobId,
+  streamTs,
 }: {
-  channel: string
-  teamId: string
-  threadTs: string
-}): Promise<RelayThreadEntity | null> {
+  deviceId: string
+  jobId: string
+  streamTs: string
+}): Promise<void> {
+  const entity = await relayClients().jobs.getEntity<RelayJobEntity>("jobs", jobId)
+  if (entity.status !== "claimed" || entity.workerId !== deviceId)
+    throw new Error("Relay stream is not owned by this device")
+  if (entity.streamTs) return
+  await relayClients().jobs.updateEntity(
+    {
+      partitionKey: "jobs",
+      rowKey: jobId,
+      streamTs,
+      streamedChars: 0,
+    },
+    "Merge",
+    { etag: entity.etag }
+  )
+}
+
+export async function recordRelayStreamClosed({
+  deviceId,
+  jobId,
+}: {
+  deviceId: string
+  jobId: string
+}): Promise<void> {
+  const entity = await relayClients().jobs.getEntity<RelayJobEntity>("jobs", jobId)
+  if (entity.workerId !== deviceId)
+    throw new Error("Relay stream is not owned by this device")
+  if (entity.streamClosed) return
+  await relayClients().jobs.updateEntity(
+    {
+      partitionKey: "jobs",
+      rowKey: jobId,
+      streamClosed: true,
+      updatedAt: new Date().toISOString(),
+    },
+    "Merge",
+    { etag: entity.etag }
+  )
+}
+
+export async function relayProgressTarget(
+  progress: RelayProgress
+): Promise<RelayDeliveryState & { accepted: boolean }> {
+  const entity = await relayClients().jobs.getEntity<RelayJobEntity>(
+    "jobs",
+    progress.jobId
+  )
+  if (entity.status !== "claimed" || entity.workerId !== progress.deviceId)
+    throw new Error("Relay progress is not owned by this device")
+  return {
+    accepted: progress.sequence > (entity.lastProgressSequence ?? 0),
+    payload: RelayJobPayloadSchema.parse(JSON.parse(entity.payload)),
+    status: entity.status,
+    streamClosed: entity.streamClosed ?? false,
+    streamTs: entity.streamTs,
+    streamedChars: entity.streamedChars ?? 0,
+  }
+}
+
+export async function recordRelayProgress(
+  progress: RelayProgress
+): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const entity = await relayClients().jobs.getEntity<RelayJobEntity>(
+      "jobs",
+      progress.jobId
+    )
+    if (entity.status !== "claimed" || entity.workerId !== progress.deviceId)
+      throw new Error("Relay progress is not owned by this device")
+    if (progress.sequence <= (entity.lastProgressSequence ?? 0)) return
+    try {
+      await relayClients().jobs.updateEntity(
+        {
+          partitionKey: "jobs",
+          rowKey: progress.jobId,
+          lastProgressSequence: progress.sequence,
+          streamedChars: (entity.streamedChars ?? 0) + progress.text.length,
+          updatedAt: new Date().toISOString(),
+        },
+        "Merge",
+        { etag: entity.etag }
+      )
+      return
+    } catch (error) {
+      if (!(error instanceof Error) || statusCode(error) !== 412 || attempt === 2)
+        throw error
+    }
+  }
+}
+
+function escapeFilter(value: string): string {
+  return value.replaceAll("'", "''")
+}
+
+export async function relayQueueStatus(origin: RemoteOrigin): Promise<{
+  queued: number
+  running: number
+}> {
+  const filter = [
+    "PartitionKey eq 'jobs'",
+    `originProvider eq '${escapeFilter(origin.provider)}'`,
+    `originTenantId eq '${escapeFilter(origin.tenantId)}'`,
+    `originConversationId eq '${escapeFilter(origin.conversationId)}'`,
+    `originThreadId eq '${escapeFilter(origin.threadId)}'`,
+  ].join(" and ")
+  let queued = 0
+  let running = 0
+  for await (const entity of relayClients().jobs.listEntities<RelayJobEntity>({
+    queryOptions: { filter },
+  })) {
+    if (entity.status === "queued") queued += 1
+    if (entity.status === "claimed") running += 1
+  }
+  return { queued, running }
+}
+
+async function markRelayStop(jobId: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const entity = await relayClients().jobs.getEntity<RelayJobEntity>("jobs", jobId)
+    if (entity.status !== "claimed") return false
+    try {
+      await relayClients().jobs.updateEntity(
+        {
+          partitionKey: "jobs",
+          rowKey: jobId,
+          control: "stop",
+          updatedAt: new Date().toISOString(),
+        },
+        "Merge",
+        { etag: entity.etag }
+      )
+      return true
+    } catch (error) {
+      if (!(error instanceof Error) || statusCode(error) !== 412 || attempt === 2)
+        throw error
+    }
+  }
+  return false
+}
+
+export async function requestRelayStop(origin: RemoteOrigin): Promise<number> {
+  const filter = [
+    "PartitionKey eq 'jobs'",
+    "status eq 'claimed'",
+    `originProvider eq '${escapeFilter(origin.provider)}'`,
+    `originTenantId eq '${escapeFilter(origin.tenantId)}'`,
+    `originConversationId eq '${escapeFilter(origin.conversationId)}'`,
+    `originThreadId eq '${escapeFilter(origin.threadId)}'`,
+  ].join(" and ")
+  let stopped = 0
+  for await (const entity of relayClients().jobs.listEntities<RelayJobEntity>({
+    queryOptions: { filter },
+  })) {
+    if (await markRelayStop(entity.rowKey)) stopped += 1
+  }
+  return stopped
+}
+
+export async function relayControl({
+  deviceId,
+  jobId,
+}: {
+  deviceId: string
+  jobId: string
+}): Promise<"stop" | null> {
+  const entity = await relayClients().jobs.getEntity<RelayJobEntity>("jobs", jobId)
+  if (entity.status !== "claimed" || entity.workerId !== deviceId)
+    throw new Error("Relay job is not owned by this device")
+  return entity.control ?? null
+}
+
+export async function relayAttachment(
+  jobId: string,
+  attachmentId: string,
+  deviceId: string
+): Promise<RemoteAttachment> {
+  const entity = await relayClients().jobs.getEntity<RelayJobEntity>("jobs", jobId)
+  if (entity.status !== "claimed" || entity.workerId !== deviceId)
+    throw new Error("Relay attachment is not owned by this device")
+  const payload = RelayJobPayloadSchema.parse(JSON.parse(entity.payload))
+  if (!("attachments" in payload))
+    throw new Error("Relay job has no attachments")
+  const attachment = payload.attachments.find(
+    (candidate) => candidate.id === attachmentId
+  )
+  if (!attachment) throw new Error("Relay attachment does not belong to this job")
+  return attachment
+}
+
+export async function relayArtifactTarget({
+  artifactKey,
+  deviceId,
+  jobId,
+}: {
+  artifactKey: string
+  deviceId: string
+  jobId: string
+}): Promise<{ payload: RelayJobPayload; uploaded: boolean }> {
+  const entity = await relayClients().jobs.getEntity<RelayJobEntity>("jobs", jobId)
+  if (entity.status !== "claimed" || entity.workerId !== deviceId)
+    throw new Error("Relay artifact is not owned by this device")
+  const uploaded = new Set(
+    entity.uploadedArtifactKeys
+      ? UploadedArtifactKeysSchema.parse(JSON.parse(entity.uploadedArtifactKeys))
+      : []
+  )
+  return {
+    payload: RelayJobPayloadSchema.parse(JSON.parse(entity.payload)),
+    uploaded: uploaded.has(artifactKey),
+  }
+}
+
+export async function markRelayArtifactUploaded({
+  artifactKey,
+  deviceId,
+  jobId,
+}: {
+  artifactKey: string
+  deviceId: string
+  jobId: string
+}): Promise<void> {
+  const entity = await relayClients().jobs.getEntity<RelayJobEntity>("jobs", jobId)
+  if (entity.status !== "claimed" || entity.workerId !== deviceId)
+    throw new Error("Relay artifact is not owned by this device")
+  const uploaded = new Set<string>(
+    entity.uploadedArtifactKeys
+      ? UploadedArtifactKeysSchema.parse(JSON.parse(entity.uploadedArtifactKeys))
+      : []
+  )
+  if (uploaded.has(artifactKey)) return
+  uploaded.add(artifactKey)
+  await relayClients().jobs.updateEntity(
+    {
+      partitionKey: "jobs",
+      rowKey: jobId,
+      uploadedArtifactKeys: JSON.stringify([...uploaded].slice(-20)),
+      updatedAt: new Date().toISOString(),
+    },
+    "Merge",
+    { etag: entity.etag }
+  )
+}
+
+export async function readThreadMapping({
+  provider,
+  tenantId,
+  conversationId,
+  threadId,
+}: Pick<
+  RemoteOrigin,
+  "provider" | "tenantId" | "conversationId" | "threadId"
+>): Promise<RelayThreadEntity | null> {
   try {
     return await relayClients().threads.getEntity<RelayThreadEntity>(
-      `slack:${teamId}:${channel}`,
-      threadTs
+      `${provider}:${tenantId}:${conversationId}`,
+      threadId
     )
   } catch (error) {
     if (error instanceof Error && statusCode(error) === 404) return null

@@ -31,7 +31,9 @@ export function backendStatus(environment: Partial<ServerEnv>): BackendStatus {
       authenticated: true,
     },
     integrations: integrationCatalog({
-      slackConnected: Boolean(environment.SLACK_CONNECTOR),
+      slackConnected: Boolean(
+        environment.SLACK_CONNECTOR || environment.SLACK_BOT_TOKEN
+      ),
     }),
     relay: {
       execution: "local-harness",

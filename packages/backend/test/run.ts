@@ -4,8 +4,17 @@ import { parseSlackWebhookBody } from "@chat-adapter/slack/webhook"
 import { z } from "zod"
 import { readOptionalServerEnv } from "../src/config/env"
 import { integrationCatalog } from "../src/integrations/catalog"
-import { slackIdentity } from "../src/integrations/slack/client"
+import {
+  appendSlackStream,
+  downloadSlackFile,
+  setSlackAgentStatus,
+  slackIdentity,
+  startSlackStream,
+  stopSlackStream,
+  uploadSlackFile,
+} from "../src/integrations/slack/client"
 import { formatHarnessReplies } from "../src/relay/delivery"
+import { applyRelayThreadMapping } from "../src/relay/storage"
 import { parseSlackRelayCommand } from "../src/relay/commands"
 import {
   prepareSlackRelayWebhook,
@@ -154,11 +163,14 @@ const origin = {
   eventId: "event-1",
   userId: "UTEST",
 }
-assert.equal(
-  parseSlackRelayCommand({ mapping: null, origin, text: "new codex investigate" })
-    .kind,
-  "enqueue"
-)
+const explicitNew = parseSlackRelayCommand({
+  mapping: null,
+  origin,
+  text: "new codex investigate",
+})
+assert.equal(explicitNew.kind, "enqueue")
+if (explicitNew.kind === "enqueue" && explicitNew.payload.kind === "new")
+  assert.equal(explicitNew.payload.forceNew, true)
 const continuation = parseSlackRelayCommand({
   mapping: {
     harness: "claude",
@@ -217,6 +229,7 @@ assert.equal(attachmentCommand.kind, "enqueue")
 if (attachmentCommand.kind === "enqueue") {
   assert.equal(attachmentCommand.payload.kind, "new")
   if (attachmentCommand.payload.kind === "new") {
+    assert.equal(attachmentCommand.payload.forceNew, false)
     assert.equal(attachmentCommand.payload.attachments[0]?.id, "FTEST")
   }
 }
@@ -228,6 +241,39 @@ const futureHarness = parseSlackRelayCommand({
 assert.equal(futureHarness.kind, "enqueue")
 if (futureHarness.kind === "enqueue")
   assert.equal(futureHarness.payload.selection.harness, "future-agent")
+if (attachmentCommand.kind === "enqueue") {
+  const mapped = applyRelayThreadMapping(attachmentCommand.payload, {
+    harness: "claude",
+    model: "sonnet",
+    threadPath: "/threads/existing",
+  })
+  assert.equal(mapped.kind, "resume")
+  if (mapped.kind === "resume") {
+    assert.equal(mapped.threadPath, "/threads/existing")
+    assert.equal(mapped.attachments[0]?.id, "FTEST")
+  }
+}
+if (explicitNew.kind === "enqueue") {
+  assert.equal(
+    applyRelayThreadMapping(explicitNew.payload, {
+      harness: "claude",
+      threadPath: "/threads/existing",
+    }).kind,
+    "new"
+  )
+}
+assert.equal(
+  parseSlackRelayCommand({ mapping: null, origin, text: "stop" }).kind,
+  "stop"
+)
+assert.equal(
+  parseSlackRelayCommand({ mapping: null, origin, text: "queue next" }).kind,
+  "enqueue"
+)
+assert.equal(
+  parseSlackRelayCommand({ mapping: null, origin, text: "steer now" }).kind,
+  "interrupt"
+)
 
 const directBotToken = "xoxb-test-direct-bot-token"
 const directSigningSecret = "0123456789abcdef0123456789abcdef"
@@ -271,14 +317,20 @@ assert.equal(staleDirectWebhook.response.status, 401)
 const originalFetch = globalThis.fetch
 let directSlackApiCalled = false
 let directSlackControlsCalled = false
+let streamCalls = 0
+let uploadedFile = false
 globalThis.fetch = async (input, init) => {
   const url = String(input)
+  if (url === "https://uploads.slack.test/file") {
+    uploadedFile = init?.body instanceof FormData
+    return new Response("OK")
+  }
+  const headers = new Headers(init?.headers)
+  assert.equal(headers.get("authorization"), `Bearer ${directBotToken}`)
+  if (url === "https://slack-files.com/files-pri/test")
+    return new Response("image-bytes", { headers: { "Content-Type": "image/png" } })
   directSlackApiCalled ||= url === "https://slack.com/api/auth.test"
   directSlackControlsCalled ||= url === "https://slack.com/api/chat.postMessage"
-  assert.equal(
-    new Headers(init?.headers).get("authorization") === `Bearer ${directBotToken}`,
-    true
-  )
   if (url === "https://slack.com/api/chat.postMessage") {
     const body = z
       .object({ blocks: z.array(z.json()).min(1), channel: z.literal("CTEST") })
@@ -291,6 +343,35 @@ globalThis.fetch = async (input, init) => {
       message: { text: "Mako local harness controls" },
     })
   }
+  if (
+    url === "https://slack.com/api/chat.startStream" ||
+    url === "https://slack.com/api/chat.appendStream" ||
+    url === "https://slack.com/api/chat.stopStream"
+  ) {
+    streamCalls += 1
+    return Response.json({ ok: true, channel: "CTEST", ts: "234.567" })
+  }
+  if (url === "https://slack.com/api/agents.sessions.setStatus")
+    return Response.json({ ok: true })
+  if (url === "https://slack.com/api/files.info")
+    return Response.json({
+      ok: true,
+      file: {
+        id: "FTEST",
+        mimetype: "image/png",
+        name: "screen.png",
+        size: 11,
+        url_private_download: "https://slack-files.com/files-pri/test",
+      },
+    })
+  if (url === "https://slack.com/api/files.getUploadURLExternal")
+    return Response.json({
+      ok: true,
+      file_id: "FUPLOADED",
+      upload_url: "https://uploads.slack.test/file",
+    })
+  if (url === "https://slack.com/api/files.completeUploadExternal")
+    return Response.json({ ok: true })
   return Response.json({
     ok: true,
     team: "Test Team",
@@ -306,6 +387,55 @@ try {
   assert.equal(directSlackApiCalled, true)
   assert.equal(await postSlackControls({ channel: "CTEST" }), "123.456")
   assert.equal(directSlackControlsCalled, true)
+  await setSlackAgentStatus({
+    channel: "CTEST",
+    initiatorUserId: "UTEST",
+    status: "processing",
+    threadTs: "123.456",
+    title: "Investigate",
+  })
+  const stream = await startSlackStream({
+    channel: "CTEST",
+    chunks: [
+      { type: "plan_update", title: "Investigate" },
+      {
+        type: "task_update",
+        id: "task-1",
+        title: "Run Codex",
+        status: "in_progress",
+      },
+    ],
+    recipientTeamId: "TTEST",
+    recipientUserId: "UTEST",
+    threadTs: "123.456",
+  })
+  await appendSlackStream({
+    channel: "CTEST",
+    chunks: [{ type: "markdown_text", text: "Working" }],
+    ts: stream.ts,
+  })
+  await stopSlackStream({
+    channel: "CTEST",
+    chunks: [
+      {
+        type: "task_update",
+        id: "task-1",
+        title: "Run Codex",
+        status: "complete",
+      },
+    ],
+    ts: stream.ts,
+  })
+  assert.equal(streamCalls, 3)
+  const downloaded = await downloadSlackFile("FTEST")
+  assert.equal(new TextDecoder().decode(downloaded.bytes), "image-bytes")
+  await uploadSlackFile({
+    bytes: new TextEncoder().encode("output"),
+    channel: "CTEST",
+    filename: "output.txt",
+    threadTs: "123.456",
+  })
+  assert.equal(uploadedFile, true)
 } finally {
   globalThis.fetch = originalFetch
 }
@@ -369,6 +499,37 @@ const unsignedSlack = await prepareSlackRelayWebhook(
 )
 assert.equal(unsignedSlack.response.status, 401)
 
+const fileMessage = parseSlackWebhookBody(
+  JSON.stringify({
+    type: "event_callback",
+    team_id: "TTEST",
+    event_id: "event-file",
+    event: {
+      type: "message",
+      channel_type: "im",
+      channel: "DTEST",
+      user: "UTEST",
+      text: "",
+      ts: "123.456",
+      files: [
+        {
+          id: "FTEST",
+          mimetype: "image/png",
+          name: "screen.png",
+          size: 1_024,
+          url_private_download: "https://slack-files.com/files-pri/test",
+        },
+      ],
+    },
+  }),
+  { contentType: "application/json" }
+)
+assert.equal(fileMessage.kind, "direct_message")
+if (fileMessage.kind === "direct_message") {
+  assert.equal(fileMessage.files?.[0]?.id, "FTEST")
+  assert.equal(fileMessage.files?.[0]?.type, "image")
+}
+
 const slash = parseSlackWebhookBody(
   new URLSearchParams({
     channel_id: "CTEST",
@@ -410,6 +571,7 @@ for (const actionId of [
   "mako-harness",
   "mako-reasoning",
   "mako-fast-on",
+  "mako-stop",
   "mako-status",
   "mako-threads",
   "mako-models",
@@ -418,6 +580,10 @@ for (const actionId of [
 }
 assert.deepEqual(formatHarnessReplies("one\\n\\ntwo"), ["one\n\ntwo"])
 assert.equal(formatHarnessReplies("x".repeat(24_000)).length, 3)
+assert.equal(
+  backendStatus({ SLACK_BOT_TOKEN: directBotToken }).integrations[0]?.status.kind,
+  "connected"
+)
 assert.deepEqual(backendStatus({}).relay, {
   execution: "local-harness",
   persistence: "azure-storage",

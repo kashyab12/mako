@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import {
   readSlackWebhook,
   type SlackFile,
@@ -12,14 +12,36 @@ import {
   SlackChannelIdSchema,
   SlackTimestampSchema,
   sendSlackMessage,
+  setSlackAgentStatus,
 } from "../integrations/slack/client"
 import { SlackRelayHelp, parseSlackRelayCommand } from "./commands"
 import { postSlackControls } from "./slack-ui"
-import { activeWorker, enqueueRelayJob, readThreadMapping } from "./storage"
+import {
+  activeWorker,
+  enqueueRelayJob,
+  readThreadMapping,
+  relayQueueStatus,
+  requestRelayStop,
+  workerById,
+} from "./storage"
 import {
   RelayHarnessSchema,
   type RemoteAttachment,
 } from "./types"
+const AgentSessionStoppedSchema = z.object({
+  event: z.object({
+    channel: SlackChannelIdSchema,
+    event_ts: SlackTimestampSchema,
+    streaming_message_ts: z.array(SlackTimestampSchema).max(20),
+    thread_ts: SlackTimestampSchema,
+    type: z.literal("agent_session_stopped"),
+    user: z.string().min(1).max(80),
+  }),
+  event_id: z.string().min(1).max(160),
+  team_id: z.string().min(1).max(80),
+  type: z.literal("event_callback"),
+})
+
 const ThreadMessageSchema = z.object({
   event: z.object({
     bot_id: z.string().optional(),
@@ -120,18 +142,25 @@ function eventAuthorized(teamId: string | undefined, userId: string): boolean {
   )
 }
 
+function slackMessageId(seed: string): string {
+  const value = createHash("sha256").update(seed).digest("hex").slice(0, 32)
+  return `${value.slice(0, 8)}-${value.slice(8, 12)}-5${value.slice(13, 16)}-a${value.slice(17, 20)}-${value.slice(20)}`
+}
+
 async function reply({
   channel,
+  idempotencyKey,
   text,
   threadTs,
 }: {
   channel: string
+  idempotencyKey: string
   text: string
   threadTs: string
 }): Promise<void> {
   await sendSlackMessage({
     channel,
-    idempotencyKey: randomUUID(),
+    idempotencyKey: slackMessageId(idempotencyKey),
     text,
     threadTs,
   })
@@ -154,7 +183,15 @@ async function processCommand({
   threadTs: string
   userId: string
 }): Promise<void> {
-  const mapping = await readThreadMapping({ channel, teamId, threadTs })
+  const origin = {
+    provider: "slack",
+    tenantId: teamId,
+    conversationId: channel,
+    threadId: threadTs,
+    eventId,
+    userId,
+  }
+  const mapping = await readThreadMapping(origin)
   const command = parseSlackRelayCommand({
     attachments,
     mapping: mapping
@@ -166,25 +203,43 @@ async function processCommand({
           threadPath: mapping.threadPath,
         }
       : null,
-    origin: {
-      provider: "slack",
-      tenantId: teamId,
-      conversationId: channel,
-      threadId: threadTs,
-      eventId,
-      userId,
-    },
+    origin,
     text,
   })
   if (command.kind === "help") {
     await Promise.all([
-      reply({ channel, text: SlackRelayHelp, threadTs }),
-      postSlackControls({ channel, threadTs }),
+      reply({
+        channel,
+        idempotencyKey: `${eventId}:help`,
+        text: SlackRelayHelp,
+        threadTs,
+      }),
+      postSlackControls({ channel, threadTs, idempotencyKey: `${eventId}:controls` }),
     ])
     return
   }
+  if (command.kind === "stop") {
+    const count = await requestRelayStop(origin)
+    await setSlackAgentStatus({
+      channel,
+      status: "active",
+      threadTs,
+    }).catch(() => undefined)
+    await reply({
+      channel,
+      idempotencyKey: `${eventId}:stop`,
+      text: count > 0 ? "Stopping the local agent…" : "No local run is active for this thread.",
+      threadTs,
+    })
+    return
+  }
   if (command.kind === "status") {
-    const worker = await activeWorker(teamId)
+    const [worker, queue] = await Promise.all([
+      mapping
+        ? workerById(teamId, mapping.deviceId)
+        : activeWorker(teamId),
+      relayQueueStatus(origin),
+    ])
     const selection = mapping
       ? [
           `harness \`${mapping.harness}\``,
@@ -197,21 +252,28 @@ async function processCommand({
       : null
     await reply({
       channel,
-      text: worker
-        ? `Mako is online on *${worker.deviceName}*.${mapping ? ` This thread resumes \`${mapping.threadPath}\` with ${selection}.` : " This Slack thread has no local Mako session yet."}`
-        : "Mako is offline. New work will remain queued until your laptop reconnects.",
+      idempotencyKey: `${eventId}:status`,
+      text: `${worker ? `Mako is online on *${worker.deviceName}*.` : "Mako is offline."}${mapping ? ` This thread resumes \`${mapping.threadPath}\` with ${selection}.` : " This Slack thread has no local Mako session yet."}${queue.running || queue.queued ? ` *${queue.running} working · ${queue.queued} queued.*` : ""}${worker ? "" : " New work will remain queued until your worker reconnects."}`,
       threadTs,
     })
     return
   }
-  const queued = await enqueueRelayJob(command.payload)
+  if (command.kind === "interrupt")
+    await requestRelayStop(command.payload.origin)
+  const worker = mapping
+    ? await workerById(teamId, mapping.deviceId)
+    : await activeWorker(teamId)
+  const queued = await enqueueRelayJob(command.payload, mapping?.deviceId)
   if (!queued.created) return
-  const worker = await activeWorker(teamId)
   await reply({
     channel,
-    text: worker
-      ? `Queued for *${worker.deviceName}*. Mako will reply here when the local harness finishes.`
-      : "Queued. Mako will run this when your laptop reconnects.",
+    idempotencyKey: `${eventId}:queued`,
+    text:
+      command.kind === "interrupt"
+        ? "Stopping the current turn. Your message is next in this Slack thread."
+        : worker
+          ? `Queued for *${worker.deviceName}*. Mako will stream progress and the reply here.`
+          : "Queued. Mako will run this when your worker reconnects.",
     threadTs,
   })
 }
@@ -229,6 +291,7 @@ export function slackActionCommand(
   }
   if (action.actionId === "mako-fast-on") return "fast on"
   if (action.actionId === "mako-fast-off") return "fast off"
+  if (action.actionId === "mako-stop") return "stop"
   if (action.actionId === "mako-status") return "status"
   if (action.actionId === "mako-threads") return "threads"
   if (action.actionId === "mako-models") return "models"
@@ -266,7 +329,9 @@ async function processNormalized(payload: SlackWebhookPayload): Promise<void> {
     }
     const root = await sendSlackMessage({
       channel: SlackChannelIdSchema.parse(payload.channelId),
-      idempotencyKey: randomUUID(),
+      idempotencyKey: slackMessageId(
+        `${payload.triggerId ?? `${payload.teamId}:${payload.userId}:${text}`}:root`
+      ),
       text: `*Mako* · ${text}`,
     })
     await processCommand({
@@ -305,6 +370,32 @@ async function processNormalized(payload: SlackWebhookPayload): Promise<void> {
 
 async function processUnsupported(payload: SlackWebhookPayload): Promise<void> {
   if (payload.kind !== "unsupported") return
+  const stopped = AgentSessionStoppedSchema.safeParse(payload.raw)
+  if (stopped.success) {
+    const { event, event_id: eventId, team_id: teamId } = stopped.data
+    if (!eventAuthorized(teamId, event.user)) return
+    const origin = {
+      provider: "slack",
+      tenantId: teamId,
+      conversationId: event.channel,
+      threadId: event.thread_ts,
+      eventId,
+      userId: event.user,
+    }
+    const count = await requestRelayStop(origin)
+    await setSlackAgentStatus({
+      channel: event.channel,
+      status: "active",
+      threadTs: event.thread_ts,
+    }).catch(() => undefined)
+    await reply({
+      channel: event.channel,
+      idempotencyKey: `${eventId}:stopped`,
+      text: count > 0 ? "Stopping the local agent…" : "No local run is active for this thread.",
+      threadTs: event.thread_ts,
+    })
+    return
+  }
   const parsed = ThreadMessageSchema.safeParse(payload.raw)
   if (!parsed.success) return
   const event = parsed.data.event

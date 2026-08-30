@@ -121,7 +121,7 @@ export function registerSlackTools(server: McpServer): void {
       inputSchema: z.object({
         channel: SlackChannelIdSchema,
         idempotencyKey: z.uuid(),
-        text: z.string().min(1).max(4_000),
+        text: z.string().min(1).max(12_000),
         threadTs: SlackTimestampSchema.optional(),
       }),
       annotations: {

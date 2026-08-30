@@ -41,6 +41,7 @@ const PromptFields = {
 export const RelayJobPayloadSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("new"),
+    forceNew: z.boolean().default(false),
     origin: RemoteOriginSchema,
     selection: RuntimeSelectionSchema,
     ...PromptFields,
@@ -133,6 +134,7 @@ export const RelayCompletionSchema = z.object({
   messageId: z.string().min(1),
   model: z.string().min(1).max(160).optional(),
   popReceipt: z.string().min(1),
+  progressFailed: z.boolean().default(false),
   result: z.string().min(1).max(1_000_000),
   status: z.enum(["done", "failed", "stopped"]).default("done"),
   threadPath: z.string().min(1).max(4_000).optional(),

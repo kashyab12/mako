@@ -58,7 +58,8 @@ export function backendConnectionCredentials(): {
 
 export async function backendRelayPost(
   path: string,
-  body: string
+  body: string,
+  signal?: AbortSignal
 ): Promise<Response> {
   await ensureBackendConnectionEnvironment()
   const credentials = backendConnectionCredentials()
@@ -71,7 +72,27 @@ export async function backendRelayPost(
       "Content-Type": "application/json",
     },
     body,
-    signal: AbortSignal.timeout(30_000),
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+      : AbortSignal.timeout(30_000),
+  })
+}
+
+export async function backendRelayUpload(
+  path: string,
+  body: FormData
+): Promise<Response> {
+  await ensureBackendConnectionEnvironment()
+  const credentials = backendConnectionCredentials()
+  if (!credentials) throw new Error("Mako backend token is missing")
+  return fetch(new URL(path, credentials.url), {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${credentials.token}`,
+    },
+    body,
+    signal: AbortSignal.timeout(60_000),
   })
 }
 

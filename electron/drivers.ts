@@ -63,6 +63,7 @@ export interface NativeRunResult {
 interface Run {
   child: ChildProcess
   completed?: Promise<NativeRunResult>
+  outputSubscribers: Set<(chunk: string) => void>
   resolve: (result: NativeRunResult) => void
   state: ThreadRunState
   stdout: string
@@ -109,6 +110,17 @@ export async function waitForNativeRun(
     run.completed = undefined
     run.stdout = ""
   }
+}
+
+export function subscribeNativeRunOutput(
+  path: string,
+  subscriber: (chunk: string) => void
+): () => void {
+  const run = runs.get(path)
+  if (!run?.completed) throw new Error(`No captured native run exists for ${path}`)
+  run.outputSubscribers.add(subscriber)
+  if (run.stdout) subscriber(run.stdout)
+  return () => run.outputSubscribers.delete(subscriber)
 }
 
 /**
@@ -195,6 +207,7 @@ async function launch(
   const run: Run = {
     child,
     completed,
+    outputSubscribers: new Set(),
     resolve: resolveRun,
     state,
     stdout: "",
@@ -220,7 +233,9 @@ async function launch(
   })
   if (captureOutput) {
     child.stdout?.on("data", (chunk: Buffer) => {
-      run.stdout = (run.stdout + chunk.toString()).slice(-1024 * 1024)
+      const text = chunk.toString()
+      run.stdout = (run.stdout + text).slice(-1024 * 1024)
+      for (const subscriber of run.outputSubscribers) subscriber(text)
     })
   } else {
     child.stdout?.resume()
@@ -278,6 +293,7 @@ function finish(run: Run, next: Partial<ThreadRunState>): void {
   }
   push(run.state)
   run.resolve({ state: run.state, text: run.stdout.trim() })
+  run.outputSubscribers.clear()
 }
 
 function push(state: ThreadRunState): void {

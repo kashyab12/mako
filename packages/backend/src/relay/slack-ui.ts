@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto"
+import { createHash } from "node:crypto"
 import {
   cardToSlackBlocks,
   type SlackCardElement,
@@ -56,6 +56,7 @@ const card: SlackCardElement = {
       children: [
         { type: "button", id: "mako-fast-on", label: "Fast on", value: "on" },
         { type: "button", id: "mako-fast-off", label: "Fast off", value: "off" },
+        { type: "button", id: "mako-stop", label: "Stop", style: "danger" },
         { type: "button", id: "mako-status", label: "Status" },
         { type: "button", id: "mako-threads", label: "Threads" },
         { type: "button", id: "mako-models", label: "Models" },
@@ -70,15 +71,20 @@ export function slackControlBlocks() {
 
 export async function postSlackControls({
   channel,
+  idempotencyKey,
   threadTs,
 }: {
   channel: string
+  idempotencyKey?: string
   threadTs?: string
 }): Promise<string> {
+  const seed = idempotencyKey ?? `${channel}:${threadTs ?? "root"}:controls`
+  const value = createHash("sha256").update(seed).digest("hex").slice(0, 32)
+  const messageId = `${value.slice(0, 8)}-${value.slice(8, 12)}-5${value.slice(13, 16)}-a${value.slice(17, 20)}-${value.slice(20)}`
   const posted = await sendSlackBlocks({
     blocks: slackControlBlocks(),
     channel,
-    idempotencyKey: randomUUID(),
+    idempotencyKey: messageId,
     text: "Mako local harness controls",
     threadTs,
   })

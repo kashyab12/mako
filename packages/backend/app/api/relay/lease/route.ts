@@ -1,7 +1,10 @@
 import { z } from "zod"
 import { readServerEnv } from "../../../../src/config/env"
 import { relayAuthorized, relayUnauthorized } from "../../../../src/relay/auth"
-import { deliverRelayCompletion } from "../../../../src/relay/delivery"
+import {
+  deliverRelayCompletion,
+  startRelayDelivery,
+} from "../../../../src/relay/delivery"
 import {
   heartbeatWorker,
   leaseRelayJob,
@@ -23,6 +26,12 @@ export async function POST(request: Request): Promise<Response> {
     const result = await leaseRelayJob(input)
     if (result.kind === "empty") return Response.json(result)
     if (result.kind === "work") {
+      await startRelayDelivery({
+        defaultHarness: input.defaultHarness,
+        deviceId: input.deviceId,
+        deviceName: input.deviceName,
+        lease: result.lease,
+      })
       return Response.json({ kind: "job", lease: result.lease })
     }
     await deliverRelayCompletion({

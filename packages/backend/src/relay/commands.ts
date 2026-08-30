@@ -16,11 +16,48 @@ interface ThreadSelection {
 export type SlackRelayCommand =
   | { kind: "enqueue"; payload: RelayJobPayload }
   | { kind: "help" }
+  | { kind: "interrupt"; payload: RelayJobPayload }
   | { kind: "status" }
+  | { kind: "stop" }
 
 function harness(value: string | undefined): RelayHarness | undefined {
   const parsed = RelayHarnessSchema.safeParse(value)
   return parsed.success ? parsed.data : undefined
+}
+
+function promptPayload({
+  attachments,
+  mapping,
+  origin,
+  text,
+}: {
+  attachments: RemoteAttachment[]
+  mapping: ThreadSelection | null
+  origin: RelayJobPayload["origin"]
+  text: string
+}): RelayJobPayload {
+  return mapping
+    ? {
+        kind: "resume",
+        attachments,
+        selection: {
+          effort: mapping.effort,
+          fast: mapping.fast,
+          harness: mapping.harness,
+          model: mapping.model,
+        },
+        origin,
+        text,
+        threadPath: mapping.threadPath,
+      }
+    : {
+        kind: "new",
+        forceNew: false,
+        attachments,
+        selection: {},
+        origin,
+        text,
+      }
 }
 
 export function parseSlackRelayCommand({
@@ -40,6 +77,15 @@ export function parseSlackRelayCommand({
 
   if (normalized === "help") return { kind: "help" }
   if (normalized === "status") return { kind: "status" }
+  if (normalized === "stop") return { kind: "stop" }
+  if (normalized === "queue" || normalized === "steer") {
+    const prompt = parts.join(" ").trim()
+    if (!prompt && attachments.length === 0) return { kind: "help" }
+    return {
+      kind: normalized === "steer" ? "interrupt" : "enqueue",
+      payload: promptPayload({ attachments, mapping, origin, text: prompt }),
+    }
+  }
   if (normalized === "reasoning") {
     const effort = parts.join(" ").trim()
     if (!mapping || !effort) return { kind: "help" }
@@ -153,6 +199,7 @@ export function parseSlackRelayCommand({
       kind: "enqueue",
       payload: {
         kind: "new",
+        forceNew: true,
         selection: {
           effort: mapping?.effort,
           fast: mapping?.fast,
@@ -165,33 +212,9 @@ export function parseSlackRelayCommand({
       },
     }
   }
-  if (mapping) {
-    return {
-      kind: "enqueue",
-      payload: {
-        kind: "resume",
-        selection: {
-          effort: mapping.effort,
-          fast: mapping.fast,
-          harness: mapping.harness,
-          model: mapping.model,
-        },
-        attachments,
-        origin,
-        text: trimmed,
-        threadPath: mapping.threadPath,
-      },
-    }
-  }
   return {
     kind: "enqueue",
-    payload: {
-      kind: "new",
-      attachments,
-      selection: {},
-      origin,
-      text: trimmed,
-    },
+    payload: promptPayload({ attachments, mapping, origin, text: trimmed }),
   }
 }
 
@@ -200,6 +223,9 @@ export const SlackRelayHelp = [
   "`new [claude|codex|cursor|grok|devin|opencode] <message>` — start a local thread",
   "`threads [search]` — find local threads and their resume IDs",
   "`resume <thread-id-or-path> <message>` — resume an existing local thread",
+  "`queue <message>` — send after the current turn finishes",
+  "`steer <message>` — stop the current turn and send this next",
+  "`stop` — stop the active local turn",
   "`harness <claude|codex|cursor|grok|devin|opencode>` — switch this Slack thread’s harness",
   "`models [harness]` — list live models and controls",
   "`model <model-id>` — choose the model for this Slack thread",

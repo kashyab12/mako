@@ -1,14 +1,34 @@
-import { randomUUID } from "node:crypto"
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises"
+import { createHash, randomUUID } from "node:crypto"
+import {
+  chmod,
+  mkdir,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises"
 import { hostname } from "node:os"
-import { dirname } from "node:path"
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path"
 import { z } from "zod"
 import type { ThreadRef } from "@mako/sessions"
-import { backendRelayPost } from "./backend-connection.js"
+import {
+  backendRelayPost,
+  backendRelayUpload,
+} from "./backend-connection.js"
 import {
   abortNative,
   resumeNative,
   startFresh,
+  subscribeNativeRunOutput,
   waitForNativeRun,
   type FreshOptions,
 } from "./drivers.js"
@@ -46,6 +66,7 @@ const AttachmentSchema = z.object({
 const PayloadSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("new"),
+    forceNew: z.boolean().default(false),
     attachments: z.array(AttachmentSchema).default([]),
     selection: SelectionSchema,
     origin: OriginSchema,
@@ -105,6 +126,8 @@ interface SlackRelayOptions {
 }
 
 let timer: ReturnType<typeof setTimeout> | undefined
+let activeLeaseAbort: AbortController | undefined
+let activePollAbort: AbortController | undefined
 let emptyPolls = 0
 let stopped = true
 
@@ -159,16 +182,143 @@ async function waitForFreshThread({
   return undefined
 }
 
+async function stageRelayAttachments(
+  payload: z.infer<typeof PayloadSchema>,
+  jobId: string,
+  deviceId: string,
+  cwd: string
+): Promise<{
+  paths: string[]
+  manifestPath: string
+  cleanup: () => Promise<void>
+}> {
+  const attachments = "attachments" in payload ? payload.attachments : []
+  const directory = join(cwd, `.mako-relay-${jobId}`)
+  await rm(directory, { recursive: true, force: true })
+  await mkdir(directory, { recursive: true, mode: 0o700 })
+  const attachmentDirectory = join(directory, "attachments")
+  await mkdir(attachmentDirectory, { recursive: true, mode: 0o700 })
+  const manifestPath = join(directory, "outbound-files.json")
+  const paths: string[] = []
+  let total = 0
+  try {
+    for (const attachment of attachments) {
+      const response = await backendRelayPost(
+        "/api/relay/attachment",
+        JSON.stringify({ attachmentId: attachment.id, deviceId, jobId })
+      )
+      if (!response.ok)
+        throw new Error(`Attachment download returned ${response.status}`)
+      const declared = Number(response.headers.get("content-length") ?? "0")
+      if (declared > 100 * 1024 * 1024)
+        throw new Error(`${attachment.name} exceeds Mako's 100 MB file limit`)
+      const bytes = new Uint8Array(await response.arrayBuffer())
+      total += bytes.byteLength
+      if (bytes.byteLength > 100 * 1024 * 1024 || total > 200 * 1024 * 1024)
+        throw new Error("Slack attachments exceed Mako's 200 MB job limit")
+      const decoded = decodeURIComponent(
+        response.headers.get("x-mako-attachment-name") ?? attachment.name
+      )
+      const name = basename(decoded).replace(/[\p{Cc}\\/:]/gu, "_")
+      if (!name || name === "." || name === "..")
+        throw new Error("Slack returned an invalid attachment name")
+      const prefix = attachment.id.replace(/[^a-zA-Z0-9._-]/g, "_")
+      const path = join(attachmentDirectory, `${prefix}-${name}`)
+      await writeFile(path, bytes, { mode: 0o600 })
+      paths.push(path)
+    }
+    return {
+      paths,
+      manifestPath,
+      cleanup: () => rm(directory, { recursive: true, force: true }),
+    }
+  } catch (error) {
+    await rm(directory, { recursive: true, force: true })
+    throw error
+  }
+}
+
+function relayPrompt(
+  text: string,
+  paths: string[],
+  manifestPath: string
+): string {
+  const attached =
+    paths.length > 0
+      ? `\n\nFiles attached by the user:\n${paths.map((path) => `- ${path}`).join("\n")}`
+      : ""
+  return `${text}${attached}\n\nIf you create files the user should receive, write a JSON array of their paths to ${manifestPath}. Only include files inside the current workspace. Do not mention this delivery instruction in your answer.`
+}
+
+const OutboundFilesSchema = z.array(z.string().min(1).max(4_000)).max(5)
+
+async function uploadRelayArtifacts({
+  cwd,
+  deviceId,
+  jobId,
+  manifestPath,
+}: {
+  cwd: string
+  deviceId: string
+  jobId: string
+  manifestPath: string
+}): Promise<void> {
+  let manifest: string
+  try {
+    manifest = await readFile(manifestPath, "utf8")
+  } catch {
+    return
+  }
+  const listed = OutboundFilesSchema.parse(JSON.parse(manifest))
+  const root = await realpath(cwd)
+  for (const requested of listed) {
+    const path = await realpath(
+      isAbsolute(requested) ? requested : resolve(root, requested)
+    )
+    const local = relative(root, path)
+    if (
+      !local ||
+      local === ".." ||
+      local.startsWith(`..${sep}`) ||
+      isAbsolute(local)
+    )
+      throw new Error("A returned Slack file must be inside the workspace")
+    const info = await stat(path)
+    if (!info.isFile()) throw new Error(`${requested} is not a file`)
+    if (info.size > 25 * 1024 * 1024)
+      throw new Error(`${requested} exceeds Slack's 25 MB relay limit`)
+    const bytes = await readFile(path)
+    const buffer = new ArrayBuffer(bytes.byteLength)
+    new Uint8Array(buffer).set(bytes)
+    const body = new FormData()
+    const artifactKey = createHash("sha256")
+      .update(local)
+      .digest("hex")
+      .slice(0, 32)
+    body.set("artifactKey", artifactKey)
+    body.set("deviceId", deviceId)
+    body.set("jobId", jobId)
+    body.set("file", new Blob([buffer]), basename(path))
+    const response = await backendRelayUpload("/api/relay/artifact", body)
+    if (!response.ok)
+      throw new Error(`Relay artifact upload returned ${response.status}`)
+  }
+}
+
 async function executePayload(
   payload: z.infer<typeof PayloadSchema>,
   defaultCwd: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  jobId: string,
+  deviceId: string,
+  onOutput: (chunk: string) => void
 ): Promise<{
   effort?: string
   fast?: boolean
   harness: z.infer<typeof HarnessSchema>
   model?: string
   result: string
+  status?: "done" | "failed" | "stopped"
   threadPath?: string
 }> {
   const requested = payload.selection.harness
@@ -333,50 +483,73 @@ async function executePayload(
       threadPath: source?.path,
     }
   }
-  const text = payload.text
   const cwd = source?.cwd ?? defaultCwd
-  const before = new Set(listThreads().map((ref) => ref.path))
-  const run =
-    source && source.harness === harness
-      ? await resumeNative(source, text, options)
-      : await startFresh(
-          harness,
-          cwd,
-          source
-            ? `${(await transcriptInlineFor(source.path))?.content ?? ""}\n\nContinue this conversation with the user's new message:\n${text}`
-            : text,
-          options
-        )
-  if (signal.aborted) {
-    abortNative(run.path)
-    throw new Error("The Slack relay lease was lost before execution started")
-  }
-  const abort = () => abortNative(run.path)
-  signal.addEventListener("abort", abort, { once: true })
-  const completed = await waitForNativeRun(run.path).finally(() =>
-    signal.removeEventListener("abort", abort)
-  )
-  if (completed.state.status !== "done") {
+  const staged = await stageRelayAttachments(payload, jobId, deviceId, cwd)
+  try {
+    const text = relayPrompt(payload.text, staged.paths, staged.manifestPath)
+    const before = new Set(listThreads().map((ref) => ref.path))
+    const run =
+      source && source.harness === harness
+        ? await resumeNative(source, text, options)
+        : await startFresh(
+            harness,
+            cwd,
+            source
+              ? `${(await transcriptInlineFor(source.path))?.content ?? ""}\n\nContinue this conversation with the user's new message:\n${text}`
+              : text,
+            options
+          )
+    const unsubscribe = subscribeNativeRunOutput(run.path, onOutput)
+    if (signal.aborted) {
+      abortNative(run.path)
+      throw new Error("The remote relay lease was lost before execution started")
+    }
+    const abort = () => abortNative(run.path)
+    signal.addEventListener("abort", abort, { once: true })
+    const completed = await waitForNativeRun(run.path).finally(() => {
+      unsubscribe()
+      signal.removeEventListener("abort", abort)
+    })
+    let artifactWarning = ""
+    try {
+      await uploadRelayArtifacts({
+        cwd,
+        deviceId,
+        jobId,
+        manifestPath: staged.manifestPath,
+      })
+    } catch (error) {
+      artifactWarning = `\n\nMako could not return a generated file: ${error instanceof Error ? error.message : String(error)}`
+    }
+    if (completed.state.status !== "done") {
+      return {
+        effort,
+        fast,
+        harness,
+        model,
+        result:
+          `${completed.state.error ?? `${harness} stopped before completing the turn.`}${artifactWarning}`,
+        status:
+          completed.state.status === "stopped" ? "stopped" : "failed",
+        threadPath: failureThreadPath,
+      }
+    }
+    const ref =
+      source && source.harness === harness
+        ? source
+        : await waitForFreshThread({ before, cwd, harness })
     return {
       effort,
       fast,
       harness,
-      model,
-      result: completed.state.error ?? `${harness} stopped before completing the turn.`,
-      threadPath: failureThreadPath,
+      model: model ?? ref?.model,
+      result:
+        `${completed.text || `${harness} completed the turn without printable output.`}${artifactWarning}`,
+      status: "done",
+      threadPath: ref?.path,
     }
-  }
-  const ref =
-    source && source.harness === harness
-      ? source
-      : await waitForFreshThread({ before, cwd, harness })
-  return {
-    effort,
-    fast,
-    harness,
-    model: model ?? ref?.model,
-    result: completed.text || `${harness} completed the turn without printable output.`,
-    threadPath: ref?.path,
+  } finally {
+    await staged.cleanup()
   }
 }
 
@@ -414,9 +587,79 @@ async function renewLease(
   throw failure
 }
 
+async function completeRelay(body: string): Promise<void> {
+  let failure: Error | null = null
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await backendRelayPost("/api/relay/complete", body)
+      if (response.ok) return
+      failure = new Error(`Relay completion returned ${response.status}`)
+    } catch (error) {
+      failure = error instanceof Error ? error : new Error(String(error))
+    }
+    if (attempt < 2)
+      await new Promise((resolve) => setTimeout(resolve, 5_000))
+  }
+  throw failure ?? new Error("Relay completion failed")
+}
+
+interface ProgressWriter {
+  close: () => Promise<void>
+  failed: () => boolean
+  push: (chunk: string) => void
+}
+
+function createProgressWriter(
+  deviceId: string,
+  jobId: string
+): ProgressWriter {
+  let pending = ""
+  let sequence = 0
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let delivery = Promise.resolve()
+  let failed = false
+  const flush = () => {
+    if (timer) clearTimeout(timer)
+    timer = undefined
+    while (pending) {
+      const text = pending.slice(0, 11_000)
+      pending = pending.slice(text.length)
+      sequence += 1
+      const current = sequence
+      delivery = delivery
+        .then(async () => {
+          if (failed) return
+          const response = await backendRelayPost(
+            "/api/relay/progress",
+            JSON.stringify({ deviceId, jobId, sequence: current, text })
+          )
+          if (!response.ok)
+            throw new Error(`Relay progress returned ${response.status}`)
+        })
+        .catch(() => {
+          failed = true
+        })
+    }
+  }
+  return {
+    failed: () => failed,
+    push(chunk) {
+      if (!chunk || failed) return
+      pending += chunk
+      timer ??= setTimeout(flush, 750)
+    },
+    async close() {
+      flush()
+      await delivery
+    },
+  }
+}
+
 async function poll(options: SlackRelayOptions, id: string): Promise<void> {
   if (stopped) return
   try {
+    const pollAbort = new AbortController()
+    activePollAbort = pollAbort
     const response = await backendRelayPost(
       "/api/relay/lease",
       JSON.stringify({
@@ -425,8 +668,12 @@ async function poll(options: SlackRelayOptions, id: string): Promise<void> {
         deviceName: hostname(),
         version: options.version,
         visibilityTimeoutSeconds: 300,
-      })
-    )
+      }),
+      pollAbort.signal
+    ).finally(() => {
+      if (activePollAbort === pollAbort) activePollAbort = undefined
+    })
+    if (stopped) return
     if (!response.ok) throw new Error(`Relay lease returned ${response.status}`)
     const value = z.json().parse(await response.json())
     const empty = EmptySchema.safeParse(value)
@@ -437,6 +684,7 @@ async function poll(options: SlackRelayOptions, id: string): Promise<void> {
       let popReceipt = leased.popReceipt
       let renewal = Promise.resolve()
       const leaseAbort = new AbortController()
+      activeLeaseAbort = leaseAbort
       const renewTimer = setInterval(() => {
         renewal = renewal
           .then(async () => {
@@ -447,19 +695,42 @@ async function poll(options: SlackRelayOptions, id: string): Promise<void> {
             throw new Error("Relay lease renewal failed")
           })
       }, 180_000)
+      const progress = createProgressWriter(id, leased.jobId)
+      let control = Promise.resolve()
+      const checkControl = () => {
+        control = control
+          .then(async () => {
+            const response = await backendRelayPost(
+              "/api/relay/control",
+              JSON.stringify({ deviceId: id, jobId: leased.jobId })
+            )
+            if (!response.ok) return
+            const value = z
+              .object({ control: z.literal("stop").nullable() })
+              .parse(z.json().parse(await response.json()))
+            if (value.control === "stop") leaseAbort.abort()
+          })
+          .catch(() => undefined)
+      }
+      const controlTimer = setInterval(checkControl, 2_000)
+      checkControl()
       let execution: Awaited<ReturnType<typeof executePayload>>
       try {
         execution = await executePayload(
           leased.payload,
           options.defaultCwd(),
-          leaseAbort.signal
+          leaseAbort.signal,
+          leased.jobId,
+          id,
+          progress.push
         )
       } finally {
         clearInterval(renewTimer)
-        await renewal
+        clearInterval(controlTimer)
+        if (activeLeaseAbort === leaseAbort) activeLeaseAbort = undefined
+        await Promise.all([renewal, control, progress.close()])
       }
-      const completed = await backendRelayPost(
-        "/api/relay/complete",
+      await completeRelay(
         JSON.stringify({
           deviceId: id,
           effort: execution.effort,
@@ -469,13 +740,12 @@ async function poll(options: SlackRelayOptions, id: string): Promise<void> {
           messageId: leased.messageId,
           model: execution.model,
           popReceipt,
+          progressFailed: progress.failed(),
           result: execution.result,
+          status: execution.status ?? "done",
           threadPath: execution.threadPath,
         })
       )
-      if (!completed.ok) {
-        throw new Error(`Relay completion returned ${completed.status}`)
-      }
     }
   } catch {
     if (!stopped) timer = setTimeout(() => void poll(options, id), 5_000)
@@ -498,6 +768,10 @@ export async function startSlackRelay(options: SlackRelayOptions): Promise<void>
 
 export function stopSlackRelay(): void {
   stopped = true
+  activePollAbort?.abort()
+  activePollAbort = undefined
+  activeLeaseAbort?.abort()
+  activeLeaseAbort = undefined
   if (timer) clearTimeout(timer)
   timer = undefined
 }
