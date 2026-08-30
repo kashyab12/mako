@@ -43,6 +43,8 @@ import {
   threads,
 } from "@/state/threads"
 import {
+  acp,
+  acpStore,
   applyAcpPermission,
   applyAcpSession,
   applyAcpUpdate,
@@ -484,7 +486,7 @@ export const actions = {
       })
     }
     const tab = await guard(() => getMako().openTab(options))
-    if (!tab) return
+    if (!tab) return false
     addTab(tab)
     window.dispatchEvent(new CustomEvent("mako:close-settings"))
     store.set({
@@ -496,6 +498,7 @@ export const actions = {
       capabilities: tab.capabilities,
     })
     void actions.refreshSessions(tab.session.meta.cwd)
+    return true
   },
 
   async closeTab(id: string) {
@@ -579,16 +582,33 @@ export const actions = {
     return guard(() => getMako().clearQueue())
   },
 
-  async newSession() {
-    window.dispatchEvent(new CustomEvent("mako:close-settings"))
-    const next = await guard(() => getMako().newSession())
-    if (!next) return
-    adoptState(next)
+  async newConversationIn(folder = store.get().meta?.cwd) {
+    const acpState = acpStore.get()
+    const live = acpState.session
+    if (acpState.starting) {
+      toast.error("Wait for the active conversation to start")
+      return false
+    }
+    if (live?.status === "running") {
+      toast.error("Stop the active conversation before starting another", {
+        action: { label: "Stop", onClick: () => acp.cancel() },
+      })
+      return false
+    }
+    if (live) acp.close()
+    threads.closeViewer()
+    viewer.close()
     stage.close()
-    void actions.refreshSessions(next.meta.cwd)
+    const opened = await actions.openTab(folder ? { cwd: folder } : {})
+    if (!opened) return false
     requestAnimationFrame(() =>
       window.dispatchEvent(new CustomEvent("mako:focus-composer"))
     )
+    return true
+  },
+
+  async newSession() {
+    return actions.newConversationIn()
   },
 
   /**
@@ -615,7 +635,7 @@ export const actions = {
 
   async pickWorkspace() {
     const folder = await guard(() => getMako().pickFolder())
-    if (folder) await actions.openWorkspace(folder)
+    if (folder) await actions.newConversationIn(folder)
   },
 
   /** Point the agent at a folder by path, without a dialog. */

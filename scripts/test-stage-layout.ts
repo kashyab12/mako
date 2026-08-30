@@ -26,6 +26,7 @@ import {
 } from "../src/state/thread-queue.ts"
 import {
   groupThreadFolders,
+  threadBelongsToWorkspace,
   threadFolderKey,
 } from "../src/lib/thread-folders.ts"
 import { acpBlocksToMessages } from "../src/lib/acp-blocks.ts"
@@ -446,6 +447,42 @@ assert.equal(
     cwd: "/private/tmp/session",
   }),
   ""
+)
+const homeRef = {
+  harness: "claude",
+  nativeId: "home",
+  path: "/home",
+  cwd: "/Users/kashyab",
+} satisfies ThreadRef
+assert.equal(threadFolderKey(homeRef), "/Users/kashyab")
+assert.equal(
+  threadBelongsToWorkspace(
+    { ...homeRef, cwd: "/Users/kashyab/repos/nu/arca" },
+    "/Users/kashyab"
+  ),
+  true
+)
+assert.equal(
+  threadBelongsToWorkspace(
+    { ...homeRef, cwd: "/Users/kashyab-other/repo" },
+    "/Users/kashyab"
+  ),
+  false
+)
+assert.deepEqual(
+  groupThreadFolders({
+    refs: [],
+    currentCwd: "/Users/kashyab",
+    pinnedThreads: [],
+    pinnedFolders: [],
+    sortBy: "recent",
+  }).map((folder) => ({
+    cwd: folder.cwd,
+    name: folder.name,
+    count: folder.refs.length,
+    current: folder.current,
+  })),
+  [{ cwd: "/Users/kashyab", name: "Home", count: 0, current: true }]
 )
 assert.deepEqual(
   groupThreadFolders({

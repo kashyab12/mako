@@ -13,17 +13,41 @@ export interface ThreadFolder {
   order: string
 }
 
+function normalizedPath(path: string | undefined): string {
+  const normalized = (path ?? "").replaceAll("\\", "/").replace(/\/+$/, "")
+  return /^[A-Za-z]:\//.test(normalized) ? normalized.toLowerCase() : normalized
+}
+
+function folderPath(path: string | undefined): string {
+  const normalized = normalizedPath(path)
+  if (!normalized) return ""
+  if (/^\/(?:private\/)?tmp(?:\/|$)/.test(normalized)) return ""
+  if (/^\/(?:private\/)?var\/folders(?:\/|$)/.test(normalized)) return ""
+  if (/^[a-z]:\/users\/[^/]+\/appdata\/local\/temp(?:\/|$)/.test(normalized)) return ""
+  return normalized
+}
+
+function isHomePath(path: string): boolean {
+  return (
+    /^\/(?:Users|home)\/[^/]+$/.test(path) ||
+    /^[a-z]:\/users\/[^/]+$/.test(path)
+  )
+}
+
+export function threadBelongsToWorkspace(
+  ref: ThreadRef,
+  workspace: string | undefined
+): boolean {
+  const root = normalizedPath(workspace)
+  if (!root) return true
+  return [ref.cwd, ref.workspace].some((candidate) => {
+    const path = normalizedPath(candidate)
+    return path === root || path.startsWith(`${root}/`)
+  })
+}
+
 export function threadFolderKey(ref: ThreadRef): string {
-  const path = (ref.workspace ?? ref.cwd ?? "")
-    .replaceAll("\\", "/")
-    .replace(/\/+$/, "")
-  if (!path) return ""
-  if (/^\/(?:Users|home)\/[^/]+$/.test(path)) return ""
-  if (/^\/(?:private\/)?tmp(?:\/|$)/.test(path)) return ""
-  if (/^\/(?:private\/)?var\/folders(?:\/|$)/.test(path)) return ""
-  if (/^[A-Za-z]:\/Users\/[^/]+$/.test(path)) return ""
-  if (/^[A-Za-z]:\/Users\/[^/]+\/AppData\/Local\/Temp(?:\/|$)/i.test(path)) return ""
-  return path
+  return folderPath(ref.workspace ?? ref.cwd)
 }
 
 export function groupThreadFolders({
@@ -48,6 +72,14 @@ export function groupThreadFolders({
     if (list) list.push(ref)
     else byCwd.set(key, [ref])
   }
+  const currentKey =
+    refs
+      .filter(
+        (ref) => ref.cwd === currentCwd || ref.workspace === currentCwd
+      )
+      .map(threadFolderKey)
+      .find(Boolean) ?? folderPath(currentCwd)
+  if (currentKey && !byCwd.has(currentKey)) byCwd.set(currentKey, [])
   const byOrder = (a: ThreadRef, b: ThreadRef): number => {
     if (sortBy === "name") return (a.title ?? "").localeCompare(b.title ?? "")
     if (sortBy === "created")
@@ -71,14 +103,10 @@ export function groupThreadFolders({
         : latest
     return {
       key: key || "~",
-      name: key ? workspaceName(key) : "Other sessions",
+      name: key ? (isHomePath(key) ? "Home" : workspaceName(key)) : "Other sessions",
       cwd: key || null,
       refs: entries,
-      current:
-        Boolean(currentCwd) &&
-        entries.some(
-          (ref) => ref.cwd === currentCwd || ref.workspace === currentCwd
-        ),
+      current: Boolean(currentKey) && key === currentKey,
       pinned:
         Boolean(key) &&
         (pinned.has(key) ||

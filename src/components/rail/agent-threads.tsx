@@ -4,6 +4,7 @@ import { harnessLabel } from "@/components/rail/harness-meta"
 import { formatRelative, workspaceName } from "@/lib/format"
 import {
   groupThreadFolders,
+  threadBelongsToWorkspace,
   type ThreadFolder,
 } from "@/lib/thread-folders"
 import {
@@ -178,7 +179,7 @@ export function AgentThreads() {
     const active = filter.length > 0 ? new Set(filter) : null
     return all.filter(
       (ref) =>
-        (scope !== "workspace" || !cwd || ref.cwd === cwd) &&
+        (scope !== "workspace" || threadBelongsToWorkspace(ref, cwd)) &&
         (!active || active.has(ref.harness)) &&
         (!needle ||
           `${ref.title ?? ""} ${ref.cwd ?? ""} ${harnessLabel(ref.harness)} ${ref.model ?? ""}`
@@ -349,7 +350,7 @@ export function AgentThreads() {
                   )
                 }}
                 onNew={() => {
-                  if (folder.cwd) void actions.openTab({ cwd: folder.cwd })
+                  if (folder.cwd) void actions.newConversationIn(folder.cwd)
                 }}
                 onPin={() => {
                   if (folder.cwd) togglePinnedProject(folder.cwd)
