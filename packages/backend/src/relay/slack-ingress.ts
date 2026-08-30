@@ -263,7 +263,11 @@ async function processCommand({
   const worker = mapping
     ? await workerById(teamId, mapping.deviceId)
     : await activeWorker(teamId)
-  const queued = await enqueueRelayJob(command.payload, mapping?.deviceId)
+  const payload = {
+    ...command.payload,
+    slack: { channel, eventId, teamId, threadTs, userId },
+  }
+  const queued = await enqueueRelayJob(payload, mapping?.deviceId)
   if (!queued.created) return
   await reply({
     channel,

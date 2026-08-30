@@ -16,6 +16,7 @@ import {
 import { formatHarnessReplies } from "../src/relay/delivery"
 import { applyRelayThreadMapping } from "../src/relay/storage"
 import { parseSlackRelayCommand } from "../src/relay/commands"
+import { parseRelayJobPayload } from "../src/relay/types"
 import {
   prepareSlackRelayWebhook,
   slackActionCommand,
@@ -163,6 +164,23 @@ const origin = {
   eventId: "event-1",
   userId: "UTEST",
 }
+const legacyPayload = parseRelayJobPayload({
+  kind: "new",
+  selection: { harness: "codex" },
+  slack: {
+    channel: "CTEST",
+    eventId: "legacy-event",
+    teamId: "TTEST",
+    threadTs: "123.456",
+    userId: "UTEST",
+  },
+  text: "legacy queued work",
+})
+assert.equal(legacyPayload.origin.provider, "slack")
+assert.equal(legacyPayload.origin.conversationId, "CTEST")
+if (legacyPayload.kind === "new")
+  assert.equal(legacyPayload.forceNew, false)
+
 const explicitNew = parseSlackRelayCommand({
   mapping: null,
   origin,

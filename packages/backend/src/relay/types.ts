@@ -17,6 +17,14 @@ export const RemoteOriginSchema = z.object({
 })
 export type RemoteOrigin = z.infer<typeof RemoteOriginSchema>
 
+export const LegacySlackOriginSchema = z.object({
+  channel: z.string().min(1).max(160),
+  eventId: z.string().min(1).max(160),
+  teamId: z.string().min(1).max(80),
+  threadTs: z.string().min(1).max(160),
+  userId: z.string().min(1).max(80),
+})
+
 export const RemoteAttachmentSchema = z.object({
   id: z.string().min(1).max(160),
   kind: z.enum(["audio", "file", "image", "video"]),
@@ -33,6 +41,11 @@ const RuntimeSelectionSchema = z.object({
   model: z.string().min(1).max(160).optional(),
 })
 
+const OriginFields = {
+  origin: RemoteOriginSchema,
+  slack: LegacySlackOriginSchema.optional(),
+}
+
 const PromptFields = {
   attachments: z.array(RemoteAttachmentSchema).max(20).default([]),
   text: z.string().max(20_000),
@@ -42,44 +55,63 @@ export const RelayJobPayloadSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("new"),
     forceNew: z.boolean().default(false),
-    origin: RemoteOriginSchema,
+    ...OriginFields,
     selection: RuntimeSelectionSchema,
     ...PromptFields,
   }),
   z.object({
     kind: z.literal("resume"),
-    origin: RemoteOriginSchema,
+    ...OriginFields,
     selection: RuntimeSelectionSchema,
     threadPath: z.string().min(1).max(4_000),
     ...PromptFields,
   }),
   z.object({
     kind: z.literal("resume-query"),
-    origin: RemoteOriginSchema,
+    ...OriginFields,
     query: z.string().min(1).max(500),
     selection: RuntimeSelectionSchema,
     ...PromptFields,
   }),
   z.object({
     kind: z.literal("inspect-threads"),
-    origin: RemoteOriginSchema,
+    ...OriginFields,
     query: z.string().max(500).optional(),
     selection: RuntimeSelectionSchema,
   }),
   z.object({
     kind: z.literal("inspect-models"),
-    origin: RemoteOriginSchema,
+    ...OriginFields,
     selection: RuntimeSelectionSchema,
   }),
   z.object({
     kind: z.literal("configure"),
-    origin: RemoteOriginSchema,
+    ...OriginFields,
     selection: RuntimeSelectionSchema,
     threadPath: z.string().min(1).max(4_000),
   }),
 ])
 
 export type RelayJobPayload = z.infer<typeof RelayJobPayloadSchema>
+
+export function parseRelayJobPayload<Value>(value: Value): RelayJobPayload {
+  const current = RelayJobPayloadSchema.safeParse(value)
+  if (current.success) return current.data
+  const record = z.record(z.string(), z.json()).parse(value)
+  const slack = LegacySlackOriginSchema.parse(record.slack)
+  return RelayJobPayloadSchema.parse({
+    ...record,
+    attachments: record.attachments ?? [],
+    origin: {
+      provider: "slack",
+      tenantId: slack.teamId,
+      conversationId: slack.channel,
+      threadId: slack.threadTs,
+      eventId: slack.eventId,
+      userId: slack.userId,
+    },
+  })
+}
 
 export const WorkerHeartbeatSchema = z.object({
   defaultHarness: RelayHarnessSchema,

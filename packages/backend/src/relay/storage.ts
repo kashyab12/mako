@@ -9,6 +9,7 @@ import {
   RelayHarnessSchema,
   RelayJobPayloadSchema,
   RelayLeaseSchema,
+  parseRelayJobPayload,
   type RelayCompletion,
   type RelayJobPayload,
   type RelayLease,
@@ -299,7 +300,7 @@ export async function leaseRelayJob({
   if (!message) return { kind: "empty" }
   const jobId = z.uuid().parse(message.messageText)
   const entity = await relayClients().jobs.getEntity<RelayJobEntity>("jobs", jobId)
-  const payload = RelayJobPayloadSchema.parse(JSON.parse(entity.payload))
+  const payload = parseRelayJobPayload(JSON.parse(entity.payload))
   if (entity.targetDeviceId && entity.targetDeviceId !== deviceId) {
     await relayClients().queue.updateMessage(
       message.messageId,
@@ -409,7 +410,7 @@ export async function recordRelayCompletion(
     "jobs",
     parsed.jobId
   )
-  const payload = RelayJobPayloadSchema.parse(JSON.parse(entity.payload))
+  const payload = parseRelayJobPayload(JSON.parse(entity.payload))
   if (
     (entity.status === "completed" || entity.status === "delivered") &&
     entity.workerId === parsed.deviceId
@@ -498,7 +499,7 @@ export async function relayDeliveryState(
 ): Promise<RelayDeliveryState> {
   const entity = await relayClients().jobs.getEntity<RelayJobEntity>("jobs", jobId)
   return {
-    payload: RelayJobPayloadSchema.parse(JSON.parse(entity.payload)),
+    payload: parseRelayJobPayload(JSON.parse(entity.payload)),
     status: entity.status,
     streamClosed: entity.streamClosed ?? false,
     streamTs: entity.streamTs,
@@ -565,7 +566,7 @@ export async function relayProgressTarget(
     throw new Error("Relay progress is not owned by this device")
   return {
     accepted: progress.sequence > (entity.lastProgressSequence ?? 0),
-    payload: RelayJobPayloadSchema.parse(JSON.parse(entity.payload)),
+    payload: parseRelayJobPayload(JSON.parse(entity.payload)),
     status: entity.status,
     streamClosed: entity.streamClosed ?? false,
     streamTs: entity.streamTs,
@@ -693,7 +694,7 @@ export async function relayAttachment(
   const entity = await relayClients().jobs.getEntity<RelayJobEntity>("jobs", jobId)
   if (entity.status !== "claimed" || entity.workerId !== deviceId)
     throw new Error("Relay attachment is not owned by this device")
-  const payload = RelayJobPayloadSchema.parse(JSON.parse(entity.payload))
+  const payload = parseRelayJobPayload(JSON.parse(entity.payload))
   if (!("attachments" in payload))
     throw new Error("Relay job has no attachments")
   const attachment = payload.attachments.find(
@@ -721,7 +722,7 @@ export async function relayArtifactTarget({
       : []
   )
   return {
-    payload: RelayJobPayloadSchema.parse(JSON.parse(entity.payload)),
+    payload: parseRelayJobPayload(JSON.parse(entity.payload)),
     uploaded: uploaded.has(artifactKey),
   }
 }

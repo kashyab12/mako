@@ -55,6 +55,19 @@ const OriginSchema = z.object({
   userId: z.string(),
 })
 
+const LegacySlackOriginSchema = z.object({
+  channel: z.string(),
+  eventId: z.string(),
+  teamId: z.string(),
+  threadTs: z.string(),
+  userId: z.string(),
+})
+
+const PayloadOriginFields = {
+  origin: OriginSchema.optional(),
+  slack: LegacySlackOriginSchema.optional(),
+}
+
 const AttachmentSchema = z.object({
   id: z.string(),
   kind: z.enum(["audio", "file", "image", "video"]),
@@ -69,14 +82,14 @@ const PayloadSchema = z.discriminatedUnion("kind", [
     forceNew: z.boolean().default(false),
     attachments: z.array(AttachmentSchema).default([]),
     selection: SelectionSchema,
-    origin: OriginSchema,
+    ...PayloadOriginFields,
     text: z.string(),
   }),
   z.object({
     kind: z.literal("resume"),
     attachments: z.array(AttachmentSchema).default([]),
     selection: SelectionSchema,
-    origin: OriginSchema,
+    ...PayloadOriginFields,
     text: z.string(),
     threadPath: z.string(),
   }),
@@ -85,24 +98,24 @@ const PayloadSchema = z.discriminatedUnion("kind", [
     attachments: z.array(AttachmentSchema).default([]),
     query: z.string(),
     selection: SelectionSchema,
-    origin: OriginSchema,
+    ...PayloadOriginFields,
     text: z.string(),
   }),
   z.object({
     kind: z.literal("inspect-threads"),
     query: z.string().optional(),
     selection: SelectionSchema,
-    origin: OriginSchema,
+    ...PayloadOriginFields,
   }),
   z.object({
     kind: z.literal("inspect-models"),
     selection: SelectionSchema,
-    origin: OriginSchema,
+    ...PayloadOriginFields,
   }),
   z.object({
     kind: z.literal("configure"),
     selection: SelectionSchema,
-    origin: OriginSchema,
+    ...PayloadOriginFields,
     threadPath: z.string(),
   }),
 ])
