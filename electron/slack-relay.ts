@@ -21,6 +21,14 @@ import {
 import { z } from "zod"
 import type { ThreadRef } from "@mako/sessions"
 import {
+  RelayHarnessSchema,
+  RelayLeaseSchema,
+  parseRelayJobPayload,
+  type RelayHarness,
+  type RelayJobPayload,
+  type RelayLease,
+} from "@mako/relay"
+import {
   backendRelayPost,
   backendRelayUpload,
 } from "./backend-connection.js"
@@ -37,98 +45,23 @@ import { providerHost } from "./providers/index.js"
 import type { HarnessModelOption } from "./shared.js"
 import { listThreads, transcriptInlineFor } from "./threads.js"
 
-const HarnessSchema = z.string().min(1).max(80)
-
-const SelectionSchema = z.object({
-  effort: z.string().min(1).max(80).optional(),
-  fast: z.boolean().optional(),
-  harness: HarnessSchema.optional(),
-  model: z.string().min(1).max(160).optional(),
-})
-
-const OriginSchema = z.object({
-  provider: z.string(),
-  tenantId: z.string(),
-  conversationId: z.string(),
-  threadId: z.string(),
-  eventId: z.string(),
-  userId: z.string(),
-})
-
-const LegacySlackOriginSchema = z.object({
-  channel: z.string(),
-  eventId: z.string(),
-  teamId: z.string(),
-  threadTs: z.string(),
-  userId: z.string(),
-})
-
-const PayloadOriginFields = {
-  origin: OriginSchema.optional(),
-  slack: LegacySlackOriginSchema.optional(),
-}
-
-const AttachmentSchema = z.object({
-  id: z.string(),
-  kind: z.enum(["audio", "file", "image", "video"]),
-  name: z.string(),
-  mimeType: z.string().optional(),
-  size: z.number().int().nonnegative().optional(),
-})
-
-const PayloadSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("new"),
-    forceNew: z.boolean().default(false),
-    attachments: z.array(AttachmentSchema).default([]),
-    selection: SelectionSchema,
-    ...PayloadOriginFields,
-    text: z.string(),
-  }),
-  z.object({
-    kind: z.literal("resume"),
-    attachments: z.array(AttachmentSchema).default([]),
-    selection: SelectionSchema,
-    ...PayloadOriginFields,
-    text: z.string(),
-    threadPath: z.string(),
-  }),
-  z.object({
-    kind: z.literal("resume-query"),
-    attachments: z.array(AttachmentSchema).default([]),
-    query: z.string(),
-    selection: SelectionSchema,
-    ...PayloadOriginFields,
-    text: z.string(),
-  }),
-  z.object({
-    kind: z.literal("inspect-threads"),
-    query: z.string().optional(),
-    selection: SelectionSchema,
-    ...PayloadOriginFields,
-  }),
-  z.object({
-    kind: z.literal("inspect-models"),
-    selection: SelectionSchema,
-    ...PayloadOriginFields,
-  }),
-  z.object({
-    kind: z.literal("configure"),
-    selection: SelectionSchema,
-    ...PayloadOriginFields,
-    threadPath: z.string(),
-  }),
-])
-
-const LeaseSchema = z.object({
+const RawLeaseSchema = z.object({
   kind: z.literal("job"),
   lease: z.object({
     jobId: z.uuid(),
     messageId: z.string(),
-    payload: PayloadSchema,
+    payload: z.json(),
     popReceipt: z.string(),
   }),
 })
+
+function parseLease<Value>(value: Value): RelayLease {
+  const raw = RawLeaseSchema.parse(value).lease
+  return RelayLeaseSchema.parse({
+    ...raw,
+    payload: parseRelayJobPayload(raw.payload),
+  })
+}
 
 const EmptySchema = z.object({ kind: z.literal("empty") })
 
@@ -196,7 +129,7 @@ async function waitForFreshThread({
 }
 
 async function stageRelayAttachments(
-  payload: z.infer<typeof PayloadSchema>,
+  payload: RelayJobPayload,
   jobId: string,
   deviceId: string,
   cwd: string
@@ -319,7 +252,7 @@ async function uploadRelayArtifacts({
 }
 
 async function executePayload(
-  payload: z.infer<typeof PayloadSchema>,
+  payload: RelayJobPayload,
   defaultCwd: string,
   signal: AbortSignal,
   jobId: string,
@@ -328,7 +261,7 @@ async function executePayload(
 ): Promise<{
   effort?: string
   fast?: boolean
-  harness: z.infer<typeof HarnessSchema>
+  harness: RelayHarness
   model?: string
   result: string
   status?: "done" | "failed" | "stopped"
@@ -380,7 +313,8 @@ async function executePayload(
       result: `Mako could not find the local thread \`${query}\`. Send \`threads\` to list resumable threads.`,
     }
   }
-  const harness = requested ?? HarnessSchema.parse(source?.harness ?? "codex")
+  const harness =
+    requested ?? RelayHarnessSchema.parse(source?.harness ?? "codex")
   const profile = await harnessProfile(harness)
   if (!profile.available) {
     return {
@@ -568,7 +502,7 @@ async function executePayload(
 
 async function renewLease(
   id: string,
-  lease: z.infer<typeof LeaseSchema>["lease"],
+  lease: RelayLease,
   popReceipt: string
 ): Promise<string> {
   let failure: unknown
@@ -693,7 +627,7 @@ async function poll(options: SlackRelayOptions, id: string): Promise<void> {
     if (empty.success) emptyPolls = Math.min(emptyPolls + 1, 4)
     if (!empty.success) {
       emptyPolls = 0
-      const leased = LeaseSchema.parse(value).lease
+      const leased = parseLease(value)
       let popReceipt = leased.popReceipt
       let renewal = Promise.resolve()
       const leaseAbort = new AbortController()

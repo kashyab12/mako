@@ -1,0 +1,20 @@
+{
+  "name": "@mako/relay",
+  "version": "0.1.0",
+  "description": "Provider-neutral remote job, event, and headless worker protocol for Mako.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "npm run -s build && node test/relay.mjs",
+    "typecheck": "tsc -b --force"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  }
+}

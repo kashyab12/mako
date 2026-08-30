@@ -19,12 +19,12 @@
     "backend:typecheck": "npm run typecheck --workspace @mako/backend",
     "build:electron": "tsc -p tsconfig.electron.json",
     "build": "npm run build:electron && tsc -b && vite build",
-    "build:all": "npm run build && npm run backend:build",
+    "build:all": "npm run relay:build && npm run build && npm run backend:build",
     "icons": "swiftc -O -o build/make-icns scripts/make-icns.swift && build/make-icns mako-icons/_masters/desktop-gradient.png build/Mako.iconset && iconutil -c icns build/Mako.iconset -o build/Mako.icns && cp build/Mako.iconset/icon_512x512@2x.png public/icons/app-icon.png",
     "lint": "eslint . && npm run lint:anti-slop",
-    "lint:anti-slop": "oxlint --config oxlint.config.ts src electron packages/sessions/src packages/backend/app packages/backend/agent packages/backend/scripts packages/backend/src packages/backend/test scripts",
+    "lint:anti-slop": "oxlint --config oxlint.config.ts src electron packages/sessions/src packages/relay/src packages/relay/test packages/backend/app packages/backend/agent packages/backend/scripts packages/backend/src packages/backend/test scripts",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
-    "typecheck": "npm run -s build --workspace @mako/sessions && tsc -b --force",
+    "typecheck": "npm run -s build --workspace @mako/sessions && npm run -s build --workspace @mako/relay && tsc -b --force",
     "typecheck:all": "npm run typecheck && npm run backend:typecheck",
     "test:accounts": "tsx scripts/test-account-usage.ts",
     "test:acp-registry": "tsx scripts/test-acp-registry.ts",
@@ -41,6 +41,9 @@
     "test:tuning": "tsx scripts/test-tuning-import.ts",
     "test:usage": "tsx scripts/test-usage.ts",
     "test:terminal": "npm run build:electron && tsx scripts/test-terminal-protocol.ts && tsx scripts/test-terminal-writer.ts && tsx scripts/test-terminal-macos.ts && tsx scripts/test-terminal-daemon.ts",
+    "relay:build": "npm run build --workspace @mako/relay",
+    "relay:test": "npm test --workspace @mako/relay",
+    "relay:typecheck": "npm run typecheck --workspace @mako/relay",
     "preview": "vite preview",
     "package": "npm run package:mac",
     "package:mac": "npm run build && electron-builder --mac dmg zip --arm64 --publish never",
@@ -50,6 +53,7 @@
     "@agentclientprotocol/sdk": "^1.3.0",
     "@fontsource-variable/geist": "^5.3.0",
     "@lydell/node-pty": "1.1.0",
+    "@mako/relay": "^0.1.0",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@pierre/diffs": "^1.3.5",
     "@shadcn/react": "^0.3.0",
@@ -123,6 +127,14 @@
       {
         "from": "packages/sessions",
         "to": "node_modules/@mako/sessions",
+        "filter": [
+          "package.json",
+          "dist/**"
+        ]
+      },
+      {
+        "from": "packages/relay",
+        "to": "node_modules/@mako/relay",
         "filter": [
           "package.json",
           "dist/**"
