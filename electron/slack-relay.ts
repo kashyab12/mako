@@ -26,50 +26,62 @@ const SelectionSchema = z.object({
   model: z.string().min(1).max(160).optional(),
 })
 
-const SlackSchema = z.object({
-  channel: z.string(),
+const OriginSchema = z.object({
+  provider: z.string(),
+  tenantId: z.string(),
+  conversationId: z.string(),
+  threadId: z.string(),
   eventId: z.string(),
-  teamId: z.string(),
-  threadTs: z.string(),
   userId: z.string(),
+})
+
+const AttachmentSchema = z.object({
+  id: z.string(),
+  kind: z.enum(["audio", "file", "image", "video"]),
+  name: z.string(),
+  mimeType: z.string().optional(),
+  size: z.number().int().nonnegative().optional(),
 })
 
 const PayloadSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("new"),
+    attachments: z.array(AttachmentSchema).default([]),
     selection: SelectionSchema,
-    slack: SlackSchema,
+    origin: OriginSchema,
     text: z.string(),
   }),
   z.object({
     kind: z.literal("resume"),
+    attachments: z.array(AttachmentSchema).default([]),
     selection: SelectionSchema,
-    slack: SlackSchema,
+    origin: OriginSchema,
     text: z.string(),
     threadPath: z.string(),
   }),
   z.object({
     kind: z.literal("resume-query"),
+    attachments: z.array(AttachmentSchema).default([]),
     query: z.string(),
     selection: SelectionSchema,
-    slack: SlackSchema,
+    origin: OriginSchema,
     text: z.string(),
   }),
   z.object({
     kind: z.literal("inspect-threads"),
     query: z.string().optional(),
     selection: SelectionSchema,
-    slack: SlackSchema,
+    origin: OriginSchema,
   }),
   z.object({
     kind: z.literal("inspect-models"),
     selection: SelectionSchema,
-    slack: SlackSchema,
+    origin: OriginSchema,
   }),
   z.object({
     kind: z.literal("configure"),
     selection: SelectionSchema,
-    slack: SlackSchema,
+    origin: OriginSchema,
     threadPath: z.string(),
   }),
 ])

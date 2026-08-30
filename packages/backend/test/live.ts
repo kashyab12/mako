@@ -24,11 +24,12 @@ const deviceId = crypto.randomUUID()
 const queued = await enqueueRelayJob({
   kind: "new",
   selection: { harness: "codex" },
-  slack: {
-    channel: "CTEST",
+  origin: {
+    provider: "slack",
+    tenantId: "TTEST",
+    conversationId: "CTEST",
+    threadId: "123.456",
     eventId: `test-${crypto.randomUUID()}`,
-    teamId: "TTEST",
-    threadTs: "123.456",
     userId: "UTEST",
   },
   text: "relay probe",

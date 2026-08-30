@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import {
   readSlackWebhook,
+  type SlackFile,
   type SlackReadOptions,
   type SlackWebhookPayload,
 } from "@chat-adapter/slack/webhook"
@@ -15,20 +16,28 @@ import {
 import { SlackRelayHelp, parseSlackRelayCommand } from "./commands"
 import { postSlackControls } from "./slack-ui"
 import { activeWorker, enqueueRelayJob, readThreadMapping } from "./storage"
-
-const RelayHarnessSchema = z.enum([
-  "claude",
-  "codex",
-  "cursor",
-  "grok",
-  "devin",
-  "opencode",
-])
+import {
+  RelayHarnessSchema,
+  type RemoteAttachment,
+} from "./types"
 const ThreadMessageSchema = z.object({
   event: z.object({
     bot_id: z.string().optional(),
     channel: SlackChannelIdSchema,
     subtype: z.string().optional(),
+    files: z
+      .array(
+        z.object({
+          id: z.string().min(1).max(160),
+          filetype: z.string().max(80).optional(),
+          mimetype: z.string().max(255).optional(),
+          name: z.string().max(255).optional(),
+          size: z.number().int().nonnegative().optional(),
+          title: z.string().max(255).optional(),
+        })
+      )
+      .max(20)
+      .optional(),
     text: z.string().max(20_000),
     thread_ts: SlackTimestampSchema,
     ts: SlackTimestampSchema,
@@ -60,6 +69,47 @@ function commandText(text: string): string {
   return text.replace(/<@[A-Z0-9]+>/g, "").trim()
 }
 
+function attachmentName(file: {
+  id: string
+  name?: string
+  title?: string
+  filetype?: string
+}): string {
+  return (
+    file.name ??
+    file.title ??
+    `${file.id}${file.filetype ? `.${file.filetype}` : ""}`
+  )
+}
+
+function normalizedAttachments(files: SlackFile[] | undefined): RemoteAttachment[] {
+  return (files ?? []).map((file) => ({
+    id: file.id,
+    kind: file.type,
+    name: attachmentName(file),
+    mimeType: file.mimeType,
+    size: file.size,
+  }))
+}
+
+function rawAttachments(
+  files: z.infer<typeof ThreadMessageSchema>["event"]["files"]
+): RemoteAttachment[] {
+  return (files ?? []).map((file) => ({
+    id: file.id,
+    kind: file.mimetype?.startsWith("image/")
+      ? "image"
+      : file.mimetype?.startsWith("video/")
+        ? "video"
+        : file.mimetype?.startsWith("audio/")
+          ? "audio"
+          : "file",
+    name: attachmentName(file),
+    mimeType: file.mimetype,
+    size: file.size,
+  }))
+}
+
 function eventAuthorized(teamId: string | undefined, userId: string): boolean {
   const environment = readServerEnv()
   if (!teamId || teamId !== environment.SLACK_TEAM_ID) return false
@@ -88,6 +138,7 @@ async function reply({
 }
 
 async function processCommand({
+  attachments = [],
   channel,
   eventId,
   teamId,
@@ -95,6 +146,7 @@ async function processCommand({
   threadTs,
   userId,
 }: {
+  attachments?: RemoteAttachment[]
   channel: string
   eventId: string
   teamId: string
@@ -104,6 +156,7 @@ async function processCommand({
 }): Promise<void> {
   const mapping = await readThreadMapping({ channel, teamId, threadTs })
   const command = parseSlackRelayCommand({
+    attachments,
     mapping: mapping
       ? {
           effort: mapping.effort,
@@ -113,7 +166,14 @@ async function processCommand({
           threadPath: mapping.threadPath,
         }
       : null,
-    slack: { channel, eventId, teamId, threadTs, userId },
+    origin: {
+      provider: "slack",
+      tenantId: teamId,
+      conversationId: channel,
+      threadId: threadTs,
+      eventId,
+      userId,
+    },
     text,
   })
   if (command.kind === "help") {
@@ -181,11 +241,13 @@ async function processNormalized(payload: SlackWebhookPayload): Promise<void> {
     if (payload.kind === "direct_message" && (payload.botId || payload.subtype)) return
     if (!eventAuthorized(payload.teamId, payload.userId)) return
     const text = commandText(payload.text)
-    if (!text) {
+    const attachments = normalizedAttachments(payload.files)
+    if (!text && attachments.length === 0) {
       await postSlackControls({ channel: payload.channelId, threadTs: payload.threadTs })
       return
     }
     await processCommand({
+      attachments,
       channel: SlackChannelIdSchema.parse(payload.channelId),
       eventId: payload.eventId ?? randomUUID(),
       teamId: payload.teamId,
@@ -249,6 +311,7 @@ async function processUnsupported(payload: SlackWebhookPayload): Promise<void> {
   if (event.bot_id || event.subtype || !event.user) return
   if (!eventAuthorized(parsed.data.team_id, event.user)) return
   await processCommand({
+    attachments: rawAttachments(event.files),
     channel: event.channel,
     eventId: parsed.data.event_id,
     teamId: parsed.data.team_id,

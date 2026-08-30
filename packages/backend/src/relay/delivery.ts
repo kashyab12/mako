@@ -39,13 +39,15 @@ export async function deliverRelayCompletion({
   completion: RelayCompletion
   payload: RelayJobPayload
 }): Promise<void> {
+  if (payload.origin.provider !== "slack")
+    throw new Error(`No delivery adapter for ${payload.origin.provider}`)
   const chunks = formatHarnessReplies(completion.result)
   for (const [index, text] of chunks.entries()) {
     await sendSlackMessage({
-      channel: payload.slack.channel,
+      channel: payload.origin.conversationId,
       idempotencyKey: messageId(completion.jobId, index),
       text,
-      threadTs: payload.slack.threadTs,
+      threadTs: payload.origin.threadId,
     })
   }
   await markRelayDelivered({ completion, payload })

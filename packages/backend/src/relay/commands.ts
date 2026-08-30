@@ -1,4 +1,9 @@
-import type { RelayHarness, RelayJobPayload } from "./types"
+import {
+  RelayHarnessSchema,
+  type RelayHarness,
+  type RelayJobPayload,
+  type RemoteAttachment,
+} from "./types"
 
 interface ThreadSelection {
   effort?: string
@@ -14,26 +19,19 @@ export type SlackRelayCommand =
   | { kind: "status" }
 
 function harness(value: string | undefined): RelayHarness | undefined {
-  if (
-    value === "claude" ||
-    value === "codex" ||
-    value === "cursor" ||
-    value === "grok" ||
-    value === "devin" ||
-    value === "opencode"
-  ) {
-    return value
-  }
-  return undefined
+  const parsed = RelayHarnessSchema.safeParse(value)
+  return parsed.success ? parsed.data : undefined
 }
 
 export function parseSlackRelayCommand({
+  attachments = [],
   mapping,
-  slack,
+  origin,
   text,
 }: {
+  attachments?: RemoteAttachment[]
   mapping: ThreadSelection | null
-  slack: RelayJobPayload["slack"]
+  origin: RelayJobPayload["origin"]
   text: string
 }): SlackRelayCommand {
   const trimmed = text.trim()
@@ -50,7 +48,7 @@ export function parseSlackRelayCommand({
       payload: {
         kind: "configure",
         selection: { ...mapping, effort },
-        slack,
+        origin,
         threadPath: mapping.threadPath,
       },
     }
@@ -69,7 +67,7 @@ export function parseSlackRelayCommand({
       payload: {
         kind: "configure",
         selection: { ...mapping, fast },
-        slack,
+        origin,
         threadPath: mapping.threadPath,
       },
     }
@@ -82,7 +80,7 @@ export function parseSlackRelayCommand({
       payload: {
         kind: "configure",
         selection: { ...mapping, harness: selected },
-        slack,
+        origin,
         threadPath: mapping.threadPath,
       },
     }
@@ -95,7 +93,7 @@ export function parseSlackRelayCommand({
       payload: {
         kind: "configure",
         selection: { ...mapping, model },
-        slack,
+        origin,
         threadPath: mapping.threadPath,
       },
     }
@@ -110,7 +108,7 @@ export function parseSlackRelayCommand({
         selection: {
           harness: mapping?.harness,
         },
-        slack,
+        origin,
       },
     }
   }
@@ -121,13 +119,14 @@ export function parseSlackRelayCommand({
       payload: {
         kind: "inspect-models",
         selection: { harness: selected },
-        slack,
+        origin,
       },
     }
   }
   if (normalized === "resume") {
     const [query, ...prompt] = parts
-    if (!query || prompt.length === 0) return { kind: "help" }
+    if (!query || (prompt.length === 0 && attachments.length === 0))
+      return { kind: "help" }
     return {
       kind: "enqueue",
       payload: {
@@ -139,7 +138,8 @@ export function parseSlackRelayCommand({
           harness: mapping?.harness,
           model: mapping?.model,
         },
-        slack,
+        attachments,
+        origin,
         text: prompt.join(" "),
       },
     }
@@ -147,7 +147,8 @@ export function parseSlackRelayCommand({
   if (normalized === "new") {
     const explicitHarness = harness(parts[0]?.toLowerCase())
     const prompt = explicitHarness ? parts.slice(1) : parts
-    if (prompt.length === 0) return { kind: "help" }
+    if (prompt.length === 0 && attachments.length === 0)
+      return { kind: "help" }
     return {
       kind: "enqueue",
       payload: {
@@ -158,7 +159,8 @@ export function parseSlackRelayCommand({
           harness: explicitHarness ?? mapping?.harness,
           model: mapping?.model,
         },
-        slack,
+        attachments,
+        origin,
         text: prompt.join(" "),
       },
     }
@@ -174,7 +176,8 @@ export function parseSlackRelayCommand({
           harness: mapping.harness,
           model: mapping.model,
         },
-        slack,
+        attachments,
+        origin,
         text: trimmed,
         threadPath: mapping.threadPath,
       },
@@ -184,8 +187,9 @@ export function parseSlackRelayCommand({
     kind: "enqueue",
     payload: {
       kind: "new",
+      attachments,
       selection: {},
-      slack,
+      origin,
       text: trimmed,
     },
   }

@@ -101,15 +101,18 @@ function deterministicJobId(eventId: string): string {
 }
 
 function threadPartition(payload: RelayJobPayload): string {
-  return `slack:${payload.slack.teamId}:${payload.slack.channel}`
+  const { provider, tenantId, conversationId } = payload.origin
+  return `${provider}:${tenantId}:${conversationId}`
 }
 
-export async function enqueueRelayJob(payload: RelayJobPayload): Promise<{
+export async function enqueueRelayJob(
+  payload: z.input<typeof RelayJobPayloadSchema>
+): Promise<{
   created: boolean
   jobId: string
 }> {
   const parsed = RelayJobPayloadSchema.parse(payload)
-  const jobId = deterministicJobId(parsed.slack.eventId)
+  const jobId = deterministicJobId(parsed.origin.eventId)
   const now = new Date().toISOString()
   const entity: RelayJobEntity = {
     partitionKey: "jobs",
@@ -315,7 +318,7 @@ export async function markRelayDelivered({
   if (completion.threadPath) {
     const mapping: RelayThreadEntity = {
       partitionKey: threadPartition(payload),
-      rowKey: payload.slack.threadTs,
+      rowKey: payload.origin.threadId,
       deviceId: completion.deviceId,
       effort: completion.effort,
       fast: completion.fast,

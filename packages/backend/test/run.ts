@@ -146,15 +146,16 @@ assert.equal(connected[0]?.status.kind, "connected")
 const disconnected = integrationCatalog({ slackConnected: false })
 assert.equal(disconnected[0]?.status.kind, "available")
 
-const slack = {
-  channel: "CTEST",
+const origin = {
+  provider: "slack",
+  tenantId: "TTEST",
+  conversationId: "CTEST",
+  threadId: "123.456",
   eventId: "event-1",
-  teamId: "TTEST",
-  threadTs: "123.456",
   userId: "UTEST",
 }
 assert.equal(
-  parseSlackRelayCommand({ mapping: null, slack, text: "new codex investigate" })
+  parseSlackRelayCommand({ mapping: null, origin, text: "new codex investigate" })
     .kind,
   "enqueue"
 )
@@ -164,7 +165,7 @@ const continuation = parseSlackRelayCommand({
     model: "sonnet",
     threadPath: "/tmp/thread",
   },
-  slack,
+  origin,
   text: "continue",
 })
 assert.equal(continuation.kind, "enqueue")
@@ -185,7 +186,7 @@ for (const [text, field, value] of [
       model: "sonnet",
       threadPath: "/tmp/thread",
     },
-    slack,
+    origin,
     text,
   })
   assert.equal(command.kind, "enqueue")
@@ -195,9 +196,38 @@ for (const [text, field, value] of [
   }
 }
 assert.equal(
-  parseSlackRelayCommand({ mapping: null, slack, text: "threads auth" }).kind,
+  parseSlackRelayCommand({ mapping: null, origin, text: "threads auth" }).kind,
   "enqueue"
 )
+const attachmentCommand = parseSlackRelayCommand({
+  attachments: [
+    {
+      id: "FTEST",
+      kind: "image",
+      name: "screenshot.png",
+      mimeType: "image/png",
+      size: 1_024,
+    },
+  ],
+  mapping: null,
+  origin,
+  text: "",
+})
+assert.equal(attachmentCommand.kind, "enqueue")
+if (attachmentCommand.kind === "enqueue") {
+  assert.equal(attachmentCommand.payload.kind, "new")
+  if (attachmentCommand.payload.kind === "new") {
+    assert.equal(attachmentCommand.payload.attachments[0]?.id, "FTEST")
+  }
+}
+const futureHarness = parseSlackRelayCommand({
+  mapping: null,
+  origin,
+  text: "new future-agent investigate",
+})
+assert.equal(futureHarness.kind, "enqueue")
+if (futureHarness.kind === "enqueue")
+  assert.equal(futureHarness.payload.selection.harness, "future-agent")
 
 const directBotToken = "xoxb-test-direct-bot-token"
 const directSigningSecret = "0123456789abcdef0123456789abcdef"
