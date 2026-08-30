@@ -2,7 +2,6 @@ import {
   app,
   BrowserWindow,
   clipboard,
-  desktopCapturer,
   dialog,
   ipcMain,
   nativeImage,
@@ -11,7 +10,6 @@ import {
   powerMonitor,
   protocol,
   shell,
-  systemPreferences,
   type BrowserWindowConstructorOptions,
 } from "electron"
 import { watch } from "node:fs"
@@ -27,6 +25,10 @@ import {
   record,
 } from "./crash.js"
 import { installAutomation } from "./automation.js"
+import {
+  computerPermissions,
+  requestComputerPermissions,
+} from "./computer-permissions.js"
 import { check, installNow, installUpdates, updateState } from "./updates.js"
 import { usageSummary } from "./usage.js"
 import {
@@ -55,7 +57,6 @@ import {
 import { HostPool } from "./pool.js"
 import { listExternalEditors, openInExternalEditor } from "./editors.js"
 import { resolveExecutable } from "./executable.js"
-import { packagedDistribution } from "./distribution.js"
 import { workspacePreviewPath } from "./workspace-preview.js"
 import {
   daemonStatus,
@@ -149,7 +150,6 @@ import type {
   AcpPermissionResponse,
   AcpPromptAttachment,
   HostEvent,
-  MakoComputerPermissions,
   McpSyncTarget,
   SkillSyncTarget,
   TerminalCreateOptions,
@@ -210,60 +210,6 @@ function ensureMakoLocalControl() {
     join(app.getPath("userData"), "computer-use", "cua"),
     "dev.mako.app"
   )
-}
-
-function computerPermissions(): MakoComputerPermissions {
-  if (process.platform !== "darwin") {
-    return {
-      supported: false,
-      persistentAcrossUpdates: false,
-      accessibility: false,
-      screenRecording: "unknown",
-    }
-  }
-  return {
-    supported: true,
-    persistentAcrossUpdates:
-      !app.isPackaged || packagedDistribution(app.getAppPath()) === "signed",
-    accessibility: systemPreferences.isTrustedAccessibilityClient(false),
-    screenRecording: systemPreferences.getMediaAccessStatus("screen"),
-  }
-}
-
-async function openPrivacyPane(
-  pane: "Privacy_Accessibility" | "Privacy_ScreenCapture"
-): Promise<void> {
-  await shell.openExternal(
-    `x-apple.systempreferences:com.apple.preference.security?${pane}`
-  )
-}
-
-async function requestComputerPermissions(): Promise<MakoComputerPermissions> {
-  if (process.platform !== "darwin") return computerPermissions()
-  window?.show()
-  window?.focus()
-  app.focus({ steal: true })
-  if (!systemPreferences.isTrustedAccessibilityClient(false)) {
-    systemPreferences.isTrustedAccessibilityClient(true)
-    await new Promise((resolve) => setTimeout(resolve, 500))
-    const permissions = computerPermissions()
-    if (!permissions.accessibility)
-      await openPrivacyPane("Privacy_Accessibility")
-    return permissions
-  }
-  if (systemPreferences.getMediaAccessStatus("screen") !== "granted") {
-    await desktopCapturer
-      .getSources({
-        types: ["screen"],
-        thumbnailSize: { width: 1, height: 1 },
-      })
-      .catch(() => [])
-    const permissions = computerPermissions()
-    if (permissions.screenRecording !== "granted")
-      await openPrivacyPane("Privacy_ScreenCapture")
-    return permissions
-  }
-  return computerPermissions()
 }
 
 function emitTerminalWake() {
@@ -616,7 +562,11 @@ function bindIpc() {
 
   handle("mako:computer-permissions", () => computerPermissions())
   handle("mako:computer-permissions-request", () =>
-    requestComputerPermissions()
+    requestComputerPermissions(() => {
+      window?.show()
+      window?.focus()
+      app.focus({ steal: true })
+    })
   )
 
   handle("mako:mcp-discover", () =>

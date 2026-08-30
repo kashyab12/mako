@@ -25,8 +25,6 @@ import { app } from "electron"
 import {
   ClientSideConnection,
   CreateElicitationRequest as ElicitationRequest,
-  ElicitationPropertySchema as ElicitationProperty,
-  MultiSelectItems as MultiSelect,
   ndJsonStream,
   PROTOCOL_VERSION,
   type Client,
@@ -34,8 +32,6 @@ import {
   type ContentBlock,
   type CreateElicitationRequest,
   type CreateElicitationResponse,
-  type ElicitationContentValue,
-  type ElicitationPropertySchema,
   type LoadSessionRequest,
   type LoadSessionResponse,
   type McpServer,
@@ -45,10 +41,14 @@ import {
   type SessionConfigOption,
   type SessionModeState,
   type SessionNotification,
-  type SessionUpdate,
 } from "@agentclientprotocol/sdk"
 import { accountEnv } from "./accounts.js"
 import { resolveAcpConfigValue } from "./acp-config.js"
+import {
+  elicitationContent,
+  elicitationQuestion,
+} from "./acp-elicitation.js"
+import { forward } from "./acp-notifications.js"
 import { normalizeAcpOptions } from "./harnesses.js"
 import { providerHost } from "./providers/index.js"
 import type { AcpTuning } from "./providers/acp-source.js"
@@ -60,12 +60,10 @@ import {
 import { acpMcpServers } from "./mcp-runtime.js"
 import type { McpTransport } from "./shared.js"
 import type {
-  AcpInputQuestion,
   AcpPermissionRequest,
   AcpPermissionResponse,
   AcpPromptAttachment,
   AcpSessionState,
-  AcpUpdate,
   HostEvent,
 } from "./shared.js"
 
@@ -84,13 +82,6 @@ interface OpenedAcpSession {
 interface LegacySessionModelRequest {
   sessionId: string
   modelId: string
-}
-
-interface AcpToolOutputBoundary {
-  value: Extract<
-    SessionUpdate,
-    { sessionUpdate: "tool_call_update" }
-  >["rawOutput"]
 }
 
 export function acpHarnesses(): string[] {
@@ -145,132 +136,6 @@ function startupStep<Value>(work: Promise<Value>, harness: string): Promise<Valu
 
 export function bindAcp(send: (event: HostEvent) => void): void {
   emit = send
-}
-
-function elicitationOptions(
-  values: string[] | null | undefined,
-  titled:
-    | Array<{ const: string; title: string; description?: string | null }>
-    | null
-    | undefined
-): AcpInputQuestion["options"] {
-  if (titled)
-    return titled.map((option) => ({
-      label: option.title,
-      description: option.description ?? "",
-      value: option.const,
-    }))
-  return (values ?? []).map((value) => ({
-    label: value,
-    description: "",
-    value,
-  }))
-}
-
-function elicitationQuestion(
-  id: string,
-  property: ElicitationPropertySchema,
-  required: boolean
-): AcpInputQuestion | null {
-  if (ElicitationProperty.isString(property)) {
-    return {
-      id,
-      header: property.title ?? id,
-      question: property.description ?? property.title ?? id,
-      isSecret: false,
-      allowOther: !property.enum && !property.oneOf,
-      required,
-      valueType: "string",
-      options: elicitationOptions(property.enum, property.oneOf),
-      defaultValues: property.default ? [property.default] : undefined,
-    }
-  }
-  if (
-    ElicitationProperty.isNumber(property) ||
-    ElicitationProperty.isInteger(property)
-  ) {
-    return {
-      id,
-      header: property.title ?? id,
-      question: property.description ?? property.title ?? id,
-      isSecret: false,
-      allowOther: true,
-      required,
-      valueType: property.type,
-      options: [],
-      defaultValues:
-        property.default === null || property.default === undefined
-          ? undefined
-          : [String(property.default)],
-    }
-  }
-  if (ElicitationProperty.isBoolean(property)) {
-    return {
-      id,
-      header: property.title ?? id,
-      question: property.description ?? property.title ?? id,
-      isSecret: false,
-      allowOther: false,
-      required,
-      valueType: "boolean",
-      options: [
-        { label: "Yes", description: "", value: "true" },
-        { label: "No", description: "", value: "false" },
-      ],
-      defaultValues:
-        property.default === null || property.default === undefined
-          ? undefined
-          : [String(property.default)],
-    }
-  }
-  if (ElicitationProperty.isArray(property)) {
-    const options = MultiSelect.isTitled(property.items)
-      ? elicitationOptions(undefined, property.items.anyOf)
-      : MultiSelect.isString(property.items)
-        ? elicitationOptions(property.items.enum, undefined)
-        : []
-    if (options.length === 0) return null
-    return {
-      id,
-      header: property.title ?? id,
-      question: property.description ?? property.title ?? id,
-      isSecret: false,
-      allowOther: false,
-      required,
-      valueType: "string-array",
-      options,
-      defaultValues: property.default ?? undefined,
-    }
-  }
-  return null
-}
-
-function elicitationContent(
-  questions: AcpInputQuestion[],
-  answers: Record<string, string[]>
-): Record<string, ElicitationContentValue> | null {
-  const content: Record<string, ElicitationContentValue> = {}
-  for (const question of questions) {
-    const values = answers[question.id] ?? []
-    if (values.length === 0) {
-      if (question.required) return null
-      continue
-    }
-    if (question.valueType === "number" || question.valueType === "integer") {
-      const value = Number(values[0])
-      if (!Number.isFinite(value)) return null
-      if (question.valueType === "integer" && !Number.isInteger(value))
-        return null
-      content[question.id] = value
-    } else if (question.valueType === "boolean") {
-      content[question.id] = values[0] === "true"
-    } else if (question.valueType === "string-array") {
-      content[question.id] = values
-    } else {
-      content[question.id] = values[0] ?? ""
-    }
-  }
-  return content
 }
 
 async function requestElicitation(
@@ -419,7 +284,7 @@ export async function acpStart(
       return requestElicitation(live, params)
     },
     async sessionUpdate(params: SessionNotification) {
-      forward(live, params)
+      forward(live, params, emit, updateState)
     },
   }
 
@@ -760,94 +625,6 @@ export function acpClose(id: string): void {
 
 export function stopAcp(): void {
   for (const id of sessions.keys()) acpClose(id)
-}
-
-/* ------------------------------------------------------------ translation */
-
-/**
- * ACP updates, reduced to what the panel renders. Chunks stay chunks — the
- * renderer appends them — and tool calls carry their id so later updates
- * find the block they belong to.
- */
-function forward(live: Live, notification: SessionNotification): void {
-  const raw = notification.update
-  let update: AcpUpdate
-  switch (raw.sessionUpdate) {
-    case "user_message_chunk":
-      // Replayed history (session/load streams the past back). Live user
-      // turns are emitted by acpPrompt itself and never arrive this way.
-      update = { kind: "user", text: contentText(raw.content) }
-      break
-    case "agent_message_chunk":
-      update = { kind: "text", text: contentText(raw.content) }
-      break
-    case "agent_thought_chunk":
-      update = { kind: "thinking", text: contentText(raw.content) }
-      break
-    case "tool_call":
-      update = {
-        kind: "tool",
-        id: raw.toolCallId,
-        title: raw.title ?? "tool",
-        toolKind: raw.kind,
-        status: raw.status ?? "pending",
-        input:
-          raw.rawInput === undefined
-            ? undefined
-            : JSON.stringify(raw.rawInput, null, 2),
-      }
-      break
-    case "tool_call_update":
-      update = {
-        kind: "tool-update",
-        id: raw.toolCallId,
-        title: raw.title ?? undefined,
-        status: raw.status ?? undefined,
-        input:
-          raw.rawInput === undefined
-            ? undefined
-            : JSON.stringify(raw.rawInput, null, 2),
-        output: parseAcpToolOutput({ value: raw.rawOutput }),
-      }
-      break
-    case "plan":
-      update = {
-        kind: "plan",
-        entries: (raw.entries ?? []).map((entry) => ({
-          content: entry.content,
-          status: entry.status,
-        })),
-      }
-      break
-    case "current_mode_update":
-      updateState(live, { currentMode: raw.currentModeId })
-      return
-    case "config_option_update":
-      updateState(live, {
-        configOptions: normalizeAcpOptions(raw.configOptions),
-      })
-      return
-    default:
-      return // Command lists and the rest are not rendered yet.
-  }
-  if ((update.kind !== "text" && update.kind !== "user") || update.text) {
-    emit({ type: "acp-update", id: live.id, update })
-  }
-}
-
-function parseAcpToolOutput(
-  boundary: AcpToolOutputBoundary
-): string | undefined {
-  const { value } = boundary
-  if (value === undefined) return undefined
-  if (Object.prototype.toString.call(value) === "[object String]") {
-    return String(value).slice(0, 256_000)
-  }
-  return JSON.stringify(value, null, 2).slice(0, 256_000)
-}
-
-function contentText(content: ContentBlock): string {
-  return content.type === "text" ? content.text : ""
 }
 
 function update(live: Live, patch: Partial<AcpSessionState>): void {

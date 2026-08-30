@@ -1,21 +1,23 @@
 import { getMako, hasBridge } from "@/lib/bridge"
-import type { AcpBlock } from "@/lib/acp-blocks"
 import type {
   AcpPermissionRequest,
   AcpPromptAttachment,
-  AcpSessionState,
-  AcpUpdate,
   ThreadRef,
 } from "@/lib/types"
 import {
-  canResumeInteractively,
-  markThreadReviewed,
-  setThreadAttention,
-  setThreadRunning,
-  setThreadWorkDetail,
-  threadsStore,
-  withConversion,
-} from "@/state/threads"
+  activeIs,
+  applyAcpPermission as applyLiveAcpPermission,
+  updateLive,
+} from "@/state/acp-live"
+import { sendTo } from "@/state/acp-queue"
+import {
+  beginStart,
+  failStart,
+  launch,
+  updateStarting,
+  waitForPromotion,
+  type AcpStartOptions,
+} from "@/state/acp-start"
 import {
   acpForThread,
   acpStore,
@@ -24,7 +26,6 @@ import {
   liveAcpConversations,
   liveAcpForThread,
   removeAcpConversation,
-  replaceAcpConversation,
   updateAcpConversation,
   useAcp,
   type AcpConversation,
@@ -34,8 +35,15 @@ import {
   type StartingAcpConversation,
 } from "@/state/acp-state"
 import { draftText, rememberDraft } from "@/state/drafts"
-import { reduceAcpUpdates } from "@/state/acp-reducer"
 import { viewedThread } from "@/state/thread-viewing"
+import {
+  canResumeInteractively,
+  markThreadReviewed,
+  setThreadAttention,
+  setThreadRunning,
+  threadsStore,
+  withConversion,
+} from "@/state/threads"
 import { toast } from "sonner"
 
 export {
@@ -47,6 +55,11 @@ export {
   liveAcpForThread,
   useAcp,
 }
+export {
+  applyAcpSession,
+  applyAcpUpdate,
+  applyAcpUpdates,
+} from "@/state/acp-live"
 export type {
   AcpConversation,
   AcpQueuedPrompt,
@@ -55,438 +68,8 @@ export type {
   StartingAcpConversation,
 }
 
-type AcpStartOptions = NonNullable<
-  Parameters<ReturnType<typeof getMako>["acpStart"]>[2]
->
-
-interface BeginStartInput {
-  harness: string
-  cwd: string
-  title?: string
-  threadPath?: string
-  blocks: AcpBlock[]
-  hiddenUserPrompt: string | null
-}
-
-let startCounter = 0
-const MAX_RESIDENT_SESSIONS = 12
-const MAX_BUFFERED_UPDATES = 2_000
-const MAX_BUFFERED_SESSIONS = 16
-
-function beginStart(input: BeginStartInput): StartingAcpConversation {
-  const now = Date.now()
-  const key = `starting-${now}-${++startCounter}`
-  const conversation: StartingAcpConversation = {
-    kind: "starting",
-    key,
-    draftKey: input.threadPath ?? key,
-    harness: input.harness,
-    cwd: input.cwd,
-    title: input.title,
-    threadPath: input.threadPath,
-    blocks: input.blocks,
-    queued: [],
-    hiddenUserPrompt: input.hiddenUserPrompt,
-    createdAt: now,
-    updatedAt: now,
-  }
-  replaceAcpConversation(key, conversation)
-  acpStore.set({ activeKey: key })
-  return conversation
-}
-
-function updateStarting(
-  key: string,
-  patch: Partial<
-    Pick<StartingAcpConversation, "hiddenUserPrompt" | "blocks">
-  >
-): void {
-  updateAcpConversation(key, (conversation) =>
-    conversation.kind === "starting"
-      ? { ...conversation, ...patch, updatedAt: Date.now() }
-      : conversation
-  )
-}
-
-function promoteStart(
-  key: string,
-  session: AcpSessionState
-): LiveAcpConversation | null {
-  const state = acpStore.get()
-  const starting = state.conversations[key]
-  if (!starting || starting.kind !== "starting") {
-    if (hasBridge()) void getMako().acpClose(session.id)
-    return null
-  }
-  const buffered = starting.threadPath
-    ? []
-    : (state.bufferedUpdates[session.id] ?? [])
-  const conversations = { ...state.conversations }
-  delete conversations[key]
-  const live: LiveAcpConversation = {
-    ...starting,
-    kind: "live",
-    key: session.id,
-    session,
-    blocks: reduceAcpUpdates(starting.blocks, buffered),
-    permission: state.bufferedPermissions[session.id] ?? null,
-    sending: false,
-    canceling: false,
-    updatedAt: Date.now(),
-  }
-  conversations[session.id] = live
-  const bufferedUpdates = { ...state.bufferedUpdates }
-  const bufferedPermissions = { ...state.bufferedPermissions }
-  delete bufferedUpdates[session.id]
-  delete bufferedPermissions[session.id]
-  acpStore.set({
-    conversations,
-    bufferedUpdates,
-    bufferedPermissions,
-    activeKey: state.activeKey === key ? session.id : state.activeKey,
-  })
-  if (live.permission && live.threadPath)
-    setThreadAttention(live.threadPath, {
-      kind: "needs-permission",
-      since: Date.now(),
-      detail: live.permission.title,
-    })
-  pruneResidentSessions()
-  return live
-}
-
-function failStart(key: string): void {
-  removeAcpConversation(key)
-}
-
-function waitForPromotion(draftKey: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const check = () => {
-      const conversation = Object.values(acpStore.get().conversations).find(
-        (candidate) => candidate.draftKey === draftKey
-      )
-      if (conversation?.kind === "live") {
-        unsubscribe()
-        resolve(true)
-      } else if (!conversation) {
-        unsubscribe()
-        resolve(false)
-      }
-    }
-    const unsubscribe = acpStore.subscribe(check)
-    check()
-  })
-}
-
-function updateLive(
-  id: string,
-  update: (conversation: LiveAcpConversation) => LiveAcpConversation
-): LiveAcpConversation | null {
-  const next = updateAcpConversation(id, (conversation) =>
-    conversation.kind === "live" ? update(conversation) : conversation
-  )
-  return next?.kind === "live" ? next : null
-}
-
-function bufferUpdates(id: string, updates: AcpUpdate[]): void {
-  if (updates.length === 0) return
-  const state = acpStore.get()
-  const current = state.bufferedUpdates[id] ?? []
-  const bufferedUpdates = {
-    ...state.bufferedUpdates,
-    [id]: [...current, ...updates].slice(-MAX_BUFFERED_UPDATES),
-  }
-  const ids = Object.keys(bufferedUpdates)
-  const oldest = ids[0]
-  if (ids.length > MAX_BUFFERED_SESSIONS && oldest)
-    delete bufferedUpdates[oldest]
-  acpStore.set({ bufferedUpdates })
-}
-
-function activeIs(id: string): boolean {
-  return acpStore.get().activeKey === id
-}
-
-function syncThreadStatus(
-  conversation: LiveAcpConversation,
-  previousStatus: AcpSessionState["status"]
-): void {
-  const { session, threadPath, queued } = conversation
-  if (!threadPath) return
-  setThreadRunning(threadPath, session.status === "running")
-  if (session.status === "running") {
-    if (!conversation.permission) setThreadAttention(threadPath, null)
-    return
-  }
-  if (conversation.permission) {
-    setThreadAttention(threadPath, {
-      kind: "needs-permission",
-      since: Date.now(),
-      detail: conversation.permission.title,
-    })
-    return
-  }
-  if (session.status === "failed") {
-    setThreadAttention(threadPath, {
-      kind: "failed",
-      at: Date.now(),
-      detail: session.error,
-    })
-    return
-  }
-  if (
-    previousStatus === "running" &&
-    session.status === "ready" &&
-    queued.length === 0
-  ) {
-    setThreadAttention(
-      threadPath,
-      activeIs(session.id)
-        ? null
-        : { kind: "review", at: Date.now(), unread: true }
-    )
-  }
-}
-
-export function applyAcpSession(session: AcpSessionState): void {
-  const current = acpStore.get().conversations[session.id]
-  if (!current || current.kind !== "live") {
-    if (session.status === "failed" || session.status === "closed") {
-      const bufferedUpdates = { ...acpStore.get().bufferedUpdates }
-      const bufferedPermissions = { ...acpStore.get().bufferedPermissions }
-      delete bufferedUpdates[session.id]
-      delete bufferedPermissions[session.id]
-      acpStore.set({ bufferedUpdates, bufferedPermissions })
-    }
-    return
-  }
-  const previousStatus = current.session.status
-  if (session.status === "closed") {
-    if (current.threadPath) {
-      setThreadRunning(current.threadPath, false)
-      setThreadAttention(current.threadPath, null)
-    }
-    removeAcpConversation(session.id)
-    return
-  }
-  const next = updateLive(session.id, (conversation) => ({
-    ...conversation,
-    session,
-    sending: false,
-    canceling: session.status === "running" ? conversation.canceling : false,
-    permission: conversation.permission,
-    updatedAt: Date.now(),
-  }))
-  if (!next) return
-  syncThreadStatus(next, previousStatus)
-  if (session.status === "failed" && session.error)
-    toast.error(session.error, { description: session.title })
-
-  if (session.status === "ready") drainQueue(session.id)
-  if (session.status !== "running") pruneResidentSessions()
-}
-
-export function applyAcpUpdate(id: string, update: AcpUpdate): void {
-  applyAcpUpdates(id, [update])
-}
-
-export function applyAcpUpdates(id: string, updates: AcpUpdate[]): void {
-  const current = acpStore.get().conversations[id]
-  if (!current || current.kind !== "live") {
-    bufferUpdates(id, updates)
-    return
-  }
-  let hidden = false
-  const visible = current.hiddenUserPrompt
-    ? updates.filter((update) => {
-        if (
-          !hidden &&
-          update.kind === "user" &&
-          update.text === current.hiddenUserPrompt
-        ) {
-          hidden = true
-          return false
-        }
-        return true
-      })
-    : updates
-  const next = updateLive(id, (conversation) => ({
-    ...conversation,
-    blocks: reduceAcpUpdates(conversation.blocks, visible),
-    hiddenUserPrompt: hidden ? null : conversation.hiddenUserPrompt,
-    updatedAt: Date.now(),
-  }))
-  if (!next?.threadPath) return
-  for (let index = visible.length - 1; index >= 0; index -= 1) {
-    const update = visible[index]
-    if (update.kind === "tool") {
-      setThreadWorkDetail(next.threadPath, update.title)
-      return
-    }
-    if (update.kind === "text") {
-      setThreadWorkDetail(next.threadPath, "Writing response")
-      return
-    }
-    if (update.kind === "thinking") {
-      setThreadWorkDetail(next.threadPath, "Reasoning")
-      return
-    }
-  }
-}
-
 export function applyAcpPermission(request: AcpPermissionRequest): void {
-  const state = acpStore.get()
-  const current = state.conversations[request.sessionId]
-  if (!current || current.kind !== "live") {
-    const bufferedPermissions = {
-      ...state.bufferedPermissions,
-      [request.sessionId]: request,
-    }
-    const ids = Object.keys(bufferedPermissions)
-    const oldest = ids[0]
-    if (ids.length > MAX_BUFFERED_SESSIONS && oldest)
-      delete bufferedPermissions[oldest]
-    acpStore.set({ bufferedPermissions })
-    return
-  }
-  const next = updateLive(request.sessionId, (conversation) => ({
-    ...conversation,
-    permission: request,
-    updatedAt: Date.now(),
-  }))
-  if (!next) return
-  if (next.threadPath)
-    setThreadAttention(next.threadPath, {
-      kind: "needs-permission",
-      since: Date.now(),
-      detail: request.title,
-    })
-  if (!activeIs(request.sessionId)) {
-    toast(`${next.session.title ?? next.session.harness} needs input`, {
-      description: request.title,
-      action: {
-        label: "View",
-        onClick: () => {
-          const ref = next.threadPath
-            ? threadsStore
-                .get()
-                .threads.find((candidate) => candidate.path === next.threadPath)
-            : undefined
-          if (ref)
-            void import("@/state/thread-viewing").then(
-              ({ threadViewingActions }) => threadViewingActions.view(ref)
-            )
-          else acp.activate(request.sessionId)
-        },
-      },
-    })
-  }
-}
-
-async function sendTo(
-  id: string,
-  text: string,
-  attachments: AcpPromptAttachment[] = []
-): Promise<boolean> {
-  const current = acpStore.get().conversations[id]
-  if (!current || current.kind !== "live" || !hasBridge()) return false
-  if (current.session.status === "running" || current.sending) {
-    updateLive(id, (conversation) => ({
-      ...conversation,
-      queued: [...conversation.queued, { text, attachments }],
-      updatedAt: Date.now(),
-    }))
-    return true
-  }
-  updateLive(id, (conversation) => ({
-    ...conversation,
-    sending: true,
-    updatedAt: Date.now(),
-  }))
-  try {
-    await getMako().acpPrompt(id, text, attachments)
-    return true
-  } catch (error) {
-    updateLive(id, (conversation) => ({
-      ...conversation,
-      sending: false,
-      updatedAt: Date.now(),
-    }))
-    toast.error(error instanceof Error ? error.message : String(error))
-    return false
-  }
-}
-
-function drainQueue(id: string): void {
-  const current = acpStore.get().conversations[id]
-  if (
-    !current ||
-    current.kind !== "live" ||
-    current.session.status !== "ready" ||
-    current.sending
-  )
-    return
-  const [queued, ...rest] = current.queued
-  if (!queued) return
-  updateLive(id, (conversation) => ({ ...conversation, queued: rest }))
-  void sendTo(id, queued.text, queued.attachments).then((sent) => {
-    if (sent) return
-    updateLive(id, (conversation) => ({
-      ...conversation,
-      queued: [queued, ...conversation.queued],
-    }))
-  })
-}
-
-function pruneResidentSessions(): void {
-  const state = acpStore.get()
-  const live = liveAcpConversations(state)
-  if (live.length <= MAX_RESIDENT_SESSIONS) return
-  const removable = live
-    .filter(
-      (conversation) =>
-        conversation.key !== state.activeKey &&
-        conversation.session.status !== "running" &&
-        !conversation.permission &&
-        !conversation.sending &&
-        !conversation.canceling &&
-        conversation.queued.length === 0
-    )
-    .sort((left, right) => left.updatedAt - right.updatedAt)
-  for (let count = live.length; count > MAX_RESIDENT_SESSIONS; count -= 1) {
-    const conversation = removable.shift()
-    if (!conversation) return
-    if (hasBridge()) void getMako().acpClose(conversation.session.id)
-    if (conversation.threadPath)
-      setThreadRunning(conversation.threadPath, false)
-    removeAcpConversation(conversation.key)
-  }
-}
-
-async function launch(
-  starting: StartingAcpConversation,
-  options: AcpStartOptions,
-  prompt?: string,
-  attachments: AcpPromptAttachment[] = []
-): Promise<boolean> {
-  try {
-    const session = await getMako().acpStart(
-      starting.harness,
-      starting.cwd,
-      options
-    )
-    const live = promoteStart(starting.key, session)
-    if (!live) return false
-    if (prompt === undefined) {
-      drainQueue(live.key)
-      return true
-    }
-    return sendTo(live.key, prompt, attachments)
-  } catch (error) {
-    failStart(starting.key)
-    toast.error(error instanceof Error ? error.message : String(error))
-    return false
-  }
+  applyLiveAcpPermission(request, acp.activate)
 }
 
 export const acp = {

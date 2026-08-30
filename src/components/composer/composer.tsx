@@ -1,40 +1,34 @@
 import {
-  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
 } from "react"
-import { AgentPicker } from "@/components/composer/agent-picker"
-import { ForeignEffortPicker } from "@/components/composer/foreign-effort"
-import { ForeignModelPicker } from "@/components/composer/foreign-model"
-import { HarnessIcon } from "@/components/ui/provider-icon"
-import { MentionMenu } from "@/components/composer/mention-menu"
 import { AttachmentStrip } from "@/components/composer/attachments"
+import { Banner } from "@/components/composer/banner"
+import { ComposerActionButton } from "@/components/composer/composer-action-button"
+import { ComposerRouting } from "@/components/composer/composer-routing"
+import { ContextDial } from "@/components/composer/context-dial"
+import { harnessTitle } from "@/components/composer/harness-title"
+import { MentionMenu } from "@/components/composer/mention-menu"
+import { ReferenceOverlay } from "@/components/composer/reference-overlay"
+import { Chip, IconAction } from "@/components/ui/kit"
+import { Slot } from "@/extend/slot"
 import {
   buildForeignPrompt,
   useAttachments,
   type Attachment,
 } from "@/lib/attachments"
-import { ReferenceOverlay } from "@/components/composer/reference-overlay"
-import { Chip, IconAction } from "@/components/ui/kit"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { Slot } from "@/extend/slot"
+import { composerActionKind, composerTurnRunning } from "@/lib/composer-action"
+import { textOf } from "@/lib/format"
 import { mentionAt, replaceMention, type ActiveMention } from "@/lib/mentions"
-import { contextAccounting } from "@/lib/context-accounting"
-import { formatContextWindow, formatCost, formatTokens, textOf } from "@/lib/format"
 import {
   appendThreadReferences,
   prefetchThreadReferences,
 } from "@/lib/thread-references"
-import {
-  actions,
-  shallowEqual,
-  store as sessionStore,
-  useSession,
-} from "@/state/session"
-import { threads, threadsStore, useThreads } from "@/state/threads"
+import type { AcpPromptAttachment } from "@/lib/types"
+import { cn } from "@/lib/utils"
 import {
   acp,
   acpStore,
@@ -43,24 +37,15 @@ import {
   useAcp,
 } from "@/state/acp"
 import { draftText, rememberDraft } from "@/state/drafts"
-import { useProviders } from "@/state/providers"
-import { stage } from "@/state/stage"
+import {
+  actions,
+  shallowEqual,
+  store as sessionStore,
+  useSession,
+} from "@/state/session"
+import { threads, threadsStore, useThreads } from "@/state/threads"
 import { stageFile } from "@/state/workspace"
-import { cn } from "@/lib/utils"
-import {
-  composerActionKind,
-  composerTurnRunning,
-  type ComposerActionKind,
-} from "@/lib/composer-action"
-import type { AcpPromptAttachment } from "@/lib/types"
-import {
-  ArrowUpIcon,
-  AtSignIcon,
-  CornerDownLeftIcon,
-  PaperclipIcon,
-  SquareIcon,
-  XIcon,
-} from "lucide-react"
+import { AtSignIcon, PaperclipIcon, XIcon } from "lucide-react"
 
 interface CommandMention {
   sigil: "/"
@@ -76,18 +61,6 @@ type ComposerTextEvent = CustomEvent<string>
 interface RestorableDraft {
   text: string
   attachments: Attachment[]
-}
-
-interface ComposerActionButtonProps {
-  action: ComposerActionKind
-  ready: boolean
-  stopping: boolean
-  onSend: () => void
-  onStop: () => void
-}
-
-interface BannerProps {
-  text: string
 }
 
 declare global {
@@ -108,7 +81,6 @@ function toAcpPromptAttachment(item: Attachment): AcpPromptAttachment {
 }
 
 const isMac = navigator.platform.startsWith("Mac")
-const EMPTY_QUEUE: never[] = []
 
 export function Composer() {
   const sessionId = useSession((state) => state.meta?.sessionId)
@@ -710,273 +682,5 @@ export function Composer() {
         </div>
       </div>
     </div>
-  )
-}
-
-/**
- * The primary action.
- *
- * Circular and lit rather than a flat pill: it is the only control in the
- * window that should look pressable from across the room, and a flat fill at
- * this size reads as a disabled placeholder. An empty running composer owns
- * the stop action; typing turns that same primary position into queue.
- */
-function ComposerActionButton({
-  action,
-  ready,
-  stopping,
-  onSend,
-  onStop,
-}: ComposerActionButtonProps) {
-  const stop = action === "stop"
-  const queue = action === "queue"
-  const enabled = stop || ready
-  const label = stop
-    ? stopping
-      ? "Stopping…"
-      : "Stop"
-    : queue
-      ? "Queue message"
-      : "Send"
-  return (
-    <button
-      type="button"
-      onClick={stop ? onStop : onSend}
-      disabled={!enabled || (stop && stopping)}
-      aria-label={label}
-      title={label}
-      className={cn(
-        "pressable relative flex size-6 shrink-0 items-center justify-center rounded-full",
-        "[transition:transform_var(--duration-press)_var(--ease-out),background-color_160ms_ease,opacity_160ms_ease]",
-        enabled
-          ? "bg-foreground text-background hover:opacity-90"
-          : "bg-foreground/10 text-faint"
-      )}
-    >
-      {stop ? (
-        <SquareIcon className="size-2.5 fill-current" strokeWidth={0} />
-      ) : queue ? (
-        <CornerDownLeftIcon className="size-3" />
-      ) : (
-        <ArrowUpIcon className="size-3.5" strokeWidth={2.2} />
-      )}
-    </button>
-  )
-}
-
-/**
- * The context dial — OpenCode's answer, adopted whole. A 16px progress
- * circle is the entire inline footprint; the numbers live in its tooltip,
- * each with its noun, and clicking it opens the Context surface. A fresh
- * session shows an empty ring, not a row of zeros. One shallow-compared
- * selector, so streaming token counts wake this span and nothing else.
- */
-const ContextDial = memo(function ContextDial() {
-  const meta = useSession((state) => state.meta)
-  const viewing = useThreads((state) => state.viewing)
-  const composerHarness = useThreads((state) => state.composerHarness)
-  const acpSession = useAcp((state) => activeLiveAcp(state)?.session ?? null)
-  const acpStarting = useAcp((state) => activeAcp(state)?.kind === "starting")
-  const profiles = useProviders((state) => state.profiles)
-  const usage = contextAccounting({
-    meta,
-    viewing,
-    acpSession,
-    acpStarting,
-    composerHarness,
-    profiles,
-  })
-  const percent =
-    usage.kind === "exact" ? Math.min(100, usage.percent ?? 0) : 0
-  const tone =
-    percent > 90
-      ? "text-negative"
-      : percent > 72
-        ? "text-caution"
-        : "text-muted-foreground"
-  const radius = 6.5
-  const circumference = 2 * Math.PI * radius
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label="Context and spend"
-          onClick={() => stage.toggle("context")}
-          className="pressable flex size-7 shrink-0 items-center justify-center rounded-md transition-colors duration-100 hover:bg-fill-hover"
-        >
-          <svg viewBox="0 0 16 16" className={cn("size-4 -rotate-90", tone)} aria-hidden>
-            <circle
-              cx="8"
-              cy="8"
-              r={radius}
-              fill="none"
-              strokeWidth="2"
-              className="stroke-foreground/15"
-            />
-            <circle
-              cx="8"
-              cy="8"
-              r={radius}
-              fill="none"
-              strokeWidth="2"
-              strokeLinecap="round"
-              stroke="currentColor"
-              strokeDasharray={circumference}
-              strokeDashoffset={circumference * (1 - percent / 100)}
-              className="transition-[stroke-dashoffset] duration-500"
-            />
-          </svg>
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="flex-col items-stretch gap-1">
-        {usage.kind === "exact" ? (
-          <>
-            <Reading label="spent" value={formatCost(usage.cost)} />
-            <Reading
-              label="context"
-              value={
-                usage.window > 0 && usage.tokens != null
-                  ? `${Math.round(percent)}% · ${formatTokens(usage.tokens)} of ${formatContextWindow(usage.window)}`
-                  : "unknown until the next response"
-              }
-            />
-          </>
-        ) : usage.kind === "reported-input" ? (
-          <>
-            <Reading
-              label="session spend"
-              value={usage.cost == null ? "not reported" : formatCost(usage.cost)}
-            />
-            <Reading
-              label="last input"
-              value={
-                usage.lastInput == null
-                  ? "not reported"
-                  : formatTokens(usage.lastInput)
-              }
-            />
-            {usage.window > 0 ? (
-              <Reading
-                label="model window"
-                value={formatContextWindow(usage.window)}
-              />
-            ) : null}
-          </>
-        ) : (
-          <Reading
-            label="context"
-            value={`not reported by ${harnessTitle(usage.harness)} live sessions`}
-          />
-        )}
-      </TooltipContent>
-    </Tooltip>
-  )
-})
-
-function Reading({ label, value }: { label: string; value: string }) {
-  return (
-    <span className="flex justify-between gap-4">
-      <span className="opacity-70">{label}</span>
-      <span className="tabular">{value}</span>
-    </span>
-  )
-}
-
-function Banner({ text }: BannerProps) {
-  return (
-    <div className="mb-1.5 flex items-center gap-2 rounded-md bg-raised px-2 py-1 text-ui text-muted-foreground">
-      <span className="animate-live size-1 rounded-full bg-current" />
-      {text}
-    </div>
-  )
-}
-
-function harnessTitle(harness: string): string {
-  switch (harness) {
-    case "claude":
-      return "Claude Code"
-    case "codex":
-      return "Codex"
-    case "cursor":
-      return "Cursor"
-    case "grok":
-      return "Grok"
-    case "devin":
-      return "Devin"
-    case "opencode":
-      return "OpenCode"
-    default:
-      return harness
-  }
-}
-
-/**
- * The left half of the toolbar, routed like the box above it.
- *
- * An open foreign conversation locks the composer to its harness — the mark
- * and name say so, and the run's state rides beside them. Otherwise the
- * provider picker chooses who answers next; model options come directly
- * from that provider's runtime catalog.
- */
-function ComposerRouting() {
-  const viewing = useThreads((state) => state.viewing?.ref)
-  const viewingQueued = useThreads((state) =>
-    state.viewing
-      ? (state.queuedReplies[state.viewing.ref.path]?.prompts.length ?? 0)
-      : 0
-  )
-  const harness = useThreads((state) => state.composerHarness)
-  const activeHarness = useAcp((state) => activeAcp(state)?.harness)
-  const activeKind = useAcp((state) => activeAcp(state)?.kind)
-  const liveThreadPath = useAcp((state) => activeAcp(state)?.threadPath)
-  const queued = useAcp((state) => activeAcp(state)?.queued ?? EMPTY_QUEUE)
-  const [modelChangedFor, setModelChangedFor] = useState<string | null>(null)
-  const moving = Boolean(viewing && harness !== viewing.harness)
-  const modelContext = `${viewing?.path ?? "new"}:${harness}`
-  const threadModel =
-    !moving && modelChangedFor !== modelContext ? viewing?.model : undefined
-
-  if (activeHarness && (!viewing || viewing.path === liveThreadPath)) {
-    return (
-      <span className="flex h-7 items-center gap-1.5 rounded-md bg-raised px-2 text-ui text-foreground/85">
-        <HarnessIcon harness={activeHarness} className="size-3.5" />
-        {harnessTitle(activeHarness)}
-        <span className="text-label text-faint">
-          {activeKind === "starting" ? "starting" : "live"}
-        </span>
-        {queued.length > 0 ? (
-          <button
-            type="button"
-            onClick={() => acp.unqueue()}
-            className="pressable rounded px-1 text-label text-faint hover:text-foreground"
-          >
-            {queued.length} queued · clear
-          </button>
-        ) : null}
-      </span>
-    )
-  }
-
-  return (
-    <>
-      <AgentPicker />
-      <ForeignModelPicker
-        harness={harness}
-        threadModel={threadModel}
-        onChange={() => setModelChangedFor(modelContext)}
-      />
-      <ForeignEffortPicker harness={harness} threadModel={threadModel} />
-      {viewingQueued > 0 ? (
-        <span className="flex h-7 items-center rounded-md bg-raised px-2 text-label text-faint">
-          {viewingQueued} queued
-        </span>
-      ) : null}
-      {moving ? (
-        <span className="animate-enter flex h-7 items-center gap-1 rounded-md bg-fill-selected px-2 text-label font-medium text-foreground">
-          moves here on send
-        </span>
-      ) : null}
-    </>
   )
 }
