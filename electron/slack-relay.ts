@@ -21,7 +21,7 @@ import {
 import { z } from "zod"
 import type { ThreadEntry, ThreadRef } from "@mako/sessions"
 import {
-  RelayEventSequencer,
+  HeadlessRelayWorker,
   RelayHarnessSchema,
   RelayLeaseSchema,
   parseRelayJobPayload,
@@ -78,12 +78,7 @@ interface SlackRelayOptions {
   version: string
 }
 
-let timer: ReturnType<typeof setTimeout> | undefined
-let activeLeaseAbort: AbortController | undefined
-let activePollAbort: AbortController | undefined
-let eventSequencer: RelayEventSequencer | undefined
-let emptyPolls = 0
-let stopped = true
+let relayWorker: HeadlessRelayWorker | null = null
 
 async function deviceId(path: string): Promise<string> {
   try {
@@ -647,231 +642,93 @@ async function renewLease(
 }
 
 async function completeRelay(body: string): Promise<void> {
-  let failure: Error | null = null
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      const response = await backendRelayPost("/api/relay/complete", body)
-      if (response.ok) return
-      failure = new Error(`Relay completion returned ${response.status}`)
-    } catch (error) {
-      failure = error instanceof Error ? error : new Error(String(error))
-    }
-    if (attempt < 2)
-      await new Promise((resolve) => setTimeout(resolve, 5_000))
-  }
-  throw failure ?? new Error("Relay completion failed")
+  const response = await backendRelayPost("/api/relay/complete", body)
+  if (!response.ok)
+    throw new Error(`Relay completion returned ${response.status}`)
 }
 
-interface ProgressWriter {
-  close: () => Promise<void>
-  event: (event: RelayCanonicalEvent) => void
-  failed: () => boolean
-  push: (chunk: string) => void
-}
-
-function createProgressWriter(
-  deviceId: string,
-  jobId: string
-): ProgressWriter {
-  let pendingText = ""
-  let pendingEvents: RelayCanonicalEvent[] = []
-  const sequencer = eventSequencer ?? new RelayEventSequencer(deviceId)
-  eventSequencer = sequencer
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let delivery = Promise.resolve()
-  let failed = false
-  const flush = () => {
-    if (timer) clearTimeout(timer)
-    timer = undefined
-    const events = pendingEvents
-    pendingEvents = []
-    while (pendingText) {
-      const text = pendingText.slice(0, 12_000)
-      pendingText = pendingText.slice(text.length)
-      events.push({ kind: "text", text })
-    }
-    if (events.length === 0 || failed) return
-    const envelopes = events.map((event) => sequencer.next(jobId, event))
-    delivery = delivery
-      .then(async () => {
-        if (failed) return
-        for (let offset = 0; offset < envelopes.length; offset += 100) {
-          const batch = envelopes.slice(offset, offset + 100)
-          const response = await backendRelayPost(
-            "/api/relay/events",
-            JSON.stringify({
-              deviceId,
-              jobId,
-              cursor: batch.at(-1)?.cursor,
-              events: batch,
-            })
-          )
-          if (!response.ok)
-            throw new Error(`Relay events returned ${response.status}`)
-        }
-      })
-      .catch(() => {
-        failed = true
-      })
-  }
-  const schedule = () => {
-    if (pendingEvents.length >= 50) flush()
-    else timer ??= setTimeout(flush, 250)
-  }
-  return {
-    failed: () => failed,
-    event(event) {
-      if (failed) return
-      pendingEvents.push(event)
-      schedule()
+function createRelayWorker(
+  options: SlackRelayOptions,
+  id: string
+): HeadlessRelayWorker {
+  return new HeadlessRelayWorker(
+    {
+      async lease(request, signal) {
+        const response = await backendRelayPost(
+          "/api/relay/lease",
+          JSON.stringify(request),
+          signal
+        )
+        if (!response.ok)
+          throw new Error(`Relay lease returned ${response.status}`)
+        const value = z.json().parse(await response.json())
+        return EmptySchema.safeParse(value).success ? null : parseLease(value)
+      },
+      renew: (lease) => renewLease(id, lease, lease.popReceipt),
+      async sendEvents(batch) {
+        const response = await backendRelayPost(
+          "/api/relay/events",
+          JSON.stringify(batch)
+        )
+        if (!response.ok)
+          throw new Error(`Relay events returned ${response.status}`)
+      },
+      async control(lease) {
+        const response = await backendRelayPost(
+          "/api/relay/control",
+          JSON.stringify({ deviceId: id, jobId: lease.jobId })
+        )
+        if (!response.ok) return null
+        return z
+          .object({ control: z.literal("stop").nullable() })
+          .parse(z.json().parse(await response.json())).control
+      },
+      complete: (completion) => completeRelay(JSON.stringify(completion)),
     },
-    push(chunk) {
-      if (!chunk || failed) return
-      pendingText += chunk
-      schedule()
+    {
+      async execute(lease, context) {
+        const execution = await executePayload(
+          lease.payload,
+          options.defaultCwd(),
+          context.signal,
+          lease.jobId,
+          id,
+          (chunk) => {
+            for (let offset = 0; offset < chunk.length; offset += 32_000) {
+              const text = chunk.slice(offset, offset + 32_000)
+              if (text) context.emit({ kind: "text", text })
+            }
+          },
+          context.emit
+        )
+        return { ...execution, status: execution.status ?? "done" }
+      },
     },
-    async close() {
-      flush()
-      await delivery
-    },
-  }
-}
-
-async function poll(options: SlackRelayOptions, id: string): Promise<void> {
-  if (stopped) return
-  try {
-    const pollAbort = new AbortController()
-    activePollAbort = pollAbort
-    const response = await backendRelayPost(
-      "/api/relay/lease",
-      JSON.stringify({
+    {
+      heartbeat: {
         defaultHarness: "codex",
         deviceId: id,
         deviceName: hostname(),
         version: options.version,
-        visibilityTimeoutSeconds: 300,
-      }),
-      pollAbort.signal
-    ).finally(() => {
-      if (activePollAbort === pollAbort) activePollAbort = undefined
-    })
-    if (stopped) return
-    if (!response.ok) throw new Error(`Relay lease returned ${response.status}`)
-    const value = z.json().parse(await response.json())
-    const empty = EmptySchema.safeParse(value)
-    if (empty.success) emptyPolls = Math.min(emptyPolls + 1, 4)
-    if (!empty.success) {
-      emptyPolls = 0
-      const leased = parseLease(value)
-      let popReceipt = leased.popReceipt
-      let renewal = Promise.resolve()
-      const leaseAbort = new AbortController()
-      activeLeaseAbort = leaseAbort
-      const renewTimer = setInterval(() => {
-        renewal = renewal
-          .then(async () => {
-            popReceipt = await renewLease(id, leased, popReceipt)
-          })
-          .catch(() => {
-            leaseAbort.abort()
-            throw new Error("Relay lease renewal failed")
-          })
-      }, 180_000)
-      const progress = createProgressWriter(id, leased.jobId)
-      progress.event({ kind: "lifecycle", status: "starting" })
-      let control = Promise.resolve()
-      const checkControl = () => {
-        control = control
-          .then(async () => {
-            const response = await backendRelayPost(
-              "/api/relay/control",
-              JSON.stringify({ deviceId: id, jobId: leased.jobId })
-            )
-            if (!response.ok) return
-            const value = z
-              .object({ control: z.literal("stop").nullable() })
-              .parse(z.json().parse(await response.json()))
-            if (value.control === "stop") leaseAbort.abort()
-          })
-          .catch(() => undefined)
-      }
-      const controlTimer = setInterval(checkControl, 2_000)
-      checkControl()
-      let execution: Awaited<ReturnType<typeof executePayload>>
-      try {
-        execution = await executePayload(
-          leased.payload,
-          options.defaultCwd(),
-          leaseAbort.signal,
-          leased.jobId,
-          id,
-          progress.push,
-          progress.event
-        )
-        progress.event({
-          kind: "lifecycle",
-          status:
-            execution.status === "done"
-              ? "completed"
-              : execution.status === "stopped"
-                ? "stopped"
-                : "failed",
-        })
-      } finally {
-        clearInterval(renewTimer)
-        clearInterval(controlTimer)
-        if (activeLeaseAbort === leaseAbort) activeLeaseAbort = undefined
-        await Promise.all([renewal, control, progress.close()])
-      }
-      await completeRelay(
-        JSON.stringify({
-          deviceId: id,
-          effort: execution.effort,
-          fast: execution.fast,
-          harness: execution.harness,
-          jobId: leased.jobId,
-          messageId: leased.messageId,
-          model: execution.model,
-          popReceipt,
-          progressFailed: progress.failed(),
-          result: execution.result,
-          status: execution.status ?? "done",
-          threadPath: execution.threadPath,
-        })
-      )
+      },
     }
-  } catch {
-    if (!stopped) timer = setTimeout(() => void poll(options, id), 5_000)
-    return
-  }
-  if (!stopped) {
-    timer = setTimeout(
-      () => void poll(options, id),
-      Math.min(1_500 * 2 ** emptyPolls, 15_000)
-    )
-  }
+  )
 }
 
 export async function startSlackRelay(options: SlackRelayOptions): Promise<void> {
-  if (!stopped) return
-  emptyPolls = 0
-  stopped = false
+  if (relayWorker) return
   const id = await deviceId(options.deviceFile)
-  eventSequencer = new RelayEventSequencer(id)
   await configureBackendRelayDevice({
     deviceId: id,
     deviceName: hostname(),
     defaultHarness: "codex",
   })
-  void poll(options, id)
+  relayWorker = createRelayWorker(options, id)
+  relayWorker.start()
 }
 
 export function stopSlackRelay(): void {
-  stopped = true
-  activePollAbort?.abort()
-  activePollAbort = undefined
-  activeLeaseAbort?.abort()
-  activeLeaseAbort = undefined
-  if (timer) clearTimeout(timer)
-  timer = undefined
+  const worker = relayWorker
+  relayWorker = null
+  if (worker) void worker.stop()
 }
