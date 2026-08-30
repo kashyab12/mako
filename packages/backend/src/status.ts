@@ -13,9 +13,13 @@ export interface BackendStatus {
   }
   integrations: ReturnType<typeof integrationCatalog>
   relay: {
-    execution: "local-harness"
-    persistence: "azure-storage"
+    attachments: "streaming"
+    authentication: "device-token" | "legacy-token"
+    events: "canonical-v1"
+    execution: "headless-worker"
     offlineQueue: true
+    persistence: "azure-storage"
+    replay: true
   }
 }
 
@@ -36,9 +40,15 @@ export function backendStatus(environment: Partial<ServerEnv>): BackendStatus {
       ),
     }),
     relay: {
-      execution: "local-harness",
-      persistence: "azure-storage",
+      attachments: "streaming",
+      authentication: environment.RELAY_TOKEN_SECRET
+        ? "device-token"
+        : "legacy-token",
+      events: "canonical-v1",
+      execution: "headless-worker",
       offlineQueue: true,
+      persistence: "azure-storage",
+      replay: true,
     },
   }
 }

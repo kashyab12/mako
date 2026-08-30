@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import {
   appendSlackStream,
+  sendSlackBlocks,
   sendSlackMessage,
   setSlackAgentStatus,
   startSlackStream,
@@ -12,12 +13,17 @@ import {
   recordRelayEventDelivery,
   relayEventDeliveryTarget,
 } from "./azure-store"
+import {
+  registerRelayDeliveryAdapter,
+  relayDeliveryAdapter,
+} from "./delivery-adapters"
 import type {
   RelayCanonicalEvent,
   RelayCompletion,
   RelayEventBatch,
   RelayJobPayload,
   RelayLease,
+  RelayPresentation,
   RelayProgress,
 } from "./types"
 
@@ -62,6 +68,64 @@ function taskTitle(harness: string): string {
   return `Run ${harness} on the connected Mako worker`
 }
 
+function presentationBlocks(presentation: RelayPresentation) {
+  if (presentation.kind === "threads")
+    return presentation.items.slice(0, 10).map((item) => ({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*${item.title}*\n${item.harness}`,
+      },
+      accessory: {
+        type: "button",
+        action_id: "mako-thread",
+        text: { type: "plain_text", text: "Resume" },
+        value: item.path,
+      },
+    }))
+  return [
+    {
+      type: "actions",
+      elements: [
+        {
+          type: "static_select",
+          action_id: "mako-model",
+          placeholder: { type: "plain_text", text: "Choose model" },
+          options: presentation.items.map((item) => ({
+            text: { type: "plain_text", text: item.label },
+            value: item.id,
+          })),
+        },
+      ],
+    },
+  ]
+}
+
+function permissionBlocks(
+  jobId: string,
+  event: Extract<RelayCanonicalEvent, { kind: "permission" }>
+) {
+  return [
+    {
+      type: "section",
+      text: { type: "mrkdwn", text: `*${event.title}*` },
+    },
+    {
+      type: "actions",
+      elements: event.options.map((option) => ({
+        type: "button",
+        action_id: "mako-permission",
+        text: { type: "plain_text", text: option.label.slice(0, 75) },
+        value: JSON.stringify({
+          jobId,
+          optionId: option.id,
+          requestId: event.id,
+        }),
+      })),
+    },
+  ]
+}
+
 function taskStatus(
   status: Extract<RelayCanonicalEvent, { kind: "tool" }>["status"]
 ): "pending" | "in_progress" | "complete" | "error" {
@@ -70,7 +134,9 @@ function taskStatus(
   return status
 }
 
-function slackChunks(event: RelayCanonicalEvent): SlackStreamChunk[] {
+export function relayEventSlackChunks(
+  event: RelayCanonicalEvent
+): SlackStreamChunk[] {
   switch (event.kind) {
     case "text": {
       const chunks: SlackStreamChunk[] = []
@@ -143,7 +209,7 @@ function slackChunks(event: RelayCanonicalEvent): SlackStreamChunk[] {
   }
 }
 
-export async function startRelayDelivery({
+async function startSlackRelayDelivery({
   defaultHarness,
   deviceId,
   deviceName,
@@ -213,11 +279,11 @@ export async function startRelayDelivery({
   }
 }
 
-export async function deliverRelayEvents(
+async function deliverSlackRelayEvents(
   batch: RelayEventBatch
 ): Promise<number> {
-  await azureRelayStore.appendEvents(batch.events)
   const target = await relayEventDeliveryTarget(batch)
+  await azureRelayStore.appendEvents(target.events)
   if (
     target.events.length === 0 ||
     !target.delivery.streamTs ||
@@ -226,13 +292,21 @@ export async function deliverRelayEvents(
     return 0
   let delivered = 0
   for (const event of target.events) {
-    if (event.event.kind === "permission")
+    if (event.event.kind === "permission") {
       await setSlackAgentStatus({
         channel: target.delivery.payload.origin.conversationId,
         status: "suspended",
         threadTs: target.delivery.payload.origin.threadId,
       }).catch(() => undefined)
-    const chunks = slackChunks(event.event)
+      await sendSlackBlocks({
+        blocks: permissionBlocks(batch.jobId, event.event),
+        channel: target.delivery.payload.origin.conversationId,
+        idempotencyKey: event.eventId,
+        text: event.event.title,
+        threadTs: target.delivery.payload.origin.threadId,
+      })
+    }
+    const chunks = relayEventSlackChunks(event.event)
     for (let offset = 0; offset < chunks.length; offset += 50) {
       await appendSlackStream({
         channel: target.delivery.payload.origin.conversationId,
@@ -261,7 +335,7 @@ export async function deliverRelayProgress(
   return true
 }
 
-export async function deliverRelayCompletion({
+async function deliverSlackRelayCompletion({
   completion,
   payload,
 }: {
@@ -272,6 +346,28 @@ export async function deliverRelayCompletion({
     throw new Error(`No delivery adapter for ${payload.origin.provider}`)
   const delivery = await azureRelayStore.delivery(completion.jobId)
   if (delivery.status === "delivered") return
+  let progressFailed = completion.progressFailed
+  if (progressFailed && delivery.streamTs) {
+    try {
+      while (true) {
+        const events = await azureRelayStore.eventsAfter({
+          jobId: completion.jobId,
+          limit: 100,
+        })
+        if (events.length === 0) break
+        const delivered = await deliverSlackRelayEvents({
+          deviceId: completion.deviceId,
+          jobId: completion.jobId,
+          cursor: events.at(-1)?.cursor,
+          events,
+        })
+        if (delivered === 0) break
+      }
+      progressFailed = false
+    } catch {
+      progressFailed = true
+    }
+  }
   const chunks = formatHarnessReplies(completion.result)
   const sessionStatus =
     completion.status === "failed" ? "suspended" : "active"
@@ -292,7 +388,7 @@ export async function deliverRelayCompletion({
     ]
     if (
       delivery.streamedChars === 0 &&
-      !completion.progressFailed &&
+      !progressFailed &&
       chunks[0]
     )
       finalChunks.push({ type: "markdown_text", text: chunks[0] })
@@ -318,9 +414,9 @@ export async function deliverRelayCompletion({
         }).catch(() => undefined)
       }
     }
-    const fullReplyNeeded = completion.progressFailed || !streamStopped
+    const fullReplyNeeded = progressFailed || !streamStopped
     const firstPosted =
-      streamStopped && !completion.progressFailed && delivery.streamedChars === 0
+      streamStopped && !progressFailed && delivery.streamedChars === 0
         ? 1
         : 0
     if (fullReplyNeeded || delivery.streamedChars === 0) {
@@ -348,5 +444,45 @@ export async function deliverRelayCompletion({
       threadTs: payload.origin.threadId,
     }).catch(() => undefined)
   }
+  if (completion.presentation)
+    await sendSlackBlocks({
+      blocks: presentationBlocks(completion.presentation),
+      channel: payload.origin.conversationId,
+      idempotencyKey: messageId(completion.jobId, 1_000),
+      text:
+        completion.presentation.kind === "threads"
+          ? "Choose a local thread to resume"
+          : `Choose a ${completion.presentation.harness} model`,
+      threadTs: payload.origin.threadId,
+    })
   await azureRelayStore.markDelivered({ completion, payload })
+}
+
+registerRelayDeliveryAdapter("slack", {
+  start: startSlackRelayDelivery,
+  events: deliverSlackRelayEvents,
+  complete: deliverSlackRelayCompletion,
+})
+
+export async function startRelayDelivery(input: {
+  defaultHarness: string
+  deviceId: string
+  deviceName: string
+  lease: RelayLease
+}): Promise<void> {
+  return relayDeliveryAdapter(input.lease.payload.origin.provider).start(input)
+}
+
+export async function deliverRelayEvents(
+  batch: RelayEventBatch
+): Promise<number> {
+  const delivery = await azureRelayStore.delivery(batch.jobId)
+  return relayDeliveryAdapter(delivery.payload.origin.provider).events(batch)
+}
+
+export async function deliverRelayCompletion(input: {
+  completion: RelayCompletion
+  payload: RelayJobPayload
+}): Promise<void> {
+  return relayDeliveryAdapter(input.payload.origin.provider).complete(input)
 }

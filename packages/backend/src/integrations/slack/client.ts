@@ -465,14 +465,23 @@ export async function stopSlackStream({
   )
 }
 
-export async function downloadSlackFile(fileId: string): Promise<{
-  bytes: Uint8Array
+export interface SlackFileSource {
   mimeType: string
   name: string
-}> {
+  size: number
+  stream: ReadableStream<Uint8Array>
+}
+
+const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024
+
+export async function downloadSlackFile(
+  fileId: string
+): Promise<SlackFileSource> {
   const info = SlackFileInfoSchema.parse(
     await slackFetch("files.info", { file: fileId })
   ).file
+  if ((info.size ?? 0) > MAX_ATTACHMENT_BYTES)
+    throw new Error("Slack attachment exceeds Mako's 100 MB limit")
   const source = info.url_private_download ?? info.url_private
   if (!source) throw new Error("Slack did not provide a private file URL")
   const url = new URL(source)
@@ -483,32 +492,56 @@ export async function downloadSlackFile(fileId: string): Promise<{
   const credential = await slackCredential()
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${credential.token}` },
-    signal: AbortSignal.timeout(30_000),
+    redirect: "error",
+    signal: AbortSignal.timeout(120_000),
   })
-  if (!response.ok)
+  if (!response.ok || !response.body)
     throw new Error(`Slack file download returned ${response.status}`)
-  const declared = info.size ?? 0
-  if (declared > 100 * 1024 * 1024)
+  const headerSize = Number(response.headers.get("content-length") ?? "0")
+  const size = Number.isFinite(headerSize) && headerSize > 0
+    ? headerSize
+    : (info.size ?? 0)
+  if (size > MAX_ATTACHMENT_BYTES)
     throw new Error("Slack attachment exceeds Mako's 100 MB limit")
-  const bytes = new Uint8Array(await response.arrayBuffer())
-  if (bytes.byteLength > 100 * 1024 * 1024)
-    throw new Error("Slack attachment exceeds Mako's 100 MB limit")
+  let received = 0
+  const stream = response.body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        received += chunk.byteLength
+        if (received > MAX_ATTACHMENT_BYTES) {
+          controller.error(
+            new Error("Slack attachment exceeds Mako's 100 MB limit")
+          )
+          return
+        }
+        controller.enqueue(chunk)
+      },
+    })
+  )
   return {
-    bytes,
-    mimeType: info.mimetype ?? response.headers.get("content-type") ?? "application/octet-stream",
+    mimeType:
+      info.mimetype ??
+      response.headers.get("content-type") ??
+      "application/octet-stream",
     name: info.name ?? info.title ?? fileId,
+    size,
+    stream,
   }
 }
 
 export async function uploadSlackFile({
-  bytes,
+  source,
+  size,
+  mimeType,
   channel,
   filename,
   initialComment,
   threadTs,
   title,
 }: {
-  bytes: Uint8Array
+  source: Blob | ReadableStream<Uint8Array>
+  size: number
+  mimeType: string
   channel: string
   filename: string
   initialComment?: string
@@ -518,18 +551,23 @@ export async function uploadSlackFile({
   const upload = SlackUploadUrlSchema.parse(
     await slackFetch("files.getUploadURLExternal", {
       filename,
-      length: bytes.byteLength,
+      length: size,
     })
   )
-  const buffer = new ArrayBuffer(bytes.byteLength)
-  new Uint8Array(buffer).set(bytes)
-  const body = new FormData()
-  body.set("file", new Blob([buffer]), filename)
-  const uploaded = await fetch(upload.upload_url, {
+  const url = new URL(upload.upload_url)
+  const slackHost =
+    url.hostname === "slack-files.com" || url.hostname.endsWith(".slack.com")
+  if (url.protocol !== "https:" || !slackHost)
+    throw new Error("Slack returned an invalid upload URL")
+  const uploadRequest: RequestInit & { duplex: "half" } = {
     method: "POST",
-    body,
-    signal: AbortSignal.timeout(60_000),
-  })
+    headers: { "Content-Type": mimeType },
+    body: source,
+    duplex: "half",
+    redirect: "error",
+    signal: AbortSignal.timeout(120_000),
+  }
+  const uploaded = await fetch(url, uploadRequest)
   if (!uploaded.ok)
     throw new Error(`Slack file upload returned ${uploaded.status}`)
   SlackOkSchema.parse(

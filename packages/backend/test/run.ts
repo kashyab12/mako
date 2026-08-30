@@ -13,8 +13,15 @@ import {
   stopSlackStream,
   uploadSlackFile,
 } from "../src/integrations/slack/client"
-import { formatHarnessReplies } from "../src/relay/delivery"
-import { applyRelayThreadMapping } from "../src/relay/storage"
+import {
+  formatHarnessReplies,
+  relayEventSlackChunks,
+} from "../src/relay/delivery"
+import {
+  registerRelayDeliveryAdapter,
+  relayDeliveryAdapter,
+} from "../src/relay/delivery-adapters"
+import { applyRelayThreadMapping } from "../src/relay/relay-routing"
 import { parseSlackRelayCommand } from "../src/relay/commands"
 import {
   relayDeviceKey,
@@ -380,8 +387,8 @@ let streamCalls = 0
 let uploadedFile = false
 globalThis.fetch = async (input, init) => {
   const url = String(input)
-  if (url === "https://uploads.slack.test/file") {
-    uploadedFile = init?.body instanceof FormData
+  if (url === "https://files.slack.com/upload-test") {
+    uploadedFile = init?.body instanceof Blob
     return new Response("OK")
   }
   const headers = new Headers(init?.headers)
@@ -427,7 +434,7 @@ globalThis.fetch = async (input, init) => {
     return Response.json({
       ok: true,
       file_id: "FUPLOADED",
-      upload_url: "https://uploads.slack.test/file",
+      upload_url: "https://files.slack.com/upload-test",
     })
   if (url === "https://slack.com/api/files.completeUploadExternal")
     return Response.json({ ok: true })
@@ -487,9 +494,12 @@ try {
   })
   assert.equal(streamCalls, 3)
   const downloaded = await downloadSlackFile("FTEST")
-  assert.equal(new TextDecoder().decode(downloaded.bytes), "image-bytes")
+  assert.equal(await new Response(downloaded.stream).text(), "image-bytes")
+  assert.equal(downloaded.size, 11)
   await uploadSlackFile({
-    bytes: new TextEncoder().encode("output"),
+    source: new Blob(["output"], { type: "text/plain" }),
+    size: 6,
+    mimeType: "text/plain",
     channel: "CTEST",
     filename: "output.txt",
     threadTs: "123.456",
@@ -624,6 +634,21 @@ const action = parseSlackWebhookBody(
 assert.equal(action.kind, "block_actions")
 if (action.kind === "block_actions") {
   assert.equal(slackActionCommand(action), "harness codex")
+  const current = action.actions[0]
+  if (current)
+    assert.equal(
+      slackActionCommand({
+        ...action,
+        actions: [
+          {
+            ...current,
+            actionId: "mako-thread",
+            value: "/threads/selected",
+          },
+        ],
+      }),
+      "select /threads/selected"
+    )
 }
 const controls = JSON.stringify(slackControlBlocks())
 for (const actionId of [
@@ -638,15 +663,65 @@ for (const actionId of [
   assert.match(controls, new RegExp(actionId))
 }
 assert.deepEqual(formatHarnessReplies("one\\n\\ntwo"), ["one\n\ntwo"])
+assert.deepEqual(
+  relayEventSlackChunks({
+    kind: "tool",
+    id: "tool-1",
+    title: "Read file",
+    status: "completed",
+    detail: "README.md",
+  }),
+  [
+    {
+      type: "task_update",
+      id: "tool-1",
+      title: "Read file",
+      status: "complete",
+      details: "README.md",
+      output: undefined,
+    },
+  ]
+)
+assert.equal(
+  relayEventSlackChunks({
+    kind: "plan",
+    id: "plan-1",
+    title: "Implementation",
+    entries: [
+      { id: "step-1", title: "Inspect", status: "in_progress" },
+      { id: "step-2", title: "Verify", status: "pending" },
+    ],
+  }).length,
+  3
+)
 assert.equal(formatHarnessReplies("x".repeat(24_000)).length, 3)
+const testDeliveryAdapter = {
+  async start() {},
+  async events() {
+    return 0
+  },
+  async complete() {},
+}
+const unregisterTestAdapter = registerRelayDeliveryAdapter(
+  "test",
+  testDeliveryAdapter
+)
+assert.equal(relayDeliveryAdapter("test"), testDeliveryAdapter)
+unregisterTestAdapter()
+assert.throws(() => relayDeliveryAdapter("test"), /No delivery adapter/)
+
 assert.equal(
   backendStatus({ SLACK_BOT_TOKEN: directBotToken }).integrations[0]?.status.kind,
   "connected"
 )
 assert.deepEqual(backendStatus({}).relay, {
-  execution: "local-harness",
-  persistence: "azure-storage",
+  attachments: "streaming",
+  authentication: "legacy-token",
+  events: "canonical-v1",
+  execution: "headless-worker",
   offlineQueue: true,
+  persistence: "azure-storage",
+  replay: true,
 })
 
 assert.equal(JSON.stringify(tools).includes(token), false)

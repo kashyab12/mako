@@ -1,37 +1,43 @@
 import type { RelayStore } from "@mako/relay"
 import {
-  activeWorker,
-  appendRelayEvents,
   enqueueRelayJob,
-  heartbeatWorker,
   leaseRelayJob,
   markRelayArtifactUploaded,
   markRelayDelivered,
   readThreadMapping,
   reconcileRelayStore,
   recordRelayCompletion,
-  recordRelayEventDelivery,
   recordRelayProgress,
   recordRelayStream,
   recordRelayStreamClosed,
-  registerRelayDevice,
   relayArtifactTarget,
   relayAttachment,
   relayControl,
   relayDeliveryState,
-  relayDeviceKeyFor,
-  relayEventDeliveryTarget,
-  relayEventsSince,
   relayProgressTarget,
   relayQueueStatus,
   renewRelayLease,
   requestRelayStop,
-  workerById,
 } from "./storage"
+import {
+  appendRelayEvents,
+  recordRelayEventDelivery,
+  relayEventDeliveryTarget,
+  relayEventsSince,
+} from "./storage-events"
+import {
+  activeWorker,
+  consumeRelayTokenRequest,
+  heartbeatWorker,
+  registerRelayDevice,
+  relayDeviceKeyFor,
+  workerById,
+} from "./storage-presence"
 
 export const azureRelayStore = {
   registerDevice: registerRelayDevice,
   deviceKey: relayDeviceKeyFor,
+  consumeTokenRequest: consumeRelayTokenRequest,
   enqueue: enqueueRelayJob,
   heartbeat: (tenantId, heartbeat) =>
     heartbeatWorker({ heartbeat, teamId: tenantId }),

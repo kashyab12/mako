@@ -1,6 +1,7 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto"
+import { randomBytes, randomUUID } from "node:crypto"
 import { relayDeviceKey } from "./auth.js"
 import { relayEventsAfter } from "./events.js"
+import { deterministicRelayJobId } from "./ids.js"
 import {
   RelayCompletionSchema,
   RelayEventEnvelopeSchema,
@@ -9,6 +10,7 @@ import {
   WorkerHeartbeatSchema,
   parseRelayJobPayload,
   type RelayCompletion,
+  type RelayControl,
   type RelayEventEnvelope,
   type RelayJobPayload,
   type RemoteOrigin,
@@ -33,7 +35,7 @@ interface MemoryJob {
   streamClosed: boolean
   streamedChars: number
   lastProgressSequence: number
-  control: "stop" | null
+  control: RelayControl | null
   uploadedArtifacts: Set<string>
 }
 
@@ -49,25 +51,22 @@ export interface MemoryRelayStoreOptions {
   now?: () => number
 }
 
-function jobIdFor(eventId: string): string {
-  const value = createHash("sha256").update(eventId).digest("hex").slice(0, 32)
-  return `${value.slice(0, 8)}-${value.slice(8, 12)}-5${value.slice(13, 16)}-a${value.slice(17, 20)}-${value.slice(20)}`
-}
-
 function originKey(origin: RemoteOrigin): string {
   return `${origin.provider}\0${origin.tenantId}\0${origin.conversationId}\0${origin.threadId}`
 }
 
 export function applyRelayThreadMapping(
   payload: RelayJobPayload,
-  mapping: RelayThreadMapping | null
+  mapping: Pick<
+    RelayThreadMapping,
+    "effort" | "fast" | "harness" | "model" | "threadPath"
+  > | null
 ): RelayJobPayload {
   if (payload.kind !== "new" || payload.forceNew || !mapping) return payload
   return RelayJobPayloadSchema.parse({
     kind: "resume",
     attachments: payload.attachments,
     origin: payload.origin,
-    slack: payload.slack,
     selection: {
       effort: payload.selection.effort ?? mapping.effort,
       fast: payload.selection.fast ?? mapping.fast,
@@ -90,6 +89,7 @@ export function createMemoryRelayStore(
   const outbox = new Map<string, OutboxEntry>()
   const workers = new Map<string, RelayWorkerRecord>()
   const registrations = new Map<string, Buffer>()
+  const tokenRequests = new Map<string, { nonce: string; timestamp: number }>()
   const threads = new Map<string, RelayThreadMapping>()
   const events = new Map<string, RelayEventEnvelope>()
 
@@ -136,9 +136,18 @@ export function createMemoryRelayStore(
       return registrations.get(registrationKey(tenantId, deviceId)) ?? null
     },
 
+    async consumeTokenRequest(input) {
+      const key = registrationKey(input.tenantId, input.deviceId)
+      if (!registrations.has(key)) return false
+      const current = tokenRequests.get(key)
+      if (current && input.timestamp <= current.timestamp) return false
+      tokenRequests.set(key, { nonce: input.nonce, timestamp: input.timestamp })
+      return true
+    },
+
     async enqueue(input, targetDeviceId) {
       const payload = parseRelayJobPayload(input)
-      const jobId = jobIdFor(payload.origin.eventId)
+      const jobId = deterministicRelayJobId(payload.origin.eventId)
       if (jobs.has(jobId)) return { created: false, jobId }
       jobs.set(jobId, {
         payload,
@@ -256,6 +265,11 @@ export function createMemoryRelayStore(
       )
         return current.payload
       const job = ownedJob(completion.jobId, completion.deviceId)
+      if (
+        job.messageId !== completion.messageId ||
+        job.popReceipt !== completion.popReceipt
+      )
+        throw new Error("Relay completion does not own the active lease")
       job.completion = completion
       job.status = "completed"
       return job.payload
@@ -366,7 +380,7 @@ export function createMemoryRelayStore(
           job.status === "claimed" &&
           originKey(job.payload.origin) === originKey(origin)
         ) {
-          job.control = "stop"
+          job.control = { kind: "stop" }
           count += 1
         }
       }
@@ -374,7 +388,10 @@ export function createMemoryRelayStore(
     },
 
     async control(input) {
-      return ownedJob(input.jobId, input.deviceId).control
+      const job = ownedJob(input.jobId, input.deviceId)
+      const control = job.control
+      job.control = null
+      return control
     },
 
     async attachment(input) {

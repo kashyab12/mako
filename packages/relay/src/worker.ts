@@ -3,10 +3,12 @@ import { RelayEventSequencer } from "./events.js"
 import type {
   RelayCanonicalEvent,
   RelayCompletion,
+  RelayControl,
   RelayEventBatch,
   RelayEventEnvelope,
   RelayLease,
   RelayLeaseRequest,
+  RelayPresentation,
 } from "./schema.js"
 
 export interface RelayExecution {
@@ -14,6 +16,7 @@ export interface RelayExecution {
   fast?: boolean
   harness: string
   model?: string
+  presentation?: RelayPresentation
   result: string
   status: "done" | "failed" | "stopped"
   threadPath?: string
@@ -29,13 +32,14 @@ export interface RelayExecutor {
     lease: RelayLease,
     context: RelayExecutionContext
   ): Promise<RelayExecution>
+  control?(lease: RelayLease, control: RelayControl): Promise<void>
 }
 
 export interface RelayTransport {
   lease(request: RelayLeaseRequest, signal: AbortSignal): Promise<RelayLease | null>
   renew(lease: RelayLease, request: RelayLeaseRequest): Promise<string>
   sendEvents(batch: RelayEventBatch): Promise<void>
-  control(lease: RelayLease, deviceId: string): Promise<"stop" | null>
+  control(lease: RelayLease, deviceId: string): Promise<RelayControl | null>
   complete(completion: RelayCompletion): Promise<void>
 }
 
@@ -174,10 +178,9 @@ export class HeadlessRelayWorker {
     const controlTimer = setInterval(() => {
       controls = controls
         .then(async () => {
-          if (
-            (await this.transport.control(lease, request.deviceId)) === "stop"
-          )
-            turn.abort()
+          const control = await this.transport.control(lease, request.deviceId)
+          if (control?.kind === "stop") turn.abort()
+          else if (control) await this.executor.control?.(lease, control)
         })
         .catch(() => undefined)
     }, this.options.controlIntervalMs ?? 2_000)
@@ -216,6 +219,7 @@ export class HeadlessRelayWorker {
       messageId: lease.messageId,
       model: execution.model,
       popReceipt,
+      presentation: execution.presentation,
       progressFailed: eventFailure,
       result: execution.result,
       status: execution.status,

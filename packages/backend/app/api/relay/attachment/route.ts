@@ -7,6 +7,11 @@ import {
 } from "../../../../src/relay/auth"
 import { azureRelayStore } from "../../../../src/relay/azure-store"
 
+const MimeTypeSchema = z
+  .string()
+  .max(255)
+  .regex(/^[\w!#$&^_.+-]+\/[\w!#$&^_.+-]+$/)
+
 const RequestSchema = z.object({
   attachmentId: z.string().min(1).max(160),
   deviceId: z.uuid(),
@@ -24,15 +29,16 @@ export async function POST(request: Request): Promise<Response> {
   if (!relayDeviceAuthorized(auth, input.deviceId)) return relayUnauthorized()
   const attachment = await azureRelayStore.attachment(input)
   const file = await downloadSlackFile(attachment.id)
-  const name = file.name.replace(/[\p{Cc}"\\;]/gu, "_")
-  const body = new ArrayBuffer(file.bytes.byteLength)
-  new Uint8Array(body).set(file.bytes)
-  return new Response(body, {
-    headers: {
-      "Content-Disposition": `attachment; filename="${name}"; filename*=UTF-8''${encodeURIComponent(name)}`,
-      "Content-Length": file.bytes.byteLength.toString(),
-      "Content-Type": file.mimeType,
-      "X-Mako-Attachment-Name": encodeURIComponent(name),
-    },
+  const name = file.name.replace(/[\p{Cc}/:"\\;]/gu, "_")
+  const mimeType = MimeTypeSchema.safeParse(file.mimeType)
+  const headers = new Headers({
+    "Content-Disposition": `attachment; filename="${name}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+    "Content-Type": mimeType.success
+      ? mimeType.data
+      : "application/octet-stream",
+    "X-Mako-Attachment-Name": encodeURIComponent(name),
+    "X-Mako-Attachment-Size": file.size.toString(),
   })
+  if (file.size > 0) headers.set("Content-Length", file.size.toString())
+  return new Response(file.stream, { headers })
 }

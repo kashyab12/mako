@@ -14,5 +14,7 @@ export async function POST(request: Request): Promise<Response> {
   const key = await azureRelayStore.deviceKey(input.tenantId, input.deviceId)
   if (!key) return relayUnauthorized()
   const response = issueRelayToken({ deviceKey: key, request: input })
-  return response ? Response.json(response) : relayUnauthorized()
+  if (!response || !(await azureRelayStore.consumeTokenRequest(input)))
+    return relayUnauthorized()
+  return Response.json(response)
 }

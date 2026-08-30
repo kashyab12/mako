@@ -6,11 +6,6 @@ import {
   type RelayEventEnvelope,
 } from "./schema.js"
 
-export function compareRelayCursors(left: RelayCursor, right: RelayCursor): number {
-  if (left.epoch !== right.epoch) return left.epoch.localeCompare(right.epoch)
-  return left.seq - right.seq
-}
-
 export function relayEventsAfter(
   events: RelayEventEnvelope[],
   cursor?: RelayCursor
@@ -25,8 +20,10 @@ export function relayEventsAfter(
 }
 
 function compareEvents(left: RelayEventEnvelope, right: RelayEventEnvelope): number {
-  const cursor = compareRelayCursors(left.cursor, right.cursor)
-  return cursor !== 0 ? cursor : left.jobSeq - right.jobSeq
+  if (left.cursor.epoch === right.cursor.epoch)
+    return left.cursor.seq - right.cursor.seq
+  const time = left.at.localeCompare(right.at)
+  return time !== 0 ? time : left.eventId.localeCompare(right.eventId)
 }
 
 export class RelayEventSequencer {

@@ -7,23 +7,21 @@ export const RelayHarnessSchema = z
   .regex(/^[a-z0-9][a-z0-9._-]*$/)
 export type RelayHarness = z.infer<typeof RelayHarnessSchema>
 
+const RemoteIdSchema = z
+  .string()
+  .min(1)
+  .max(160)
+  .regex(/^[A-Za-z0-9._:-]+$/)
+
 export const RemoteOriginSchema = z.object({
-  provider: z.string().min(1).max(40),
-  tenantId: z.string().min(1).max(80),
-  conversationId: z.string().min(1).max(160),
-  threadId: z.string().min(1).max(160),
-  eventId: z.string().min(1).max(160),
-  userId: z.string().min(1).max(80),
+  provider: RemoteIdSchema,
+  tenantId: RemoteIdSchema,
+  conversationId: RemoteIdSchema,
+  threadId: RemoteIdSchema,
+  eventId: RemoteIdSchema,
+  userId: RemoteIdSchema,
 })
 export type RemoteOrigin = z.infer<typeof RemoteOriginSchema>
-
-export const LegacySlackOriginSchema = z.object({
-  channel: z.string().min(1).max(160),
-  eventId: z.string().min(1).max(160),
-  teamId: z.string().min(1).max(80),
-  threadTs: z.string().min(1).max(160),
-  userId: z.string().min(1).max(80),
-})
 
 export const RemoteAttachmentSchema = z.object({
   id: z.string().min(1).max(160),
@@ -42,11 +40,6 @@ export const RuntimeSelectionSchema = z.object({
 })
 export type RuntimeSelection = z.infer<typeof RuntimeSelectionSchema>
 
-const OriginFields = {
-  origin: RemoteOriginSchema,
-  slack: LegacySlackOriginSchema.optional(),
-}
-
 const PromptFields = {
   attachments: z.array(RemoteAttachmentSchema).max(20).default([]),
   text: z.string().max(20_000),
@@ -56,38 +49,38 @@ export const RelayJobPayloadSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("new"),
     forceNew: z.boolean().default(false),
-    ...OriginFields,
+    origin: RemoteOriginSchema,
     selection: RuntimeSelectionSchema,
     ...PromptFields,
   }),
   z.object({
     kind: z.literal("resume"),
-    ...OriginFields,
+    origin: RemoteOriginSchema,
     selection: RuntimeSelectionSchema,
     threadPath: z.string().min(1).max(4_000),
     ...PromptFields,
   }),
   z.object({
     kind: z.literal("resume-query"),
-    ...OriginFields,
+    origin: RemoteOriginSchema,
     query: z.string().min(1).max(500),
     selection: RuntimeSelectionSchema,
     ...PromptFields,
   }),
   z.object({
     kind: z.literal("inspect-threads"),
-    ...OriginFields,
+    origin: RemoteOriginSchema,
     query: z.string().max(500).optional(),
     selection: RuntimeSelectionSchema,
   }),
   z.object({
     kind: z.literal("inspect-models"),
-    ...OriginFields,
+    origin: RemoteOriginSchema,
     selection: RuntimeSelectionSchema,
   }),
   z.object({
     kind: z.literal("configure"),
-    ...OriginFields,
+    origin: RemoteOriginSchema,
     selection: RuntimeSelectionSchema,
     threadPath: z.string().min(1).max(4_000),
   }),
@@ -95,22 +88,7 @@ export const RelayJobPayloadSchema = z.discriminatedUnion("kind", [
 export type RelayJobPayload = z.infer<typeof RelayJobPayloadSchema>
 
 export function parseRelayJobPayload<Value>(value: Value): RelayJobPayload {
-  const current = RelayJobPayloadSchema.safeParse(value)
-  if (current.success) return current.data
-  const record = z.record(z.string(), z.json()).parse(value)
-  const slack = LegacySlackOriginSchema.parse(record.slack)
-  return RelayJobPayloadSchema.parse({
-    ...record,
-    attachments: record.attachments ?? [],
-    origin: {
-      provider: "slack",
-      tenantId: slack.teamId,
-      conversationId: slack.channel,
-      threadId: slack.threadTs,
-      eventId: slack.eventId,
-      userId: slack.userId,
-    },
-  })
+  return RelayJobPayloadSchema.parse(value)
 }
 
 export const WorkerHeartbeatSchema = z.object({
@@ -158,6 +136,44 @@ export const RelayControlPollSchema = z.object({
 })
 export type RelayControlPoll = z.infer<typeof RelayControlPollSchema>
 
+export const RelayControlSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("stop") }),
+  z.object({
+    kind: z.literal("permission"),
+    requestId: z.string().min(1).max(160),
+    optionId: z.string().min(1).max(160),
+  }),
+])
+export type RelayControl = z.infer<typeof RelayControlSchema>
+
+export const RelayPresentationSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("threads"),
+    items: z
+      .array(
+        z.object({
+          harness: RelayHarnessSchema,
+          path: z.string().min(1).max(4_000),
+          title: z.string().min(1).max(256),
+        })
+      )
+      .max(15),
+  }),
+  z.object({
+    kind: z.literal("models"),
+    harness: RelayHarnessSchema,
+    items: z
+      .array(
+        z.object({
+          id: z.string().min(1).max(160),
+          label: z.string().min(1).max(160),
+        })
+      )
+      .max(100),
+  }),
+])
+export type RelayPresentation = z.infer<typeof RelayPresentationSchema>
+
 export const RelayCompletionSchema = z.object({
   deviceId: z.uuid(),
   effort: z.string().min(1).max(80).optional(),
@@ -167,6 +183,7 @@ export const RelayCompletionSchema = z.object({
   messageId: z.string().min(1),
   model: z.string().min(1).max(160).optional(),
   popReceipt: z.string().min(1),
+  presentation: RelayPresentationSchema.optional(),
   progressFailed: z.boolean().default(false),
   result: z.string().min(1).max(1_000_000),
   status: z.enum(["done", "failed", "stopped"]).default("done"),
@@ -241,12 +258,34 @@ export const RelayEventEnvelopeSchema = z.object({
 })
 export type RelayEventEnvelope = z.infer<typeof RelayEventEnvelopeSchema>
 
-export const RelayEventBatchSchema = z.object({
-  deviceId: z.uuid(),
-  jobId: z.uuid(),
-  cursor: RelayCursorSchema.optional(),
-  events: z.array(RelayEventEnvelopeSchema).min(1).max(100),
-})
+export const RelayEventBatchSchema = z
+  .object({
+    deviceId: z.uuid(),
+    jobId: z.uuid(),
+    cursor: RelayCursorSchema.optional(),
+    events: z.array(RelayEventEnvelopeSchema).min(1).max(100),
+  })
+  .superRefine((batch, context) => {
+    if (
+      batch.events.some(
+        (event) =>
+          event.jobId !== batch.jobId || event.workerId !== batch.deviceId
+      )
+    )
+      context.addIssue({
+        code: "custom",
+        message: "Relay event batch ownership does not match its envelope",
+      })
+    const last = batch.events.at(-1)?.cursor
+    if (
+      batch.cursor &&
+      (last?.epoch !== batch.cursor.epoch || last.seq !== batch.cursor.seq)
+    )
+      context.addIssue({
+        code: "custom",
+        message: "Relay event batch cursor does not match its final event",
+      })
+  })
 export type RelayEventBatch = z.infer<typeof RelayEventBatchSchema>
 
 export const RelayRegistrationSchema = z.object({

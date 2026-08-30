@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import {
   HeadlessRelayWorker,
+  RelayEventBatchSchema,
   RelayEventSequencer,
   createMemoryRelayStore,
   parseRelayJobPayload,
@@ -63,22 +64,12 @@ const payload = parseRelayJobPayload({
   text: "Inspect",
 })
 assert.equal(payload.origin.conversationId, "CTEST")
-assert.equal(
+assert.throws(() =>
   parseRelayJobPayload({
-    kind: "new",
-    slack: {
-      channel: "CTEST",
-      eventId: "event-old",
-      teamId: "TTEST",
-      threadTs: "123.456",
-      userId: "UTEST",
-    },
-    selection: {},
-    text: "Legacy",
-  }).origin.provider,
-  "slack"
+    ...payload,
+    origin: { ...origin, conversationId: "channel' or 1 eq 1" },
+  })
 )
-
 const workerId = crypto.randomUUID()
 const epoch = crypto.randomUUID()
 const jobId = crypto.randomUUID()
@@ -93,6 +84,14 @@ const second = sequencer.next(jobId, {
 assert.equal(first.jobSeq, 1)
 assert.equal(second.jobSeq, 2)
 assert.deepEqual(relayEventsAfter([second, first], first.cursor), [second])
+assert.throws(() =>
+  RelayEventBatchSchema.parse({
+    deviceId: workerId,
+    jobId,
+    cursor: second.cursor,
+    events: [{ ...second, jobId: crypto.randomUUID() }],
+  })
+)
 
 const lease = {
   jobId,
@@ -167,6 +166,25 @@ assert.deepEqual(
   await memory.deviceKey(origin.tenantId, memoryDevice),
   relayDeviceKey(registeredSecret)
 )
+const tokenTimestamp = Date.now()
+assert.equal(
+  await memory.consumeTokenRequest({
+    tenantId: origin.tenantId,
+    deviceId: memoryDevice,
+    nonce: crypto.randomUUID(),
+    timestamp: tokenTimestamp,
+  }),
+  true
+)
+assert.equal(
+  await memory.consumeTokenRequest({
+    tenantId: origin.tenantId,
+    deviceId: memoryDevice,
+    nonce: crypto.randomUUID(),
+    timestamp: tokenTimestamp,
+  }),
+  false
+)
 await memory.heartbeat(origin.tenantId, {
   defaultHarness: "codex",
   deviceId: memoryDevice,
@@ -193,6 +211,18 @@ const firstLease = await memory.lease({
 })
 assert.equal(firstLease.kind, "work")
 if (firstLease.kind !== "work") throw new Error("first memory lease missing")
+assert.equal(
+  await memory.requestStop({ ...origin, eventId: "memory-first" }),
+  1
+)
+assert.deepEqual(
+  await memory.control({ deviceId: memoryDevice, jobId: firstQueued.jobId }),
+  { kind: "stop" }
+)
+assert.equal(
+  await memory.control({ deviceId: memoryDevice, jobId: firstQueued.jobId }),
+  null
+)
 const secondQueued = await memory.enqueue({
   ...payload,
   origin: { ...origin, eventId: "memory-second" },

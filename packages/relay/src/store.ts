@@ -1,5 +1,6 @@
 import type {
   RelayCompletion,
+  RelayControl,
   RelayEventEnvelope,
   RelayJobPayload,
   RelayLease,
@@ -63,6 +64,12 @@ export interface RelayStore {
     deviceName: string
   }): Promise<string>
   deviceKey(tenantId: string, deviceId: string): Promise<Buffer | null>
+  consumeTokenRequest(input: {
+    tenantId: string
+    deviceId: string
+    nonce: string
+    timestamp: number
+  }): Promise<boolean>
   enqueue(
     payload: RelayJobPayload,
     targetDeviceId?: string
@@ -108,7 +115,7 @@ export interface RelayStore {
   }): Promise<RelayEventEnvelope[]>
   queueStatus(origin: RemoteOrigin): Promise<{ queued: number; running: number }>
   requestStop(origin: RemoteOrigin): Promise<number>
-  control(input: { deviceId: string; jobId: string }): Promise<"stop" | null>
+  control(input: { deviceId: string; jobId: string }): Promise<RelayControl | null>
   attachment(input: {
     jobId: string
     attachmentId: string

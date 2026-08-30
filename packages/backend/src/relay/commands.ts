@@ -78,6 +78,24 @@ export function parseSlackRelayCommand({
   if (normalized === "help") return { kind: "help" }
   if (normalized === "status") return { kind: "status" }
   if (normalized === "stop") return { kind: "stop" }
+  if (normalized === "select") {
+    const threadPath = parts.join(" ").trim()
+    if (!threadPath) return { kind: "help" }
+    return {
+      kind: "enqueue",
+      payload: {
+        kind: "configure",
+        origin,
+        selection: {
+          effort: mapping?.effort,
+          fast: mapping?.fast,
+          harness: mapping?.harness,
+          model: mapping?.model,
+        },
+        threadPath,
+      },
+    }
+  }
   if (normalized === "queue" || normalized === "steer") {
     const prompt = parts.join(" ").trim()
     if (!prompt && attachments.length === 0) return { kind: "help" }

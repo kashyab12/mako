@@ -146,6 +146,7 @@ async function registerRelayDevice(): Promise<
       "Content-Type": "application/json",
     },
     body: JSON.stringify(relayDevice),
+    redirect: "error",
     signal: AbortSignal.timeout(15_000),
   })
   if (response.status === 404) {
@@ -193,6 +194,7 @@ async function deviceRelayToken(): Promise<string | null> {
         ...unsigned,
         signature: signRelayTokenRequest(unsigned, credential.deviceSecret),
       }),
+      redirect: "error",
       signal: AbortSignal.timeout(15_000),
     }
   )
@@ -232,6 +234,7 @@ export async function backendRelayPost(
       "Content-Type": "application/json",
     },
     body,
+    redirect: "error",
     signal: signal
       ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
       : AbortSignal.timeout(30_000),
@@ -240,7 +243,14 @@ export async function backendRelayPost(
 
 export async function backendRelayUpload(
   path: string,
-  body: FormData
+  body: Blob,
+  metadata: {
+    artifactKey: string
+    deviceId: string
+    filename: string
+    jobId: string
+    mimeType: string
+  }
 ): Promise<Response> {
   const credentials = await relayAuthorization()
   return fetch(new URL(path, credentials.url), {
@@ -248,9 +258,16 @@ export async function backendRelayUpload(
     headers: {
       Accept: "application/json",
       Authorization: `Bearer ${credentials.token}`,
+      "Content-Length": body.size.toString(),
+      "Content-Type": metadata.mimeType,
+      "X-Mako-Artifact-Key": metadata.artifactKey,
+      "X-Mako-Device-Id": metadata.deviceId,
+      "X-Mako-Filename": encodeURIComponent(metadata.filename),
+      "X-Mako-Job-Id": metadata.jobId,
     },
     body,
-    signal: AbortSignal.timeout(60_000),
+    redirect: "error",
+    signal: AbortSignal.timeout(120_000),
   })
 }
 

@@ -17,17 +17,23 @@ import {
 import { SlackRelayHelp, parseSlackRelayCommand } from "./commands"
 import { postSlackControls } from "./slack-ui"
 import {
-  activeWorker,
   enqueueRelayJob,
   readThreadMapping,
   relayQueueStatus,
+  requestRelayPermission,
   requestRelayStop,
-  workerById,
 } from "./storage"
+import { activeWorker, workerById } from "./storage-presence"
 import {
   RelayHarnessSchema,
   type RemoteAttachment,
 } from "./types"
+const PermissionActionSchema = z.object({
+  jobId: z.uuid(),
+  optionId: z.string().min(1).max(160),
+  requestId: z.string().min(1).max(160),
+})
+
 const AgentSessionStoppedSchema = z.object({
   event: z.object({
     channel: SlackChannelIdSchema,
@@ -282,6 +288,18 @@ async function processCommand({
   })
 }
 
+function slackPermissionAction(
+  payload: Extract<SlackWebhookPayload, { kind: "block_actions" }>
+): z.infer<typeof PermissionActionSchema> | null {
+  const action = payload.actions[0]
+  if (action?.actionId !== "mako-permission" || !action.value) return null
+  try {
+    return PermissionActionSchema.parse(JSON.parse(action.value))
+  } catch {
+    return null
+  }
+}
+
 export function slackActionCommand(
   payload: Extract<SlackWebhookPayload, { kind: "block_actions" }>
 ): string | null {
@@ -295,6 +313,12 @@ export function slackActionCommand(
   }
   if (action.actionId === "mako-fast-on") return "fast on"
   if (action.actionId === "mako-fast-off") return "fast off"
+  if (action.actionId === "mako-thread" && action.value)
+    return `select ${action.value}`
+  if (action.actionId === "mako-model") {
+    const model = action.selectedOptionValue ?? action.value
+    if (model) return `model ${model}`
+  }
   if (action.actionId === "mako-stop") return "stop"
   if (action.actionId === "mako-status") return "status"
   if (action.actionId === "mako-threads") return "threads"
@@ -349,11 +373,12 @@ async function processNormalized(payload: SlackWebhookPayload): Promise<void> {
     return
   }
   if (payload.kind === "block_actions") {
+    const permission = slackPermissionAction(payload)
     const command = slackActionCommand(payload)
     const channel = payload.channelId
     const threadTs = payload.threadTs ?? payload.continuation?.threadTs ?? payload.messageTs
     if (
-      !command ||
+      (!command && !permission) ||
       !channel ||
       !threadTs ||
       !payload.teamId ||
@@ -361,12 +386,38 @@ async function processNormalized(payload: SlackWebhookPayload): Promise<void> {
     ) {
       return
     }
+    const parsedChannel = SlackChannelIdSchema.parse(channel)
+    const parsedThread = SlackTimestampSchema.parse(threadTs)
+    if (permission) {
+      const accepted = await requestRelayPermission({
+        ...permission,
+        origin: {
+          provider: "slack",
+          tenantId: payload.teamId,
+          conversationId: parsedChannel,
+          threadId: parsedThread,
+          eventId: payload.triggerId ?? randomUUID(),
+          userId: payload.userId,
+        },
+      })
+      if (accepted)
+        await sendSlackMessage({
+          channel: parsedChannel,
+          idempotencyKey: slackMessageId(
+            `${permission.jobId}:${permission.requestId}:${permission.optionId}`
+          ),
+          text: "Permission response sent to the local agent.",
+          threadTs: parsedThread,
+        })
+      return
+    }
+    if (!command) return
     await processCommand({
-      channel: SlackChannelIdSchema.parse(channel),
+      channel: parsedChannel,
       eventId: payload.triggerId ?? randomUUID(),
       teamId: payload.teamId,
       text: command,
-      threadTs: SlackTimestampSchema.parse(threadTs),
+      threadTs: parsedThread,
       userId: payload.userId,
     })
   }

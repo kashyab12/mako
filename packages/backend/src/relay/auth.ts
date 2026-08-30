@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto"
 import {
   RelayTokenRequestSchema,
   signRelayToken,
@@ -12,6 +13,14 @@ import { verifyMcpToken } from "../mcp/auth"
 export type RelayAuth =
   | { kind: "device"; tenantId: string; deviceId: string }
   | { kind: "legacy"; tenantId: string }
+
+function secretsEqual(left: string, right: string): boolean {
+  const candidate = Buffer.from(left)
+  const expected = Buffer.from(right)
+  return (
+    candidate.length === expected.length && timingSafeEqual(candidate, expected)
+  )
+}
 
 function bearer(request: Request): string | null {
   return /^Bearer (.+)$/.exec(request.headers.get("Authorization") ?? "")?.[1] ?? null
@@ -32,9 +41,7 @@ export function relayAuth(request: Request): RelayAuth | null {
     )
       return { kind: "device", tenantId, deviceId: claims.deviceId }
   }
-  const legacyAllowed =
-    !environment.RELAY_TOKEN_SECRET ||
-    environment.RELAY_ALLOW_LEGACY_TOKEN === "true"
+  const legacyAllowed = environment.RELAY_ALLOW_LEGACY_TOKEN === "true"
   return legacyAllowed && verifyMcpToken(request, token)
     ? { kind: "legacy", tenantId }
     : null
@@ -53,7 +60,7 @@ export function relayRegistrationAuthorized(request: Request): boolean {
   if (
     bootstrap &&
     environment.RELAY_BOOTSTRAP_SECRET &&
-    bootstrap === environment.RELAY_BOOTSTRAP_SECRET
+    secretsEqual(bootstrap, environment.RELAY_BOOTSTRAP_SECRET)
   )
     return true
   const token = bearer(request)

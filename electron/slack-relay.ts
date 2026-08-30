@@ -1,38 +1,23 @@
 import { createHash, randomUUID } from "node:crypto"
-import {
-  chmod,
-  mkdir,
-  readFile,
-  realpath,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises"
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises"
 import { hostname } from "node:os"
-import {
-  basename,
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-  sep,
-} from "node:path"
+import { dirname } from "node:path"
 import { z } from "zod"
 import type { ThreadEntry, ThreadRef } from "@mako/sessions"
 import {
   HeadlessRelayWorker,
+  RelayControlSchema,
   RelayHarnessSchema,
+  RelayJobPayloadSchema,
   RelayLeaseSchema,
-  parseRelayJobPayload,
   type RelayCanonicalEvent,
   type RelayHarness,
   type RelayJobPayload,
   type RelayLease,
+  type RelayPresentation,
 } from "@mako/relay"
 import {
   backendRelayPost,
-  backendRelayUpload,
   configureBackendRelayDevice,
 } from "./backend-connection.js"
 import {
@@ -45,6 +30,11 @@ import {
 } from "./drivers.js"
 import { harnessProfile, resolveHarnessTuning } from "./harnesses.js"
 import { providerHost } from "./providers/index.js"
+import {
+  relayPrompt,
+  stageRelayAttachments,
+  uploadRelayArtifacts,
+} from "./relay-artifacts.js"
 import type { HarnessModelOption } from "./shared.js"
 import {
   listThreads,
@@ -62,11 +52,38 @@ const RawLeaseSchema = z.object({
   }),
 })
 
+const LegacySlackOriginSchema = z.object({
+  channel: z.string().min(1).max(160),
+  eventId: z.string().min(1).max(160),
+  teamId: z.string().min(1).max(80),
+  threadTs: z.string().min(1).max(160),
+  userId: z.string().min(1).max(80),
+})
+
+function parseDesktopRelayPayload<Value>(value: Value): RelayJobPayload {
+  const current = RelayJobPayloadSchema.safeParse(value)
+  if (current.success) return current.data
+  const record = z.record(z.string(), z.json()).parse(value)
+  const slack = LegacySlackOriginSchema.parse(record.slack)
+  return RelayJobPayloadSchema.parse({
+    ...record,
+    attachments: record.attachments ?? [],
+    origin: {
+      provider: "slack",
+      tenantId: slack.teamId,
+      conversationId: slack.channel,
+      threadId: slack.threadTs,
+      eventId: slack.eventId,
+      userId: slack.userId,
+    },
+  })
+}
+
 function parseLease<Value>(value: Value): RelayLease {
   const raw = RawLeaseSchema.parse(value).lease
   return RelayLeaseSchema.parse({
     ...raw,
-    payload: parseRelayJobPayload(raw.payload),
+    payload: parseDesktopRelayPayload(raw.payload),
   })
 }
 
@@ -129,129 +146,6 @@ async function waitForFreshThread({
     await new Promise((resolve) => setTimeout(resolve, 200))
   }
   return undefined
-}
-
-async function stageRelayAttachments(
-  payload: RelayJobPayload,
-  jobId: string,
-  deviceId: string,
-  cwd: string
-): Promise<{
-  paths: string[]
-  manifestPath: string
-  cleanup: () => Promise<void>
-}> {
-  const attachments = "attachments" in payload ? payload.attachments : []
-  const directory = join(cwd, `.mako-relay-${jobId}`)
-  await rm(directory, { recursive: true, force: true })
-  await mkdir(directory, { recursive: true, mode: 0o700 })
-  const attachmentDirectory = join(directory, "attachments")
-  await mkdir(attachmentDirectory, { recursive: true, mode: 0o700 })
-  const manifestPath = join(directory, "outbound-files.json")
-  const paths: string[] = []
-  let total = 0
-  try {
-    for (const attachment of attachments) {
-      const response = await backendRelayPost(
-        "/api/relay/attachment",
-        JSON.stringify({ attachmentId: attachment.id, deviceId, jobId })
-      )
-      if (!response.ok)
-        throw new Error(`Attachment download returned ${response.status}`)
-      const declared = Number(response.headers.get("content-length") ?? "0")
-      if (declared > 100 * 1024 * 1024)
-        throw new Error(`${attachment.name} exceeds Mako's 100 MB file limit`)
-      const bytes = new Uint8Array(await response.arrayBuffer())
-      total += bytes.byteLength
-      if (bytes.byteLength > 100 * 1024 * 1024 || total > 200 * 1024 * 1024)
-        throw new Error("Slack attachments exceed Mako's 200 MB job limit")
-      const decoded = decodeURIComponent(
-        response.headers.get("x-mako-attachment-name") ?? attachment.name
-      )
-      const name = basename(decoded).replace(/[\p{Cc}\\/:]/gu, "_")
-      if (!name || name === "." || name === "..")
-        throw new Error("Slack returned an invalid attachment name")
-      const prefix = attachment.id.replace(/[^a-zA-Z0-9._-]/g, "_")
-      const path = join(attachmentDirectory, `${prefix}-${name}`)
-      await writeFile(path, bytes, { mode: 0o600 })
-      paths.push(path)
-    }
-    return {
-      paths,
-      manifestPath,
-      cleanup: () => rm(directory, { recursive: true, force: true }),
-    }
-  } catch (error) {
-    await rm(directory, { recursive: true, force: true })
-    throw error
-  }
-}
-
-function relayPrompt(
-  text: string,
-  paths: string[],
-  manifestPath: string
-): string {
-  const attached =
-    paths.length > 0
-      ? `\n\nFiles attached by the user:\n${paths.map((path) => `- ${path}`).join("\n")}`
-      : ""
-  return `${text}${attached}\n\nIf you create files the user should receive, write a JSON array of their paths to ${manifestPath}. Only include files inside the current workspace. Do not mention this delivery instruction in your answer.`
-}
-
-const OutboundFilesSchema = z.array(z.string().min(1).max(4_000)).max(5)
-
-async function uploadRelayArtifacts({
-  cwd,
-  deviceId,
-  jobId,
-  manifestPath,
-}: {
-  cwd: string
-  deviceId: string
-  jobId: string
-  manifestPath: string
-}): Promise<void> {
-  let manifest: string
-  try {
-    manifest = await readFile(manifestPath, "utf8")
-  } catch {
-    return
-  }
-  const listed = OutboundFilesSchema.parse(JSON.parse(manifest))
-  const root = await realpath(cwd)
-  for (const requested of listed) {
-    const path = await realpath(
-      isAbsolute(requested) ? requested : resolve(root, requested)
-    )
-    const local = relative(root, path)
-    if (
-      !local ||
-      local === ".." ||
-      local.startsWith(`..${sep}`) ||
-      isAbsolute(local)
-    )
-      throw new Error("A returned Slack file must be inside the workspace")
-    const info = await stat(path)
-    if (!info.isFile()) throw new Error(`${requested} is not a file`)
-    if (info.size > 25 * 1024 * 1024)
-      throw new Error(`${requested} exceeds Slack's 25 MB relay limit`)
-    const bytes = await readFile(path)
-    const buffer = new ArrayBuffer(bytes.byteLength)
-    new Uint8Array(buffer).set(bytes)
-    const body = new FormData()
-    const artifactKey = createHash("sha256")
-      .update(local)
-      .digest("hex")
-      .slice(0, 32)
-    body.set("artifactKey", artifactKey)
-    body.set("deviceId", deviceId)
-    body.set("jobId", jobId)
-    body.set("file", new Blob([buffer]), basename(path))
-    const response = await backendRelayUpload("/api/relay/artifact", body)
-    if (!response.ok)
-      throw new Error(`Relay artifact upload returned ${response.status}`)
-  }
 }
 
 function canonicalEvents(
@@ -349,6 +243,7 @@ async function executePayload(
   fast?: boolean
   harness: RelayHarness
   model?: string
+  presentation?: RelayPresentation
   result: string
   status?: "done" | "failed" | "stopped"
   threadPath?: string
@@ -367,6 +262,14 @@ async function executePayload(
       .slice(0, 15)
     return {
       harness: requested ?? "codex",
+      presentation: {
+        kind: "threads",
+        items: refs.map((ref) => ({
+          harness: ref.harness,
+          path: ref.path,
+          title: ref.title ?? "Untitled thread",
+        })),
+      },
       result:
         refs.length > 0
           ? refs
@@ -412,6 +315,14 @@ async function executePayload(
   if (payload.kind === "inspect-models") {
     return {
       harness,
+      presentation: {
+        kind: "models",
+        harness,
+        items: profile.models.map((candidate) => ({
+          id: candidate.id,
+          label: candidate.label,
+        })),
+      },
       result: profile.models
         .map((candidate) => {
           const controls = candidate.options.map((option) =>
@@ -680,7 +591,16 @@ function createRelayWorker(
         )
         if (!response.ok) return null
         return z
-          .object({ control: z.literal("stop").nullable() })
+          .object({
+            control: z
+              .union([
+                RelayControlSchema,
+                z
+                  .literal("stop")
+                  .transform(() => RelayControlSchema.parse({ kind: "stop" })),
+              ])
+              .nullable(),
+          })
           .parse(z.json().parse(await response.json())).control
       },
       complete: (completion) => completeRelay(JSON.stringify(completion)),

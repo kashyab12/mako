@@ -4,6 +4,10 @@ const OptionalStringSchema = z
   .union([z.literal("").transform(() => undefined), z.string().min(1)])
   .optional()
 
+const OptionalAzureSecretSchema = z
+  .union([z.literal("").transform(() => undefined), z.string().min(32)])
+  .optional()
+
 const OptionalSecretSchema = z
   .union([z.literal("").transform(() => undefined), z.string().min(64)])
   .optional()
@@ -35,7 +39,7 @@ const OptionalSlackSigningSecretSchema = z
 
 const ServerEnvBaseSchema = z.object({
   AZURE_CLIENT_ID: OptionalUuidSchema,
-  AZURE_CLIENT_SECRET: OptionalStringSchema,
+  AZURE_CLIENT_SECRET: OptionalAzureSecretSchema,
   AZURE_STORAGE_ACCOUNT_NAME: OptionalStorageAccountSchema,
   AZURE_TENANT_ID: OptionalUuidSchema,
   MAKO_MCP_TOKEN: z.string().min(32),
