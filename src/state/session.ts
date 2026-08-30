@@ -14,6 +14,7 @@ import type {
 } from "@/lib/types"
 import { getMako, hasBridge } from "@/lib/bridge"
 import { reconcileMessages } from "@/lib/reconcile"
+import { composerTurnRunning } from "@/lib/composer-action"
 import { prefsStore } from "@/state/prefs"
 import {
   addTab,
@@ -41,6 +42,7 @@ import {
   applyThreadRun,
   applyThreads,
   threads,
+  threadsStore,
 } from "@/state/threads"
 import {
   acp,
@@ -90,6 +92,18 @@ export const store = createStore<SessionStore>({
 
 export const useSession = createHook(store)
 export { shallowEqual }
+
+export function currentTurnRunning(): boolean {
+  const acpState = acpStore.get()
+  return composerTurnRunning({
+    builtinRunning: store.get().meta?.isStreaming ?? false,
+    livePresent: Boolean(acpState.session),
+    liveRunning: acpState.session?.status === "running",
+    liveThreadPath: acpState.threadPath,
+    viewingPath: threadsStore.get().viewing?.ref.path,
+    viewingRunning: threadsStore.get().run?.status === "running",
+  })
+}
 
 /* ------------------------------------------------------------------ */
 /* event application                                                   */
@@ -576,6 +590,23 @@ export const actions = {
 
   abort() {
     return guard(() => getMako().abort())
+  },
+
+  async stopCurrentTurn() {
+    const live = acpStore.get().session
+    const liveThreadPath = acpStore.get().threadPath
+    const viewing = threadsStore.get().viewing?.ref
+    const viewingOwnsComposer = Boolean(
+      viewing && (!live || viewing.path !== liveThreadPath)
+    )
+    if (viewingOwnsComposer && viewing)
+      return threads.abortReply(viewing)
+    if (live?.status === "running") return acp.cancel()
+    if (store.get().meta?.isStreaming) {
+      await actions.abort()
+      return true
+    }
+    return false
   },
 
   clearQueue() {

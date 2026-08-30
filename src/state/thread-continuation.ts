@@ -218,10 +218,14 @@ export const threadContinuationActions = {
   },
 
   async abortReply(ref: ThreadRef) {
-    if (!hasBridge()) return
-    await getMako()
-      .abortThreadRun(ref.path)
-      .catch(() => {})
+    if (!hasBridge()) return false
+    try {
+      await getMako().abortThreadRun(ref.path)
+      return true
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+      return false
+    }
   },
 
   /**
@@ -232,9 +236,11 @@ export const threadContinuationActions = {
     if (!hasBridge()) return false
     const ok = await threadContinuationActions.reply(ref, prompt)
     if (ok && threadsStore.get().working[ref.path]) {
-      await getMako()
-        .abortThreadRun(ref.path)
-        .catch(() => {})
+      try {
+        await getMako().abortThreadRun(ref.path)
+      } catch {
+        toast.error("The turn could not be stopped; your message remains queued")
+      }
     }
     return ok
   },

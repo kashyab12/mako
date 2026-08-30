@@ -41,6 +41,11 @@ import { useProviders } from "@/state/providers"
 import { stage } from "@/state/stage"
 import { stageFile } from "@/state/workspace"
 import { cn } from "@/lib/utils"
+import {
+  composerActionKind,
+  composerTurnRunning,
+  type ComposerActionKind,
+} from "@/lib/composer-action"
 import type { AcpPromptAttachment } from "@/lib/types"
 import {
   ArrowUpIcon,
@@ -67,10 +72,12 @@ interface RestorableDraft {
   attachments: Attachment[]
 }
 
-interface SendButtonProps {
+interface ComposerActionButtonProps {
+  action: ComposerActionKind
   ready: boolean
-  steering: boolean
+  stopping: boolean
   onSend: () => void
+  onStop: () => void
 }
 
 interface BannerProps {
@@ -392,6 +399,11 @@ export function Composer() {
     [draft, mention, update]
   )
 
+  const stopCurrentTurn = useCallback(
+    () => actions.stopCurrentTurn(),
+    []
+  )
+
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // The mention menu owns navigation keys while it is open.
     if (
@@ -438,15 +450,16 @@ export function Composer() {
       event.preventDefault()
       void submit(event.metaKey || event.ctrlKey ? "followUp" : undefined)
     }
-    if (event.key === "Escape" && status.streaming) {
+    if (event.key === "Escape" && turnRunning) {
       event.preventDefault()
-      void actions.abort()
+      void stopCurrentTurn()
     }
   }
 
   const busy = status.streaming || status.compacting
   const liveHarness = useAcp((state) => state.session?.harness ?? null)
   const liveRunning = useAcp((state) => state.session?.status === "running")
+  const stopping = useAcp((state) => state.canceling)
   const liveThreadPath = useAcp((state) => state.threadPath)
   const routedHarness = useThreads(
     (state) => state.viewing?.ref.harness ?? null
@@ -456,6 +469,19 @@ export function Composer() {
     liveHarness && (!routedPath || routedPath === liveThreadPath)
   )
   const viewingRunning = useThreads((state) => state.run?.status === "running")
+  const turnRunning = composerTurnRunning({
+    builtinRunning: status.streaming,
+    livePresent: Boolean(liveHarness),
+    liveRunning,
+    liveThreadPath,
+    viewingPath: routedPath,
+    viewingRunning,
+  })
+  const hasContent = Boolean(draft.trim()) || attachments.items.length > 0
+  const primaryAction = composerActionKind({
+    running: turnRunning,
+    hasContent,
+  })
   const viewingArchived = useThreads((state) =>
     Boolean(state.viewing?.ref.archived)
   )
@@ -627,21 +653,12 @@ export function Composer() {
             <div className="ml-auto flex items-center gap-1">
               <Slot name="composer.trailing" meta={meta} disabled={busy} />
               <ContextDial />
-              {status.streaming ? (
-                <IconAction
-                  label="Stop"
-                  keys={["Esc"]}
-                  side="top"
-                  tone="danger"
-                  onClick={() => void actions.abort()}
-                >
-                  <SquareIcon />
-                </IconAction>
-              ) : null}
-              <SendButton
-                ready={Boolean(draft.trim()) || attachments.items.length > 0}
-                steering={status.streaming}
+              <ComposerActionButton
+                action={primaryAction}
+                ready={hasContent}
+                stopping={liveOwnsComposer && stopping}
                 onSend={() => void submit()}
+                onStop={() => void stopCurrentTurn()}
               />
             </div>
           </div>
@@ -656,26 +673,44 @@ export function Composer() {
  *
  * Circular and lit rather than a flat pill: it is the only control in the
  * window that should look pressable from across the room, and a flat fill at
- * this size reads as a disabled placeholder. Inert until there is something to
- * send, so the composer never invites a no-op.
+ * this size reads as a disabled placeholder. An empty running composer owns
+ * the stop action; typing turns that same primary position into queue.
  */
-function SendButton({ ready, steering, onSend }: SendButtonProps) {
+function ComposerActionButton({
+  action,
+  ready,
+  stopping,
+  onSend,
+  onStop,
+}: ComposerActionButtonProps) {
+  const stop = action === "stop"
+  const queue = action === "queue"
+  const enabled = stop || ready
+  const label = stop
+    ? stopping
+      ? "Stopping…"
+      : "Stop"
+    : queue
+      ? "Queue message"
+      : "Send"
   return (
     <button
       type="button"
-      onClick={onSend}
-      disabled={!ready}
-      aria-label={steering ? "Steer the current turn" : "Send"}
-      title={steering ? "Steer the current turn" : "Send"}
+      onClick={stop ? onStop : onSend}
+      disabled={!enabled || (stop && stopping)}
+      aria-label={label}
+      title={label}
       className={cn(
         "pressable relative flex size-6 shrink-0 items-center justify-center rounded-full",
         "[transition:transform_var(--duration-press)_var(--ease-out),background-color_160ms_ease,opacity_160ms_ease]",
-        ready
+        enabled
           ? "bg-foreground text-background hover:opacity-90"
           : "bg-foreground/10 text-faint"
       )}
     >
-      {steering ? (
+      {stop ? (
+        <SquareIcon className="size-2.5 fill-current" strokeWidth={0} />
+      ) : queue ? (
         <CornerDownLeftIcon className="size-3" />
       ) : (
         <ArrowUpIcon className="size-3.5" strokeWidth={2.2} />
@@ -841,7 +876,6 @@ function harnessTitle(harness: string): string {
  */
 function ComposerRouting() {
   const viewing = useThreads((state) => state.viewing?.ref)
-  const run = useThreads((state) => state.run)
   const viewingQueued = useThreads((state) =>
     state.viewing
       ? (state.queuedReplies[state.viewing.ref.path]?.prompts.length ?? 0)
@@ -862,16 +896,6 @@ function ComposerRouting() {
         <HarnessIcon harness={live.harness} className="size-3.5" />
         {harnessTitle(live.harness)}
         <span className="text-label text-faint">live</span>
-        {live.status === "running" ? (
-          <button
-            type="button"
-            onClick={() => acp.cancel()}
-            title="Stops this turn only — the session stays live"
-            className="pressable ml-1 rounded px-1 text-label text-faint hover:text-foreground"
-          >
-            stop turn
-          </button>
-        ) : null}
         {queued ? (
           <span className="text-label text-faint">1 queued</span>
         ) : null}
@@ -888,16 +912,6 @@ function ComposerRouting() {
         onChange={() => setModelChangedFor(modelContext)}
       />
       <ForeignEffortPicker harness={harness} threadModel={threadModel} />
-      {viewing && run?.status === "running" ? (
-        <button
-          type="button"
-          onClick={() => void threads.abortReply(viewing)}
-          className="pressable flex h-7 items-center gap-1.5 rounded-md bg-raised px-2 text-label text-faint hover:text-foreground"
-        >
-          <span className="size-1.5 animate-live rounded-full bg-ember" />
-          working — stop
-        </button>
-      ) : null}
       {viewingQueued > 0 ? (
         <span className="flex h-7 items-center rounded-md bg-raised px-2 text-label text-faint">
           {viewingQueued} queued

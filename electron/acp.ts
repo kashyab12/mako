@@ -714,7 +714,7 @@ export async function acpSetMode(id: string, modeId: string): Promise<void> {
 export async function acpCancel(id: string): Promise<void> {
   const live = sessions.get(id)
   if (!live?.sessionId || !live.connection) return
-  await live.connection.cancel({ sessionId: live.sessionId }).catch(() => {})
+  await live.connection.cancel({ sessionId: live.sessionId })
 }
 
 export function acpClose(id: string): void {

@@ -35,6 +35,7 @@ interface AcpState {
   blocks: AcpBlock[]
   permission: AcpPermissionRequest | null
   starting: boolean
+  canceling: boolean
   threadPath?: string
   /** Typed while the agent was working; sent the moment it goes quiet. */
   queued: { text: string; attachments: AcpPromptAttachment[] } | null
@@ -50,16 +51,20 @@ export const acpStore = createStore<AcpState>({
   blocks: [],
   permission: null,
   starting: false,
+  canceling: false,
   queued: null,
   hiddenUserPrompt: null,
 })
 export const useAcp = createHook(acpStore)
 
 export function applyAcpSession(session: AcpSessionState) {
-  const { session: current, queued, threadPath } = acpStore.get()
+  const { session: current, queued, threadPath, canceling } = acpStore.get()
   if (!current || current.id !== session.id) return
   const previousStatus = current.status
-  acpStore.set({ session })
+  acpStore.set({
+    session,
+    canceling: session.status === "running" ? canceling : false,
+  })
   if (threadPath) {
     setThreadRunning(threadPath, session.status === "running")
     if (session.status === "running") setThreadAttention(threadPath, null)
@@ -218,7 +223,12 @@ export const acp = {
   /** Open a provider-owned session directly when its live protocol can resume it. */
   async openInteractive(ref: ThreadRef) {
     if (!hasBridge()) return
-    acpStore.set({ starting: true, blocks: [], permission: null })
+    acpStore.set({
+      starting: true,
+      canceling: false,
+      blocks: [],
+      permission: null,
+    })
     try {
       const canResume = canResumeInteractively(ref.harness)
       const harness = canResume
@@ -274,6 +284,7 @@ export const acp = {
     setThreadRunning(ref.path, true)
     acpStore.set({
       starting: true,
+      canceling: false,
       blocks: [{ type: "user", text: prompt }],
       permission: null,
       threadPath: ref.path,
@@ -317,6 +328,7 @@ export const acp = {
     if (!hasBridge()) return false
     acpStore.set({
       starting: true,
+      canceling: false,
       blocks: displayPrompt ? [{ type: "user", text: displayPrompt }] : [],
       permission: null,
       threadPath,
@@ -378,6 +390,7 @@ export const acp = {
         blocks: [],
         permission: null,
         starting: false,
+        canceling: false,
         queued: null,
         threadPath: undefined,
         hiddenUserPrompt: null,
@@ -433,10 +446,29 @@ export const acp = {
     void getMako().acpSetMode(session.id, modeId)
   },
 
-  cancel() {
-    const { session } = acpStore.get()
-    if (!session || !hasBridge()) return
-    void getMako().acpCancel(session.id)
+  async cancel() {
+    const { session, canceling } = acpStore.get()
+    if (!session || !hasBridge() || canceling) return false
+    acpStore.set({ canceling: true })
+    try {
+      await getMako().acpCancel(session.id)
+      globalThis.setTimeout(() => {
+        const current = acpStore.get()
+        if (
+          current.session?.id === session.id &&
+          current.session.status === "running" &&
+          current.canceling
+        ) {
+          acpStore.set({ canceling: false })
+          toast.error("The provider did not stop the current turn")
+        }
+      }, 10_000)
+      return true
+    } catch (error) {
+      acpStore.set({ canceling: false })
+      toast.error(error instanceof Error ? error.message : String(error))
+      return false
+    }
   },
 
   close() {
@@ -447,6 +479,7 @@ export const acp = {
       session: null,
       blocks: [],
       permission: null,
+      canceling: false,
       queued: null,
       threadPath: undefined,
       hiddenUserPrompt: null,

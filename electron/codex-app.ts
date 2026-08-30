@@ -251,7 +251,7 @@ export async function codexAppCancel(id: string): Promise<void> {
   await rpcRequest(live, "turn/interrupt", {
     threadId: live.threadId,
     turnId: live.currentTurnId,
-  }).catch(() => {})
+  })
 }
 
 export function codexAppClose(id: string): void {

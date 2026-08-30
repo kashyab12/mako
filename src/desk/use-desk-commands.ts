@@ -8,7 +8,7 @@ import {
   type DeskCommand,
 } from "@/extend/commands"
 import { installBuiltins } from "@/desk/builtins"
-import { actions, store } from "@/state/session"
+import { actions, currentTurnRunning, store } from "@/state/session"
 import { git } from "@/state/git"
 import { prefsStore, setPref, togglePref } from "@/state/prefs"
 import { stage } from "@/state/stage"
@@ -122,8 +122,8 @@ const DESK_COMMANDS: DeskCommand[] = [
     title: "Stop the current turn",
     section: "Session",
     keys: "mod+escape",
-    when: () => store.get().meta?.isStreaming ?? false,
-    run: () => void actions.abort(),
+    when: currentTurnRunning,
+    run: () => void actions.stopCurrentTurn(),
   },
   {
     id: "session.compact",

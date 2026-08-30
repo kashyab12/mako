@@ -33,6 +33,10 @@ import { acpBlocksToMessages } from "../src/lib/acp-blocks.ts"
 import { contextAccounting } from "../src/lib/context-accounting.ts"
 import { runningTerminalForWorkspace } from "../src/state/terminal.ts"
 import { workspaceFocusOf } from "../src/components/stage/workspace-focus-context.ts"
+import {
+  composerActionKind,
+  composerTurnRunning,
+} from "../src/lib/composer-action.ts"
 import { responseSections } from "../src/lib/exchanges.ts"
 import {
   pendingThreadInput,
@@ -50,6 +54,44 @@ import type {
 
 const css = readFileSync(new URL("../src/index.css", import.meta.url), "utf8")
 assert.doesNotMatch(css, /\binfinite\b/)
+assert.equal(
+  composerActionKind({ running: false, hasContent: false }),
+  "send"
+)
+assert.equal(
+  composerActionKind({ running: false, hasContent: true }),
+  "send"
+)
+assert.equal(
+  composerActionKind({ running: true, hasContent: false }),
+  "stop"
+)
+assert.equal(
+  composerActionKind({ running: true, hasContent: true }),
+  "queue"
+)
+assert.equal(
+  composerTurnRunning({
+    builtinRunning: false,
+    livePresent: true,
+    liveRunning: true,
+    liveThreadPath: "/live",
+    viewingPath: "/live",
+    viewingRunning: false,
+  }),
+  true
+)
+assert.equal(
+  composerTurnRunning({
+    builtinRunning: false,
+    livePresent: true,
+    liveRunning: true,
+    liveThreadPath: "/live",
+    viewingPath: "/other",
+    viewingRunning: false,
+  }),
+  false
+)
 
 assert.deepEqual(
   workspaceFocusOf({
