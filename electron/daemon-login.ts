@@ -56,7 +56,6 @@ ${DAEMON_NODE_ARGS.map((argument) => `    <string>${argument}</string>`).join("\
   <dict>
     <key>SuccessfulExit</key><false/>
   </dict>
-  <key>ProcessType</key><string>Background</string>
 </dict>
 </plist>
 `
