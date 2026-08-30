@@ -267,6 +267,29 @@ function spokenText(content: CursorTextContent): string | null {
   return trimmed
 }
 
+async function nativeFiles(paths: string[]): Promise<NativeFile[]> {
+  const files: NativeFile[] = []
+  const iterator = paths.values()
+  const worker = async () => {
+    while (true) {
+      const item = iterator.next()
+      if (item.done) return
+      // A session directory without a store yet.
+      const info = await stat(item.value).catch(() => null)
+      if (info)
+        files.push({
+          path: item.value,
+          bytes: info.size,
+          mtimeMs: info.mtimeMs,
+        })
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(16, paths.length) }, worker)
+  )
+  return files
+}
+
 export class CursorProvider implements SessionProvider {
   harness = "cursor" as const
   displayName = "Cursor"
@@ -285,25 +308,18 @@ export class CursorProvider implements SessionProvider {
   }
 
   async discover(): Promise<NativeFile[]> {
-    const files: NativeFile[] = []
+    const paths: string[] = []
     const workspaces = await readdir(this.chatRoot).catch((): string[] => [])
     for (const workspace of workspaces) {
       const root = join(this.chatRoot, workspace)
       const sessions = await readdir(root).catch((): string[] => [])
-      for (const session of sessions) {
-        const path = join(root, session, "store.db")
-        // A session directory without a store yet.
-        const info = await stat(path).catch(() => null)
-        if (info) files.push({ path, bytes: info.size, mtimeMs: info.mtimeMs })
-      }
+      for (const session of sessions)
+        paths.push(join(root, session, "store.db"))
     }
     const acpSessions = await readdir(this.acpRoot).catch((): string[] => [])
-    for (const session of acpSessions) {
-      const path = join(this.acpRoot, session, "store.db")
-      const info = await stat(path).catch(() => null)
-      if (info) files.push({ path, bytes: info.size, mtimeMs: info.mtimeMs })
-    }
-    return files
+    for (const session of acpSessions)
+      paths.push(join(this.acpRoot, session, "store.db"))
+    return nativeFiles(paths)
   }
 
   async peek(file: NativeFile): Promise<ThreadRef | null> {
