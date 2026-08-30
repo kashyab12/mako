@@ -43,13 +43,12 @@ export function AppShell() {
     }
   }, [])
 
-  // Sessions and the working tree both change outside our process — a branch
-  // switched in a terminal, a session started elsewhere. Refresh when the
-  // window regains focus rather than polling for either.
+  // The working tree changes outside our process when a terminal switches a
+  // branch. Refresh on focus rather than polling; the thread catalog owns its
+  // separate native-store refresh.
   useEffect(() => {
     const refresh = () => {
       if (store.get().phase !== "ready") return
-      void actions.refreshSessions()
       void actions.refreshGit()
     }
     window.addEventListener("focus", refresh)

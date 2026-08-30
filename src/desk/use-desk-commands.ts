@@ -316,7 +316,6 @@ const DESK_COMMANDS: DeskCommand[] = [
     run: () => {
       const next = prefsStore.get().railScope === "all" ? "workspace" : "all"
       setPref("railScope", next)
-      void actions.refreshSessions(undefined, next)
     },
   },
   {

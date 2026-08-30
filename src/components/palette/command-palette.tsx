@@ -7,8 +7,8 @@ import {
   type DeskCommand,
 } from "@/extend/commands"
 import { fuzzy, rank } from "@/lib/fuzzy"
-import { firstLine } from "@/lib/format"
 import { actions, useSession } from "@/state/session"
+import { threads, useThreads } from "@/state/threads"
 import { modelKey, noteModelUse, usePrefs } from "@/state/prefs"
 import { useWorkspaceFiles } from "@/state/files"
 import { viewer } from "@/state/viewer"
@@ -51,7 +51,7 @@ export function CommandPalette() {
   const keybindings = usePrefs((prefs) => prefs.keybindings)
   const favoriteModels = usePrefs((prefs) => prefs.favoriteModels)
   const recentModels = usePrefs((prefs) => prefs.recentModels)
-  const sessions = useSession((state) => state.sessions)
+  const sessions = useThreads((state) => state.threads)
   const models = useSession((state) => state.models)
   const piCommands = useSession((state) => state.capabilities.commands)
   const activeModel = useSession((state) => state.meta?.model)
@@ -138,9 +138,9 @@ export function CommandPalette() {
       list.push({
         id: `session:${session.path}`,
         section: "Open session",
-        title: session.name || firstLine(session.firstMessage, 60) || "Untitled session",
-        hint: `${session.messageCount} messages`,
-        run: () => void actions.openSession(session.path),
+        title: session.title ?? "Untitled session",
+        hint: [session.harness, session.cwd].filter(Boolean).join(" · "),
+        run: () => void threads.view(session),
       })
     }
 

@@ -11,11 +11,15 @@ import { toast } from "sonner"
 
 /** The composer harness to give back when the viewer closes. */
 let harnessBeforeViewing: string | null = null
+let viewingGeneration = 0
 
 export function leaveViewerForLive(harness: string) {
+  viewingGeneration += 1
   harnessBeforeViewing = null
   threadsStore.set({
     viewing: null,
+    opening: null,
+    viewingBusy: false,
     run: null,
     composerHarness: harness,
   })
@@ -125,6 +129,7 @@ export const threadViewingActions = {
   /** Open a foreign session read-only, translated to the canonical shape. */
   async view(ref: ThreadRef) {
     if (!hasBridge()) return
+    const generation = ++viewingGeneration
     markThreadReviewed(ref.path)
     const cached = threadCache.get(ref.path)
     if (cached) {
@@ -134,6 +139,7 @@ export const threadViewingActions = {
       }
       threadsStore.set({
         viewing: cached,
+        opening: null,
         viewingBusy: false,
         run: null,
         composerHarness: cached.ref.harness,
@@ -141,7 +147,10 @@ export const threadViewingActions = {
       void getMako()
         .threadRun(ref.path)
         .then((run) => {
-          if (threadsStore.get().viewing?.ref.path === ref.path)
+          if (
+            generation === viewingGeneration &&
+            threadsStore.get().viewing?.ref.path === ref.path
+          )
             threadsStore.set({ run })
         })
         .catch(() => {})
@@ -151,7 +160,7 @@ export const threadViewingActions = {
       void getMako()
         .pageThread(ref.path)
         .then((fresh) => {
-          if (!fresh) return
+          if (!fresh || generation !== viewingGeneration) return
           const replaced: ViewedThread = {
             ...viewedPage(fresh),
             streamRevision: (cached.streamRevision ?? 0) + 1,
@@ -166,15 +175,18 @@ export const threadViewingActions = {
         .catch(() => {})
       return
     }
-    threadsStore.set({ viewingBusy: true })
+    threadsStore.set({ opening: ref, viewingBusy: true, run: null })
     try {
-      const page = await getMako().pageThread(ref.path)
+      const [page, run] = await Promise.all([
+        getMako().pageThread(ref.path),
+        getMako()
+          .threadRun(ref.path)
+          .catch(() => null),
+      ])
+      if (generation !== viewingGeneration) return
       if (!page) throw new Error("This session could not be read")
       const thread = viewedPage(page)
       rememberThread(thread)
-      const run = await getMako()
-        .threadRun(ref.path)
-        .catch(() => null)
       // The composer adopts this conversation: its agent picker shows the
       // harness that owns the session, and switching it moves the
       // conversation on the next send. No separate "move" ceremony.
@@ -183,6 +195,7 @@ export const threadViewingActions = {
       }
       threadsStore.set({
         viewing: thread,
+        opening: null,
         viewingBusy: false,
         run,
         composerHarness: thread.ref.harness,
@@ -191,7 +204,8 @@ export const threadViewingActions = {
       // keeps appending, and those entries belong on screen.
       void getMako().followThread(ref.path, thread.ref.bytes ?? 0)
     } catch (error) {
-      threadsStore.set({ viewingBusy: false })
+      if (generation !== viewingGeneration) return
+      threadsStore.set({ opening: null, viewingBusy: false })
       toast.error(error instanceof Error ? error.message : String(error))
     }
   },
@@ -234,10 +248,13 @@ export const threadViewingActions = {
   },
 
   closeViewer() {
+    viewingGeneration += 1
     const restore = harnessBeforeViewing
     harnessBeforeViewing = null
     const patch: Partial<ThreadsState> = {
       viewing: null,
+      opening: null,
+      viewingBusy: false,
       run: null,
     }
     if (restore !== null) patch.composerHarness = restore

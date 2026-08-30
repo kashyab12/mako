@@ -28,6 +28,9 @@ const providerStore = createStore<ProviderState>({
 
 export const useProviders = createHook(providerStore)
 
+let loaded = false
+let loading: Promise<void> | null = null
+
 function admit(profile: HarnessProfile): void {
   providerStore.set({
     profiles: { ...providerStore.get().profiles, [profile.id]: profile },
@@ -37,13 +40,30 @@ function admit(profile: HarnessProfile): void {
 
 export const providers = {
   async loadAll(force = false): Promise<void> {
-    if (!hasBridge()) return
-    const profiles = await getMako().harnessProfiles(force).catch(() => [])
-    for (const profile of profiles) admit(profile)
+    if (!hasBridge() || (loaded && !force)) return
+    if (loading) return loading
+    loading = getMako()
+      .harnessProfiles(force)
+      .then((profiles) => {
+        const next = { ...providerStore.get().profiles }
+        for (const profile of profiles) next[profile.id] = profile
+        providerStore.set({ profiles: next })
+        for (const profile of profiles) initializeComposerTuning(profile)
+        loaded = true
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        loading = null
+      })
+    return loading
   },
 
-  async load(provider: string): Promise<void> {
-    if (!hasBridge()) return
+  async load(provider: string, force = false): Promise<void> {
+    if (
+      !hasBridge() ||
+      (!force && providerStore.get().profiles[provider] !== undefined)
+    )
+      return
     const profile = await getMako().harnessTuning(provider).catch(() => null)
     if (profile) admit(profile)
   },

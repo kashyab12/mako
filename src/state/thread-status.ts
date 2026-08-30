@@ -19,6 +19,25 @@ const OBSERVED_STATUS: ThreadStatus = { kind: "observed" }
 const EXTERNAL_OPEN_STATUS: ThreadStatus = { kind: "external-open" }
 const EXTERNAL_ACTIVE_STATUS: ThreadStatus = { kind: "external-active" }
 
+export function threadStatusPriority(status: ThreadStatus): number {
+  switch (status.kind) {
+    case "needs-permission":
+      return 5
+    case "failed":
+      return 4
+    case "review":
+      return status.unread ? 3 : 0
+    case "working":
+      return 2
+    case "observed":
+    case "external-active":
+      return 1
+    case "external-open":
+    case "idle":
+      return 0
+  }
+}
+
 export function threadStatus(
   ref: ThreadRef,
   state: ThreadsState = threadsStore.get()
@@ -96,9 +115,8 @@ export function setThreadAttention(
 }
 
 export function markThreadReviewed(path: string) {
-  const current = threadsStore.get().attention[path]
-  if (current?.kind !== "review" || !current.unread) return
-  setThreadAttention(path, { ...current, unread: false })
+  if (threadsStore.get().attention[path]?.kind !== "review") return
+  setThreadAttention(path, null)
 }
 
 export function applyThreadRun(run: ThreadRunState) {
@@ -107,11 +125,12 @@ export function applyThreadRun(run: ThreadRunState) {
   setThreadRunning(run.path, run.status === "running")
   if (run.status === "running") setThreadAttention(run.path, null)
   else if (run.status === "done" && !queue)
-    setThreadAttention(run.path, {
-      kind: "review",
-      at: Date.now(),
-      unread: viewing?.ref.path !== run.path,
-    })
+    setThreadAttention(
+      run.path,
+      viewing?.ref.path === run.path
+        ? null
+        : { kind: "review", at: Date.now(), unread: true }
+    )
   else if (run.status === "failed")
     setThreadAttention(run.path, {
       kind: "failed",

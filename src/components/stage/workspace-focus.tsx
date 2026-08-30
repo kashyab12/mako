@@ -10,7 +10,9 @@ import { useThreads } from "@/state/threads"
 export function WorkspaceFocusProvider({ children }: { children: ReactNode }) {
   const sessionCwd = useSession((state) => state.meta?.cwd)
   const sessionTitle = useSession((state) => state.meta?.sessionName)
-  const viewing = useThreads((state) => state.viewing?.ref)
+  const viewing = useThreads(
+    (state) => state.opening ?? state.viewing?.ref
+  )
   const live = useAcp((state) => state.session)
   const liveThreadPath = useAcp((state) => state.threadPath)
   const focus = workspaceFocusOf({

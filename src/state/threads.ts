@@ -10,11 +10,13 @@ import {
   applyThreadRun,
   clearObserved,
   markObserved,
+  markThreadReviewed,
   OBSERVED_IDLE_MS,
   setThreadAttention,
   setThreadRunning,
   setThreadWorkDetail,
   threadStatus,
+  threadStatusPriority,
 } from "@/state/thread-status"
 import type { ThreadStatus } from "@/state/thread-status"
 import {
@@ -54,12 +56,14 @@ export {
   applyThreadRun,
   canResumeInteractively,
   initializeComposerTuning,
+  markThreadReviewed,
   setComposerHarness,
   setComposerTuning,
   setThreadAttention,
   setThreadRunning,
   setThreadWorkDetail,
   threadStatus,
+  threadStatusPriority,
   withConversion,
 }
 export type { ThreadStatus }

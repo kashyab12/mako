@@ -55,12 +55,14 @@ export function groupThreadFolders({
   currentCwd,
   pinnedThreads,
   pinnedFolders,
+  priorities = {},
   sortBy,
 }: {
   refs: ThreadRef[]
   currentCwd?: string
   pinnedThreads: string[]
   pinnedFolders: string[]
+  priorities?: Record<string, number>
   sortBy: RailSortBy
 }): ThreadFolder[] {
   const held = new Set(pinnedThreads)
@@ -81,6 +83,8 @@ export function groupThreadFolders({
       .find(Boolean) ?? folderPath(currentCwd)
   if (currentKey && !byCwd.has(currentKey)) byCwd.set(currentKey, [])
   const byOrder = (a: ThreadRef, b: ThreadRef): number => {
+    const urgency = (priorities[b.path] ?? 0) - (priorities[a.path] ?? 0)
+    if (urgency !== 0) return urgency
     if (sortBy === "name") return (a.title ?? "").localeCompare(b.title ?? "")
     if (sortBy === "created")
       return (b.startedAt ?? "").localeCompare(a.startedAt ?? "")

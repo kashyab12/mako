@@ -76,6 +76,7 @@ export function AcpPanel() {
             {harnessLabel(session.harness)} · live · {session.cwd}
           </p>
         </div>
+        <LiveStatus />
         <ModePicker />
         <button
           type="button"
@@ -99,6 +100,44 @@ export function AcpPanel() {
  * for its behaviours; renaming them here would mean documenting a mapping
  * forever.
  */
+function LiveStatus() {
+  const session = useAcp((state) => state.session)
+  const permission = useAcp((state) => state.permission)
+  const canceling = useAcp((state) => state.canceling)
+  const sending = useAcp((state) => state.sending)
+  const queued = useAcp((state) => state.queued)
+  if (!session) return null
+  const label = permission
+    ? "Needs input"
+    : canceling
+      ? "Stopping…"
+      : sending
+        ? "Starting turn…"
+        : session.status === "running"
+        ? queued.length > 0
+          ? `Working · ${queued.length} queued`
+          : "Working"
+        : session.status === "failed"
+          ? "Failed"
+          : "Ready"
+  return (
+    <span
+      className={cn(
+        "shrink-0 rounded-full px-2 py-0.5 text-label",
+        permission
+          ? "bg-caution/10 text-caution"
+          : session.status === "failed"
+            ? "bg-negative/10 text-negative"
+            : session.status === "running" || canceling || sending
+              ? "bg-fill-selected text-foreground/80"
+              : "bg-raised text-faint"
+      )}
+    >
+      {label}
+    </span>
+  )
+}
+
 function ModePicker() {
   const session = useAcp((state) => state.session)
   if (!session || session.modes.length === 0) return null

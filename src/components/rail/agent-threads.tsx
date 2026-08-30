@@ -9,7 +9,9 @@ import {
 } from "@/lib/thread-folders"
 import {
   threadStatus,
+  threadStatusPriority,
   threads,
+  threadsStore,
   useThreads,
 } from "@/state/threads"
 import { actions, shallowEqual, useSession } from "@/state/session"
@@ -188,6 +190,16 @@ export function AgentThreads() {
     )
   }, [all, cwd, deferred, filter, scope])
 
+  const priorities = useMemo(() => {
+    const state = { ...threadsStore.get(), attention, observed, working }
+    return Object.fromEntries(
+      matched.map((ref) => [
+        ref.path,
+        threadStatusPriority(threadStatus(ref, state)),
+      ])
+    )
+  }, [attention, matched, observed, working])
+
   const held = useMemo(() => {
     const set = new Set(pinned)
     const list = matched.filter((ref) => set.has(ref.path))
@@ -202,9 +214,10 @@ export function AgentThreads() {
         currentCwd: cwd,
         pinnedThreads: pinned,
         pinnedFolders: pinnedProjects,
+        priorities,
         sortBy,
       }),
-    [cwd, matched, pinned, pinnedProjects, sortBy]
+    [cwd, matched, pinned, pinnedProjects, priorities, sortBy]
   )
 
   const searchActive = Boolean(deferred.trim())
@@ -852,7 +865,9 @@ const ThreadRow = memo(function ThreadRow({
     status.kind === "observed" || status.kind === "external-active"
   const isPinned = usePrefs((prefs) => prefs.pinnedThreads.includes(ref.path))
   const active = useSession((state) => state.meta?.sessionFile === ref.path)
-  const viewingPath = useThreads((state) => state.viewing?.ref.path)
+  const selectedPath = useThreads(
+    (state) => state.opening?.path ?? state.viewing?.ref.path
+  )
 
   const open = () => {
     void threads.view(ref)
@@ -861,7 +876,7 @@ const ThreadRow = memo(function ThreadRow({
   // One selection at a time: while a thread is open in the viewer, IT is
   // the selection — the native tab keeps its state but not its highlight,
   // because two lit rows read as a broken click.
-  const lit = viewingPath ? viewingPath === ref.path : active
+  const lit = selectedPath ? selectedPath === ref.path : active
 
   return (
     <button

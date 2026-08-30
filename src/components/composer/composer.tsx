@@ -195,6 +195,12 @@ export function Composer() {
     },
     [draftKey]
   )
+  const draftRef = useRef(draft)
+  const updateRef = useRef(update)
+  useEffect(() => {
+    draftRef.current = draft
+    updateRef.current = update
+  }, [draft, update])
 
   /** Re-read the token under the caret after any edit or caret move. */
   const syncMention = useCallback(() => {
@@ -248,7 +254,7 @@ export function Composer() {
     const focus = () => textarea.current?.focus()
     const setText = (event: ComposerTextEvent) => {
       const { detail } = event
-      update(detail)
+      updateRef.current(detail)
       requestAnimationFrame(() => {
         const node = textarea.current
         node?.focus()
@@ -258,9 +264,10 @@ export function Composer() {
     const insert = (event: ComposerTextEvent) => {
       const { detail } = event
       const node = textarea.current
-      const at = node?.selectionStart ?? draft.length
-      const next = `${draft.slice(0, at)}${detail}${draft.slice(at)}`
-      update(next)
+      const current = draftRef.current
+      const at = node?.selectionStart ?? current.length
+      const next = `${current.slice(0, at)}${detail}${current.slice(at)}`
+      updateRef.current(next)
       requestAnimationFrame(() => {
         node?.focus()
         node?.setSelectionRange(at + detail.length, at + detail.length)
@@ -274,7 +281,7 @@ export function Composer() {
       window.removeEventListener("mako:compose", setText)
       window.removeEventListener("mako:insert", insert)
     }
-  }, [draft, update])
+  }, [])
 
   const submit = useCallback(
     async (mode?: "steer" | "followUp") => {
@@ -345,8 +352,7 @@ export function Composer() {
           // Mod+Enter while the agent runs: stop the turn, then send — the
           // live protocol's own interrupt. Plain Enter queues agent-side.
           if (mode && liveSession.status === "running") acp.cancel()
-          await acp.send(full, acpAttachments)
-          ok = true
+          ok = await acp.send(full, acpAttachments)
         }
       } else if (threadsStore.get().acpable.includes(harness)) {
         ok = await acp.startFresh(
@@ -883,6 +889,7 @@ function ComposerRouting() {
   )
   const harness = useThreads((state) => state.composerHarness)
   const live = useAcp((state) => state.session)
+  const liveThreadPath = useAcp((state) => state.threadPath)
   const queued = useAcp((state) => state.queued)
   const [modelChangedFor, setModelChangedFor] = useState<string | null>(null)
   const moving = Boolean(viewing && harness !== viewing.harness)
@@ -890,14 +897,20 @@ function ComposerRouting() {
   const threadModel =
     !moving && modelChangedFor !== modelContext ? viewing?.model : undefined
 
-  if (live) {
+  if (live && (!viewing || viewing.path === liveThreadPath)) {
     return (
       <span className="flex h-7 items-center gap-1.5 rounded-md bg-raised px-2 text-ui text-foreground/85">
         <HarnessIcon harness={live.harness} className="size-3.5" />
         {harnessTitle(live.harness)}
         <span className="text-label text-faint">live</span>
-        {queued ? (
-          <span className="text-label text-faint">1 queued</span>
+        {queued.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => acp.unqueue()}
+            className="pressable rounded px-1 text-label text-faint hover:text-foreground"
+          >
+            {queued.length} queued · clear
+          </button>
         ) : null}
       </span>
     )

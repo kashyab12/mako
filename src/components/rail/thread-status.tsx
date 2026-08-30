@@ -23,48 +23,51 @@ export function ThreadStatusMark({
           className="flex shrink-0 items-center gap-1 text-label text-ember/80"
         >
           <Loader2Icon className="size-3 animate-spin" />
+          <span>Working</span>
           <Elapsed since={status.since} />
         </span>
       )
     case "needs-permission":
       return (
-        <ShieldQuestionIcon
-          className="size-3 shrink-0 text-caution"
-          aria-label={
-            status.detail ? `Needs input: ${status.detail}` : "Needs input"
-          }
-        />
+        <span
+          title={status.detail ?? "Needs input"}
+          className="flex shrink-0 items-center gap-1 text-label text-caution"
+        >
+          <ShieldQuestionIcon className="size-3" />
+          Needs input
+        </span>
       )
     case "failed":
       return (
-        <TriangleAlertIcon
-          className="size-3 shrink-0 text-negative"
-          aria-label={status.detail ? `Failed: ${status.detail}` : "Failed"}
-        />
+        <span
+          title={status.detail ?? "Failed"}
+          className="flex shrink-0 items-center gap-1 text-label text-negative"
+        >
+          <TriangleAlertIcon className="size-3" />
+          Failed
+        </span>
       )
     case "review":
       return (
-        <span
-          className="relative flex size-3 shrink-0 items-center justify-center"
-          aria-label="Ready for review"
-        >
-          <CheckIcon className="size-3 text-positive" />
-          {status.unread ? (
-            <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-foreground" />
-          ) : null}
+        <span className="flex shrink-0 items-center gap-1 text-label text-positive">
+          <CheckIcon className="size-3" />
+          {status.unread ? "Done" : "Reviewed"}
         </span>
       )
     case "observed":
     case "external-active":
       return (
-        <Loader2Icon
-          className="size-3 shrink-0 animate-spin text-foreground/45"
-          aria-label={
+        <span
+          title={
             status.kind === "external-active"
               ? "Active in another app"
               : "Live activity"
           }
-        />
+          className="flex shrink-0 items-center gap-1 text-label text-faint"
+        >
+          <Loader2Icon className="size-3 animate-spin" />
+          Active
+        </span>
       )
     case "external-open":
     case "idle":

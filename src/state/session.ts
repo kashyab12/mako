@@ -7,7 +7,6 @@ import type {
   ChatMessage,
   SessionMeta,
   SessionState,
-  SessionSummary,
   TabSnapshot,
   ThinkingLevel,
   TreeNode,
@@ -15,7 +14,6 @@ import type {
 import { getMako, hasBridge } from "@/lib/bridge"
 import { reconcileMessages } from "@/lib/reconcile"
 import { composerTurnRunning } from "@/lib/composer-action"
-import { prefsStore } from "@/state/prefs"
 import {
   addTab,
   cacheOf,
@@ -68,8 +66,6 @@ export interface SessionStore {
   git?: GitStatus
   models: ModelInfo[]
   capabilities: Capabilities
-  sessions: SessionSummary[]
-  sessionsLoading: boolean
   platform: NodeJS.Platform | "unknown"
   /** Mako's own source tree, when it is editable — development only. */
   sourceRoot?: string
@@ -85,8 +81,6 @@ export const store = createStore<SessionStore>({
   tree: [],
   models: [],
   capabilities: empty,
-  sessions: [],
-  sessionsLoading: true,
   platform: "unknown",
 })
 
@@ -428,7 +422,6 @@ export const actions = {
         platform: boot.platform,
         sourceRoot: boot.sourceRoot,
       })
-      void actions.refreshSessions(active.session.meta.cwd)
       void updates.load()
       void automations.load()
       void threads.load()
@@ -482,7 +475,6 @@ export const actions = {
     dropCache(id)
     window.dispatchEvent(new CustomEvent("mako:close-settings"))
     await guard(() => getMako().activateTab(id))
-    if (next.meta?.cwd) void actions.refreshSessions(next.meta.cwd)
   },
 
   /** Open another conversation beside this one. */
@@ -511,7 +503,6 @@ export const actions = {
       git: tab.git,
       capabilities: tab.capabilities,
     })
-    void actions.refreshSessions(tab.session.meta.cwd)
     return true
   },
 
@@ -534,30 +525,6 @@ export const actions = {
     })
     dropCache(result.activeId)
     patchTab(result.activeId, { unread: false })
-    if (next.meta?.cwd) void actions.refreshSessions(next.meta.cwd)
-  },
-
-  async refreshSessions(cwd?: string, scope?: "workspace" | "all") {
-    if (!hasBridge()) return
-    store.set({ sessionsLoading: true })
-    try {
-      // A list that never answers must still resolve into something the user
-      // can see and retry — an eternal skeleton is the one unacceptable
-      // outcome here.
-      const next = await withTimeout(
-        getMako().listSessions(
-          cwd ?? store.get().meta?.cwd,
-          scope ?? prefsStore.get().railScope
-        ),
-        20_000,
-        "Listing sessions took too long"
-      )
-      store.set({ sessions: next })
-    } catch (error) {
-      report(error instanceof Error ? error.message : String(error))
-    } finally {
-      store.set({ sessionsLoading: false })
-    }
   },
 
   async refreshModels() {
@@ -661,7 +628,6 @@ export const actions = {
     const next = await guard(() => getMako().openSession(path))
     if (!next) return
     adoptState(next)
-    void actions.refreshSessions(next.meta.cwd)
   },
 
   async pickWorkspace() {
@@ -676,7 +642,6 @@ export const actions = {
     if (!next || mine !== workspaceGeneration) return
     adoptSnapshot(next)
     viewer.close()
-    void actions.refreshSessions(folder)
     void actions.refreshModels()
   },
 
@@ -713,7 +678,6 @@ export const actions = {
       git: result.tab.git,
       capabilities: result.tab.capabilities,
     })
-    void actions.refreshSessions(result.tab.session.meta.cwd)
     if (result.text) {
       window.dispatchEvent(
         new CustomEvent("mako:compose", { detail: result.text })

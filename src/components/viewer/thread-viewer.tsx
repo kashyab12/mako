@@ -166,10 +166,11 @@ function createExchangeBuilder() {
 
 export function ThreadViewer() {
   const thread = useThreads((state) => state.viewing)
+  const opening = useThreads((state) => state.opening)
   const busy = useThreads((state) => state.viewingBusy)
 
   useEffect(() => {
-    if (!thread) return
+    if (!thread && !busy) return
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return
       if (event.key === "Escape") {
@@ -179,12 +180,19 @@ export function ThreadViewer() {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [thread])
+  }, [busy, thread])
 
   if (busy) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center bg-surface text-ui text-faint">
-        Loading conversation…
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-surface">
+        <div className="flex items-center gap-2 text-ui text-faint">
+          {opening ? (
+            <HarnessIcon harness={opening.harness} className="size-3.5" />
+          ) : null}
+          <span>
+            Opening {opening?.title ?? (opening ? harnessLabel(opening.harness) : "conversation")}…
+          </span>
+        </div>
       </div>
     )
   }

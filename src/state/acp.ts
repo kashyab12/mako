@@ -35,10 +35,11 @@ interface AcpState {
   blocks: AcpBlock[]
   permission: AcpPermissionRequest | null
   starting: boolean
+  sending: boolean
   canceling: boolean
   threadPath?: string
   /** Typed while the agent was working; sent the moment it goes quiet. */
-  queued: { text: string; attachments: AcpPromptAttachment[] } | null
+  queued: Array<{ text: string; attachments: AcpPromptAttachment[] }>
   hiddenUserPrompt: string | null
 }
 
@@ -51,8 +52,9 @@ export const acpStore = createStore<AcpState>({
   blocks: [],
   permission: null,
   starting: false,
+  sending: false,
   canceling: false,
-  queued: null,
+  queued: [],
   hiddenUserPrompt: null,
 })
 export const useAcp = createHook(acpStore)
@@ -63,6 +65,7 @@ export function applyAcpSession(session: AcpSessionState) {
   const previousStatus = current.status
   acpStore.set({
     session,
+    sending: false,
     canceling: session.status === "running" ? canceling : false,
   })
   if (threadPath) {
@@ -77,20 +80,33 @@ export function applyAcpSession(session: AcpSessionState) {
     else if (
       previousStatus === "running" &&
       session.status === "ready" &&
-      !queued
+      queued.length === 0
     )
-      setThreadAttention(threadPath, {
-        kind: "review",
-        at: Date.now(),
-        unread: threadsStore.get().viewing?.ref.path !== threadPath,
-      })
+      setThreadAttention(
+        threadPath,
+        threadsStore.get().viewing?.ref.path === threadPath
+          ? null
+          : { kind: "review", at: Date.now(), unread: true }
+      )
   }
   if (session.status === "failed" && session.error) toast.error(session.error)
   // A message typed mid-turn goes the moment the agent goes quiet — that is
   // what queueing promised.
-  if (current.status === "running" && session.status === "ready" && queued) {
-    acpStore.set({ queued: null })
-    void acp.send(queued.text, queued.attachments)
+  if (
+    current.status === "running" &&
+    session.status === "ready" &&
+    queued.length > 0
+  ) {
+    const [next, ...rest] = queued
+    acpStore.set({ queued: rest })
+    if (next) {
+      void acp.send(next.text, next.attachments).then((sent) => {
+        const state = acpStore.get()
+        if (!sent && state.session?.id === session.id) {
+          acpStore.set({ queued: [next, ...state.queued] })
+        }
+      })
+    }
   }
 }
 
@@ -225,6 +241,7 @@ export const acp = {
     if (!hasBridge()) return
     acpStore.set({
       starting: true,
+      sending: false,
       canceling: false,
       blocks: [],
       permission: null,
@@ -284,6 +301,7 @@ export const acp = {
     setThreadRunning(ref.path, true)
     acpStore.set({
       starting: true,
+      sending: false,
       canceling: false,
       blocks: [{ type: "user", text: prompt }],
       permission: null,
@@ -328,6 +346,7 @@ export const acp = {
     if (!hasBridge()) return false
     acpStore.set({
       starting: true,
+      sending: false,
       canceling: false,
       blocks: displayPrompt ? [{ type: "user", text: displayPrompt }] : [],
       permission: null,
@@ -390,8 +409,9 @@ export const acp = {
         blocks: [],
         permission: null,
         starting: false,
+        sending: false,
         canceling: false,
-        queued: null,
+        queued: [],
         threadPath: undefined,
         hiddenUserPrompt: null,
       })
@@ -405,22 +425,31 @@ export const acp = {
   },
 
   async send(text: string, attachments: AcpPromptAttachment[] = []) {
-    const { session } = acpStore.get()
-    if (!session || !hasBridge()) return
-    if (session.status === "running") {
+    const { session, queued, sending } = acpStore.get()
+    if (!session || !hasBridge()) return false
+    if (session.status === "running" || sending) {
       // Not lost, not an error: it goes next.
-      acpStore.set({ queued: { text, attachments } })
-      return
+      acpStore.set({ queued: [...queued, { text, attachments }] })
+      return true
     }
+    acpStore.set({ sending: true })
     try {
       await getMako().acpPrompt(session.id, text, attachments)
+      globalThis.setTimeout(() => {
+        const current = acpStore.get()
+        if (current.session?.id === session.id && current.sending)
+          acpStore.set({ sending: false })
+      }, 1_000)
+      return true
     } catch (error) {
+      acpStore.set({ sending: false })
       toast.error(error instanceof Error ? error.message : String(error))
+      return false
     }
   },
 
   unqueue() {
-    acpStore.set({ queued: null })
+    acpStore.set({ queued: [] })
   },
 
   answerPermission(
@@ -479,8 +508,9 @@ export const acp = {
       session: null,
       blocks: [],
       permission: null,
+      sending: false,
       canceling: false,
-      queued: null,
+      queued: [],
       threadPath: undefined,
       hiddenUserPrompt: null,
     })

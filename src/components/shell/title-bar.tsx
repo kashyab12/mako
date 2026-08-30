@@ -11,6 +11,9 @@ import { TitleBarStatus } from "@/components/shell/title-bar-status"
 import { workspaceName } from "@/lib/format"
 import { search } from "@/state/search"
 import { useWorkspaceFocus } from "@/components/stage/workspace-focus-context"
+import { composerTurnRunning } from "@/lib/composer-action"
+import { useAcp } from "@/state/acp"
+import { useThreads } from "@/state/threads"
 import { cn } from "@/lib/utils"
 import {
   PanelLeftIcon,
@@ -35,7 +38,23 @@ import {
  */
 export function TitleBar() {
   const { cwd, title: name } = useWorkspaceFocus()
-  const streaming = useSession((state) => state.meta?.isStreaming ?? false)
+  const builtinRunning = useSession(
+    (state) => state.meta?.isStreaming ?? false
+  )
+  const live = useAcp((state) => state.session)
+  const liveThreadPath = useAcp((state) => state.threadPath)
+  const viewingPath = useThreads((state) => state.viewing?.ref.path)
+  const viewingRunning = useThreads(
+    (state) => state.run?.status === "running"
+  )
+  const streaming = composerTurnRunning({
+    builtinRunning,
+    livePresent: Boolean(live),
+    liveRunning: live?.status === "running",
+    liveThreadPath,
+    viewingPath,
+    viewingRunning,
+  })
   const railOpen = usePrefs((prefs) => prefs.railOpen)
   const railWidth = usePrefs((prefs) => prefs.railWidth)
   const activeTab = useTabs((state) => state.activeId)
@@ -88,7 +107,7 @@ export function TitleBar() {
             label="Stop"
             keys={formatChord("mod+escape")}
             tone="danger"
-            onClick={() => void actions.abort()}
+            onClick={() => void actions.stopCurrentTurn()}
           >
             <SquareIcon />
           </IconAction>

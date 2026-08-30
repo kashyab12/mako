@@ -13,7 +13,10 @@ import {
   toolLabel,
 } from "../src/lib/tools.ts"
 import {
+  applyThreadRun,
+  markThreadReviewed,
   threadStatus,
+  threadStatusPriority,
   threadsStore,
   uniqueThreadRefs,
 } from "../src/state/threads.ts"
@@ -289,7 +292,7 @@ acpStore.set({
   blocks: [],
   permission: null,
   starting: false,
-  queued: null,
+  queued: [],
   hiddenUserPrompt: null,
 })
 applyAcpUpdates("acp-echo", [
@@ -536,6 +539,21 @@ assert.deepEqual(
   }).map((folder) => ({ cwd: folder.cwd, count: folder.refs.length })),
   [{ cwd: "/repo", count: 2 }]
 )
+assert.deepEqual(
+  groupThreadFolders({
+    refs: folderRefs,
+    currentCwd: "/repo",
+    pinnedThreads: [],
+    pinnedFolders: [],
+    priorities: { "/one": 5 },
+    sortBy: "recent",
+  })[0]?.refs.map((ref) => ref.path),
+  ["/one", "/two"]
+)
+assert.ok(
+  threadStatusPriority({ kind: "needs-permission", since: 1 }) >
+    threadStatusPriority({ kind: "working", since: 1 })
+)
 
 const statusState = threadsStore.get()
 const openCodeRef = {
@@ -553,6 +571,45 @@ assert.deepEqual(
   ),
   { kind: "idle" }
 )
+
+const backgroundRef = {
+  harness: "grok",
+  nativeId: "background",
+  path: "/background",
+} satisfies ThreadRef
+threadsStore.set({
+  viewing: { ref: openCodeRef, entries: [] },
+  attention: {},
+  working: {},
+})
+applyThreadRun({
+  path: backgroundRef.path,
+  harness: backgroundRef.harness,
+  status: "running",
+})
+applyThreadRun({
+  path: backgroundRef.path,
+  harness: backgroundRef.harness,
+  status: "done",
+})
+const backgroundAttention = threadsStore.get().attention[backgroundRef.path]
+assert.equal(backgroundAttention?.kind, "review")
+assert.equal(
+  backgroundAttention?.kind === "review" && backgroundAttention.unread,
+  true
+)
+markThreadReviewed(backgroundRef.path)
+assert.equal(threadsStore.get().attention[backgroundRef.path], undefined)
+threadsStore.set({
+  viewing: { ref: backgroundRef, entries: [] },
+  attention: {},
+})
+applyThreadRun({
+  path: backgroundRef.path,
+  harness: backgroundRef.harness,
+  status: "done",
+})
+assert.equal(threadsStore.get().attention[backgroundRef.path], undefined)
 
 const queuedRef = {
   harness: "codex",
