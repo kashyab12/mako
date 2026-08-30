@@ -170,6 +170,20 @@ state read-only, destructive, idempotent, and open-world behavior. Provider
 OAuth remains provider-owned. Never send secret values over IPC, logs, tests,
 or registry snapshots.
 
+## Remote control plane
+
+`@mako/relay` is the pure provider-neutral protocol and headless worker core.
+It owns remote jobs, canonical events, event cursors, controls, the worker loop,
+and the storage contract. It must not import Electron, Next, Azure, Slack, or a
+provider implementation. Desktop and headless hosts supply an executor and
+transport; gateways register backend delivery adapters.
+
+Relay workers authenticate with short-lived tenant/device tokens. The shared
+MCP token is registration bootstrap only unless an operator explicitly enables
+the temporary legacy migration flag. Keep event persistence idempotent, validate
+batch and lease ownership before writes, reconcile queue/table partial failures,
+and stream attachment bodies through measured limits rather than buffering them.
+
 ## Zero lint debt
 
 Every source change must leave both ESLint and Oxlint clean. Run `npm run lint`
