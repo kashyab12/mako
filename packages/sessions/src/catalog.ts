@@ -18,7 +18,7 @@
 
 import { existsSync, realpathSync, watch, type FSWatcher } from "node:fs"
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises"
-import { dirname, join } from "node:path"
+import { dirname, join, sep } from "node:path"
 import { parseCache, type CacheEntry } from "./catalog-cache.js"
 import type { Thread, ThreadEntry, ThreadPage, ThreadRef } from "./format.js"
 import type {
@@ -517,9 +517,14 @@ export class SessionCatalog {
         }
       }
     }
-    const prefix = provider.roots()[0] ?? ""
+    const roots = provider.roots()
     for (const path of this.byPath.keys()) {
-      if (path.startsWith(prefix) && !seen.has(path)) {
+      if (
+        roots.some(
+          (root) => path === root || path.startsWith(`${root}${sep}`)
+        ) &&
+        !seen.has(path)
+      ) {
         this.byPath.delete(path)
         this.emit({ type: "removed", path })
       }

@@ -46,6 +46,12 @@ belong under that provider's directory. A new provider adds one module to
 contract owns discovery, translation, and following without importing Electron
 or any provider host capability.
 
+Exact external activity is also provider-owned. A process probe returns a typed
+`available` or `unavailable` snapshot keyed by native session ID or canonical
+store path; an error is never interpreted as zero active sessions. The activity
+engine polls each provider independently, prevents overlap, bounds stale data,
+and emits narrow activity events instead of resending or re-sorting the catalog.
+
 ## The hot path
 
 Token streaming must never re-send the session. The host emits `stream` with

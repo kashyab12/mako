@@ -15,6 +15,7 @@ import {
 } from "../src/lib/tools.ts"
 import {
   activeThreadRefs,
+  applyThreadActivity,
   applyThreadRun,
   markThreadReviewed,
   recentThreadActivityDuration,
@@ -832,6 +833,29 @@ assert.deepEqual(
   }).map((ref) => ref.nativeId),
   ["codex-two", "codex-one"]
 )
+threadsStore.set({
+  threads: liveCodexRefs,
+  externalActivity: {},
+  observed: {},
+  working: {},
+  attention: {},
+})
+applyThreadActivity("/codex-one", {
+  provider: "codex",
+  since: 10,
+  status: "needs-input",
+  detail: "permission prompt",
+})
+assert.deepEqual(
+  threadsStore.get().threads.map((ref) => ref.nativeId),
+  ["codex-one", "codex-two"]
+)
+assert.deepEqual(threadStatus(liveCodexRefs[0]!, threadsStore.get()), {
+  kind: "needs-permission",
+  since: 10,
+  detail: "permission prompt",
+})
+applyThreadActivity("/codex-one", null)
 
 const backgroundRef = {
   harness: "grok",

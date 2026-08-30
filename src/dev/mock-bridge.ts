@@ -432,7 +432,10 @@ export function installMockBridge() {
     userAvatar: async () =>
       "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPcv2H9fwAHmwM6iEyzTAAAAABJRU5ErkJggg==",
     openUrl: async () => {},
-    threads: async () => mockThreads(),
+    threads: async () => ({
+      ...mockThreads(),
+      activity: {},
+    }),
     openThread: async (path: string) => ({
       ref: path.includes("devin")
         ? {

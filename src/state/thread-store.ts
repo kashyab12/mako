@@ -15,6 +15,7 @@ export const threadsStore = createStore<ThreadsState>({
   working: {},
   attention: {},
   observed: {},
+  externalActivity: {},
   converting: null,
   composerHarness: prefsStore.get().composerHarness ?? "claude",
   composerTuning: prefsStore.get().composerTuning,

@@ -63,6 +63,7 @@ import {
   emitThreadAs,
   followThread,
   threadsReady,
+  threadActivitySnapshot,
   installThreads,
   listThreads,
   openThread,
@@ -439,6 +440,7 @@ function bindIpc() {
   handle("mako:threads", (_e, filter?: { cwd?: string; harness?: string }) => ({
     ready: threadsReady(),
     threads: listThreads(filter),
+    activity: threadActivitySnapshot(),
   }))
   handle("mako:thread-open", (_e, path: string) => openThread(path))
   handle(

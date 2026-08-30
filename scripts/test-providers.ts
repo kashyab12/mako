@@ -16,25 +16,37 @@ import {
   environmentForExecutable,
   resolveExecutable,
 } from "../electron/executable.ts"
+import { ProviderActivityEngine } from "../electron/provider-activity-engine.ts"
 import { ProviderProfileCache } from "../electron/provider-profile-cache.ts"
+import {
+  claudeProcessProbeFor,
+  parseClaudeActiveSessions,
+} from "../electron/providers/claude/process-probe.ts"
 import { parseCodexOpenSessionPaths } from "../electron/providers/codex/process-probe.ts"
+import { parseCursorOpenSessionPaths } from "../electron/providers/cursor/process-probe.ts"
+import { parseGrokActiveSessions } from "../electron/providers/grok/process-probe.ts"
 import type { ProviderAccountCapability } from "../electron/providers/account-capability.ts"
-import { applyProviderProcessActivity } from "../electron/providers/process-probe.ts"
+import { processStartMatches } from "../electron/providers/process-liveness.ts"
+import type { ProviderProcessProbe } from "../electron/providers/process-probe.ts"
 import { providerHost } from "../electron/providers/index.ts"
 import type { NativeRunner } from "../electron/providers/native-runner.ts"
 import { ProviderRegistry } from "../electron/providers/registry.ts"
 
-assert.deepEqual(
-  applyProviderProcessActivity(
-    { harness: "codex", nativeId: "one", path: "/sessions/one.jsonl" },
-    new Set(["/sessions/one.jsonl"])
-  ),
-  {
-    harness: "codex",
-    nativeId: "one",
-    path: "/sessions/one.jsonl",
-    active: true,
+async function waitFor(check: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (check()) return
+    await new Promise((resolve) => setTimeout(resolve, 5))
   }
+  assert.fail("Timed out waiting for provider activity")
+}
+
+assert.equal(
+  processStartMatches("2026-08-30T12:00:00.000Z", Date.parse("2026-08-30T12:00:20.000Z")),
+  true
+)
+assert.equal(
+  processStartMatches("2026-08-30T12:00:00.000Z", Date.parse("2026-08-30T12:02:00.000Z")),
+  false
 )
 assert.deepEqual(
   parseCodexOpenSessionPaths(
@@ -46,6 +58,116 @@ assert.deepEqual(
     "/Users/test/.codex/sessions/two.jsonl",
   ]
 )
+assert.deepEqual(
+  parseClaudeActiveSessions([
+    { sessionId: "claude-one", state: "working" },
+    {
+      sessionId: "claude-two",
+      status: "waiting",
+      waitingFor: "permission prompt",
+    },
+  ]),
+  [
+    { nativeId: "claude-one", status: "active", detail: undefined },
+    {
+      nativeId: "claude-two",
+      status: "needs-input",
+      detail: "permission prompt",
+    },
+  ]
+)
+assert.deepEqual(
+  parseCursorOpenSessionPaths(
+    "p10\nn/Users/test/.cursor/chats/hash/one/store.db\nn/tmp/store.db\nn/Users/test/.cursor/acp-sessions/two/store.db\n",
+    ["/Users/test/.cursor/chats", "/Users/test/.cursor/acp-sessions"]
+  ),
+  [
+    "/Users/test/.cursor/chats/hash/one/store.db",
+    "/Users/test/.cursor/acp-sessions/two/store.db",
+  ]
+)
+assert.deepEqual(
+  parseGrokActiveSessions(
+    [
+      { session_id: "grok-one", pid: 10 },
+      { session_id: "grok-dead", pid: 11 },
+    ],
+    (pid) => pid === 10
+  ),
+  [{ nativeId: "grok-one", status: "active" }]
+)
+let probeAvailable = true
+let probeNeedsInput = false
+const activityProbe = {
+  provider: "test",
+  pollIntervalMs: 5,
+  staleAfterMs: 10,
+  async probe() {
+    return probeAvailable
+      ? {
+          kind: "available",
+          sessions: [
+            {
+              nativeId: "live",
+              status: probeNeedsInput ? "needs-input" : "active",
+            },
+          ],
+        }
+      : { kind: "unavailable", reason: "failed" }
+  },
+} satisfies ProviderProcessProbe
+const activityUpdates: string[][] = []
+const activityEngine = new ProviderActivityEngine([activityProbe])
+activityEngine.onChange((snapshot) =>
+  activityUpdates.push(
+    snapshot.sessions.flatMap((session) =>
+      session.nativeId ? [`${session.nativeId}:${session.status}`] : []
+    )
+  )
+)
+activityEngine.start()
+await waitFor(() => activityUpdates.length === 1)
+probeNeedsInput = true
+await waitFor(() => activityUpdates.length === 2)
+probeAvailable = false
+await waitFor(() => activityUpdates.length === 3)
+activityEngine.stop()
+assert.deepEqual(activityUpdates, [
+  ["live:active"],
+  ["live:needs-input"],
+  [],
+])
+
+const claudeProbeHome = await mkdtemp(join(tmpdir(), "mako-claude-probe-"))
+try {
+  const registry = join(claudeProbeHome, ".claude", "sessions")
+  await mkdir(registry, { recursive: true })
+  await writeFile(
+    join(registry, `${process.pid}.json`),
+    JSON.stringify({
+      pid: process.pid,
+      sessionId: "claude-registry-session",
+      state: "working",
+    })
+  )
+  assert.deepEqual(
+    await claudeProcessProbeFor(claudeProbeHome).probe(
+      new AbortController().signal
+    ),
+    {
+      kind: "available",
+      sessions: [
+        {
+          nativeId: "claude-registry-session",
+          status: "active",
+          detail: undefined,
+        },
+      ],
+    }
+  )
+} finally {
+  await rm(claudeProbeHome, { recursive: true, force: true })
+}
 
 const cursorModelOption = {
   type: "select",
@@ -140,7 +262,7 @@ assert.deepEqual(
 )
 assert.deepEqual(
   providerHost.processProbes.list().map((probe) => probe.provider),
-  ["codex"]
+  ["claude", "codex", "cursor", "grok"]
 )
 assert.equal(
   providerHost.nativeRunners.get("claude")?.fastMode,

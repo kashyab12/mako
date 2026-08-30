@@ -1,4 +1,5 @@
 import type {
+  ExternalThreadActivity,
   Thread,
   ThreadEntry,
   ThreadRef,
@@ -87,6 +88,7 @@ export interface ThreadsState {
   attention: AttentionByPath
   /** Threads actively writing in another client, inferred from native-store events. */
   observed: Record<string, boolean>
+  externalActivity: Record<string, ExternalThreadActivity>
   /** A translation in flight: one conversation becoming another harness's. */
   converting: { from: string; to: string; title?: string; done: boolean } | null
   /** The composer's chosen harness for new conversations. */

@@ -34,6 +34,7 @@ import {
   noteAutomationRun,
 } from "@/state/automations"
 import {
+  applyThreadActivity,
   applyThreadEntries,
   applyThreadRef,
   applyThreadRemoved,
@@ -245,6 +246,9 @@ function applyToActive(event: HostEvent) {
       break
     case "thread-removed":
       applyThreadRemoved(event.path)
+      break
+    case "thread-activity":
+      applyThreadActivity(event.path, event.activity)
       break
     case "thread-entries":
       applyThreadEntries(

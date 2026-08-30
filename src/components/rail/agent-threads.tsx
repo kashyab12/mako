@@ -105,6 +105,7 @@ export function AgentThreads() {
   const working = useThreads((state) => state.working)
   const attention = useThreads((state) => state.attention)
   const observed = useThreads((state) => state.observed)
+  const externalActivity = useThreads((state) => state.externalActivity)
   const filter = usePrefs((prefs) => prefs.agentHarnessFilter)
   const pinned = usePrefs((prefs) => prefs.pinnedThreads)
   const pinnedProjects = usePrefs((prefs) => prefs.pinnedProjects)
@@ -166,10 +167,11 @@ export function AgentThreads() {
       activeThreadRefs(all, {
         ...threadsStore.get(),
         attention,
+        externalActivity,
         observed,
         working,
       }),
-    [all, attention, observed, working]
+    [all, attention, externalActivity, observed, working]
   )
   const activePaths = useMemo(
     () => new Set(activeThreads.map((ref) => ref.path)),
@@ -203,7 +205,13 @@ export function AgentThreads() {
   }, [all, cwd, deferred, filter, scope])
 
   const { priorities, threadActivity } = useMemo(() => {
-    const state = { ...threadsStore.get(), attention, observed, working }
+    const state = {
+      ...threadsStore.get(),
+      attention,
+      externalActivity,
+      observed,
+      working,
+    }
     const nextPriorities: Record<string, number> = {}
     const nextActivity: Record<
       string,
@@ -228,7 +236,7 @@ export function AgentThreads() {
       }
     }
     return { priorities: nextPriorities, threadActivity: nextActivity }
-  }, [attention, matched, observed, working])
+  }, [attention, externalActivity, matched, observed, working])
 
   const held = useMemo(() => {
     const set = new Set(pinned)

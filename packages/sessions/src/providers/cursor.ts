@@ -53,6 +53,7 @@ interface CursorMeta {
 
 interface CursorSidecar {
   cwd?: string
+  title?: string
   createdAtMs?: number
   updatedAtMs?: number
   model?: string
@@ -271,45 +272,37 @@ export class CursorProvider implements SessionProvider {
   displayName = "Cursor"
   rescanRoot = true
   rescanDebounceMs = 250
-  private root: string
+  private chatRoot: string
+  private acpRoot: string
 
   constructor(home = homedir()) {
-    this.root = join(home, ".cursor", "chats")
+    this.chatRoot = join(home, ".cursor", "chats")
+    this.acpRoot = join(home, ".cursor", "acp-sessions")
   }
 
   roots(): string[] {
-    return [this.root]
+    return [this.chatRoot, this.acpRoot]
   }
 
   async discover(): Promise<NativeFile[]> {
     const files: NativeFile[] = []
-    let workspaces: string[]
-    try {
-      workspaces = await readdir(this.root)
-    } catch {
-      return []
+    const workspaces = await readdir(this.chatRoot).catch((): string[] => [])
+    for (const workspace of workspaces) {
+      const root = join(this.chatRoot, workspace)
+      const sessions = await readdir(root).catch((): string[] => [])
+      for (const session of sessions) {
+        const path = join(root, session, "store.db")
+        // A session directory without a store yet.
+        const info = await stat(path).catch(() => null)
+        if (info) files.push({ path, bytes: info.size, mtimeMs: info.mtimeMs })
+      }
     }
-    await Promise.all(
-      workspaces.map(async (workspace) => {
-        let sessions: string[]
-        try {
-          sessions = await readdir(join(this.root, workspace))
-        } catch {
-          return
-        }
-        await Promise.all(
-          sessions.map(async (session) => {
-            const path = join(this.root, workspace, session, "store.db")
-            try {
-              const info = await stat(path)
-              files.push({ path, bytes: info.size, mtimeMs: info.mtimeMs })
-            } catch {
-              // A session directory without a store yet.
-            }
-          })
-        )
-      })
-    )
+    const acpSessions = await readdir(this.acpRoot).catch((): string[] => [])
+    for (const session of acpSessions) {
+      const path = join(this.acpRoot, session, "store.db")
+      const info = await stat(path).catch(() => null)
+      if (info) files.push({ path, bytes: info.size, mtimeMs: info.mtimeMs })
+    }
     return files
   }
 
@@ -344,6 +337,7 @@ export class CursorProvider implements SessionProvider {
       if (sidecar) {
         const parsed = parseSidecar(sidecar)
         if (parsed?.cwd) ref.cwd = parsed.cwd
+        if (!ref.title && parsed?.title) ref.title = titleFrom(parsed.title)
         if (parsed?.model) ref.model = parsed.model
         if (parsed?.updatedAtMs) ref.updatedAt = new Date(parsed.updatedAtMs).toISOString()
         if (parsed?.createdAtMs) ref.startedAt = new Date(parsed.createdAtMs).toISOString()
@@ -573,6 +567,7 @@ function parseSidecar(raw: string): CursorSidecar | null {
   if (!isJsonObject(value)) return null
   return {
     cwd: stringValue(value["cwd"]),
+    title: stringValue(value["title"]),
     createdAtMs: numberValue(value["createdAtMs"]),
     updatedAtMs: numberValue(value["updatedAtMs"]),
     model: stringValue(value["model"]),

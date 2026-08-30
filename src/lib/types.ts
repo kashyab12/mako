@@ -27,6 +27,7 @@ export type {
   CommandSummary,
   ContextUsage,
   ExternalEditor,
+  ExternalThreadActivity,
   FileContents,
   GitCommitEntry,
   GitDiff,

@@ -1,14 +1,10 @@
-import { execFile } from "node:child_process"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { promisify } from "node:util"
-import { z } from "zod"
-import type { ProviderProcessProbe } from "../process-probe.js"
-
-const run = promisify(execFile)
-const LsofErrorSchema = z.object({
-  code: z.union([z.number().int(), z.string()]).optional(),
-})
+import { probeOpenFiles } from "../open-files-probe.js"
+import type {
+  ProviderActivitySession,
+  ProviderProcessProbe,
+} from "../process-probe.js"
 
 export function parseCodexOpenSessionPaths(
   output: string,
@@ -25,22 +21,22 @@ export function parseCodexOpenSessionPaths(
   ]
 }
 
+function sessions(paths: string[]): ProviderActivitySession[] {
+  return paths.map((path) => ({ path, status: "active" }))
+}
+
 export const codexProcessProbe: ProviderProcessProbe = {
   provider: "codex",
-  async activeSessionPaths() {
-    if (process.platform === "win32") return []
-    const root = `${join(homedir(), ".codex", "sessions")}/`
-    try {
-      const command = process.platform === "darwin" ? "/usr/sbin/lsof" : "lsof"
-      const { stdout } = await run(command, ["-Fn", "-c", "codex"], {
-        maxBuffer: 8 * 1024 * 1024,
-        timeout: 4_000,
-      })
-      return parseCodexOpenSessionPaths(stdout, root)
-    } catch (error) {
-      const parsed = LsofErrorSchema.safeParse(error)
-      if (parsed.success && Number(parsed.data.code) === 1) return []
-      throw error
-    }
+  staleAfterMs: 15_000,
+  async probe(signal) {
+    const root = join(homedir(), ".codex", "sessions")
+    const prefix = `${root.replace(/[\\/]$/, "")}/`
+    const result = await probeOpenFiles({
+      processNames: ["codex"],
+      signal,
+      accept: (path) => path.startsWith(prefix) && path.endsWith(".jsonl"),
+    })
+    if (result.kind === "unavailable") return result
+    return { kind: "available", sessions: sessions(result.paths) }
   },
 }

@@ -30,6 +30,13 @@ import type {
  * session. `stream` carries one message; `meta` carries scalars; the heavy
  * payloads (`messages`, `tree`, `git`) are emitted only when they change.
  */
+export interface ExternalThreadActivity {
+  provider: string
+  since: number
+  status: "active" | "needs-input"
+  detail?: string
+}
+
 export type HostEventBody =
   | { type: "session"; session: SessionState }
   | { type: "meta"; meta: SessionMeta }
@@ -54,6 +61,11 @@ export type HostEventBody =
   | { type: "threads"; threads: CatalogThreadRef[] }
   | { type: "thread-ref"; ref: CatalogThreadRef }
   | { type: "thread-removed"; path: string }
+  | {
+      type: "thread-activity"
+      path: string
+      activity: ExternalThreadActivity | null
+    }
   /** New entries appended to the thread the viewer is following. */
   | {
       type: "thread-entries"

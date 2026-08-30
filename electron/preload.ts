@@ -4,6 +4,7 @@ import type {
   BootPayload,
   Capabilities,
   ExternalEditor,
+  ExternalThreadActivity,
   FileContents,
   GitCommitEntry,
   GitDiff,
@@ -86,7 +87,11 @@ const api = {
 
   /* Cross-harness threads: every coding agent's sessions on this machine. */
   threads: (filter?: { cwd?: string; harness?: string }) =>
-    invokeTrustedHost<{ ready: boolean; threads: ThreadRef[] }>(
+    invokeTrustedHost<{
+      ready: boolean
+      threads: ThreadRef[]
+      activity: Record<string, ExternalThreadActivity>
+    }>(
       "mako:threads",
       filter
     ),

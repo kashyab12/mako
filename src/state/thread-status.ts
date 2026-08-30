@@ -46,6 +46,14 @@ export function threadStatus(
   if (attention) return attention
   const working = state.working[ref.path]
   if (working) return working
+  const external = state.externalActivity[ref.path]
+  if (external?.status === "needs-input")
+    return {
+      kind: "needs-permission",
+      since: external.since,
+      detail: external.detail,
+    }
+  if (external?.status === "active") return EXTERNAL_ACTIVE_STATUS
   if (ref.active === true) return EXTERNAL_ACTIVE_STATUS
   if (ref.locked)
     return state.observed[ref.path]

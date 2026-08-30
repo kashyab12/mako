@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import {
   appendFile,
+  cp,
   mkdir,
   readFile,
   stat,
@@ -639,6 +640,36 @@ async function cursorWatcherDeliversReplacement() {
   catalog.stop()
 }
 
+async function cursorDiscoversAcpSessions() {
+  const home = temp("cursor-acp")
+  const emitted = await emitCursorSession(
+    {
+      ref: {
+        harness: "cursor",
+        nativeId: "source",
+        path: "/source",
+        cwd: "/work",
+        title: "Cursor ACP",
+      },
+      entries: [{ kind: "user", text: "discover me" }],
+    },
+    { cwd: "/work", home }
+  )
+  const sessionId = dirname(emitted.path).split("/").pop()
+  assert.ok(sessionId)
+  const acpDirectory = join(home, ".cursor", "acp-sessions", sessionId)
+  await mkdir(dirname(acpDirectory), { recursive: true })
+  await cp(dirname(emitted.path), acpDirectory, { recursive: true })
+  const acpPath = join(acpDirectory, "store.db")
+  const provider = new CursorProvider(home)
+  const files = await provider.discover()
+  const acpFile = files.find((file) => file.path === acpPath)
+  assert.ok(acpFile)
+  const ref = await provider.peek(acpFile)
+  assert.equal(ref?.nativeId, sessionId)
+  assert.equal(ref?.title, "Cursor ACP")
+}
+
 function rowText(row) {
   return Buffer.from(row.data).toString("utf8")
 }
@@ -727,6 +758,7 @@ const tests = [
   ["Codex lifecycle markers", codexLifecycleMarkersSurvive],
   ["Claude interruption marker", claudeInterruptedMarkerSurvives],
   ["Cursor watcher replacement delivery", cursorWatcherDeliversReplacement],
+  ["Cursor ACP session discovery", cursorDiscoversAcpSessions],
   ["canonical workspace roots", catalogCanonicalizesWorkspaceRoots],
   ["external watcher append delivery", externalWatcherDeliversAppend],
   ["entry sink payload budget", entrySinkBoundsMutatedPayloads],

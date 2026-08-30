@@ -37,8 +37,9 @@ import {
   type ThreadRef,
 } from "@mako/sessions"
 import { annotate, bindLineage, loadLineage } from "./lineage.js"
+import { ProviderActivityEngine } from "./provider-activity-engine.js"
 import { providerHost } from "./providers/index.js"
-import { applyProviderProcessActivity } from "./providers/process-probe.js"
+import type { ProviderActivitySession } from "./providers/process-probe.js"
 import {
   daemonLoginEnabled,
   daemonLoginProcess,
@@ -46,6 +47,7 @@ import {
   setDaemonLogin,
 } from "./daemon-login.js"
 import type {
+  ExternalThreadActivity,
   HostEvent,
   ThreadFileContext,
   ThreadInlineContext,
@@ -57,10 +59,9 @@ const LIST_CAP = 600
 let catalog: SessionCatalog | null = null
 let daemon: DaemonClient | null = null
 let daemonMonitor: ReturnType<typeof setInterval> | null = null
-let processMonitor: ReturnType<typeof setInterval> | null = null
-let processRefresh: Promise<void> | null = null
-const activePathsByProvider = new Map<string, Set<string>>()
-let externallyActivePaths = new Set<string>()
+let activityEngine: ProviderActivityEngine | null = null
+const providerActivity = new Map<string, ProviderActivitySession[]>()
+let emittedActivity = new Map<string, ExternalThreadActivity>()
 /** Daemon mode's synchronous view: filled once, patched by events. */
 const mirror = new Map<string, ThreadRef>()
 let sendEvent: (event: HostEvent) => void = () => {}
@@ -85,59 +86,87 @@ function stopDaemonMonitor(): void {
   daemonMonitor = null
 }
 
-function withProcessActivity(ref: ThreadRef): ThreadRef {
-  return applyProviderProcessActivity(annotate(ref), externallyActivePaths)
+function sameActivity(
+  left: ExternalThreadActivity | undefined,
+  right: ExternalThreadActivity | undefined
+): boolean {
+  return (
+    left?.provider === right?.provider &&
+    left?.status === right?.status &&
+    left?.detail === right?.detail
+  )
 }
 
-async function refreshProcessActivityNow(): Promise<void> {
-  const previous = externallyActivePaths
-  await Promise.all(
-    providerHost.processProbes.list().map(async (probe) => {
-      try {
-        activePathsByProvider.set(
-          probe.provider,
-          new Set(await probe.activeSessionPaths())
-        )
-      } catch {
-        return
+function refForNativeId(
+  provider: string,
+  nativeId: string,
+  refs: ThreadRef[],
+  exact: Map<string, ThreadRef>
+): ThreadRef | undefined {
+  const direct = exact.get(`${provider}:${nativeId}`)
+  if (direct) return direct
+  const candidates = refs.filter(
+    (ref) =>
+      ref.harness === provider &&
+      (ref.nativeId.startsWith(nativeId) || nativeId.startsWith(ref.nativeId))
+  )
+  return candidates.length === 1 ? candidates[0] : undefined
+}
+
+function reconcileProviderActivity(): void {
+  const refs = daemon ? [...mirror.values()] : (catalog?.list() ?? [])
+  const byPath = new Map(refs.map((ref) => [ref.path, ref]))
+  const byIdentity = new Map(
+    refs.map((ref) => [`${ref.harness}:${ref.nativeId}`, ref])
+  )
+  const next = new Map<string, ExternalThreadActivity>()
+  for (const [provider, sessions] of providerActivity) {
+    for (const session of sessions) {
+      const ref =
+        (session.path ? byPath.get(session.path) : undefined) ??
+        (session.nativeId
+          ? refForNativeId(provider, session.nativeId, refs, byIdentity)
+          : undefined)
+      if (!ref) continue
+      const previous = emittedActivity.get(ref.path)
+      const unchanged =
+        previous?.provider === provider &&
+        previous.status === session.status &&
+        previous.detail === session.detail
+      const activity: ExternalThreadActivity = {
+        provider,
+        since: unchanged ? previous.since : Date.now(),
+        status: session.status,
+        detail: session.detail,
       }
-    })
-  )
-  if (stopping) return
-  externallyActivePaths = new Set(
-    [...activePathsByProvider.values()].flatMap((paths) => [...paths])
-  )
-  const changed = new Set(
-    [...previous, ...externallyActivePaths].filter(
-      (path) => previous.has(path) !== externallyActivePaths.has(path)
-    )
-  )
-  if (changed.size === 0) return
-  const available = daemon ? mirror : new Map((catalog?.list() ?? []).map((ref) => [ref.path, ref]))
-  for (const path of changed) {
-    const ref = available.get(path)
-    if (ref) emit({ type: "thread-ref", ref: withProcessActivity(ref) })
+      const held = next.get(ref.path)
+      if (!held || activity.status === "needs-input") next.set(ref.path, activity)
+    }
   }
-}
-
-function refreshProcessActivity(): Promise<void> {
-  processRefresh ??= refreshProcessActivityNow().finally(() => {
-    processRefresh = null
-  })
-  return processRefresh
+  for (const path of new Set([...emittedActivity.keys(), ...next.keys()])) {
+    const previous = emittedActivity.get(path)
+    const activity = next.get(path)
+    if (!sameActivity(previous, activity))
+      emit({ type: "thread-activity", path, activity: activity ?? null })
+  }
+  emittedActivity = next
 }
 
 function monitorProviderProcesses(): void {
-  if (processMonitor) return
-  void refreshProcessActivity()
-  processMonitor = setInterval(() => void refreshProcessActivity(), 5_000)
+  if (activityEngine) return
+  activityEngine = new ProviderActivityEngine(providerHost.processProbes.list())
+  activityEngine.onChange((snapshot) => {
+    providerActivity.set(snapshot.provider, snapshot.sessions)
+    reconcileProviderActivity()
+  })
+  activityEngine.start()
 }
 
 function stopProcessMonitor(): void {
-  if (processMonitor) clearInterval(processMonitor)
-  processMonitor = null
-  activePathsByProvider.clear()
-  externallyActivePaths = new Set()
+  activityEngine?.stop()
+  activityEngine = null
+  providerActivity.clear()
+  emittedActivity = new Map()
 }
 
 /**
@@ -184,10 +213,12 @@ function applyDaemonEvent(event: DaemonEvent, announce: boolean): void {
   if (event.event === "added" || event.event === "updated") {
     mirror.set(event.ref.path, event.ref)
     if (event.event === "added") bindLineage(event.ref)
-    if (announce) emit({ type: "thread-ref", ref: withProcessActivity(event.ref) })
+    if (announce) emit({ type: "thread-ref", ref: annotate(event.ref) })
+    reconcileProviderActivity()
   } else if (event.event === "removed") {
     mirror.delete(event.path)
     if (announce) emit({ type: "thread-removed", path: event.path })
+    reconcileProviderActivity()
   } else if (event.event === "entries" && announce) {
     emit({
       type: "thread-entries",
@@ -284,6 +315,7 @@ async function connectViaDaemon(): Promise<boolean> {
     monitorDaemon(client)
     hydrated = true
     push()
+    reconcileProviderActivity()
     client.onClose(() => {
       // The daemon died underneath us; restart it before falling back locally.
       if (daemon !== client) return
@@ -354,14 +386,16 @@ async function runLocalCatalog(): Promise<void> {
   })
   await catalog.scan()
   push()
+  reconcileProviderActivity()
   catalog.startWatching()
   catalog.onEvent((event) => {
     if (event.type === "added") bindLineage(event.ref)
     if (event.type === "removed") {
       emit({ type: "thread-removed", path: event.path })
     } else {
-      emit({ type: "thread-ref", ref: withProcessActivity(event.ref) })
+      emit({ type: "thread-ref", ref: annotate(event.ref) })
     }
+    reconcileProviderActivity()
   })
 }
 
@@ -371,6 +405,13 @@ export function threadsReady(): boolean {
 }
 
 /** For the settings surface: is the daemon doing the work, and since when. */
+export function threadActivitySnapshot(): Record<
+  string,
+  ExternalThreadActivity
+> {
+  return Object.fromEntries(emittedActivity)
+}
+
 export async function daemonStatus(): Promise<DaemonStats | null> {
   const current = daemon
   return current ? current.refresh().catch(() => current.stats) : null
@@ -400,7 +441,7 @@ export function listThreads(
         )
         .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
     : (catalog?.list(filter) ?? [])
-  return refs.slice(0, LIST_CAP).map(withProcessActivity)
+  return refs.slice(0, LIST_CAP).map(annotate)
 }
 
 export async function pageThread(
@@ -411,14 +452,14 @@ export async function pageThread(
   const page = daemon
     ? await daemon.page(path, before, limit)
     : await (catalog?.page(path, before, limit) ?? null)
-  return page ? { ...page, ref: withProcessActivity(page.ref) } : null
+  return page ? { ...page, ref: annotate(page.ref) } : null
 }
 
 export async function openThread(path: string): Promise<Thread | null> {
   const thread = daemon
     ? await openThreadViaDaemon(path)
     : await (catalog?.open(path) ?? null)
-  return thread ? { ...thread, ref: withProcessActivity(thread.ref) } : null
+  return thread ? { ...thread, ref: annotate(thread.ref) } : null
 }
 
 async function openThreadViaDaemon(path: string): Promise<Thread | null> {

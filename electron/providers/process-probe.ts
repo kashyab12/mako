@@ -1,13 +1,24 @@
-import type { ThreadRef } from "@mako/sessions"
 import type { ProviderCapability } from "./registry.js"
 
-export function applyProviderProcessActivity(
-  ref: ThreadRef,
-  activePaths: ReadonlySet<string>
-): ThreadRef {
-  return activePaths.has(ref.path) ? { ...ref, active: true } : ref
+export type ProviderActivityStatus = "active" | "needs-input"
+
+export interface ProviderActivitySession {
+  nativeId?: string
+  path?: string
+  status: ProviderActivityStatus
+  detail?: string
 }
 
+export type ProviderActivityResult =
+  | { kind: "available"; sessions: ProviderActivitySession[] }
+  | {
+      kind: "unavailable"
+      reason: "unsupported" | "timeout" | "permission" | "failed"
+    }
+
 export interface ProviderProcessProbe extends ProviderCapability {
-  activeSessionPaths(): Promise<string[]>
+  pollIntervalMs?: number
+  staleAfterMs?: number
+  timeoutMs?: number
+  probe(signal: AbortSignal): Promise<ProviderActivityResult>
 }

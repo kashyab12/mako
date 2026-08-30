@@ -1,5 +1,5 @@
 import { getMako, hasBridge } from "@/lib/bridge"
-import type { ThreadRef } from "@/lib/types"
+import type { ExternalThreadActivity, ThreadRef } from "@/lib/types"
 import { bindQueuedReplySender } from "@/state/thread-queue"
 import {
   takePendingThread,
@@ -38,6 +38,7 @@ import { threadsStore, useThreads } from "@/state/thread-store"
 interface ThreadCatalog {
   ready: boolean
   threads: ThreadRef[]
+  activity?: Record<string, ExternalThreadActivity>
 }
 
 type ThreadCatalogResponse = ThreadCatalog | ThreadRef[]
@@ -107,8 +108,28 @@ export function applyThreadRef(ref: ThreadRef) {
   }
 }
 
+export function applyThreadActivity(
+  path: string,
+  activity: ExternalThreadActivity | null
+): void {
+  const current = threadsStore.get().externalActivity[path]
+  if (
+    current?.provider === activity?.provider &&
+    current?.since === activity?.since &&
+    current?.status === activity?.status &&
+    current?.detail === activity?.detail
+  )
+    return
+  if (activity) clearObserved(path)
+  const externalActivity = { ...threadsStore.get().externalActivity }
+  if (activity) externalActivity[path] = activity
+  else delete externalActivity[path]
+  threadsStore.set({ externalActivity })
+}
+
 export function applyThreadRemoved(path: string) {
   clearObserved(path)
+  applyThreadActivity(path, null)
   setThreadRunning(path, false)
   setThreadAttention(path, null)
   applyThreads(threadsStore.get().threads.filter((entry) => entry.path !== path))
@@ -176,6 +197,8 @@ const threadCatalogActions = {
     const result = normalizeThreadCatalog(raw)
     threadsStore.set({ resumable, targets, acpable })
     applyThreads(result.threads, result.ready)
+    if (result.activity)
+      threadsStore.set({ externalActivity: result.activity })
     // The catalog scans for a moment at boot, and its "here is the list"
     // push can fire while the window is still loading — a lossy first
     // handshake. Retrying until the host says ready is what makes the rail
