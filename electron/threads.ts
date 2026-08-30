@@ -20,6 +20,7 @@ import { dirname, join } from "node:path"
 import { app } from "electron"
 import {
   connectDaemon,
+  daemonMemoryUnsafe,
   PROTOCOL_VERSION,
   defaultCatalog,
   renderTranscript,
@@ -37,6 +38,7 @@ import {
 } from "@mako/sessions"
 import { annotate, bindLineage, loadLineage } from "./lineage.js"
 import { providerHost } from "./providers/index.js"
+import { applyProviderProcessActivity } from "./providers/process-probe.js"
 import {
   daemonLoginEnabled,
   daemonLoginProcess,
@@ -54,6 +56,11 @@ const LIST_CAP = 600
 
 let catalog: SessionCatalog | null = null
 let daemon: DaemonClient | null = null
+let daemonMonitor: ReturnType<typeof setInterval> | null = null
+let processMonitor: ReturnType<typeof setInterval> | null = null
+let processRefresh: Promise<void> | null = null
+const activePathsByProvider = new Map<string, Set<string>>()
+let externallyActivePaths = new Set<string>()
 /** Daemon mode's synchronous view: filled once, patched by events. */
 const mirror = new Map<string, ThreadRef>()
 let sendEvent: (event: HostEvent) => void = () => {}
@@ -73,6 +80,66 @@ export function subscribeThreadEvents(
 }
 let stopping = false
 
+function stopDaemonMonitor(): void {
+  if (daemonMonitor) clearInterval(daemonMonitor)
+  daemonMonitor = null
+}
+
+function withProcessActivity(ref: ThreadRef): ThreadRef {
+  return applyProviderProcessActivity(annotate(ref), externallyActivePaths)
+}
+
+async function refreshProcessActivityNow(): Promise<void> {
+  const previous = externallyActivePaths
+  await Promise.all(
+    providerHost.processProbes.list().map(async (probe) => {
+      try {
+        activePathsByProvider.set(
+          probe.provider,
+          new Set(await probe.activeSessionPaths())
+        )
+      } catch {
+        return
+      }
+    })
+  )
+  if (stopping) return
+  externallyActivePaths = new Set(
+    [...activePathsByProvider.values()].flatMap((paths) => [...paths])
+  )
+  const changed = new Set(
+    [...previous, ...externallyActivePaths].filter(
+      (path) => previous.has(path) !== externallyActivePaths.has(path)
+    )
+  )
+  if (changed.size === 0) return
+  const available = daemon ? mirror : new Map((catalog?.list() ?? []).map((ref) => [ref.path, ref]))
+  for (const path of changed) {
+    const ref = available.get(path)
+    if (ref) emit({ type: "thread-ref", ref: withProcessActivity(ref) })
+  }
+}
+
+function refreshProcessActivity(): Promise<void> {
+  processRefresh ??= refreshProcessActivityNow().finally(() => {
+    processRefresh = null
+  })
+  return processRefresh
+}
+
+function monitorProviderProcesses(): void {
+  if (processMonitor) return
+  void refreshProcessActivity()
+  processMonitor = setInterval(() => void refreshProcessActivity(), 5_000)
+}
+
+function stopProcessMonitor(): void {
+  if (processMonitor) clearInterval(processMonitor)
+  processMonitor = null
+  activePathsByProvider.clear()
+  externallyActivePaths = new Set()
+}
+
 /**
  * Prefer the daemon; run locally only when it cannot exist.
  *
@@ -84,6 +151,7 @@ let stopping = false
 export function installThreads(send: (event: HostEvent) => void): void {
   sendEvent = send
   stopping = false
+  monitorProviderProcesses()
   void (async () => {
     try {
       await loadLineage()
@@ -116,7 +184,7 @@ function applyDaemonEvent(event: DaemonEvent, announce: boolean): void {
   if (event.event === "added" || event.event === "updated") {
     mirror.set(event.ref.path, event.ref)
     if (event.event === "added") bindLineage(event.ref)
-    if (announce) emit({ type: "thread-ref", ref: annotate(event.ref) })
+    if (announce) emit({ type: "thread-ref", ref: withProcessActivity(event.ref) })
   } else if (event.event === "removed") {
     mirror.delete(event.path)
     if (announce) emit({ type: "thread-removed", path: event.path })
@@ -129,6 +197,37 @@ function applyDaemonEvent(event: DaemonEvent, announce: boolean): void {
       replaceFrom: event.replaceFrom,
     })
   }
+}
+
+function monitorDaemon(client: DaemonClient): void {
+  stopDaemonMonitor()
+  let checking = false
+  let highMemorySamples = 0
+  daemonMonitor = setInterval(() => {
+    if (checking || daemon !== client || stopping) return
+    checking = true
+    void client
+      .refresh()
+      .then((stats) => {
+        if (daemon !== client) return
+        highMemorySamples = daemonMemoryUnsafe(stats.rss ?? 0)
+          ? highMemorySamples + 1
+          : 0
+        if (highMemorySamples < 3) return
+        emit({
+          type: "notice",
+          level: "error",
+          message: "Session sync exceeded 512 MB and was restarted safely.",
+        })
+        stopDaemonMonitor()
+        void client.retire().catch(() => {})
+        client.close()
+      })
+      .catch(() => {})
+      .finally(() => {
+        checking = false
+      })
+  }, 5_000)
 }
 
 async function connectViaDaemon(): Promise<boolean> {
@@ -182,10 +281,13 @@ async function connectViaDaemon(): Promise<boolean> {
     }
 
     daemon = client
+    monitorDaemon(client)
     hydrated = true
     push()
     client.onClose(() => {
       // The daemon died underneath us; restart it before falling back locally.
+      if (daemon !== client) return
+      stopDaemonMonitor()
       daemon = null
       if (!stopping) void recoverDaemon()
     })
@@ -258,7 +360,7 @@ async function runLocalCatalog(): Promise<void> {
     if (event.type === "removed") {
       emit({ type: "thread-removed", path: event.path })
     } else {
-      emit({ type: "thread-ref", ref: annotate(event.ref) })
+      emit({ type: "thread-ref", ref: withProcessActivity(event.ref) })
     }
   })
 }
@@ -269,12 +371,15 @@ export function threadsReady(): boolean {
 }
 
 /** For the settings surface: is the daemon doing the work, and since when. */
-export function daemonStatus(): DaemonStats | null {
-  return daemon?.stats ?? null
+export async function daemonStatus(): Promise<DaemonStats | null> {
+  const current = daemon
+  return current ? current.refresh().catch(() => current.stats) : null
 }
 
 export function stopThreads(): void {
   stopping = true
+  stopDaemonMonitor()
+  stopProcessMonitor()
   catalog?.stop()
   catalog = null
   daemon?.close()
@@ -295,7 +400,7 @@ export function listThreads(
         )
         .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
     : (catalog?.list(filter) ?? [])
-  return refs.slice(0, LIST_CAP).map(annotate)
+  return refs.slice(0, LIST_CAP).map(withProcessActivity)
 }
 
 export async function pageThread(
@@ -306,14 +411,14 @@ export async function pageThread(
   const page = daemon
     ? await daemon.page(path, before, limit)
     : await (catalog?.page(path, before, limit) ?? null)
-  return page ? { ...page, ref: annotate(page.ref) } : null
+  return page ? { ...page, ref: withProcessActivity(page.ref) } : null
 }
 
 export async function openThread(path: string): Promise<Thread | null> {
   const thread = daemon
     ? await openThreadViaDaemon(path)
     : await (catalog?.open(path) ?? null)
-  return thread ? { ...thread, ref: annotate(thread.ref) } : null
+  return thread ? { ...thread, ref: withProcessActivity(thread.ref) } : null
 }
 
 async function openThreadViaDaemon(path: string): Promise<Thread | null> {

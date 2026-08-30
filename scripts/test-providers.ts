@@ -17,10 +17,35 @@ import {
   resolveExecutable,
 } from "../electron/executable.ts"
 import { ProviderProfileCache } from "../electron/provider-profile-cache.ts"
+import { parseCodexOpenSessionPaths } from "../electron/providers/codex/process-probe.ts"
 import type { ProviderAccountCapability } from "../electron/providers/account-capability.ts"
+import { applyProviderProcessActivity } from "../electron/providers/process-probe.ts"
 import { providerHost } from "../electron/providers/index.ts"
 import type { NativeRunner } from "../electron/providers/native-runner.ts"
 import { ProviderRegistry } from "../electron/providers/registry.ts"
+
+assert.deepEqual(
+  applyProviderProcessActivity(
+    { harness: "codex", nativeId: "one", path: "/sessions/one.jsonl" },
+    new Set(["/sessions/one.jsonl"])
+  ),
+  {
+    harness: "codex",
+    nativeId: "one",
+    path: "/sessions/one.jsonl",
+    active: true,
+  }
+)
+assert.deepEqual(
+  parseCodexOpenSessionPaths(
+    "p10\nn/Users/test/.codex/sessions/one.jsonl\nn/tmp/other.jsonl\np11\nn/Users/test/.codex/sessions/two.jsonl\n",
+    "/Users/test/.codex/sessions"
+  ),
+  [
+    "/Users/test/.codex/sessions/one.jsonl",
+    "/Users/test/.codex/sessions/two.jsonl",
+  ]
+)
 
 const cursorModelOption = {
   type: "select",
@@ -112,6 +137,10 @@ assert.deepEqual(
 assert.deepEqual(
   providerHost.sessionEmitters.list().map((emitter) => emitter.provider),
   ["claude", "codex", "cursor", "grok"]
+)
+assert.deepEqual(
+  providerHost.processProbes.list().map((probe) => probe.provider),
+  ["codex"]
 )
 assert.equal(
   providerHost.nativeRunners.get("claude")?.fastMode,

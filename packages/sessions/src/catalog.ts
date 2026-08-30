@@ -55,6 +55,24 @@ const CACHE_SAVE_DEBOUNCE_MS = 2000
 const POLL_FALLBACK_MS = 30_000
 const workspaceRoots = new Map<string, string>()
 
+async function forEachConcurrent<T>(
+  values: T[],
+  limit: number,
+  visit: (value: T) => Promise<void>
+): Promise<void> {
+  const iterator = values.values()
+  const worker = async () => {
+    while (true) {
+      const item = iterator.next()
+      if (item.done) return
+      await visit(item.value)
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, values.length) }, worker)
+  )
+}
+
 function workspaceOf(cwd: string | undefined): string | undefined {
   if (!cwd) return undefined
   const cached = workspaceRoots.get(cwd)
@@ -128,6 +146,22 @@ export class SessionCatalog {
       this.archive = new SessionArchive(options.archivePath)
   }
 
+  private commit(file: NativeFile, ref: ThreadRef | null): boolean {
+    const current = this.byPath.get(file.path)
+    if (
+      current &&
+      (current.mtimeMs > file.mtimeMs ||
+        (current.mtimeMs === file.mtimeMs && current.bytes > file.bytes))
+    )
+      return false
+    this.byPath.set(file.path, {
+      bytes: file.bytes,
+      mtimeMs: file.mtimeMs,
+      ref,
+    })
+    return true
+  }
+
   /* ------------------------------------------------------------ scanning */
 
   /**
@@ -143,33 +177,29 @@ export class SessionCatalog {
     await Promise.all(
       this.providers.map(async (provider) => {
         const files = await provider.discover().catch((): NativeFile[] => [])
-        await Promise.all(
-          files.map(async (file) => {
-            seen.add(file.path)
-            const cached = this.byPath.get(file.path)
-            if (
-              cached &&
-              cached.bytes === file.bytes &&
-              cached.mtimeMs === file.mtimeMs
-            )
-              return
-            const ref = withWorkspace(
-              await provider.peek(file).catch(() => null)
-            )
-            this.byPath.set(file.path, {
-              bytes: file.bytes,
-              mtimeMs: file.mtimeMs,
-              ref,
-            })
-            if (options.emitChanges && ref) {
-              this.emit({ type: cached?.ref ? "updated" : "added", ref })
-            }
-          })
-        )
+        await forEachConcurrent(files, 4, async (file) => {
+          seen.add(file.path)
+          const cached = this.byPath.get(file.path)
+          if (
+            cached &&
+            cached.bytes === file.bytes &&
+            cached.mtimeMs === file.mtimeMs
+          )
+            return
+          const ref = withWorkspace(
+            await provider.peek(file).catch(() => null)
+          )
+          if (!this.commit(file, ref)) return
+          if (options.emitChanges && ref) {
+            this.emit({ type: cached?.ref ? "updated" : "added", ref })
+          }
+        })
       })
     )
     for (const path of this.byPath.keys()) {
-      if (!seen.has(path)) this.byPath.delete(path)
+      if (seen.has(path)) continue
+      const existing = await stat(path).catch(() => null)
+      if (!existing) this.byPath.delete(path)
     }
     this.scheduleSave()
     return this.list()
@@ -453,11 +483,7 @@ export class SessionCatalog {
       )
         continue
       const ref = withWorkspace(await provider.peek(file).catch(() => null))
-      this.byPath.set(file.path, {
-        bytes: file.bytes,
-        mtimeMs: file.mtimeMs,
-        ref,
-      })
+      if (!this.commit(file, ref)) continue
       if (ref) this.emit({ type: cached?.ref ? "updated" : "added", ref })
       const follow = this.follows.get(file.path)
       if (follow && follow.listeners.size > 0) {
@@ -554,7 +580,7 @@ export class SessionCatalog {
             updatedAt: new Date(file.mtimeMs).toISOString(),
           }
         : withWorkspace(await provider.peek(file).catch(() => null))
-    this.byPath.set(path, { bytes: file.bytes, mtimeMs: file.mtimeMs, ref })
+    if (!this.commit(file, ref)) return
     this.scheduleSave()
     if (ref) this.emit({ type: cached?.ref ? "updated" : "added", ref })
 
@@ -580,12 +606,8 @@ export class SessionCatalog {
         const resetRef = withWorkspace(
           await provider.peek(file).catch(() => null)
         )
-        this.byPath.set(path, {
-          bytes: file.bytes,
-          mtimeMs: file.mtimeMs,
-          ref: resetRef,
-        })
-        if (resetRef) this.emit({ type: "updated", ref: resetRef })
+        if (this.commit(file, resetRef) && resetRef)
+          this.emit({ type: "updated", ref: resetRef })
       }
       if (update && (update.replace || update.entries.length > 0)) {
         await this.deliverFollowerUpdate(provider, path, follow, update)

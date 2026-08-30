@@ -7,11 +7,14 @@ import {
   withConversion,
 } from "@/state/thread-continuation"
 import {
+  activeThreadRefs,
   applyThreadRun,
   clearObserved,
   markObserved,
   markThreadReviewed,
   OBSERVED_IDLE_MS,
+  recentThreadActivityDuration,
+  seedRecentThreadActivity,
   setThreadAttention,
   setThreadRunning,
   setThreadWorkDetail,
@@ -52,11 +55,13 @@ function normalizeThreadCatalog(
 export {
   threadsStore,
   useThreads,
+  activeThreadRefs,
   applyThreadEntries,
   applyThreadRun,
   canResumeInteractively,
   initializeComposerTuning,
   markThreadReviewed,
+  recentThreadActivityDuration,
   setComposerHarness,
   setComposerTuning,
   setThreadAttention,
@@ -93,7 +98,7 @@ export function applyThreadRef(ref: ThreadRef) {
   next.sort((left, right) =>
     (right.updatedAt ?? "").localeCompare(left.updatedAt ?? "")
   )
-  applyThreads(next)
+  applyThreads(next, threadsStore.get().loaded)
   const viewing = threadsStore.get().viewing
   if (viewing?.ref.path === ref.path) {
     const updated = { ...viewing, ref }
@@ -128,8 +133,10 @@ export function uniqueThreadRefs(list: ThreadRef[]) {
 }
 
 export function applyThreads(list: ThreadRef[], loaded = true) {
+  const initialHydration = loaded && !threadsStore.get().loaded
   const unique = uniqueThreadRefs(list)
   threadsStore.set({ threads: unique, loaded })
+  if (initialHydration) seedRecentThreadActivity(unique)
   const candidate = takePendingThread(unique, knownPaths)
   if (candidate) void threadViewingActions.view(candidate)
   knownPaths = new Set(unique.map((ref) => ref.path))

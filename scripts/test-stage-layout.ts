@@ -14,8 +14,10 @@ import {
   toolLabel,
 } from "../src/lib/tools.ts"
 import {
+  activeThreadRefs,
   applyThreadRun,
   markThreadReviewed,
+  recentThreadActivityDuration,
   threadStatus,
   threadStatusPriority,
   threadsStore,
@@ -54,6 +56,10 @@ import {
   applyAcpUpdates,
   type LiveAcpConversation,
 } from "../src/state/acp.ts"
+import {
+  sameAcpPresence,
+  selectAcpPresence,
+} from "../src/state/acp-presence.ts"
 import type {
   ChatMessage,
   HarnessProfile,
@@ -425,10 +431,16 @@ acpStore.set({
   bufferedPermissions: {},
 })
 const stableBackgroundB = acpStore.get().conversations[backgroundB.key]
+const presenceBeforeToken = selectAcpPresence(acpStore.get())
 applyAcpUpdates(backgroundA.key, [{ kind: "text", text: "Background token" }])
 assert.deepEqual(acpStore.get().conversations[backgroundA.key]?.blocks, [
   { type: "text", text: "Background token" },
 ])
+assert.equal(
+  sameAcpPresence(presenceBeforeToken, selectAcpPresence(acpStore.get())),
+  true,
+  "token updates must not repaint the rail"
+)
 assert.equal(
   acpStore.get().conversations[backgroundB.key],
   stableBackgroundB,
@@ -784,6 +796,41 @@ assert.deepEqual(
     { ...statusState, observed: { "/session": true } }
   ),
   { kind: "idle" }
+)
+const liveCodexRefs = [
+  {
+    harness: "codex",
+    nativeId: "codex-one",
+    path: "/codex-one",
+    cwd: "/other-project",
+    updatedAt: "2026-08-30T13:05:00Z",
+  },
+  {
+    harness: "codex",
+    nativeId: "codex-two",
+    path: "/codex-two",
+    cwd: "/other-project",
+    updatedAt: "2026-08-30T13:05:01Z",
+  },
+] satisfies ThreadRef[]
+const activityNow = Date.parse("2026-08-30T13:05:30Z")
+assert.equal(
+  recentThreadActivityDuration(liveCodexRefs[0]!, activityNow),
+  30_000
+)
+assert.equal(
+  recentThreadActivityDuration(
+    { ...liveCodexRefs[0]!, active: false },
+    activityNow
+  ),
+  null
+)
+assert.deepEqual(
+  activeThreadRefs(liveCodexRefs, {
+    ...statusState,
+    observed: { "/codex-one": true, "/codex-two": true },
+  }).map((ref) => ref.nativeId),
+  ["codex-two", "codex-one"]
 )
 
 const backgroundRef = {

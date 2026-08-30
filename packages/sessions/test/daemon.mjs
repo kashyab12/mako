@@ -3,7 +3,15 @@ import { access, mkdtemp, rm, stat, writeFile } from "node:fs/promises"
 import { createConnection } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { connectDaemon, serveCatalog } from "../dist/daemon.js"
+import {
+  connectDaemon,
+  daemonMemoryUnsafe,
+  MAX_DAEMON_RSS,
+  serveCatalog,
+} from "../dist/daemon.js"
+
+assert.equal(daemonMemoryUnsafe(MAX_DAEMON_RSS), false)
+assert.equal(daemonMemoryUnsafe(MAX_DAEMON_RSS + 1), true)
 
 const root = await mkdtemp(join(tmpdir(), "mako-daemon-test-"))
 const socketPath = join(root, "syncd.sock")
@@ -50,6 +58,9 @@ await assert.rejects(
   /already (?:running|starting)/
 )
 const client = await connectDaemon(socketPath, 100)
+const refreshed = await client.refresh()
+assert.equal(refreshed.pid, process.pid)
+assert.ok((refreshed.rss ?? 0) > 0)
 assert.deepEqual(await client.open(thread.ref.path), thread)
 assert.deepEqual(await client.page(thread.ref.path), page)
 const streamed = new Promise((resolve) => {

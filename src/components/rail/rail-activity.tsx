@@ -1,32 +1,9 @@
-import { harnessLabel } from "@/components/rail/harness-meta"
-import { HarnessIcon } from "@/components/ui/provider-icon"
 import type { ThreadFolder } from "@/lib/thread-folders"
 import {
   Loader2Icon,
   ShieldQuestionIcon,
   TriangleAlertIcon,
 } from "lucide-react"
-
-export interface AgentActivity {
-  harness: string
-  count: number
-}
-
-export function ActiveAgents({ activity }: { activity: AgentActivity[] }) {
-  if (activity.length === 0) return null
-  return (
-    <div className="flex h-7 items-center gap-2 overflow-x-auto px-3 text-label text-faint">
-      {activity.map((entry) => (
-        <span key={entry.harness} className="flex shrink-0 items-center gap-1.5">
-          <HarnessIcon harness={entry.harness} className="size-3" />
-          <span>{harnessLabel(entry.harness)}</span>
-          <span className="size-1.5 animate-live rounded-full bg-current" />
-          {entry.count > 1 ? <span>{entry.count} active</span> : <span>active</span>}
-        </span>
-      ))}
-    </div>
-  )
-}
 
 export function FolderActivity({ folder }: { folder: ThreadFolder }) {
   const working = folder.running ? `${folder.running} working` : null

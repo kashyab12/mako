@@ -24,7 +24,9 @@ export { SessionCatalog, type CatalogEvent } from "./catalog.js"
 export { SessionArchive } from "./archive.js"
 export {
   connectDaemon,
+  daemonMemoryUnsafe,
   daemonSocketPath,
+  MAX_DAEMON_RSS,
   pingDaemon,
   PROTOCOL_VERSION,
   serveCatalog,

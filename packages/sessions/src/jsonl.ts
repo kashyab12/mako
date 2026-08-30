@@ -14,7 +14,9 @@ import { open } from "node:fs/promises"
 import { EntrySink, type ThreadEntry } from "./format.js"
 import type { SessionFollower, SessionUpdate } from "./providers/types.js"
 
-const CHUNK = 4 * 1024 * 1024
+const CHUNK = 512 * 1024
+const MAX_LINE_BYTES = 16 * 1024 * 1024
+const MAX_FOLLOW_RESET_BYTES = 64 * 1024 * 1024
 
 export interface LineTranslator {
   push(raw: string): void
@@ -63,9 +65,9 @@ export async function readHead(path: string, bytes: number): Promise<string> {
   try {
     const size = (await handle.stat()).size
     const length = Math.min(bytes, size)
-    const buffer = Buffer.alloc(length)
-    await handle.read(buffer, 0, length, 0)
-    return buffer.toString("utf8")
+    const buffer = Buffer.allocUnsafe(length)
+    const read = await handle.read(buffer, 0, length, 0)
+    return buffer.subarray(0, read.bytesRead).toString("utf8")
   } finally {
     await handle.close()
   }
@@ -100,35 +102,74 @@ async function readLineBatch(
     let cursor = reset ? 0 : fromByte
     const end = size
     let consumed = cursor
-    let carry: Buffer | null = null
+    let carry: Buffer[] = []
+    let carryBytes = 0
+    let skipping = false
+    if (cursor > 0) {
+      const prior = Buffer.allocUnsafe(1)
+      const read = await handle.read(prior, 0, 1, cursor - 1)
+      skipping = read.bytesRead === 1 && prior[0] !== 0x0a
+    }
 
     while (cursor < end) {
-      const length = Math.min(CHUNK, end - cursor)
-      const chunk = Buffer.alloc(length)
-      await handle.read(chunk, 0, length, cursor)
-      cursor += length
-
-      const buffer: Buffer = carry ? Buffer.concat([carry, chunk]) : chunk
-      const lastBreak = buffer.lastIndexOf(0x0a)
-      if (lastBreak === -1) {
-        carry = buffer
-        continue
-      }
-      for (const line of buffer.toString("utf8", 0, lastBreak).split("\n")) {
-        if (onLine(line) === false) {
-          return {
-            nextByte: consumed,
-            reset,
-            size,
-            identity: `${info.dev}:${info.ino}`,
+      const requested = Math.min(CHUNK, end - cursor)
+      const chunk = Buffer.allocUnsafe(requested)
+      const read = await handle.read(chunk, 0, requested, cursor)
+      if (read.bytesRead === 0) break
+      const startByte = cursor
+      cursor += read.bytesRead
+      let start = 0
+      while (start < read.bytesRead) {
+        const lineBreak = chunk.indexOf(0x0a, start)
+        if (lineBreak === -1 || lineBreak >= read.bytesRead) {
+          if (!skipping) {
+            const segment = chunk.subarray(start, read.bytesRead)
+            if (carryBytes + segment.length > MAX_LINE_BYTES) {
+              carry = []
+              carryBytes = 0
+              skipping = true
+            } else {
+              carry.push(Buffer.from(segment))
+              carryBytes += segment.length
+            }
           }
+          break
         }
+        const nextByte = startByte + lineBreak + 1
+        if (skipping) {
+          skipping = false
+          carry = []
+          carryBytes = 0
+          consumed = nextByte
+          start = lineBreak + 1
+          continue
+        }
+        const segment = chunk.subarray(start, lineBreak)
+        if (carryBytes + segment.length <= MAX_LINE_BYTES) {
+          const line =
+            carryBytes === 0
+              ? segment.toString("utf8")
+              : Buffer.concat([...carry, segment], carryBytes + segment.length).toString(
+                  "utf8"
+                )
+          carry = []
+          carryBytes = 0
+          consumed = nextByte
+          if (onLine(line) === false) {
+            return {
+              nextByte: consumed,
+              reset,
+              size,
+              identity: `${info.dev}:${info.ino}`,
+            }
+          }
+        } else {
+          carry = []
+          carryBytes = 0
+          consumed = nextByte
+        }
+        start = lineBreak + 1
       }
-      consumed += lastBreak + 1
-      carry =
-        lastBreak + 1 < buffer.length
-          ? Buffer.from(buffer.subarray(lastBreak + 1))
-          : null
     }
     return {
       nextByte: consumed,
@@ -182,7 +223,11 @@ export function createJsonlFollower(
       let read = await readLineBatch(path, cursor, parser.push)
       if (read.reset || (identity !== null && read.identity !== identity)) {
         parser = createTranslator()
-        read = await readLineBatch(path, 0, parser.push)
+        read = await readLineBatch(
+          path,
+          Math.max(0, read.size - MAX_FOLLOW_RESET_BYTES),
+          parser.push
+        )
         parser.commitBatch?.()
         cursor = read.nextByte
         identity = read.identity
@@ -201,7 +246,11 @@ export function createJsonlFollower(
       parser.commitBatch?.()
       if (!synchronized && parser.needsReset) {
         parser = createTranslator()
-        read = await readLineBatch(path, 0, parser.push)
+        read = await readLineBatch(
+          path,
+          Math.max(0, read.size - MAX_FOLLOW_RESET_BYTES),
+          parser.push
+        )
         parser.commitBatch?.()
         cursor = read.nextByte
         identity = read.identity

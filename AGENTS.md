@@ -67,8 +67,16 @@ Three rules hold this together, and each has a specific failure it prevents:
   surface-panel rows carry `.contain-turn` so offscreen work is skipped
   without the fragility of windowing variable-height streaming content.
 
-`useVirtualizer` makes the React Compiler bail out of the component that calls
-it, so it stays isolated in `rail/virtual-sessions.tsx`. Keep it there.
+The rail bounds mounted rows through folder pagination and an explicit search
+result cap; it never renders the full catalog. Components that genuinely use
+`useVirtualizer` stay isolated because the React Compiler cannot memoize them.
+
+Native JSONL files can contain multi-gigabyte tool output. Readers must cap one
+record before retaining it, skip into a tail from the next newline, and collect
+bounded chunks before one final concatenation. Never carry `Buffer.concat`
+through a loop. Catalog scans use bounded concurrency, and provider metadata
+queries select only the native session IDs being peeked rather than hydrating a
+whole provider database.
 
 ## The built-in runtime's session tree is not a tree
 

@@ -30,7 +30,7 @@ import {
   type Server,
   type Socket,
 } from "node:net"
-import { chmod, mkdir, open, readFile, unlink } from "node:fs/promises"
+import { chmod, mkdir, readFile, unlink, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { monitorEventLoopDelay } from "node:perf_hooks"
 import { dirname, join } from "node:path"
@@ -67,7 +67,11 @@ export function daemonSocketPath(): string {
  * without it forever. Clients that see an older daemon retire it and let a
  * fresh one take the socket.
  */
-export const PROTOCOL_VERSION = 27
+export const PROTOCOL_VERSION = 28
+export const MAX_DAEMON_RSS = 512 * 1024 * 1024
+export function daemonMemoryUnsafe(rss: number): boolean {
+  return rss > MAX_DAEMON_RSS
+}
 const MAX_CLIENTS = 64
 const MAX_REQUEST_FRAME_BYTES = 1024 * 1024
 const MAX_RESPONSE_FRAME_BYTES = 256 * 1024 * 1024
@@ -96,20 +100,25 @@ export async function claimDaemon(
   await mkdir(dirname(lockPath), { recursive: true, mode: 0o700 })
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const handle = await open(lockPath, "wx", 0o600)
-      await handle.writeFile(String(process.pid))
+      await writeFile(lockPath, String(process.pid), {
+        flag: "wx",
+        mode: 0o600,
+      })
       let released = false
       return {
         async release() {
           if (released) return
           released = true
-          await handle.close().catch(() => {})
           const owner = Number(await readFile(lockPath, "utf8").catch(() => ""))
           if (owner === process.pid) await unlink(lockPath).catch(() => {})
         },
       }
     } catch (error) {
-      const owner = Number(await readFile(lockPath, "utf8").catch(() => ""))
+      let owner = Number(await readFile(lockPath, "utf8").catch(() => ""))
+      if (!Number.isInteger(owner) || owner <= 0) {
+        await new Promise((resolve) => setTimeout(resolve, 25))
+        owner = Number(await readFile(lockPath, "utf8").catch(() => ""))
+      }
       if (Number.isInteger(owner) && owner > 0 && processIsAlive(owner)) {
         throw new Error(`A sync daemon is already starting (pid ${owner})`)
       }
@@ -263,11 +272,7 @@ export async function serveCatalog(
             // A newer client wants this vintage gone. Answer, then leave —
             // the socket frees, and the successor takes over the watchers.
             reply({ id: frame.id, ok: true, result: null })
-            server.close()
-            setTimeout(() => {
-              catalog.stop()
-              for (const client of clients) client.destroy()
-            }, 100)
+            retire()
             return
           }
           case "unfollow": {
@@ -301,7 +306,26 @@ export async function serveCatalog(
     socket.on("error", cleanup)
   })
 
+  let retiring = false
+  const retire = () => {
+    if (retiring) return
+    retiring = true
+    server.close()
+    setTimeout(() => {
+      catalog.stop()
+      for (const client of clients) client.destroy()
+    }, 100)
+  }
+  let highMemorySamples = 0
+  const memoryTimer = setInterval(() => {
+    highMemorySamples = daemonMemoryUnsafe(process.memoryUsage().rss)
+      ? highMemorySamples + 1
+      : 0
+    if (highMemorySamples >= 3) retire()
+  }, 5_000)
+
   server.once("close", () => {
+    clearInterval(memoryTimer)
     eventLoopDelay.disable()
     stopEvents()
     void ownership.release()
@@ -315,6 +339,7 @@ export async function serveCatalog(
     if (process.platform !== "win32") await chmod(socketPath, 0o600)
     return server
   } catch (error) {
+    clearInterval(memoryTimer)
     eventLoopDelay.disable()
     stopEvents()
     await ownership.release()
@@ -326,6 +351,7 @@ export async function serveCatalog(
 
 export interface DaemonClient {
   stats: DaemonStats
+  refresh(): Promise<DaemonStats>
   list(filter?: { cwd?: string; harness?: string }): Promise<ThreadRef[]>
   open(path: string): Promise<Thread | null>
   page(path: string, before?: number, limit?: number): Promise<ThreadPage | null>
@@ -508,6 +534,7 @@ export async function connectDaemon(
 
     return {
       stats,
+      refresh: requestPing,
       list: requestList,
       open: requestOpen,
       page: requestPage,

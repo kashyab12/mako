@@ -68,7 +68,7 @@ export function clearObserved(path: string) {
   threadsStore.set({ observed })
 }
 
-export function markObserved(path: string) {
+export function markObserved(path: string, duration = OBSERVED_IDLE_MS) {
   if (threadsStore.get().working[path]) return
   if (!threadsStore.get().observed[path]) {
     threadsStore.set({
@@ -80,8 +80,51 @@ export function markObserved(path: string) {
   observedTimers.delete(path)
   observedTimers.set(
     path,
-    setTimeout(() => clearObserved(path), OBSERVED_IDLE_MS)
+    setTimeout(() => clearObserved(path), Math.max(1, duration))
   )
+}
+
+export function recentThreadActivityDuration(
+  ref: ThreadRef,
+  now = Date.now()
+): number | null {
+  if (ref.active !== undefined || ref.locked || !ref.updatedAt) return null
+  const elapsed = now - Date.parse(ref.updatedAt)
+  return Number.isFinite(elapsed) && elapsed >= 0 && elapsed < OBSERVED_IDLE_MS
+    ? OBSERVED_IDLE_MS - elapsed
+    : null
+}
+
+export function seedRecentThreadActivity(
+  refs: ThreadRef[],
+  now = Date.now()
+): void {
+  for (const ref of refs) {
+    const duration = recentThreadActivityDuration(ref, now)
+    if (duration !== null) markObserved(ref.path, duration)
+  }
+}
+
+export function activeThreadRefs(
+  refs: ThreadRef[],
+  state: ThreadsState = threadsStore.get()
+): ThreadRef[] {
+  return refs
+    .filter((ref) => {
+      const status = threadStatus(ref, state)
+      return (
+        status.kind === "working" ||
+        status.kind === "needs-permission" ||
+        status.kind === "observed" ||
+        status.kind === "external-active"
+      )
+    })
+    .sort((left, right) => {
+      const priority =
+        threadStatusPriority(threadStatus(right, state)) -
+        threadStatusPriority(threadStatus(left, state))
+      return priority || (right.updatedAt ?? "").localeCompare(left.updatedAt ?? "")
+    })
 }
 
 /** A native run started, finished, or failed, on any thread. */

@@ -70,6 +70,10 @@ interface CodexThreadMetadata {
   updatedAt?: string
 }
 
+interface CodexPeekResult {
+  ref: ThreadRef | null
+}
+
 interface CodexTurnContext extends CodexRolloutBase {
   kind: "turn_context"
   model?: string
@@ -326,66 +330,77 @@ export class CodexProvider implements SessionProvider {
   private metadataPath: string
   private metadataMtime = -1
   private metadata = new Map<string, CodexThreadMetadata>()
-  private metadataLoad: Promise<Map<string, CodexThreadMetadata>> | null = null
+  private metadataKnown = new Set<string>()
+  private metadataLoads = new Map<
+    string,
+    Promise<CodexThreadMetadata | undefined>
+  >()
 
   constructor(home = homedir()) {
     this.root = join(home, ".codex", "sessions")
     this.metadataPath = join(home, ".codex", "state_5.sqlite")
   }
 
-  private async threadMetadata(): Promise<Map<string, CodexThreadMetadata>> {
+  private async threadMetadata(
+    id: string
+  ): Promise<CodexThreadMetadata | undefined> {
     const [info, wal] = await Promise.all([
       stat(this.metadataPath).catch(() => null),
       stat(`${this.metadataPath}-wal`).catch(() => null),
     ])
-    if (!info) return this.metadata
+    if (!info) return undefined
     const mtime = Math.max(info.mtimeMs, wal?.mtimeMs ?? 0)
-    if (mtime === this.metadataMtime) return this.metadata
-    if (this.metadataLoad) return this.metadataLoad
-    this.metadataLoad = (async () => {
+    if (mtime !== this.metadataMtime) {
+      this.metadata.clear()
+      this.metadataKnown.clear()
+      this.metadataLoads.clear()
+      this.metadataMtime = mtime
+    }
+    if (this.metadataKnown.has(id)) return this.metadata.get(id)
+    const existing = this.metadataLoads.get(id)
+    if (existing) return existing
+    const load = (async () => {
       const sqlite = await import("node:sqlite").catch(() => null)
-      if (!sqlite) return this.metadata
+      if (!sqlite) return undefined
       const database = new sqlite.DatabaseSync(this.metadataPath, {
         readOnly: true,
       })
       try {
-        const rows = database
+        const row = database
           .prepare(
-            "SELECT id, name, title, cwd, updated_at_ms FROM threads WHERE thread_source IS NULL OR thread_source != 'subagent'"
+            "SELECT id, name, title, cwd, updated_at_ms FROM threads WHERE id = ? AND (thread_source IS NULL OR thread_source != 'subagent')"
           )
-          .all()
-        const metadata = new Map<string, CodexThreadMetadata>()
-        for (const row of rows) {
-          const id = sqliteText(row.id)
-          if (!id) continue
-          const updatedAtMs = sqliteNumber(row.updated_at_ms)
-          const storedTitle = sqliteText(row.title)
-          const conciseTitle =
-            storedTitle &&
-            !storedTitle.includes("\n") &&
-            storedTitle.length <= 80
-              ? titleFrom(storedTitle)
-              : undefined
-          metadata.set(id, {
-            title: titleFrom(sqliteText(row.name)) ?? conciseTitle,
-            cwd: sqliteText(row.cwd),
-            updatedAt: updatedAtMs
-              ? new Date(updatedAtMs).toISOString()
-              : undefined,
-          })
+          .get(id)
+        if (this.metadataMtime !== mtime) return this.metadata.get(id)
+        this.metadataKnown.add(id)
+        if (!row) return undefined
+        const updatedAtMs = sqliteNumber(row.updated_at_ms)
+        const storedTitle = sqliteText(row.title)
+        const conciseTitle =
+          storedTitle &&
+          !storedTitle.includes("\n") &&
+          storedTitle.length <= 80
+            ? titleFrom(storedTitle)
+            : undefined
+        const metadata = {
+          title: titleFrom(sqliteText(row.name)) ?? conciseTitle,
+          cwd: sqliteText(row.cwd),
+          updatedAt: updatedAtMs
+            ? new Date(updatedAtMs).toISOString()
+            : undefined,
         }
-        this.metadata = metadata
-        this.metadataMtime = mtime
+        this.metadata.set(id, metadata)
         return metadata
       } catch {
-        return this.metadata
+        return undefined
       } finally {
         database.close()
       }
     })().finally(() => {
-      this.metadataLoad = null
+      if (this.metadataLoads.get(id) === load) this.metadataLoads.delete(id)
     })
-    return this.metadataLoad
+    this.metadataLoads.set(id, load)
+    return load
   }
 
   roots(): string[] {
@@ -416,11 +431,10 @@ export class CodexProvider implements SessionProvider {
    * ever making a changed gigabyte file cost a gigabyte.
    */
   async peek(file: NativeFile): Promise<ThreadRef | null> {
-    const metadata = await this.threadMetadata()
     const budget = 8 * 1024 * 1024
     let spent = 0
     let sawMeta = false
-    let ref: ThreadRef | null = null
+    const found: CodexPeekResult = { ref: null }
     await readLines(file.path, 0, (raw) => {
       spent += raw.length + 1
       const event = parseCodexRolloutLine(raw)
@@ -429,21 +443,19 @@ export class CodexProvider implements SessionProvider {
         if (sawMeta) return spent < budget
         sawMeta = true
         if (!event.id || event.threadSource === "subagent") return false
-        const details = metadata.get(event.id)
-        ref = {
+        found.ref = {
           harness: this.harness,
           nativeId: event.id,
           path: file.path,
-          cwd: details?.cwd ?? event.cwd,
-          title: details?.title,
+          cwd: event.cwd,
           startedAt: event.startedAt ?? event.at,
-          updatedAt:
-            details?.updatedAt ?? new Date(file.mtimeMs).toISOString(),
+          updatedAt: new Date(file.mtimeMs).toISOString(),
           bytes: file.bytes,
         }
         return spent < budget
       }
       if (!sawMeta) return false // Not a rollout file at all.
+      const ref = found.ref
       if (!ref) return spent < budget
       if (event.kind === "turn_context" && !ref.model && event.model) {
         ref.model = event.model
@@ -456,7 +468,20 @@ export class CodexProvider implements SessionProvider {
       }
       return spent < budget && !(ref.title && ref.model)
     })
-    return ref
+    const ref = found.ref
+    if (!ref) return null
+    const details = await this.threadMetadata(ref.nativeId)
+    return details
+      ? {
+          ...ref,
+          cwd: details.cwd ?? ref.cwd,
+          title: details.title ?? ref.title,
+          updatedAt:
+            details.updatedAt && details.updatedAt > (ref.updatedAt ?? "")
+              ? details.updatedAt
+              : ref.updatedAt,
+        }
+      : ref
   }
 
   async read(path: string): Promise<Thread | null> {

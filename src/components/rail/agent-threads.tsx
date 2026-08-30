@@ -1,40 +1,40 @@
-import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { RunningThreads } from "@/components/rail/active-threads"
+import { ThreadRow } from "@/components/rail/thread-row"
 import { harnessLabel } from "@/components/rail/harness-meta"
-import { formatRelative, workspaceName } from "@/lib/format"
+import { formatRelative } from "@/lib/format"
 import {
   groupThreadFolders,
   threadBelongsToWorkspace,
   type ThreadFolder,
 } from "@/lib/thread-folders"
 import {
+  activeThreadRefs,
   threadStatus,
   threadStatusPriority,
-  threads,
   threadsStore,
   useThreads,
 } from "@/state/threads"
-import { actions, shallowEqual, useSession } from "@/state/session"
-import { activeAcp, useAcp } from "@/state/acp"
+import { actions, useSession } from "@/state/session"
+import { useAcp } from "@/state/acp"
+import {
+  sameAcpPresence,
+  selectAcpPresence,
+} from "@/state/acp-presence"
 import { useWorkspaceFocus } from "@/components/stage/workspace-focus-context"
 import {
-  prefsStore,
   setPref,
-  togglePinned,
   togglePinnedProject,
   usePrefs,
 } from "@/state/prefs"
 import { cn } from "@/lib/utils"
-import { useTabs, type TabInfo } from "@/state/tabs"
 import { Blank } from "@/components/ui/kit"
 import { formatChord } from "@/extend/commands"
 import { DraftThreads } from "@/components/rail/draft-threads"
-import { ThreadStatusMark } from "@/components/rail/thread-status"
 import {
-  ActiveAgents,
   FolderActivity,
   RailSkeleton,
-  type AgentActivity,
 } from "@/components/rail/rail-activity"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import {
@@ -42,7 +42,6 @@ import {
   ChevronRightIcon,
   FolderIcon,
   FolderOpenIcon,
-  ArchiveIcon,
   FolderPlusIcon,
   ListFilterIcon,
   MessagesSquareIcon,
@@ -51,7 +50,6 @@ import {
   SearchIcon,
   XIcon,
 } from "lucide-react"
-import type { ThreadRef } from "@/lib/types"
 
 /**
  * The threads rail: every agent's conversations, arranged the way work is —
@@ -102,6 +100,7 @@ export function AgentThreads() {
   const [pages, setPages] = useState<Record<string, number>>({})
   const deferred = useDeferredValue(query)
   const all = useThreads((state) => state.threads)
+  const liveAgents = useAcp(selectAcpPresence, sameAcpPresence)
   const loaded = useThreads((state) => state.loaded)
   const working = useThreads((state) => state.working)
   const attention = useThreads((state) => state.attention)
@@ -162,21 +161,32 @@ export function AgentThreads() {
     return byHarness
   }, [all])
 
-  const activity = useMemo(() => {
-    const byHarness = new Map<string, number>()
-    for (const ref of all) {
-      if (
-        !working[ref.path] &&
-        !observed[ref.path] &&
-        attention[ref.path]?.kind !== "needs-permission"
-      )
-        continue
-      byHarness.set(ref.harness, (byHarness.get(ref.harness) ?? 0) + 1)
-    }
-    return [...byHarness.entries()].map(
-      ([harness, count]): AgentActivity => ({ harness, count })
+  const activeThreads = useMemo(
+    () =>
+      activeThreadRefs(all, {
+        ...threadsStore.get(),
+        attention,
+        observed,
+        working,
+      }),
+    [all, attention, observed, working]
+  )
+  const activePaths = useMemo(
+    () => new Set(activeThreads.map((ref) => ref.path)),
+    [activeThreads]
+  )
+  const unboundLiveAgents = useMemo(() => {
+    const nativePaths = new Set(all.map((ref) => ref.path))
+    const nativeIdentities = new Set(
+      all.map((ref) => `${ref.harness}:${ref.nativeId}`)
     )
-  }, [all, attention, observed, working])
+    return liveAgents.filter(
+      (presence) =>
+        (!presence.threadPath || !nativePaths.has(presence.threadPath)) &&
+        (!presence.nativeId ||
+          !nativeIdentities.has(`${presence.harness}:${presence.nativeId}`))
+    )
+  }, [all, liveAgents])
 
   const matched = useMemo(() => {
     const needle = deferred.trim().toLowerCase()
@@ -242,8 +252,11 @@ export function AgentThreads() {
   )
 
   const searchActive = Boolean(deferred.trim())
-  const shownPinned = showAllPinned ? held : held.slice(0, PINNED_ROWS)
-  const hiddenPinned = held.length - shownPinned.length
+  const quietPinned = held.filter((ref) => !activePaths.has(ref.path))
+  const shownPinned = showAllPinned
+    ? quietPinned
+    : quietPinned.slice(0, PINNED_ROWS)
+  const hiddenPinned = quietPinned.length - shownPinned.length
   const workspaceFolders = folders.filter((folder) => folder.cwd !== null)
   const sessions = folders.find((folder) => folder.cwd === null)
   const priorityFolders = workspaceFolders.filter(
@@ -295,8 +308,6 @@ export function AgentThreads() {
         counts={counts}
         filter={filter}
       />
-      <ActiveAgents activity={activity} />
-
       <div className="scroll-fade-scope flex min-h-0 flex-1 flex-col">
         <span
           ref={topFade}
@@ -347,7 +358,8 @@ export function AgentThreads() {
         ) : (
           <>
             <DraftThreads />
-            {held.length > 0 ? (
+            <RunningThreads refs={activeThreads} liveAgents={unboundLiveAgents} />
+            {quietPinned.length > 0 ? (
               <section className="pt-1 pb-2">
                 <p className="flex h-7 items-center gap-1.5 px-1.5 text-label font-medium text-faint">
                   <PinIcon className="size-3 fill-current opacity-60" />
@@ -373,6 +385,7 @@ export function AgentThreads() {
                 folder={folder}
                 branch={folder.current ? focusedBranch : undefined}
                 now={now}
+                hiddenPaths={activePaths}
                 collapsed={collapsed.includes(`ws:${folder.key}`)}
                 onToggle={() => {
                   const key = `ws:${folder.key}`
@@ -406,6 +419,7 @@ export function AgentThreads() {
               <FolderSection
                 folder={sessions}
                 now={now}
+                hiddenPaths={activePaths}
                 collapsed={collapsed.includes(`ws:${sessions.key}`)}
                 onToggle={() => {
                   const key = `ws:${sessions.key}`
@@ -429,58 +443,6 @@ export function AgentThreads() {
     </div>
   )
 }
-
-/**
- * The mark a session wears while it is attached — running in a background
- * tab of this window. The old tab strip carried these; the rail does now.
- * A leaf with its own narrow selector: a background tab's progress repaints
- * one dot, never the list. Detach appears on hover; the row itself keeps
- * meaning "bring this forward".
- */
-const Attached = memo(function Attached({ path }: { path: string }) {
-  const tab = useTabs(
-    useCallback(
-      (state: { tabs: TabInfo[]; activeId: string }) => {
-        const found = state.tabs.find((entry) => entry.sessionFile === path)
-        if (!found) return null
-        return {
-          id: found.id,
-          working: found.working,
-          unread: found.unread,
-          active: found.id === state.activeId,
-          only: state.tabs.length < 2,
-        }
-      },
-      [path]
-    ),
-    shallowEqual
-  )
-  if (!tab) return null
-  return (
-    <>
-      {tab.working ? (
-        <span aria-label="Working" className="size-1.5 shrink-0 animate-live rounded-full bg-ember" />
-      ) : tab.unread && !tab.active ? (
-        <span aria-label="Finished while you were away" className="size-1.5 shrink-0 rounded-full bg-foreground/45" />
-      ) : null}
-      {tab.only ? null : (
-        <span
-          role="button"
-          tabIndex={-1}
-          aria-label="Detach"
-          title="Detach — stop holding this session open in the background"
-          onClick={(event) => {
-            event.stopPropagation()
-            void actions.closeTab(tab.id)
-          }}
-          className="shrink-0 rounded p-0.5 text-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-foreground"
-        >
-          <XIcon className="size-3" />
-        </span>
-      )}
-    </>
-  )
-})
 
 /**
  * The rail's one header line: an eyebrow, and two glyphs that expand into
@@ -688,6 +650,7 @@ function FolderSection({
   folder,
   branch,
   now,
+  hiddenPaths,
   collapsed,
   onToggle,
   onNew,
@@ -698,6 +661,7 @@ function FolderSection({
   folder: ThreadFolder
   branch?: string
   now: number
+  hiddenPaths: ReadonlySet<string>
   collapsed: boolean
   onToggle: () => void
   onNew?: () => void
@@ -716,8 +680,9 @@ function FolderSection({
   const contentId = `folder-${folder.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`
 
   const lead = folder.current ? LEAD_ROWS : REST_ROWS
-  const visible = folder.refs.slice(0, lead + pages * PAGE_ROWS)
-  const hidden = folder.refs.length - visible.length
+  const available = folder.refs.filter((ref) => !hiddenPaths.has(ref.path))
+  const visible = available.slice(0, lead + pages * PAGE_ROWS)
+  const hidden = available.length - visible.length
 
   return (
     <section className="pb-1">
@@ -828,147 +793,3 @@ function FolderSection({
     </section>
   )
 }
-
-const ThreadRow = memo(function ThreadRow({
-  threadRef: ref,
-  indent,
-  showFolder,
-}: {
-  threadRef: ThreadRef
-  indent?: boolean
-  showFolder?: boolean
-}) {
-  const override = usePrefs((prefs) => prefs.titleOverrides[ref.path])
-  const [editing, setEditing] = useState<string | null>(null)
-  // A thread whose CLI is being driven from here right now wears a pulse —
-  // the same promise a tab's dot makes: something is working behind this row.
-  const status = useThreads((state) => threadStatus(ref, state))
-  const working = status.kind === "working"
-  const activeElsewhere =
-    status.kind === "observed" || status.kind === "external-active"
-  const isPinned = usePrefs((prefs) => prefs.pinnedThreads.includes(ref.path))
-  const active = useSession((state) => state.meta?.sessionFile === ref.path)
-  const selectedPath = useThreads(
-    (state) => state.opening?.path ?? state.viewing?.ref.path
-  )
-  const livePath = useAcp((state) => activeAcp(state)?.threadPath)
-
-  const open = () => {
-    void threads.view(ref)
-  }
-
-  // One selection at a time: while a thread is open in the viewer, IT is
-  // the selection — the native tab keeps its state but not its highlight,
-  // because two lit rows read as a broken click.
-  const focusedPath = selectedPath ?? livePath
-  const lit = focusedPath ? focusedPath === ref.path : active
-
-  return (
-    <button
-      type="button"
-      onClick={open}
-      onAuxClick={(event) => {
-        if (event.button === 1) open()
-      }}
-      title={[
-        ref.title ?? "Untitled session",
-        ref.archived ? "Archived: the native store lost this; Mako kept it. Reply to bring it back to life." : undefined,
-        [...(ref.lineage ?? []).map((origin) => harnessLabel(origin.harness)), harnessLabel(ref.harness)].join(" → "),
-        ref.model,
-        ref.cwd,
-      ]
-        .filter(Boolean)
-        .join("\n")}
-      data-active={lit || undefined}
-      data-thread-row
-      className={cn(
-        "group flex h-7 w-full items-center gap-2 rounded-md pr-1.5 text-left",
-        indent ? "pl-[26px]" : "pl-1.5",
-        "transition-colors duration-100 hover:bg-fill-hover data-active:bg-raised"
-      )}
-    >
-      {/* Where this conversation has lived: earlier harnesses dimmed and
-          tucked behind, the current one in front. One mark when it has
-          only ever been one place — which is most sessions. */}
-      <span className="flex shrink-0 items-center -space-x-1">
-        {(ref.lineage ?? []).slice(-1).map((origin, index) => (
-          <HarnessIcon
-            key={`${origin.harness}-${index}`}
-            harness={origin.harness}
-            className="size-3 opacity-40"
-          />
-        ))}
-        <HarnessIcon
-          harness={ref.harness}
-          className={cn("size-3", (working || activeElsewhere) && "animate-live")}
-        />
-      </span>
-      {editing !== null ? (
-        <input
-          autoFocus
-          value={editing}
-          onClick={(event) => event.stopPropagation()}
-          onChange={(event) => setEditing(event.target.value)}
-          onKeyDown={(event) => {
-            event.stopPropagation()
-            if (event.key === "Enter") {
-              const next = editing.trim()
-              const all = { ...prefsStore.get().titleOverrides }
-              if (next && next !== ref.title) all[ref.path] = next
-              else delete all[ref.path]
-              setPref("titleOverrides", all)
-              setEditing(null)
-            }
-            if (event.key === "Escape") setEditing(null)
-          }}
-          onBlur={() => setEditing(null)}
-          className="min-w-0 flex-1 rounded bg-raised px-1 text-ui text-foreground ring-1 ring-hairline focus:outline-none"
-        />
-      ) : (
-        <span
-          onDoubleClick={(event) => {
-            event.stopPropagation()
-            setEditing(override ?? ref.title ?? "")
-          }}
-          title="Double-click to rename"
-          className={cn(
-            "min-w-0 flex-1 truncate text-ui",
-            lit ? "font-medium text-foreground" : "text-foreground/85"
-          )}
-        >
-          {override ?? ref.title ?? "Untitled session"}
-        </span>
-      )}
-      {showFolder && ref.cwd ? (
-        <span className="max-w-[6rem] shrink-0 truncate text-label text-faint/70">
-          {workspaceName(ref.cwd)}
-        </span>
-      ) : null}
-      <span
-        role="button"
-        tabIndex={-1}
-        aria-label={isPinned ? "Unpin" : "Pin"}
-        onClick={(event) => {
-          event.stopPropagation()
-          togglePinned(ref.path)
-        }}
-        className={cn(
-          "shrink-0 rounded p-0.5 transition-opacity duration-150",
-          isPinned
-            ? "text-foreground/70"
-            : "text-faint opacity-0 group-hover:opacity-100 hover:text-foreground"
-        )}
-      >
-        <PinIcon className={cn("size-3", isPinned && "fill-current")} />
-      </span>
-      <Attached path={ref.path} />
-      {ref.archived ? (
-        <ArchiveIcon
-          className="size-3 shrink-0 text-faint/70"
-          aria-label="Archived — the native session is gone; Mako kept the conversation"
-        />
-      ) : null}
-      <ThreadStatusMark status={status} updatedAt={ref.updatedAt} />
-    </button>
-  )
-})

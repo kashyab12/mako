@@ -1,8 +1,17 @@
 import assert from "node:assert/strict"
-import { mkdtemp, mkdir, open, rm, stat, writeFile } from "node:fs/promises"
+import {
+  appendFile,
+  mkdtemp,
+  mkdir,
+  open,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
+import { readLines } from "../dist/jsonl.js"
 import { CodexProvider } from "../dist/providers/codex.js"
 
 const home = await mkdtemp(join(tmpdir(), "mako-codex-large-"))
@@ -51,6 +60,24 @@ assert.equal(thread.entries[0]?.kind, "event")
 assert.match(thread.entries[0]?.detail ?? "", /most recent 64 MB/)
 assert.ok(thread.entries.some((entry) => entry.kind === "user" && entry.text === "Recent prompt"))
 assert.ok(!thread.entries.some((entry) => entry.kind === "user" && entry.text === "First prompt"))
+const beforeFollow = await stat(path)
+const follower = new CodexProvider(home).createFollower(path, beforeFollow.size)
+await follower.next()
+await appendFile(
+  path,
+  line("response_item", {
+    type: "function_call_output",
+    call_id: "missing-before-tail",
+    output: "bounded recovery",
+  })
+)
+const recovered = await follower.next()
+assert.equal(recovered.reset, true)
+assert.ok(
+  !recovered.entries.some(
+    (entry) => entry.kind === "user" && entry.text === "First prompt"
+  )
+)
 
 const wrappedPath = join(sessions, "rollout-wrapped.jsonl")
 await writeFile(
@@ -79,6 +106,7 @@ const wrapped = await new CodexProvider(home).peek({
   mtimeMs: wrappedInfo.mtimeMs,
 })
 assert.equal(wrapped?.title, "Update sequence links")
+assert.equal(wrapped?.updatedAt, new Date(wrappedInfo.mtimeMs).toISOString())
 
 const childPath = join(sessions, "rollout-subagent.jsonl")
 await writeFile(
@@ -104,6 +132,26 @@ const child = await new CodexProvider(home).peek({
   mtimeMs: childInfo.mtimeMs,
 })
 assert.equal(child, null)
+
+const oversizedPath = join(sessions, "oversized-line.jsonl")
+const oversized = await open(oversizedPath, "w")
+await oversized.write(Buffer.from("{"), 0, 1, 0)
+const afterOversized = line("session_meta", {
+  id: "after-oversized",
+  cwd: home,
+})
+await oversized.write(
+  Buffer.from(`\n${afterOversized}`),
+  0,
+  Buffer.byteLength(`\n${afterOversized}`),
+  20 * 1024 * 1024
+)
+await oversized.close()
+const lines = []
+await readLines(oversizedPath, 0, (raw) => lines.push(raw))
+assert.equal(lines.length, 1)
+assert.match(lines[0] ?? "", /after-oversized/)
+
 await rm(home, { recursive: true, force: true })
 
 console.log("Large Codex checks clean: gigabyte rollouts translate from a bounded recent window.")
