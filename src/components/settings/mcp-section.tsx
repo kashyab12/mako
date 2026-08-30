@@ -47,8 +47,12 @@ export function McpSection() {
             <span className="block text-label text-faint">
               {state.permissions.accessibility &&
               state.permissions.screenRecording === "granted"
-                ? "Accessibility and Screen Recording are granted once to Mako."
-                : "Grant Accessibility and Screen Recording once; macOS Harness and the embedded CUA fallback share Mako’s app identity."}
+                ? state.permissions.persistentAcrossUpdates
+                  ? "Accessibility and Screen Recording are granted to Mako."
+                  : "Granted for this unsigned build; a future update may require access again."
+                : state.permissions.persistentAcrossUpdates
+                  ? "Grant Accessibility and Screen Recording to Mako."
+                  : "Grant access to this unsigned build; updates may require access again."}
             </span>
           </span>
           {!state.permissions.accessibility ||

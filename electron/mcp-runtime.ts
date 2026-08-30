@@ -1,5 +1,8 @@
 import type { McpServer } from "@agentclientprotocol/sdk"
-import { projectRuntimeDefinitions } from "./mcp-registry.js"
+import {
+  isMakoNodeServer,
+  projectRuntimeDefinitions,
+} from "./mcp-registry.js"
 import type {
   McpProvider,
   McpRegistrySnapshot,
@@ -27,7 +30,7 @@ function localEnvironment(definition: McpServerDefinition): Array<{
   name: string
   value: string
 }> {
-  return definition.name === "mako-local-tools"
+  return isMakoNodeServer(definition.name)
     ? [{ name: "ELECTRON_RUN_AS_NODE", value: "1" }]
     : []
 }

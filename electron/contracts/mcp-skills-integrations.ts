@@ -132,6 +132,7 @@ export interface McpRegistrySnapshot {
 
 export interface MakoComputerPermissions {
   supported: boolean
+  persistentAcrossUpdates: boolean
   accessibility: boolean
   screenRecording: "not-determined" | "denied" | "restricted" | "granted" | "unknown"
 }

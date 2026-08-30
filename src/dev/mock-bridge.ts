@@ -330,11 +330,13 @@ export function installMockBridge() {
       "You are an expert at writing Git commits.",
     computerPermissions: async () => ({
       supported: true,
+      persistentAcrossUpdates: true,
       accessibility: true,
       screenRecording: "granted" as const,
     }),
     requestComputerPermissions: async () => ({
       supported: true,
+      persistentAcrossUpdates: true,
       accessibility: true,
       screenRecording: "granted" as const,
     }),

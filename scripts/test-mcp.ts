@@ -22,6 +22,7 @@ import {
   previewMcpSync,
 } from "../electron/mcp.js"
 import { integrationCatalog } from "../electron/integrations.js"
+import { BROWSER_TOOL_INPUTS } from "../electron/browser-tools-main.js"
 import { LOCAL_TOOL_INPUTS } from "../electron/local-tools-main.js"
 import {
   cuaEmbeddedSocket,
@@ -397,6 +398,12 @@ async function testManagedDefinitions(): Promise<void> {
     false
   )
   assert.equal(
+    definitions.some(
+      (entry) => entry.definition.name === "mako-browser-use"
+    ),
+    true
+  )
+  assert.equal(
     definitions.some((entry) => entry.definition.name === "mako-local-tools"),
     true
   )
@@ -424,7 +431,9 @@ async function testManagedDefinitions(): Promise<void> {
       .filter(
         (entry) =>
           !entry.definition.blockReason &&
-          entry.definition.name === "mako-local-tools"
+          ["mako-browser-use", "mako-local-tools"].includes(
+            entry.definition.name
+          )
       )
       .map((entry) => entry.definition.name)
       .sort()
@@ -467,7 +476,7 @@ async function testManagedCommandIsolation(): Promise<void> {
 
 async function testMakoRuntimeProjection(): Promise<void> {
   const managed = (
-    name: "mako-local-tools" | "mako-local-control",
+    name: "mako-browser-use" | "mako-local-tools" | "mako-local-control",
     command: string,
     args: string[]
   ): McpDiscoveredDefinition => ({
@@ -476,7 +485,10 @@ async function testMakoRuntimeProjection(): Promise<void> {
       transport: "stdio",
       command,
       args,
-      envNames: name === "mako-local-tools" ? ["ELECTRON_RUN_AS_NODE"] : [],
+      envNames:
+        name === "mako-local-tools" || name === "mako-browser-use"
+          ? ["ELECTRON_RUN_AS_NODE"]
+          : [],
       headerNames: [],
       portable: true,
     },
@@ -492,6 +504,7 @@ async function testMakoRuntimeProjection(): Promise<void> {
     generatedAt: 1,
     providers: [],
     servers: mergeMcpDefinitions([
+      managed("mako-browser-use", process.execPath, ["browser-tools.js"]),
       managed("mako-local-tools", process.execPath, ["local-tools.js"]),
       managed("mako-local-control", "cua-driver", [
         "mcp",
@@ -508,10 +521,14 @@ async function testMakoRuntimeProjection(): Promise<void> {
   const acpServers = acpMcpServers(snapshot, "claude", ["stdio"])
   assert.deepEqual(
     acpServers.map((server) => server.name),
-    ["mako-local-control", "mako-local-tools"]
+    ["mako-browser-use", "mako-local-control", "mako-local-tools"]
   )
   assert.deepEqual(
     acpServers.find((server) => server.name === "mako-local-tools")?.env,
+    [{ name: "ELECTRON_RUN_AS_NODE", value: "1" }]
+  )
+  assert.deepEqual(
+    acpServers.find((server) => server.name === "mako-browser-use")?.env,
     [{ name: "ELECTRON_RUN_AS_NODE", value: "1" }]
   )
   const codex = codexMcpConfig(snapshot)
@@ -519,6 +536,7 @@ async function testMakoRuntimeProjection(): Promise<void> {
     .object({ mcp_servers: z.record(z.string(), z.json()) })
     .parse(codex).mcp_servers
   assert.deepEqual(Object.keys(servers).sort(), [
+    "mako-browser-use",
     "mako-local-control",
     "mako-local-tools",
   ])
@@ -541,6 +559,7 @@ async function testMakoRuntimeProjection(): Promise<void> {
   const nativeSnapshot: McpRegistrySnapshot = {
     ...snapshot,
     servers: mergeMcpDefinitions([
+      managed("mako-browser-use", process.execPath, ["browser-tools.js"]),
       managed("mako-local-tools", process.execPath, ["local-tools.js"]),
       managed("mako-local-control", "cua-driver", [
         "mcp",
@@ -559,7 +578,7 @@ async function testMakoRuntimeProjection(): Promise<void> {
     acpMcpServers(nativeSnapshot, "claude", ["stdio"]).map(
       (server) => server.name
     ),
-    ["mako-local-control", "mako-local-tools"]
+    ["mako-browser-use", "mako-local-control", "mako-local-tools"]
   )
 }
 
@@ -677,12 +696,33 @@ function testIntegrationCatalog(): void {
         availability: "available",
         managed: true,
       },
+      {
+        id: "local-browser",
+        name: "mako-browser-use",
+        transport: "stdio",
+        command: "browser-use",
+        args: [],
+        envNames: [],
+        headerNames: [],
+        origins: [
+          {
+            provider: "mako",
+            account: "local",
+            scope: "managed",
+            provenance: "fixture",
+          },
+        ],
+        portable: true,
+        availability: "available",
+        managed: true,
+      },
     ],
   }
   const granted = integrationCatalog(
     snapshot,
     {
       supported: true,
+      persistentAcrossUpdates: true,
       accessibility: true,
       screenRecording: "granted",
     },
@@ -707,6 +747,7 @@ function testIntegrationCatalog(): void {
     snapshot,
     {
       supported: true,
+      persistentAcrossUpdates: false,
       accessibility: false,
       screenRecording: "denied",
     },
@@ -726,6 +767,22 @@ function testIntegrationCatalog(): void {
 }
 
 function testLocalSchemas(): void {
+  assert.equal(BROWSER_TOOL_INPUTS.doctor.safeParse({}).success, true)
+  assert.equal(
+    BROWSER_TOOL_INPUTS.exec.safeParse({ source: "print(page_info())" })
+      .success,
+    true
+  )
+  for (const source of [
+    'start_remote_daemon("cloud")',
+    'os.environ["BROWSER_USE_CLOUD"] = "1"',
+    'os.environ["BH_REMOTE"] = "1"',
+  ]) {
+    assert.equal(
+      BROWSER_TOOL_INPUTS.exec.safeParse({ source }).success,
+      false
+    )
+  }
   assert.equal(LOCAL_TOOL_INPUTS.apps.safeParse({}).success, true)
   assert.equal(LOCAL_TOOL_INPUTS.apps.safeParse({ extra: true }).success, false)
   assert.equal(

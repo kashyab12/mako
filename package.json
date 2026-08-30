@@ -136,6 +136,10 @@
       "category": "public.app-category.developer-tools",
       "icon": "build/Mako.icns",
       "identity": "-",
+      "extendInfo": {
+        "NSScreenCaptureUsageDescription": "Mako captures local application windows only when you ask an agent to inspect them.",
+        "NSAppleEventsUsageDescription": "Mako controls local applications only when you ask an agent to interact with them."
+      },
       "target": [
         {
           "target": "dmg",

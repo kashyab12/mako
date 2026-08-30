@@ -356,6 +356,27 @@ export const MCP: McpRegistrySnapshot = {
       portable: true,
     },
     {
+      id: "mock-browser-use",
+      name: "mako-browser-use",
+      transport: "stdio",
+      command: "/Users/you/.local/bin/browser-use",
+      args: [],
+      envNames: [],
+      headerNames: [],
+      origins: [
+        {
+          provider: "mako",
+          account: "local",
+          scope: "managed",
+          provenance: "Mako managed",
+        },
+      ],
+      portable: true,
+      managed: true,
+      availability: "available",
+      detail: "Uses the existing local Chrome through Browser Use and CDP",
+    },
+    {
       id: "mock-local-control",
       name: "mako-local-control",
       transport: "stdio",
@@ -485,7 +506,7 @@ export const INTEGRATIONS: IntegrationCatalogSnapshot = {
       auth: "local-browser",
       capabilities: ["Gmail", "Calendar", "Drive", "Docs", "Sheets"],
       events: [],
-      connection: { kind: "ready", detail: "Isolated and running on this Mac" },
+      connection: { kind: "ready", detail: "Existing local Chrome via CDP" },
     },
     {
       id: "atlassian",
@@ -503,16 +524,16 @@ export const INTEGRATIONS: IntegrationCatalogSnapshot = {
     },
     {
       id: "local-browser",
-      label: "Mako Browser",
-      description: "An isolated browser that runs only on this Mac.",
+      label: "Browser Use",
+      description: "Control your existing local Chrome through CDP.",
       category: "Local",
       trust: "mako",
       auth: "local-permission",
-      capabilities: ["Isolated profile", "Inspect", "Interact", "Capture"],
+      capabilities: ["Local Chrome", "Inspect", "Interact", "Capture"],
       events: [],
       connection: {
         kind: "ready",
-        detail: "Runs locally under Mako permissions",
+        detail: "Existing local Chrome via CDP",
       },
     },
     {

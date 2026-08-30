@@ -55,6 +55,7 @@ import {
 import { HostPool } from "./pool.js"
 import { listExternalEditors, openInExternalEditor } from "./editors.js"
 import { resolveExecutable } from "./executable.js"
+import { packagedDistribution } from "./distribution.js"
 import { workspacePreviewPath } from "./workspace-preview.js"
 import {
   daemonStatus,
@@ -215,25 +216,52 @@ function computerPermissions(): MakoComputerPermissions {
   if (process.platform !== "darwin") {
     return {
       supported: false,
+      persistentAcrossUpdates: false,
       accessibility: false,
       screenRecording: "unknown",
     }
   }
   return {
     supported: true,
+    persistentAcrossUpdates:
+      !app.isPackaged || packagedDistribution(app.getAppPath()) === "signed",
     accessibility: systemPreferences.isTrustedAccessibilityClient(false),
     screenRecording: systemPreferences.getMediaAccessStatus("screen"),
   }
 }
 
+async function openPrivacyPane(
+  pane: "Privacy_Accessibility" | "Privacy_ScreenCapture"
+): Promise<void> {
+  await shell.openExternal(
+    `x-apple.systempreferences:com.apple.preference.security?${pane}`
+  )
+}
+
 async function requestComputerPermissions(): Promise<MakoComputerPermissions> {
   if (process.platform !== "darwin") return computerPermissions()
-  systemPreferences.isTrustedAccessibilityClient(true)
+  window?.show()
+  window?.focus()
+  app.focus({ steal: true })
+  if (!systemPreferences.isTrustedAccessibilityClient(false)) {
+    systemPreferences.isTrustedAccessibilityClient(true)
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    const permissions = computerPermissions()
+    if (!permissions.accessibility)
+      await openPrivacyPane("Privacy_Accessibility")
+    return permissions
+  }
   if (systemPreferences.getMediaAccessStatus("screen") !== "granted") {
-    await desktopCapturer.getSources({
-      types: ["screen"],
-      thumbnailSize: { width: 1, height: 1 },
-    })
+    await desktopCapturer
+      .getSources({
+        types: ["screen"],
+        thumbnailSize: { width: 1, height: 1 },
+      })
+      .catch(() => [])
+    const permissions = computerPermissions()
+    if (permissions.screenRecording !== "granted")
+      await openPrivacyPane("Privacy_ScreenCapture")
+    return permissions
   }
   return computerPermissions()
 }

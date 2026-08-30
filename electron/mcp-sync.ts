@@ -14,7 +14,11 @@ import { dirname, join } from "node:path"
 import { promisify } from "node:util"
 import { z } from "zod"
 import type { JsonObject } from "./codex-app-json.js"
-import { mcpDiscoveryRoute, type McpDiscoveryRoute } from "./mcp-registry.js"
+import {
+  isMakoNodeServer,
+  mcpDiscoveryRoute,
+  type McpDiscoveryRoute,
+} from "./mcp-registry.js"
 import type {
   McpRegistrySnapshot,
   McpServerDefinition,
@@ -58,7 +62,7 @@ function directPath(
 function managedEnvironment(
   definition: McpServerDefinition
 ): Record<string, string> {
-  return definition.name === "mako-local-tools"
+  return isMakoNodeServer(definition.name)
     ? { ELECTRON_RUN_AS_NODE: "1" }
     : {}
 }

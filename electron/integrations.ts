@@ -173,7 +173,7 @@ function localBrowserConnection(
       detail: server?.detail ?? "Local browser control is not installed",
     }
   }
-  return { kind: "ready", detail: "Isolated and running on this Mac" }
+  return { kind: "ready", detail: "Existing local Chrome via CDP" }
 }
 
 function localConnection(
@@ -197,7 +197,9 @@ function localConnection(
   }
   return {
     kind: "ready",
-    detail: "Runs locally under Mako permissions",
+    detail: permissions.persistentAcrossUpdates
+      ? "Runs locally under Mako permissions"
+      : "Granted for this build; unsigned updates may require access again",
   }
 }
 
@@ -225,13 +227,16 @@ export function integrationCatalog(
   const localControl = snapshot.servers.find(
     (server) => server.name === "mako-local-control"
   )
+  const localBrowser = snapshot.servers.find(
+    (server) => server.name === "mako-browser-use"
+  )
   const services: IntegrationRecord[] = DEFINITIONS.map((definition) => ({
     ...definition,
     connection:
       definition.auth === "mako-backend"
         ? backendConnection(backendStatus)
         : definition.auth === "local-browser"
-          ? localBrowserConnection(localControl)
+          ? localBrowserConnection(localBrowser)
           : serviceConnection(definition, snapshot.servers, githubConnected),
   }))
   const local: IntegrationRecord[] = [
@@ -248,14 +253,14 @@ export function integrationCatalog(
     },
     {
       id: "local-browser",
-      label: "Mako Browser",
-      description: "An isolated browser that runs only on this Mac.",
+      label: "Browser Use",
+      description: "Control your existing local Chrome through CDP.",
       category: "Local",
       trust: "mako",
       auth: "local-permission",
-      capabilities: ["Isolated profile", "Inspect", "Interact", "Capture"],
+      capabilities: ["Local Chrome", "Inspect", "Interact", "Capture"],
       events: [],
-      connection: localBrowserConnection(localControl),
+      connection: localBrowserConnection(localBrowser),
     },
     {
       id: "computer-use",

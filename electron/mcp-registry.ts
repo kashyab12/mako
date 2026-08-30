@@ -429,18 +429,31 @@ async function readCliDefinitions(
   }
 }
 
+const MAKO_NODE_SERVERS = new Set([
+  "mako-browser-use",
+  "mako-local-tools",
+])
+
+export function isMakoNodeServer(name: string): boolean {
+  return MAKO_NODE_SERVERS.has(name)
+}
+
 function localServerPath(appPath: string): string {
   return join(appPath, "dist-electron", "local-tools-main.js")
 }
 
+function browserServerPath(appPath: string): string {
+  return join(appPath, "dist-electron", "browser-tools-main.js")
+}
+
 async function harnessDoctor(
-  available: boolean,
+  executable: string | null,
   env: NodeJS.ProcessEnv
 ): Promise<string> {
-  if (!available) return "macOS Harness is not installed"
+  if (!executable) return "macOS Harness is not installed"
   try {
-    const { stdout, stderr } = await run("macos-harness", ["doctor"], {
-      env,
+    const { stdout, stderr } = await run(executable, ["doctor"], {
+      env: environmentForExecutable(executable, env),
       timeout: 8_000,
       maxBuffer: 256 * 1024,
       windowsHide: true,
@@ -477,12 +490,13 @@ export async function managedMcpDefinitions(
   delete commandEnv.MAKO_CUA_SOCKET
   const harnessPath = await findExecutable("macos-harness", commandEnv)
   const cuaPath = await findExecutable("cua-driver", commandEnv)
+  const browserPath = await findExecutable("browser-use", commandEnv)
   const harness = harnessPath !== null
   const cuaSocket = runtimeEnv.MAKO_CUA_SOCKET
   const cua = cuaPath !== null && Boolean(cuaSocket)
   const backendUrl = runtimeEnv.MAKO_BACKEND_URL
   const backend = Boolean(backendUrl && runtimeEnv.MAKO_BACKEND_TOKEN)
-  const doctor = await harnessDoctor(harness, commandEnv)
+  const doctor = await harnessDoctor(harnessPath, commandEnv)
   const definitions: Array<
     McpInternalDefinition & { availability: boolean; detail: string }
   > = [
@@ -507,6 +521,27 @@ export async function managedMcpDefinitions(
         process.platform === "darwin"
           ? doctor
           : "Local app control is available only on macOS",
+    },
+    {
+      name: "mako-browser-use",
+      transport: "stdio",
+      command: process.platform === "win32" ? execPath : "/usr/bin/env",
+      args:
+        process.platform === "win32"
+          ? [browserServerPath(appPath)]
+          : [
+              "ELECTRON_RUN_AS_NODE=1",
+              execPath,
+              browserServerPath(appPath),
+            ],
+      envNames:
+        process.platform === "win32" ? ["ELECTRON_RUN_AS_NODE"] : [],
+      headerNames: [],
+      portable: true,
+      availability: browserPath !== null,
+      detail: browserPath
+        ? "Uses the existing local Chrome through Browser Use and CDP"
+        : "Browser Use is not installed",
     },
     {
       name: "mako-local-control",
@@ -650,6 +685,7 @@ export function projectPortableDefinitions(
 }
 
 const MAKO_RUNTIME_SERVERS = new Set([
+  "mako-browser-use",
   "mako-local-tools",
   "mako-local-control",
   "mako-backend",
