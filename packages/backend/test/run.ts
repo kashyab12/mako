@@ -16,6 +16,15 @@ import {
 import { formatHarnessReplies } from "../src/relay/delivery"
 import { applyRelayThreadMapping } from "../src/relay/storage"
 import { parseSlackRelayCommand } from "../src/relay/commands"
+import {
+  relayDeviceKey,
+  signRelayTokenRequest,
+} from "@mako/relay"
+import {
+  issueRelayToken,
+  relayAuth,
+  relayDeviceAuthorized,
+} from "../src/relay/auth"
 import { parseRelayJobPayload } from "../src/relay/types"
 import {
   prepareSlackRelayWebhook,
@@ -164,6 +173,38 @@ const origin = {
   eventId: "event-1",
   userId: "UTEST",
 }
+process.env.SLACK_TEAM_ID = origin.tenantId
+process.env.RELAY_TOKEN_SECRET = "relay-token-secret".padEnd(64, "x")
+process.env.RELAY_BOOTSTRAP_SECRET = "relay-bootstrap-secret".padEnd(64, "x")
+process.env.RELAY_ALLOW_LEGACY_TOKEN = "true"
+const relayDeviceSecret = "relay-device-secret".padEnd(64, "x")
+const relayTokenInput = {
+  tenantId: origin.tenantId,
+  deviceId: crypto.randomUUID(),
+  nonce: crypto.randomUUID(),
+  timestamp: Date.now(),
+}
+const issued = issueRelayToken({
+  deviceKey: relayDeviceKey(relayDeviceSecret),
+  request: {
+    ...relayTokenInput,
+    signature: signRelayTokenRequest(relayTokenInput, relayDeviceSecret),
+  },
+})
+assert.ok(issued)
+const relayRequest = new Request("http://localhost/api/relay/lease", {
+  headers: { Authorization: `Bearer ${issued.token}` },
+})
+const relayIdentity = relayAuth(relayRequest)
+assert.equal(relayIdentity?.kind, "device")
+if (relayIdentity)
+  assert.equal(
+    relayDeviceAuthorized(relayIdentity, relayTokenInput.deviceId),
+    true
+  )
+if (relayIdentity)
+  assert.equal(relayDeviceAuthorized(relayIdentity, crypto.randomUUID()), false)
+
 const legacyPayload = parseRelayJobPayload({
   kind: "new",
   selection: { harness: "codex" },

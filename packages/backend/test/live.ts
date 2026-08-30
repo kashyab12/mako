@@ -35,6 +35,7 @@ const queued = await enqueueRelayJob({
   text: "relay probe",
 })
 const leased = await leaseRelayJob({
+  tenantId: "TTEST",
   deviceId,
   visibilityTimeoutSeconds: 60,
 })

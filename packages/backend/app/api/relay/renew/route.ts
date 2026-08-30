@@ -1,15 +1,21 @@
 import { z } from "zod"
-import { relayAuthorized, relayUnauthorized } from "../../../../src/relay/auth"
-import { renewRelayLease } from "../../../../src/relay/storage"
+import {
+  relayAuth,
+  relayDeviceAuthorized,
+  relayUnauthorized,
+} from "../../../../src/relay/auth"
+import { azureRelayStore } from "../../../../src/relay/azure-store"
 import { RelayRenewalSchema } from "../../../../src/relay/types"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 export async function POST(request: Request): Promise<Response> {
-  if (!relayAuthorized(request)) return relayUnauthorized()
+  const auth = relayAuth(request)
+  if (!auth) return relayUnauthorized()
   const renewal = RelayRenewalSchema.parse(z.json().parse(await request.json()))
+  if (!relayDeviceAuthorized(auth, renewal.deviceId)) return relayUnauthorized()
   return Response.json({
-    popReceipt: await renewRelayLease(renewal),
+    popReceipt: await azureRelayStore.renew(renewal),
   })
 }

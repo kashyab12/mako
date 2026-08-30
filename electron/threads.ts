@@ -56,8 +56,21 @@ let catalog: SessionCatalog | null = null
 let daemon: DaemonClient | null = null
 /** Daemon mode's synchronous view: filled once, patched by events. */
 const mirror = new Map<string, ThreadRef>()
-let emit: (event: HostEvent) => void = () => {}
+let sendEvent: (event: HostEvent) => void = () => {}
+const threadEventSubscribers = new Set<(event: HostEvent) => void>()
 let recoveringDaemon: Promise<void> | null = null
+
+function emit(event: HostEvent): void {
+  sendEvent(event)
+  for (const subscriber of threadEventSubscribers) subscriber(event)
+}
+
+export function subscribeThreadEvents(
+  subscriber: (event: HostEvent) => void
+): () => void {
+  threadEventSubscribers.add(subscriber)
+  return () => threadEventSubscribers.delete(subscriber)
+}
 let stopping = false
 
 /**
@@ -69,7 +82,7 @@ let stopping = false
  * LaunchAgent owns startup; other platforms use one detached fallback.
  */
 export function installThreads(send: (event: HostEvent) => void): void {
-  emit = send
+  sendEvent = send
   stopping = false
   void (async () => {
     try {

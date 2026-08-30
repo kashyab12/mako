@@ -267,3 +267,27 @@ export const RelayTokenClaimsSchema = z.object({
   expiresAt: z.number().int().positive(),
 })
 export type RelayTokenClaims = z.infer<typeof RelayTokenClaimsSchema>
+
+export const RelayTokenRequestSchema = z.object({
+  tenantId: z.string().min(1).max(80),
+  deviceId: z.uuid(),
+  nonce: z.uuid(),
+  timestamp: z.number().int().positive(),
+  signature: z.string().min(40).max(128),
+})
+export type RelayTokenRequest = z.infer<typeof RelayTokenRequestSchema>
+
+export const RelayTokenResponseSchema = z.object({
+  token: z.string().min(80),
+  expiresAt: z.number().int().positive(),
+})
+export type RelayTokenResponse = z.infer<typeof RelayTokenResponseSchema>
+
+export const RelayRegistrationResponseSchema = z.object({
+  tenantId: z.string().min(1).max(80),
+  deviceId: z.uuid(),
+  deviceSecret: z.string().min(64),
+})
+export type RelayRegistrationResponse = z.infer<
+  typeof RelayRegistrationResponseSchema
+>

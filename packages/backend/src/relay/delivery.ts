@@ -8,15 +8,14 @@ import {
   type SlackStreamChunk,
 } from "../integrations/slack/client"
 import {
-  markRelayDelivered,
-  recordRelayProgress,
-  recordRelayStream,
-  recordRelayStreamClosed,
-  relayDeliveryState,
-  relayProgressTarget,
-} from "./storage"
+  azureRelayStore,
+  recordRelayEventDelivery,
+  relayEventDeliveryTarget,
+} from "./azure-store"
 import type {
+  RelayCanonicalEvent,
   RelayCompletion,
+  RelayEventBatch,
   RelayJobPayload,
   RelayLease,
   RelayProgress,
@@ -63,6 +62,87 @@ function taskTitle(harness: string): string {
   return `Run ${harness} on the connected Mako worker`
 }
 
+function taskStatus(
+  status: Extract<RelayCanonicalEvent, { kind: "tool" }>["status"]
+): "pending" | "in_progress" | "complete" | "error" {
+  if (status === "completed") return "complete"
+  if (status === "failed" || status === "canceled") return "error"
+  return status
+}
+
+function slackChunks(event: RelayCanonicalEvent): SlackStreamChunk[] {
+  switch (event.kind) {
+    case "text": {
+      const chunks: SlackStreamChunk[] = []
+      for (let offset = 0; offset < event.text.length; offset += 12_000)
+        chunks.push({
+          type: "markdown_text",
+          text: event.text.slice(offset, offset + 12_000),
+        })
+      return chunks
+    }
+    case "reasoning":
+      return [
+        {
+          type: "task_update",
+          id: event.id,
+          title: event.title,
+          status: event.status === "completed" ? "complete" : "in_progress",
+          details: event.detail?.slice(0, 256),
+        },
+      ]
+    case "tool":
+      return [
+        {
+          type: "task_update",
+          id: event.id,
+          title: event.title,
+          status: taskStatus(event.status),
+          details: event.detail?.slice(0, 256),
+          output: event.output?.slice(0, 256),
+        },
+      ]
+    case "plan":
+      return [
+        { type: "plan_update", title: event.title },
+        ...event.entries.map(
+          (entry): SlackStreamChunk => ({
+            type: "task_update",
+            id: entry.id,
+            title: entry.title,
+            status: taskStatus(entry.status),
+          })
+        ),
+      ]
+    case "permission":
+      return [
+        {
+          type: "task_update",
+          id: event.id,
+          title: event.title,
+          status: "error",
+          details: "Needs input in Mako",
+        },
+      ]
+    case "lifecycle":
+      return [
+        {
+          type: "task_update",
+          id: "agent-run",
+          title: event.detail ?? "Local agent",
+          status:
+            event.status === "completed"
+              ? "complete"
+              : event.status === "failed" || event.status === "stopped"
+                ? "error"
+                : event.status === "queued"
+                  ? "pending"
+                  : "in_progress",
+        },
+      ]
+  }
+}
+
 export async function startRelayDelivery({
   defaultHarness,
   deviceId,
@@ -76,7 +156,7 @@ export async function startRelayDelivery({
 }): Promise<void> {
   const { payload } = lease
   if (payload.origin.provider !== "slack") return
-  const existing = await relayDeliveryState(lease.jobId)
+  const existing = await azureRelayStore.delivery(lease.jobId)
   if (existing.streamTs) return
   const harness = payload.selection.harness ?? defaultHarness
   try {
@@ -104,7 +184,7 @@ export async function startRelayDelivery({
       threadTs: payload.origin.threadId,
     })
     try {
-      await recordRelayStream({ deviceId, jobId: lease.jobId, streamTs: stream.ts })
+      await azureRelayStore.recordStream({ deviceId, jobId: lease.jobId, streamTs: stream.ts })
     } catch (error) {
       await stopSlackStream({
         channel: payload.origin.conversationId,
@@ -133,13 +213,46 @@ export async function startRelayDelivery({
   }
 }
 
+export async function deliverRelayEvents(
+  batch: RelayEventBatch
+): Promise<number> {
+  await azureRelayStore.appendEvents(batch.events)
+  const target = await relayEventDeliveryTarget(batch)
+  if (
+    target.events.length === 0 ||
+    !target.delivery.streamTs ||
+    target.delivery.payload.origin.provider !== "slack"
+  )
+    return 0
+  let delivered = 0
+  for (const event of target.events) {
+    if (event.event.kind === "permission")
+      await setSlackAgentStatus({
+        channel: target.delivery.payload.origin.conversationId,
+        status: "suspended",
+        threadTs: target.delivery.payload.origin.threadId,
+      }).catch(() => undefined)
+    const chunks = slackChunks(event.event)
+    for (let offset = 0; offset < chunks.length; offset += 50) {
+      await appendSlackStream({
+        channel: target.delivery.payload.origin.conversationId,
+        chunks: chunks.slice(offset, offset + 50),
+        ts: target.delivery.streamTs,
+      })
+    }
+    await recordRelayEventDelivery(batch.jobId, batch.deviceId, event)
+    delivered += 1
+  }
+  return delivered
+}
+
 export async function deliverRelayProgress(
   progress: RelayProgress
 ): Promise<boolean> {
-  const target = await relayProgressTarget(progress)
+  const target = await azureRelayStore.progressTarget(progress)
   if (!target.accepted || !target.streamTs) return false
   if (target.payload.origin.provider !== "slack") return false
-  await recordRelayProgress(progress)
+  await azureRelayStore.recordProgress(progress)
   await appendSlackStream({
     channel: target.payload.origin.conversationId,
     chunks: [{ type: "markdown_text", text: progress.text }],
@@ -157,7 +270,7 @@ export async function deliverRelayCompletion({
 }): Promise<void> {
   if (payload.origin.provider !== "slack")
     throw new Error(`No delivery adapter for ${payload.origin.provider}`)
-  const delivery = await relayDeliveryState(completion.jobId)
+  const delivery = await azureRelayStore.delivery(completion.jobId)
   if (delivery.status === "delivered") return
   const chunks = formatHarnessReplies(completion.result)
   const sessionStatus =
@@ -192,7 +305,7 @@ export async function deliverRelayCompletion({
           sessionStatus,
           ts: delivery.streamTs,
         })
-        await recordRelayStreamClosed({
+        await azureRelayStore.recordStreamClosed({
           deviceId: completion.deviceId,
           jobId: completion.jobId,
         })
@@ -235,5 +348,5 @@ export async function deliverRelayCompletion({
       threadTs: payload.origin.threadId,
     }).catch(() => undefined)
   }
-  await markRelayDelivered({ completion, payload })
+  await azureRelayStore.markDelivered({ completion, payload })
 }

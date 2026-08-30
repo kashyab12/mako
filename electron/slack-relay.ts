@@ -19,11 +19,13 @@ import {
   sep,
 } from "node:path"
 import { z } from "zod"
-import type { ThreadRef } from "@mako/sessions"
+import type { ThreadEntry, ThreadRef } from "@mako/sessions"
 import {
+  RelayEventSequencer,
   RelayHarnessSchema,
   RelayLeaseSchema,
   parseRelayJobPayload,
+  type RelayCanonicalEvent,
   type RelayHarness,
   type RelayJobPayload,
   type RelayLease,
@@ -31,6 +33,7 @@ import {
 import {
   backendRelayPost,
   backendRelayUpload,
+  configureBackendRelayDevice,
 } from "./backend-connection.js"
 import {
   abortNative,
@@ -43,7 +46,11 @@ import {
 import { harnessProfile, resolveHarnessTuning } from "./harnesses.js"
 import { providerHost } from "./providers/index.js"
 import type { HarnessModelOption } from "./shared.js"
-import { listThreads, transcriptInlineFor } from "./threads.js"
+import {
+  listThreads,
+  subscribeThreadEvents,
+  transcriptInlineFor,
+} from "./threads.js"
 
 const RawLeaseSchema = z.object({
   kind: z.literal("job"),
@@ -74,6 +81,7 @@ interface SlackRelayOptions {
 let timer: ReturnType<typeof setTimeout> | undefined
 let activeLeaseAbort: AbortController | undefined
 let activePollAbort: AbortController | undefined
+let eventSequencer: RelayEventSequencer | undefined
 let emptyPolls = 0
 let stopped = true
 
@@ -251,13 +259,96 @@ async function uploadRelayArtifacts({
   }
 }
 
+function canonicalEvents(
+  entries: ThreadEntry[],
+  seen: Map<string, string>
+): RelayCanonicalEvent[] {
+  const events: RelayCanonicalEvent[] = []
+  let reasoning = 0
+  for (const entry of entries) {
+    if (entry.kind === "event" && /plan/i.test(entry.label)) {
+      const id = createHash("sha256")
+        .update(`${entry.label}\0${entry.detail ?? ""}`)
+        .digest("hex")
+        .slice(0, 24)
+      if (seen.get(id) === entry.detail) continue
+      seen.set(id, entry.detail ?? "")
+      events.push({
+        kind: "plan",
+        id,
+        title: entry.label,
+        entries: entry.detail
+          ? [
+              {
+                id: `${id}-detail`,
+                title: entry.detail.slice(0, 256),
+                status: "in_progress",
+              },
+            ]
+          : [],
+      })
+      continue
+    }
+    if (entry.kind !== "assistant") continue
+    for (const block of entry.blocks) {
+      if (block.type === "text") {
+        for (const [id, value] of seen) {
+          if (!id.startsWith("reasoning-") || value === "completed") continue
+          seen.set(id, "completed")
+          events.push({
+            kind: "reasoning",
+            id,
+            title: "Reasoning",
+            status: "completed",
+          })
+        }
+      } else if (block.type === "thinking") {
+        reasoning += 1
+        const id = `reasoning-${reasoning}`
+        const detail = block.text.slice(-2_000)
+        if (seen.get(id) === detail) continue
+        seen.set(id, detail)
+        events.push({
+          kind: "reasoning",
+          id,
+          title: "Reasoning",
+          status: "in_progress",
+          detail,
+        })
+      } else if (block.type === "tool") {
+        const id = createHash("sha256")
+          .update(`${block.name}\0${block.input ?? ""}`)
+          .digest("hex")
+          .slice(0, 24)
+        const fingerprint = `${block.output ?? ""}\0${block.error ?? false}`
+        if (seen.get(id) === fingerprint) continue
+        seen.set(id, fingerprint)
+        events.push({
+          kind: "tool",
+          id,
+          title: block.name,
+          status: block.error
+            ? "failed"
+            : block.output === undefined
+              ? "in_progress"
+              : "completed",
+          detail: block.input?.slice(0, 2_000),
+          output: block.output?.slice(0, 4_000),
+        })
+      }
+    }
+  }
+  return events
+}
+
 async function executePayload(
   payload: RelayJobPayload,
   defaultCwd: string,
   signal: AbortSignal,
   jobId: string,
   deviceId: string,
-  onOutput: (chunk: string) => void
+  onOutput: (chunk: string) => void,
+  onEvent: (event: RelayCanonicalEvent) => void
 ): Promise<{
   effort?: string
   fast?: boolean
@@ -432,9 +523,29 @@ async function executePayload(
   }
   const cwd = source?.cwd ?? defaultCwd
   const staged = await stageRelayAttachments(payload, jobId, deviceId, cwd)
+  let unsubscribeThread = () => {}
   try {
     const text = relayPrompt(payload.text, staged.paths, staged.manifestPath)
     const before = new Set(listThreads().map((ref) => ref.path))
+    let watchedPath = source?.path
+    const seenEvents = new Map<string, string>()
+    unsubscribeThread = subscribeThreadEvents((event) => {
+      if (
+        !watchedPath &&
+        event.type === "thread-ref" &&
+        !before.has(event.ref.path) &&
+        event.ref.harness === harness &&
+        (!event.ref.cwd || event.ref.cwd === cwd)
+      )
+        watchedPath = event.ref.path
+      if (
+        watchedPath &&
+        event.type === "thread-entries" &&
+        event.path === watchedPath
+      )
+        for (const update of canonicalEvents(event.entries, seenEvents))
+          onEvent(update)
+    })
     const run =
       source && source.harness === harness
         ? await resumeNative(source, text, options)
@@ -496,6 +607,7 @@ async function executePayload(
       threadPath: ref?.path,
     }
   } finally {
+    unsubscribeThread()
     await staged.cleanup()
   }
 }
@@ -552,6 +664,7 @@ async function completeRelay(body: string): Promise<void> {
 
 interface ProgressWriter {
   close: () => Promise<void>
+  event: (event: RelayCanonicalEvent) => void
   failed: () => boolean
   push: (chunk: string) => void
 }
@@ -560,40 +673,62 @@ function createProgressWriter(
   deviceId: string,
   jobId: string
 ): ProgressWriter {
-  let pending = ""
-  let sequence = 0
+  let pendingText = ""
+  let pendingEvents: RelayCanonicalEvent[] = []
+  const sequencer = eventSequencer ?? new RelayEventSequencer(deviceId)
+  eventSequencer = sequencer
   let timer: ReturnType<typeof setTimeout> | undefined
   let delivery = Promise.resolve()
   let failed = false
   const flush = () => {
     if (timer) clearTimeout(timer)
     timer = undefined
-    while (pending) {
-      const text = pending.slice(0, 11_000)
-      pending = pending.slice(text.length)
-      sequence += 1
-      const current = sequence
-      delivery = delivery
-        .then(async () => {
-          if (failed) return
+    const events = pendingEvents
+    pendingEvents = []
+    while (pendingText) {
+      const text = pendingText.slice(0, 12_000)
+      pendingText = pendingText.slice(text.length)
+      events.push({ kind: "text", text })
+    }
+    if (events.length === 0 || failed) return
+    const envelopes = events.map((event) => sequencer.next(jobId, event))
+    delivery = delivery
+      .then(async () => {
+        if (failed) return
+        for (let offset = 0; offset < envelopes.length; offset += 100) {
+          const batch = envelopes.slice(offset, offset + 100)
           const response = await backendRelayPost(
-            "/api/relay/progress",
-            JSON.stringify({ deviceId, jobId, sequence: current, text })
+            "/api/relay/events",
+            JSON.stringify({
+              deviceId,
+              jobId,
+              cursor: batch.at(-1)?.cursor,
+              events: batch,
+            })
           )
           if (!response.ok)
-            throw new Error(`Relay progress returned ${response.status}`)
-        })
-        .catch(() => {
-          failed = true
-        })
-    }
+            throw new Error(`Relay events returned ${response.status}`)
+        }
+      })
+      .catch(() => {
+        failed = true
+      })
+  }
+  const schedule = () => {
+    if (pendingEvents.length >= 50) flush()
+    else timer ??= setTimeout(flush, 250)
   }
   return {
     failed: () => failed,
+    event(event) {
+      if (failed) return
+      pendingEvents.push(event)
+      schedule()
+    },
     push(chunk) {
       if (!chunk || failed) return
-      pending += chunk
-      timer ??= setTimeout(flush, 750)
+      pendingText += chunk
+      schedule()
     },
     async close() {
       flush()
@@ -643,6 +778,7 @@ async function poll(options: SlackRelayOptions, id: string): Promise<void> {
           })
       }, 180_000)
       const progress = createProgressWriter(id, leased.jobId)
+      progress.event({ kind: "lifecycle", status: "starting" })
       let control = Promise.resolve()
       const checkControl = () => {
         control = control
@@ -669,8 +805,18 @@ async function poll(options: SlackRelayOptions, id: string): Promise<void> {
           leaseAbort.signal,
           leased.jobId,
           id,
-          progress.push
+          progress.push,
+          progress.event
         )
+        progress.event({
+          kind: "lifecycle",
+          status:
+            execution.status === "done"
+              ? "completed"
+              : execution.status === "stopped"
+                ? "stopped"
+                : "failed",
+        })
       } finally {
         clearInterval(renewTimer)
         clearInterval(controlTimer)
@@ -710,7 +856,14 @@ export async function startSlackRelay(options: SlackRelayOptions): Promise<void>
   if (!stopped) return
   emptyPolls = 0
   stopped = false
-  void poll(options, await deviceId(options.deviceFile))
+  const id = await deviceId(options.deviceFile)
+  eventSequencer = new RelayEventSequencer(id)
+  await configureBackendRelayDevice({
+    deviceId: id,
+    deviceName: hostname(),
+    defaultHarness: "codex",
+  })
+  void poll(options, id)
 }
 
 export function stopSlackRelay(): void {

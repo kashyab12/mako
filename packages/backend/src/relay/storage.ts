@@ -1,7 +1,14 @@
-import { createHash } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 import { ClientSecretCredential } from "@azure/identity"
 import { QueueClient } from "@azure/storage-queue"
 import { TableClient, type TableEntity } from "@azure/data-tables"
+import {
+  RelayEventEnvelopeSchema,
+  relayDeviceKey,
+  relayEventsAfter,
+  type RelayEventBatch,
+  type RelayEventEnvelope,
+} from "@mako/relay"
 import { z } from "zod"
 import { readRelayEnv } from "../config/env"
 import {
@@ -19,6 +26,12 @@ import {
   type WorkerHeartbeat,
 } from "./types"
 
+interface RelayEventEntity extends TableEntity {
+  data: string
+  epoch: string
+  seq: number
+}
+
 interface RelayJobEntity extends TableEntity {
   createdAt: string
   resultEffort?: string
@@ -29,13 +42,18 @@ interface RelayJobEntity extends TableEntity {
   resultModel?: string
   resultProgressFailed?: boolean
   resultStatus?: string
-  status: "queued" | "claimed" | "completed" | "delivered" | "failed"
+  status: "pending" | "queued" | "claimed" | "completed" | "delivered" | "failed"
+  queueConfirmed?: boolean
+  pendingDeleteMessageId?: string
+  pendingDeletePopReceipt?: string
   threadPath?: string
   targetDeviceId?: string
   streamTs?: string
   streamClosed?: boolean
   streamedChars?: number
   lastProgressSequence?: number
+  deliveredEventEpoch?: string
+  deliveredEventSeq?: number
   control?: "stop"
   uploadedArtifactKeys?: string
   originProvider: string
@@ -56,6 +74,12 @@ interface RelayThreadEntity extends TableEntity {
   updatedAt: string
 }
 
+interface RelayRegistrationEntity extends TableEntity {
+  deviceKey: string
+  deviceName: string
+  registeredAt: string
+}
+
 interface RelayWorkerEntity extends TableEntity {
   defaultHarness: string
   defaultModel?: string
@@ -69,8 +93,10 @@ const UploadedArtifactKeysSchema = z.array(z.string().min(1).max(128)).max(20)
 
 let clients:
   | {
+      events: TableClient
       jobs: TableClient
       queue: QueueClient
+      registrations: TableClient
       threads: TableClient
       workers: TableClient
     }
@@ -86,6 +112,11 @@ function relayClients() {
   )
   const account = environment.AZURE_STORAGE_ACCOUNT_NAME
   clients = {
+    events: new TableClient(
+      `https://${account}.table.core.windows.net`,
+      "MakoEvents",
+      credential
+    ),
     jobs: new TableClient(
       `https://${account}.table.core.windows.net`,
       "MakoJobs",
@@ -93,6 +124,11 @@ function relayClients() {
     ),
     queue: new QueueClient(
       `https://${account}.queue.core.windows.net/mako-jobs`,
+      credential
+    ),
+    registrations: new TableClient(
+      `https://${account}.table.core.windows.net`,
+      "MakoRegistrations",
       credential
     ),
     threads: new TableClient(
@@ -107,6 +143,43 @@ function relayClients() {
     ),
   }
   return clients
+}
+
+export async function registerRelayDevice({
+  tenantId,
+  deviceId,
+  deviceName,
+}: {
+  tenantId: string
+  deviceId: string
+  deviceName: string
+}): Promise<string> {
+  const deviceSecret = randomBytes(48).toString("base64url")
+  const entity: RelayRegistrationEntity = {
+    partitionKey: `registrations:${tenantId}`,
+    rowKey: deviceId,
+    deviceKey: relayDeviceKey(deviceSecret).toString("base64url"),
+    deviceName,
+    registeredAt: new Date().toISOString(),
+  }
+  await relayClients().registrations.createEntity(entity)
+  return deviceSecret
+}
+
+export async function relayDeviceKeyFor(
+  tenantId: string,
+  deviceId: string
+): Promise<Buffer | null> {
+  try {
+    const entity = await relayClients().registrations.getEntity<RelayRegistrationEntity>(
+      `registrations:${tenantId}`,
+      deviceId
+    )
+    return Buffer.from(entity.deviceKey, "base64url")
+  } catch (error) {
+    if (error instanceof Error && statusCode(error) === 404) return null
+    throw error
+  }
 }
 
 function statusCode(error: Error): number | undefined {
@@ -205,7 +278,8 @@ export async function enqueueRelayJob(
     originConversationId: parsed.origin.conversationId,
     originThreadId: parsed.origin.threadId,
     payload: JSON.stringify(parsed),
-    status: "queued",
+    queueConfirmed: false,
+    status: "pending",
     targetDeviceId,
     updatedAt: now,
   }
@@ -219,11 +293,20 @@ export async function enqueueRelayJob(
   }
   try {
     await enqueueJobMessage(jobId)
+    await relayClients().jobs.updateEntity(
+      {
+        partitionKey: "jobs",
+        rowKey: jobId,
+        queueConfirmed: true,
+        status: "queued",
+        updatedAt: new Date().toISOString(),
+      },
+      "Merge"
+    )
+  } catch {
     return { created: true, jobId }
-  } catch (error) {
-    await relayClients().jobs.deleteEntity("jobs", jobId).catch(() => undefined)
-    throw error
   }
+  return { created: true, jobId }
 }
 
 export async function heartbeatWorker({
@@ -286,9 +369,11 @@ export type LeaseResult =
   | { kind: "work"; lease: RelayLease }
 
 export async function leaseRelayJob({
+  tenantId,
   deviceId,
   visibilityTimeoutSeconds,
 }: {
+  tenantId: string
   deviceId: string
   visibilityTimeoutSeconds: number
 }): Promise<LeaseResult> {
@@ -301,6 +386,15 @@ export async function leaseRelayJob({
   const jobId = z.uuid().parse(message.messageText)
   const entity = await relayClients().jobs.getEntity<RelayJobEntity>("jobs", jobId)
   const payload = parseRelayJobPayload(JSON.parse(entity.payload))
+  if (payload.origin.tenantId !== tenantId) {
+    await relayClients().queue.updateMessage(
+      message.messageId,
+      message.popReceipt,
+      jobId,
+      5
+    )
+    return { kind: "empty" }
+  }
   if (entity.targetDeviceId && entity.targetDeviceId !== deviceId) {
     await relayClients().queue.updateMessage(
       message.messageId,
@@ -474,6 +568,8 @@ export async function markRelayDelivered({
     {
       partitionKey: "jobs",
       rowKey: completion.jobId,
+      pendingDeleteMessageId: completion.messageId,
+      pendingDeletePopReceipt: completion.popReceipt,
       status: "delivered",
       updatedAt: new Date().toISOString(),
     },
@@ -483,6 +579,16 @@ export async function markRelayDelivered({
   await relayClients().queue.deleteMessage(
     completion.messageId,
     completion.popReceipt
+  )
+  await relayClients().jobs.updateEntity(
+    {
+      partitionKey: "jobs",
+      rowKey: completion.jobId,
+      pendingDeleteMessageId: "",
+      pendingDeletePopReceipt: "",
+      updatedAt: new Date().toISOString(),
+    },
+    "Merge"
   )
 }
 
@@ -756,6 +862,164 @@ export async function markRelayArtifactUploaded({
     "Merge",
     { etag: entity.etag }
   )
+}
+
+export async function relayEventDeliveryTarget(
+  batch: RelayEventBatch
+): Promise<{ events: RelayEventEnvelope[]; delivery: RelayDeliveryState }> {
+  const entity = await relayClients().jobs.getEntity<RelayJobEntity>(
+    "jobs",
+    batch.jobId
+  )
+  if (entity.status !== "claimed" || entity.workerId !== batch.deviceId)
+    throw new Error("Relay events are not owned by this device")
+  const events = batch.events.filter(
+    (event) =>
+      event.cursor.epoch !== entity.deliveredEventEpoch ||
+      event.cursor.seq > (entity.deliveredEventSeq ?? 0)
+  )
+  return {
+    events,
+    delivery: {
+      payload: parseRelayJobPayload(JSON.parse(entity.payload)),
+      status: entity.status,
+      streamClosed: entity.streamClosed ?? false,
+      streamTs: entity.streamTs,
+      streamedChars: entity.streamedChars ?? 0,
+    },
+  }
+}
+
+export async function recordRelayEventDelivery(
+  jobId: string,
+  deviceId: string,
+  event: RelayEventEnvelope
+): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const entity = await relayClients().jobs.getEntity<RelayJobEntity>("jobs", jobId)
+    if (entity.status !== "claimed" || entity.workerId !== deviceId)
+      throw new Error("Relay events are not owned by this device")
+    if (
+      entity.deliveredEventEpoch === event.cursor.epoch &&
+      (entity.deliveredEventSeq ?? 0) >= event.cursor.seq
+    )
+      return
+    try {
+      await relayClients().jobs.updateEntity(
+        {
+          partitionKey: "jobs",
+          rowKey: jobId,
+          deliveredEventEpoch: event.cursor.epoch,
+          deliveredEventSeq: event.cursor.seq,
+          updatedAt: new Date().toISOString(),
+        },
+        "Merge",
+        { etag: entity.etag }
+      )
+      return
+    } catch (error) {
+      if (!(error instanceof Error) || statusCode(error) !== 412 || attempt === 2)
+        throw error
+    }
+  }
+}
+
+export async function appendRelayEvents(
+  input: RelayEventEnvelope[]
+): Promise<void> {
+  for (const event of input.map((value) => RelayEventEnvelopeSchema.parse(value))) {
+    const entity: RelayEventEntity = {
+      partitionKey: `events:${event.jobId}`,
+      rowKey: event.eventId,
+      data: JSON.stringify(event),
+      epoch: event.cursor.epoch,
+      seq: event.cursor.seq,
+    }
+    try {
+      await relayClients().events.createEntity(entity)
+    } catch (error) {
+      if (!(error instanceof Error) || statusCode(error) !== 409) throw error
+    }
+  }
+}
+
+export async function relayEventsSince({
+  jobId,
+  epoch,
+  seq = 0,
+  limit = 100,
+}: {
+  jobId: string
+  epoch?: string
+  seq?: number
+  limit?: number
+}): Promise<RelayEventEnvelope[]> {
+  const found: RelayEventEnvelope[] = []
+  for await (const entity of relayClients().events.listEntities<RelayEventEntity>({
+    queryOptions: { filter: `PartitionKey eq 'events:${jobId}'` },
+  })) {
+    found.push(RelayEventEnvelopeSchema.parse(JSON.parse(entity.data)))
+  }
+  return relayEventsAfter(
+    found,
+    epoch ? { epoch, seq } : undefined
+  ).slice(0, limit)
+}
+
+export async function reconcileRelayStore(
+  tenantId: string
+): Promise<{ processed: number; failed: number }> {
+  const filter = [
+    "PartitionKey eq 'jobs'",
+    `originTenantId eq '${escapeFilter(tenantId)}'`,
+  ].join(" and ")
+  let processed = 0
+  let failed = 0
+  for await (const entity of relayClients().jobs.listEntities<RelayJobEntity>({
+    queryOptions: { filter },
+  })) {
+    try {
+      if (entity.status === "pending" && !entity.queueConfirmed) {
+        await enqueueJobMessage(entity.rowKey)
+        await relayClients().jobs.updateEntity(
+          {
+            partitionKey: "jobs",
+            rowKey: entity.rowKey,
+            queueConfirmed: true,
+            status: "queued",
+            updatedAt: new Date().toISOString(),
+          },
+          "Merge"
+        )
+        processed += 1
+      } else if (
+        entity.status === "delivered" &&
+        entity.pendingDeleteMessageId &&
+        entity.pendingDeletePopReceipt
+      ) {
+        await relayClients().queue
+          .deleteMessage(
+            entity.pendingDeleteMessageId,
+            entity.pendingDeletePopReceipt
+          )
+          .catch(() => undefined)
+        await relayClients().jobs.updateEntity(
+          {
+            partitionKey: "jobs",
+            rowKey: entity.rowKey,
+            pendingDeleteMessageId: "",
+            pendingDeletePopReceipt: "",
+            updatedAt: new Date().toISOString(),
+          },
+          "Merge"
+        )
+        processed += 1
+      }
+    } catch {
+      failed += 1
+    }
+  }
+  return { processed, failed }
 }
 
 export async function readThreadMapping({

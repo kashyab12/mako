@@ -4,6 +4,10 @@ const OptionalStringSchema = z
   .union([z.literal("").transform(() => undefined), z.string().min(1)])
   .optional()
 
+const OptionalSecretSchema = z
+  .union([z.literal("").transform(() => undefined), z.string().min(64)])
+  .optional()
+
 const OptionalUuidSchema = z
   .union([z.literal("").transform(() => undefined), z.uuid()])
   .optional()
@@ -35,6 +39,11 @@ const ServerEnvBaseSchema = z.object({
   AZURE_STORAGE_ACCOUNT_NAME: OptionalStorageAccountSchema,
   AZURE_TENANT_ID: OptionalUuidSchema,
   MAKO_MCP_TOKEN: z.string().min(32),
+  RELAY_ALLOW_LEGACY_TOKEN: z
+    .union([z.literal("true"), z.literal("false")])
+    .optional(),
+  RELAY_BOOTSTRAP_SECRET: OptionalSecretSchema,
+  RELAY_TOKEN_SECRET: OptionalSecretSchema,
   SLACK_ALLOWED_USER_IDS: OptionalStringSchema,
   SLACK_BOT_TOKEN: OptionalSlackBotTokenSchema,
   SLACK_CONNECTOR: OptionalStringSchema,
