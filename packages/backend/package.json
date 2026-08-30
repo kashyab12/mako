@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "next build",
-    "build:vercel": "next build",
+    "build:vercel": "npm run -s build --workspace @mako/relay && next build",
     "deploy": "node scripts/deploy.mjs",
     "dev": "next dev",
     "lint": "oxlint --config ../../oxlint.config.ts app scripts src test",

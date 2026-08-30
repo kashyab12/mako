@@ -5,6 +5,8 @@
 packages/*
 !packages/backend
 !packages/backend/**
+!packages/relay
+!packages/relay/**
 packages/backend/.env*
 packages/backend/.eve/**
 packages/backend/.next/**
@@ -13,3 +15,5 @@ packages/backend/.vercel/**
 packages/backend/node_modules/**
 packages/backend/test/**
 packages/backend/*.tsbuildinfo
+packages/relay/test/**
+packages/relay/*.tsbuildinfo
