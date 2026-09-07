@@ -337,7 +337,7 @@ export function Composer() {
               )
       } else if (activeConversation) {
         if (harness !== activeConversation.harness) {
-          if (liveSession) ok = await acp.handoff(harness, full)
+          if (liveSession) ok = await acp.handoff(harness, full, acpAttachments)
           else {
             acp.deactivate()
             ok = await acp.startFresh(
