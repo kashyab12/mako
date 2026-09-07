@@ -9,10 +9,7 @@ import { providerHost } from "./providers/index.js"
 import type { ProviderMcpSource } from "./providers/mcp-source.js"
 import { backendConnectionCredentials } from "./backend-connection.js"
 import { cuaEmbeddedSocket } from "./cua-embedded.js"
-import {
-  environmentForExecutable,
-  resolveExecutable,
-} from "./executable.js"
+import { environmentForExecutable, resolveExecutable } from "./executable.js"
 import type { JsonObject, JsonValue } from "./codex-app-json.js"
 import type {
   McpProvider,
@@ -231,19 +228,21 @@ export function parseProviderJson(
   if (provider === "opencode") {
     const parsed = OpenCodeRootSchema.safeParse(value)
     if (!parsed.success) return []
-    return Object.entries(parsed.data.mcp ?? {}).flatMap(([name, definition]) => {
-      const normalized: JsonObject = {
-        args: definition.command?.slice(1) ?? [],
-        env: definition.environment ?? definition.env ?? {},
+    return Object.entries(parsed.data.mcp ?? {}).flatMap(
+      ([name, definition]) => {
+        const normalized: JsonObject = {
+          args: definition.command?.slice(1) ?? [],
+          env: definition.environment ?? definition.env ?? {},
+        }
+        const command = definition.command?.[0]
+        if (command) normalized.command = command
+        if (definition.type) normalized.type = definition.type
+        if (definition.url) normalized.url = definition.url
+        if (definition.headers) normalized.headers = definition.headers
+        const item = parseDefinition(name, normalized)
+        return item ? [item] : []
       }
-      const command = definition.command?.[0]
-      if (command) normalized.command = command
-      if (definition.type) normalized.type = definition.type
-      if (definition.url) normalized.url = definition.url
-      if (definition.headers) normalized.headers = definition.headers
-      const item = parseDefinition(name, normalized)
-      return item ? [item] : []
-    })
+    )
   }
   if ((provider === "codex" || provider === "grok") && Array.isArray(value)) {
     return value.flatMap((entry) => {
@@ -351,7 +350,8 @@ export async function mcpDiscoveryRoute(
   cwd: string
 ): Promise<McpDiscoveryRoute> {
   const source = providerHost.mcpSources.get(provider)
-  if (!source) throw new Error(`Provider ${provider} has no MCP discovery source`)
+  if (!source)
+    throw new Error(`Provider ${provider} has no MCP discovery source`)
   const env = await accountEnv(provider, process.env)
   const selected = await selectedAccount(provider)
   return {
@@ -432,6 +432,7 @@ async function readCliDefinitions(
 const MAKO_NODE_SERVERS = new Set([
   "mako-browser-use",
   "mako-local-tools",
+  "mako-local-control",
 ])
 
 export function isMakoNodeServer(name: string): boolean {
@@ -490,7 +491,6 @@ export async function managedMcpDefinitions(
   delete commandEnv.MAKO_CUA_SOCKET
   const harnessPath = await findExecutable("macos-harness", commandEnv)
   const cuaPath = await findExecutable("cua-driver", commandEnv)
-  const browserPath = await findExecutable("browser-use", commandEnv)
   const harness = harnessPath !== null
   const cuaSocket = runtimeEnv.MAKO_CUA_SOCKET
   const cua = cuaPath !== null && Boolean(cuaSocket)
@@ -507,16 +507,11 @@ export async function managedMcpDefinitions(
       args:
         process.platform === "win32"
           ? [localServerPath(appPath)]
-          : [
-              "ELECTRON_RUN_AS_NODE=1",
-              execPath,
-              localServerPath(appPath),
-            ],
-      envNames:
-        process.platform === "win32" ? ["ELECTRON_RUN_AS_NODE"] : [],
+          : ["ELECTRON_RUN_AS_NODE=1", execPath, localServerPath(appPath)],
+      envNames: process.platform === "win32" ? ["ELECTRON_RUN_AS_NODE"] : [],
       headerNames: [],
       portable: true,
-      availability: process.platform === "darwin" && harness,
+      availability: process.platform === "darwin" && harness && !cua,
       detail:
         process.platform === "darwin"
           ? doctor
@@ -529,28 +524,28 @@ export async function managedMcpDefinitions(
       args:
         process.platform === "win32"
           ? [browserServerPath(appPath)]
-          : [
-              "ELECTRON_RUN_AS_NODE=1",
-              execPath,
-              browserServerPath(appPath),
-            ],
-      envNames:
-        process.platform === "win32" ? ["ELECTRON_RUN_AS_NODE"] : [],
+          : ["ELECTRON_RUN_AS_NODE=1", execPath, browserServerPath(appPath)],
+      envNames: process.platform === "win32" ? ["ELECTRON_RUN_AS_NODE"] : [],
       headerNames: [],
       portable: true,
-      availability: browserPath !== null,
-      detail: browserPath
-        ? "Uses the existing local Chrome through Browser Use and CDP"
-        : "Browser Use is not installed",
+      availability: true,
+      detail:
+        "Browser control is built into Mako; connect a local browser before use",
     },
     {
       name: "mako-local-control",
       transport: "stdio",
-      command: cuaPath ?? "cua-driver",
-      args: cuaSocket
-        ? ["mcp", "--embedded", "--socket", cuaSocket]
-        : ["mcp", "--embedded"],
-      envNames: [],
+      command: process.platform === "win32" ? execPath : "/usr/bin/env",
+      args: [
+        ...(process.platform === "win32"
+          ? []
+          : ["ELECTRON_RUN_AS_NODE=1", execPath]),
+        join(appPath, "dist-electron", "computer-tools-main.js"),
+        ...(cuaSocket && cuaPath
+          ? ["--socket", cuaSocket, "--driver", cuaPath]
+          : []),
+      ],
+      envNames: process.platform === "win32" ? ["ELECTRON_RUN_AS_NODE"] : [],
       headerNames: [],
       portable: true,
       availability: cua,
@@ -637,7 +632,10 @@ export async function discoverMcpRegistry(
         server.availability = managedOrigin.provenance.includes("(unavailable:")
           ? "unavailable"
           : "available"
-        server.detail = managedOrigin.provenance.replace(/^Mako managed \(|\)$/g, "")
+        server.detail = managedOrigin.provenance.replace(
+          /^Mako managed \(|\)$/g,
+          ""
+        )
         return
       }
       if (server.transport === "stdio" && server.command) {

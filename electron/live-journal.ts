@@ -1,3 +1,8 @@
+import {
+  ContextManifestSchema,
+  ConversationControlSchema,
+  PromptAttachmentSchema,
+} from "./contracts/conversation-control.js"
 import { mkdirSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -48,17 +53,13 @@ const question = z.object({
   defaultValues: z.array(z.string()).optional(),
 })
 export const LiveRequestSchema = z.object({
+  inputDigest: z.string().optional(),
+  nativeRun: z.object({ bindingId: z.string(), runId: z.string() }).optional(),
   id: z.string().uuid(),
   text: z.string().max(1_000_000),
-  attachments: z.array(
-    z.object({
-      name: z.string(),
-      mimeType: z.string(),
-      size: z.number(),
-      data: z.string().optional(),
-      path: z.string().optional(),
-    })
-  ),
+  attachments: z.array(PromptAttachmentSchema),
+  displayText: z.string().optional(),
+  context: z.array(ContextManifestSchema).optional(),
   status: z.enum([
     "queued",
     "dispatching",
@@ -70,6 +71,7 @@ export const LiveRequestSchema = z.object({
   error: z.string().optional(),
 })
 const MetadataSchema = z.object({
+  control: ConversationControlSchema.optional(),
   session: z.object({
     connection: z.enum(["starting", "connected", "disconnected"]),
     id: z.string(),
@@ -139,10 +141,17 @@ export class LiveJournal {
   summary() {
     const row = this.db.prepare("SELECT value FROM metadata WHERE id=1").get()
     if (!row) return null
-    const { session, revision, threadPath, createdAt } = MetadataSchema.parse(
-      JSON.parse(RowSchema.parse(row).value)
-    )
-    return { session, revision, threadPath, createdAt }
+    const { session, revision, threadPath, createdAt, control } =
+      MetadataSchema.parse(JSON.parse(RowSchema.parse(row).value))
+    return {
+      session,
+      revision,
+      threadPath,
+      createdAt,
+      nativePaths: control?.bindings.flatMap((binding) =>
+        binding.path ? [binding.path] : []
+      ),
+    }
   }
 
   read(): LiveSnapshot | null {

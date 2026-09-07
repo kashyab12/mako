@@ -1,14 +1,42 @@
 import { createHash, randomUUID } from "node:crypto"
 import {
+  constants,
+  copyFileSync,
+  chmodSync,
   existsSync,
   mkdirSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs"
-import { join } from "node:path"
+import { join, relative, isAbsolute } from "node:path"
 import type { AttachmentContent } from "@mako/sessions"
+import type { PromptAttachment } from "./shared.js"
 import type { LiveUpdate } from "./contracts/live-content.js"
+
+export function promptFingerprint(
+  text: string,
+  attachments: PromptAttachment[]
+): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        text,
+        attachments.map((attachment) => [
+          attachment.name,
+          attachment.mimeType,
+          attachment.size,
+          attachment.data,
+          attachment.path,
+        ]),
+      ])
+    )
+    .digest("hex")
+}
+
+type StoredAttachment = AttachmentContent & {
+  source: Extract<AttachmentContent["source"], { kind: "file" }>
+}
 
 const PREVIEW_LIMIT = 64_000
 
@@ -23,7 +51,7 @@ export class LiveAssets {
     name: string,
     mimeType: string,
     bytes: Buffer
-  ): AttachmentContent {
+  ): StoredAttachment {
     const digest = createHash("sha256").update(bytes).digest("hex")
     mkdirSync(this.root, { recursive: true })
     const path = join(
@@ -47,7 +75,52 @@ export class LiveAssets {
     }
   }
 
+  retainPrompt(attachments: PromptAttachment[]): PromptAttachment[] {
+    return attachments.map((attachment) => {
+      if (attachment.data !== undefined) {
+        const retained = this.save(
+          attachment.name,
+          attachment.mimeType,
+          Buffer.from(attachment.data, "base64")
+        )
+        return { ...attachment, path: retained.source.path }
+      }
+      if (!attachment.path)
+        throw new Error(`Attachment ${attachment.name} has no retained bytes`)
+      const retained = this.attachment({
+        type: "attachment",
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        source: { kind: "file", path: attachment.path },
+      })
+      if (retained.source.kind !== "file")
+        throw new Error("The attachment could not be retained")
+      return { ...attachment, path: retained.source.path }
+    })
+  }
+
   private attachment(attachment: AttachmentContent): AttachmentContent {
+    if (attachment.source.kind === "file") {
+      const local = relative(this.root, attachment.source.path)
+      if (local && !local.startsWith("..") && !isAbsolute(local))
+        return attachment
+      mkdirSync(this.root, { recursive: true })
+      const path = join(
+        this.root,
+        `${randomUUID()}-${attachment.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100)}`
+      )
+      copyFileSync(attachment.source.path, path, constants.COPYFILE_FICLONE)
+      chmodSync(path, 0o600)
+      return {
+        ...attachment,
+        source: {
+          kind: "file",
+          path,
+          originalPath:
+            attachment.source.originalPath ?? attachment.source.path,
+        },
+      }
+    }
     return attachment.source.kind === "inline"
       ? {
           ...attachment,

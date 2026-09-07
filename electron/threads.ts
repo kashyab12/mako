@@ -39,7 +39,7 @@ import {
 } from "@mako/sessions"
 import { WorkspaceGit } from "./host-git.js"
 import { WorkspaceFiles } from "./host-workspace.js"
-import { annotate, bindLineage, loadLineage } from "./lineage.js"
+import { annotate, loadLineage } from "./lineage.js"
 import { ProviderActivityEngine } from "./provider-activity-engine.js"
 import { providerHost } from "./providers/index.js"
 import type { ProviderActivitySession } from "./providers/process-probe.js"
@@ -144,7 +144,11 @@ function reconcileProviderActivity(): void {
         detail: session.detail,
       }
       const held = next.get(ref.path)
-      if (!held || activity.status === "needs-input")
+      if (
+        !held ||
+        activity.status === "needs-input" ||
+        (held.status === "open" && activity.status === "active")
+      )
         next.set(ref.path, activity)
     }
   }
@@ -217,7 +221,6 @@ export function installThreads(send: (event: HostEvent) => void): void {
 function applyDaemonEvent(event: DaemonEvent, announce: boolean): void {
   if (event.event === "added" || event.event === "updated") {
     mirror.set(event.ref.path, event.ref)
-    if (event.event === "added") bindLineage(event.ref)
     if (announce) emit({ type: "thread-ref", ref: annotate(event.ref) })
     reconcileProviderActivity()
   } else if (event.event === "removed") {
@@ -399,7 +402,6 @@ async function runLocalCatalog(): Promise<void> {
   reconcileProviderActivity()
   catalog.startWatching()
   catalog.onEvent((event) => {
-    if (event.type === "added") bindLineage(event.ref)
     if (event.type === "removed") {
       emit({ type: "thread-removed", path: event.path })
     } else {

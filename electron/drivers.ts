@@ -136,7 +136,7 @@ export async function resumeNative(
   tuning?: FreshOptions
 ): Promise<ThreadRunState> {
   const existing = runs.get(ref.path)
-  if (existing && existing.state.status === "running") return existing.state
+  if (existing && existing.state.status === "running") throw new Error("This native session already has an active writer")
 
   const runner = providerHost.nativeRunners.get(ref.harness)
   if (!runner)

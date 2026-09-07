@@ -1,3 +1,5 @@
+import { resolveCodexExecutable } from "./providers/codex/executable.js"
+import type { ConversationTools } from "./providers/live-driver.js"
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
@@ -5,7 +7,7 @@ import { StringDecoder } from "node:string_decoder"
 import { app } from "electron"
 import { accountEnv } from "./accounts.js"
 import { discoverMcpRegistry } from "./mcp-registry.js"
-import { environmentForExecutable, resolveExecutable } from "./executable.js"
+import { environmentForExecutable } from "./executable.js"
 import { codexMcpConfig, mergeCodexConfig } from "./mcp-runtime.js"
 import {
   clearTurnServerRequests,
@@ -50,6 +52,8 @@ type Live = {
   currentTurnId: string | null
   state: LiveSessionState
   tuning?: Tuning
+  conversationToolsUrl?: string
+  control?: ConversationTools["control"]
   mcpSnapshot: McpRegistrySnapshot
   nextRequestId: number
   pending: Map<string, PendingRpc>
@@ -88,6 +92,8 @@ export async function codexAppStart(
   cwd: string,
   options: {
     conversationId: string
+    conversationTools?: ConversationTools
+    fork?: { nativeId: string; runId: string }
     resume?: string
     title?: string
     tuning?: Tuning
@@ -97,7 +103,9 @@ export async function codexAppStart(
   const workingDir = cwd && existsSync(cwd) ? cwd : homedir()
   const mcpSnapshot = await discoverMcpRegistry(workingDir, app.getAppPath())
   const env = await accountEnv("codex", process.env)
-  const executable = resolveExecutable("codex", env)
+  if (options.conversationTools)
+    env.MAKO_CONVERSATIONS_TOKEN = options.conversationTools.token
+  const executable = await resolveCodexExecutable(env)
   if (!executable) throw new Error("Codex is not installed")
   const child = spawn(executable, ["app-server"], {
     cwd: workingDir,
@@ -125,6 +133,8 @@ export async function codexAppStart(
       configOptions: [],
     },
     tuning: options.tuning,
+    conversationToolsUrl: options.conversationTools?.url,
+    control: options.conversationTools?.control,
     mcpSnapshot,
     nextRequestId: 0,
     pending: new Map(),
@@ -159,7 +169,7 @@ export async function codexAppStart(
   })
   try {
     const response = await Promise.race([
-      openThread(live, options.resume),
+      openThread(live, options.resume, options.fork),
       startup,
     ])
     clearStartupTimer(live)
@@ -205,13 +215,15 @@ export async function codexAppPrompt(
     throw new Error("This Codex session is not running")
   if (live.state.status === "running")
     throw new Error("Codex is already working")
-  if (!text.trim()) throw new Error("A prompt cannot be empty")
+  if (!text.trim() && !attachments.length)
+    throw new Error("A prompt cannot be empty")
   if (text.length > MAX_PROMPT_CHARS)
     throw new Error("The prompt is too large for the Codex app-server adapter")
 
   const sequence = ++live.promptSequence
   updateState(live, {
     status: "running",
+    nativeRunId: undefined,
     error: undefined,
     lastStop: undefined,
   })
@@ -221,8 +233,15 @@ export async function codexAppPrompt(
       { type: "text", text, textElements: [] },
     ]
     for (const attachment of attachments) {
-      if (attachment.path && attachment.mimeType.startsWith("image/")) {
+      if (!attachment.path)
+        throw new Error(`Attachment ${attachment.name} was not staged`)
+      if (attachment.mimeType.startsWith("image/")) {
         input.push({ type: "localImage", path: attachment.path })
+      } else {
+        input.push({
+          type: "text",
+          text: `User attachment ${attachment.name} (${attachment.mimeType}): ${attachment.path}`,
+        })
       }
     }
     const result = await rpcRequest(live, "turn/start", {
@@ -231,8 +250,10 @@ export async function codexAppPrompt(
       cwd: live.cwd,
       ...turnTuning(live.tuning),
     })
-    if (isRunning(live) && live.promptSequence === sequence)
+    if (isRunning(live) && live.promptSequence === sequence) {
       live.currentTurnId = result.turn.id
+      updateState(live, { nativeRunId: result.turn.id })
+    }
   } catch (error) {
     if (live.promptSequence !== sequence) return
     const message =
@@ -278,14 +299,25 @@ export function stopCodexApps(): void {
 
 async function openThread(
   live: Live,
-  resume?: string
+  resume?: string,
+  fork?: { nativeId: string; runId: string }
 ): Promise<ThreadResponse> {
   await rpcRequest(live, "initialize", {
     clientInfo: { name: "mako", title: "Mako", version: "0.0.1" },
     capabilities: { experimentalApi: true, requestAttestation: false },
   })
   sendRpc(live, { jsonrpc: "2.0", method: "initialized" })
-  const tuning = threadTuning(live.tuning, codexMcpConfig(live.mcpSnapshot))
+  const tuning = threadTuning(
+    live.tuning,
+    codexMcpConfig(live.mcpSnapshot, live.conversationToolsUrl, live.control, live.id)
+  )
+  if (fork)
+    return rpcRequest(live, "thread/fork", {
+      threadId: fork.nativeId,
+      lastTurnId: fork.runId,
+      cwd: live.cwd,
+      ...tuning,
+    })
   return resume
     ? rpcRequest(live, "thread/resume", {
         threadId: resume,

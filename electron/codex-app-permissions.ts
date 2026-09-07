@@ -67,6 +67,7 @@ type ServerRequestParams = {
     turnId: string | null
     serverName: string
     mode: "form" | "openai/form" | "url"
+    approvalConfirmation: boolean
     message: string
   }
 }
@@ -84,8 +85,8 @@ type ServerRequestResults = {
     scope: "turn" | "session"
   }
   "mcpServer/elicitation/request": {
-    action: "decline" | "cancel"
-    content: null
+    action: "accept" | "decline" | "cancel"
+    content: JsonObject | null
     _meta: null
   }
 }
@@ -430,6 +431,13 @@ function requestMcpElicitation<C extends PermissionContext>(
       result: { action: "cancel", content: null, _meta: null },
     },
   ]
+  if (params.approvalConfirmation)
+    choices.unshift({
+      optionId: "accept",
+      name: "Allow once",
+      kind: "allow_once",
+      result: { action: "accept", content: {}, _meta: null },
+    })
   registerServerRequest(
     context,
     callbacks,
@@ -594,7 +602,37 @@ function parseMcpElicitation(
     (mode !== "form" && mode !== "openai/form" && mode !== "url")
   )
     return null
-  return { threadId, turnId: turnId.value, serverName, mode, message }
+  const schema = objectValue(params.requestedSchema)
+  const properties = objectValue(schema?.properties)
+  const meta = objectValue(params._meta) ?? objectValue(params.meta)
+  const approvalConfirmation =
+    mode === "form" &&
+    meta?.codex_approval_kind === "mcp_tool_call" &&
+    schema?.type === "object" &&
+    Object.keys(schema).every((key) =>
+      [
+        "type",
+        "properties",
+        "required",
+        "title",
+        "description",
+        "$schema",
+        "additionalProperties",
+      ].includes(key)
+    ) &&
+    properties !== undefined &&
+    properties !== null &&
+    Object.keys(properties).length === 0 &&
+    (schema.required === undefined ||
+      (Array.isArray(schema.required) && schema.required.length === 0))
+  return {
+    threadId,
+    turnId: turnId.value,
+    serverName,
+    mode,
+    message,
+    approvalConfirmation,
+  }
 }
 
 function parseItemRequest(

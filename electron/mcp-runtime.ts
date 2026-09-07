@@ -1,8 +1,5 @@
 import type { McpServer } from "@agentclientprotocol/sdk"
-import {
-  isMakoNodeServer,
-  projectRuntimeDefinitions,
-} from "./mcp-registry.js"
+import { isMakoNodeServer, projectRuntimeDefinitions } from "./mcp-registry.js"
 import type {
   McpProvider,
   McpRegistrySnapshot,
@@ -11,6 +8,7 @@ import type {
 } from "./shared.js"
 import type { JsonObject } from "./codex-app-json.js"
 import { backendConnectionCredentials } from "./backend-connection.js"
+import type { ControlCredentials } from "./control-service.js"
 
 function backendHeaders(definition: McpServerDefinition): Array<{
   name: string
@@ -26,19 +24,33 @@ function backendHeaders(definition: McpServerDefinition): Array<{
   ]
 }
 
-function localEnvironment(definition: McpServerDefinition): Array<{
+function localEnvironment(
+  definition: McpServerDefinition,
+  control?: ControlCredentials,
+  taskId?: string
+): Array<{
   name: string
   value: string
 }> {
-  return isMakoNodeServer(definition.name)
+  const environment = isMakoNodeServer(definition.name)
     ? [{ name: "ELECTRON_RUN_AS_NODE", value: "1" }]
     : []
+  if (definition.name === "mako-browser-use" && control)
+    environment.push(
+      { name: "MAKO_CONTROL_URL", value: control.url },
+      { name: "MAKO_CONTROL_TOKEN", value: control.token }
+    )
+  if (definition.name === "mako-local-control" && taskId)
+    environment.push({ name: "MAKO_TASK_ID", value: taskId })
+  return environment
 }
 
 export function acpMcpServers(
   snapshot: McpRegistrySnapshot,
   provider: Exclude<McpProvider, "mako">,
-  transports: readonly McpTransport[]
+  transports: readonly McpTransport[],
+  control?: ControlCredentials,
+  taskId?: string
 ): McpServer[] {
   return projectRuntimeDefinitions(snapshot, provider, transports).flatMap(
     (definition): McpServer[] => {
@@ -48,7 +60,7 @@ export function acpMcpServers(
             name: definition.name,
             command: definition.command,
             args: definition.args ?? [],
-            env: localEnvironment(definition),
+            env: localEnvironment(definition, control, taskId),
           },
         ]
       }
@@ -72,13 +84,17 @@ export function acpMcpServers(
   )
 }
 
-function codexDefinition(definition: McpServerDefinition): JsonObject | null {
+function codexDefinition(
+  definition: McpServerDefinition,
+  control?: ControlCredentials,
+  taskId?: string
+): JsonObject | null {
   if (definition.transport === "stdio" && definition.command) {
     const result: JsonObject = {
       command: definition.command,
       args: definition.args ?? [],
     }
-    const environment = localEnvironment(definition)
+    const environment = localEnvironment(definition, control, taskId)
     if (environment.length > 0) {
       result.env = Object.fromEntries(
         environment.map(({ name, value }) => [name, value])
@@ -100,15 +116,25 @@ function codexDefinition(definition: McpServerDefinition): JsonObject | null {
   return null
 }
 
-export function codexMcpConfig(snapshot: McpRegistrySnapshot): JsonObject {
+export function codexMcpConfig(
+  snapshot: McpRegistrySnapshot,
+  conversationToolsUrl?: string,
+  control?: ControlCredentials,
+  taskId?: string
+): JsonObject {
   const servers: JsonObject = {}
   for (const definition of projectRuntimeDefinitions(snapshot, "codex", [
     "stdio",
     "http",
   ])) {
-    const projected = codexDefinition(definition)
+    const projected = codexDefinition(definition, control, taskId)
     if (projected) servers[definition.name] = projected
   }
+  if (conversationToolsUrl)
+    servers["mako-conversations"] = {
+      url: conversationToolsUrl,
+      bearer_token_env_var: "MAKO_CONVERSATIONS_TOKEN",
+    }
   return Object.keys(servers).length > 0 ? { mcp_servers: servers } : {}
 }
 

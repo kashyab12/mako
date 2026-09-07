@@ -89,6 +89,14 @@ export type RpcParams = {
     serviceTier?: string
     config?: JsonObject
   }
+  "thread/fork": {
+    threadId: string
+    lastTurnId: string
+    cwd: string
+    model?: string
+    serviceTier?: string
+    config?: JsonObject
+  }
   "thread/resume": {
     threadId: string
     cwd: string
@@ -113,6 +121,7 @@ export type RpcParams = {
 export type RpcResults = {
   initialize: JsonObject
   "thread/start": ThreadResponse
+  "thread/fork": ThreadResponse
   "thread/resume": ThreadResponse
   "turn/start": { turn: Turn }
   "turn/interrupt": JsonObject

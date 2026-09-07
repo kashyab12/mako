@@ -5,6 +5,7 @@ import type {
   IntegrationConnection,
   IntegrationRecord,
   MakoComputerPermissions,
+  BrowserControlStatus,
   McpProvider,
   McpRegistrySnapshot,
   McpServerRecord,
@@ -51,7 +52,8 @@ const DEFINITIONS: Definition[] = [
   {
     id: "slack",
     label: "Slack",
-    description: "Read and send messages through your authenticated Mako backend.",
+    description:
+      "Read and send messages through your authenticated Mako backend.",
     category: "Communication",
     trust: "mako",
     auth: "mako-backend",
@@ -165,7 +167,8 @@ function serviceConnection(
 }
 
 function localBrowserConnection(
-  server: McpServerRecord | undefined
+  server: McpServerRecord | undefined,
+  browsers: BrowserControlStatus[]
 ): IntegrationConnection {
   if (!server || server.availability === "unavailable") {
     return {
@@ -173,7 +176,16 @@ function localBrowserConnection(
       detail: server?.detail ?? "Local browser control is not installed",
     }
   }
-  return { kind: "ready", detail: "Existing local Chrome via CDP" }
+  if (browsers.some((browser) => browser.connection.status === "connected"))
+    return { kind: "ready", detail: "Local browser connected" }
+  return {
+    kind: "setup",
+    detail: browsers.some(
+      (browser) => browser.connection.status === "awaiting-approval"
+    )
+      ? "Waiting for browser connection approval"
+      : "Connect a browser in MCP settings",
+  }
 }
 
 function localConnection(
@@ -186,10 +198,7 @@ function localConnection(
       detail: server?.detail ?? "Local control is not installed",
     }
   }
-  if (
-    !permissions.accessibility ||
-    permissions.screenRecording !== "granted"
-  ) {
+  if (!permissions.accessibility || permissions.screenRecording !== "granted") {
     return {
       kind: "needs-permission",
       detail: "Grant Accessibility and Screen Recording",
@@ -222,7 +231,8 @@ export function integrationCatalog(
   snapshot: McpRegistrySnapshot,
   permissions: MakoComputerPermissions,
   githubConnected: boolean,
-  backendStatus: BackendConnectionStatus
+  backendStatus: BackendConnectionStatus,
+  browsers: BrowserControlStatus[] = []
 ): IntegrationCatalogSnapshot {
   const localControl = snapshot.servers.find(
     (server) => server.name === "mako-local-control"
@@ -236,14 +246,15 @@ export function integrationCatalog(
       definition.auth === "mako-backend"
         ? backendConnection(backendStatus)
         : definition.auth === "local-browser"
-          ? localBrowserConnection(localBrowser)
+          ? localBrowserConnection(localBrowser, browsers)
           : serviceConnection(definition, snapshot.servers, githubConnected),
   }))
   const local: IntegrationRecord[] = [
     {
       id: "mako-backend",
       label: "Mako Backend",
-      description: "Remote MCP, skills, integrations, and communication channels.",
+      description:
+        "Remote MCP, skills, integrations, and communication channels.",
       category: "Development",
       trust: "mako",
       auth: "mako-backend",
@@ -260,7 +271,7 @@ export function integrationCatalog(
       auth: "local-permission",
       capabilities: ["Local Chrome", "Inspect", "Interact", "Capture"],
       events: [],
-      connection: localBrowserConnection(localBrowser),
+      connection: localBrowserConnection(localBrowser, browsers),
     },
     {
       id: "computer-use",

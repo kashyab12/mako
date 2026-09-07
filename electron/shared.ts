@@ -14,3 +14,10 @@ export * from "./contracts/terminal.js"
 
 export * from "./contracts/live-conversations.js"
 export * from "./contracts/live-content.js"
+
+export * from "./contracts/conversation-control.js"
+
+export * from "./contracts/native-requests.js"
+export * from "./contracts/browser-control.js"
+
+export * from "./contracts/renderer-bridge.js"

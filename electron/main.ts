@@ -1,3 +1,11 @@
+import { RelayConversations } from "./relay-conversations.js"
+import { nativeCheckpoint, canResumeBinding } from "./native-continuation.js"
+import { NativeRequests } from "./native-requests.js"
+import type { NativeRequestInput } from "./shared.js"
+import { startConversationMcp } from "./conversation-mcp.js"
+import { BrowserService } from "./browser-service.js"
+import { startControlService } from "./control-service.js"
+import type { DelegateInput, ForkInput, TransferInput } from "./shared.js"
 import { attachmentFiles } from "@mako/sessions"
 import { WorkspaceFiles } from "./host-workspace.js"
 import { WorkspaceGit } from "./host-git.js"
@@ -10,7 +18,6 @@ import {
   BrowserWindow,
   clipboard,
   dialog,
-  ipcMain,
   nativeImage,
   nativeTheme,
   net,
@@ -85,16 +92,17 @@ import {
   bindDrivers,
   resumableHarnesses,
   resumeNative,
+  threadRun,
+  waitForNativeRun,
   startFresh,
   stopDrivers,
-  threadRun,
 } from "./drivers.js"
 import {
   harnessProfile,
   harnessProfiles,
   resolveHarnessTuning,
 } from "./harnesses.js"
-import { bindLineageDirect, chainOf, expectLineage } from "./lineage.js"
+import { bindLineageDirect, chainOf } from "./lineage.js"
 import {
   accountUsage,
   captureAccount,
@@ -131,7 +139,9 @@ import {
   previewSkillSync,
 } from "./skill-sync.js"
 import { installGitIpc } from "./ipc/git.js"
-import { registerIpc as handle } from "./ipc/register.js"
+import { fileResponse } from "./file-response.js"
+import { startWebHost } from "./web-host.js"
+import { registerIpc as handle, invokeHost } from "./ipc/register.js"
 import { installSessionIpc } from "./ipc/session.js"
 import { installWorkspaceIpc, stopWorkspaceIpc } from "./ipc/workspace.js"
 import type {
@@ -158,6 +168,12 @@ protocol.registerSchemesAsPrivileged([
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const isDev = !app.isPackaged && !process.env.MAKO_PROD
+if (!app.requestSingleInstanceLock()) {
+  console.error(
+    "Mako is already running. Close the existing desk host before starting another desktop or web host."
+  )
+  app.exit(1)
+}
 
 /**
  * The Dock and window icon.
@@ -183,8 +199,16 @@ function appIcon() {
   return undefined
 }
 
+let conversationMcp: Awaited<ReturnType<typeof startConversationMcp>> | null =
+  null
+let nativeRequests: NativeRequests | null = null
+const browserControl = new BrowserService()
+let controlService: Awaited<ReturnType<typeof startControlService>> | null =
+  null
 let liveConversations: LiveConversations
 let window: BrowserWindow | null = null
+let webHost: Awaited<ReturnType<typeof startWebHost>> | undefined
+const webSocket = isDev ? process.env.MAKO_WEB_SOCKET : undefined
 let terminalClient: TerminalDaemonClient | null = null
 const pool = new HostPool(emit)
 let starting: Promise<unknown> | null = null
@@ -202,16 +226,20 @@ function ensureMakoLocalControl() {
 }
 
 function emitTerminalWake() {
+  webHost?.terminal({ type: "wake" })
   if (!window?.isDestroyed()) {
     window?.webContents.send("mako:terminal-event", { type: "wake" })
   }
 }
 
 function emit(event: HostEvent) {
+  if (event.type === "thread-run" && event.run.status !== "running")
+    nativeRequests?.ready(event.run.path)
   // Git status is recomputed after every turn and on focus, which is exactly
   // when HEAD could have moved — so the commit trigger rides on it rather than
   // running a watcher of its own.
   if (event.type === "git") noticeHead(event.git.head)
+  webHost?.event(event)
   if (window?.isDestroyed()) return
   window?.webContents.send("mako:event", event)
 }
@@ -379,10 +407,12 @@ function bindIpc() {
   })
 
   handle("mako:pick-folder", async () => {
-    if (!window) return null
-    const result = await dialog.showOpenDialog(window, {
+    const options: Electron.OpenDialogOptions = {
       properties: ["openDirectory", "createDirectory"],
-    })
+    }
+    const result = window
+      ? await dialog.showOpenDialog(window, options)
+      : await dialog.showOpenDialog(options)
     return result.canceled ? null : result.filePaths[0]
   })
   handle("mako:external-editors", () => listExternalEditors())
@@ -500,7 +530,6 @@ function bindIpc() {
             ? `Then: ${instruction.trim()}`
             : "Then continue where the latest turn left off.",
         ].join("\n")
-        expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
         return { kind: "prepared" as const, prompt, cwd: thread.ref.cwd ?? "" }
       }
       // Native replay, the default: every harness whose store we can write
@@ -522,7 +551,6 @@ function bindIpc() {
       if (!thread || !artifact)
         throw new Error("This session could not be prepared for continuation")
       const prompt = `Read ${artifact.file} in full before continuing. It is ordered newest turn first; each turn remains chronological.`
-      expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
       return { kind: "prepared" as const, prompt, cwd: thread.ref.cwd ?? "" }
     }
   )
@@ -561,6 +589,15 @@ function bindIpc() {
   )
 
   handle("mako:computer-permissions", () => computerPermissions())
+  handle("mako:browser-control-status", () => browserControl.status())
+  handle("mako:browser-control-connect", async (_event, browser: string) => {
+    await browserControl.connect(browser)
+    return browserControl.status()
+  })
+  handle("mako:browser-control-disconnect", (_event, browser: string) => {
+    browserControl.disconnect(browser)
+    return browserControl.status()
+  })
   handle("mako:computer-permissions-request", () =>
     requestComputerPermissions(() => {
       window?.show()
@@ -587,7 +624,8 @@ function bindIpc() {
         snapshot,
         computerPermissions(),
         github.authenticated,
-        backend
+        backend,
+        browserControl.status()
       )
     })
   )
@@ -680,6 +718,44 @@ function bindIpc() {
       return liveConversations.snapshot(options.conversationId)
     }
   )
+  handle(
+    "mako:native-receipt",
+    (_event, id: string) => nativeRequests?.receipt(id) ?? null
+  )
+  handle("mako:native-dismiss", (_event, id: string) =>
+    nativeRequests?.dismiss(id)
+  )
+  handle("mako:native-requests", () => nativeRequests?.list() ?? [])
+  handle("mako:native-submit", (_event, input: NativeRequestInput) => {
+    if (!nativeRequests)
+      throw new Error("The native command service is not ready")
+    return nativeRequests.submit(input)
+  })
+  handle("mako:live-delegate", (_event, id: string, input: DelegateInput) =>
+    liveConversations.delegate(id, input)
+  )
+  handle("mako:live-child-cancel", (_event, id: string, childId: string) =>
+    liveConversations.cancelChild(id, childId)
+  )
+  handle("mako:live-merge-fork", (_event, id: string, mergeId: string) =>
+    liveConversations.mergeFork(id, mergeId)
+  )
+  handle("mako:live-fork", (_event, id: string, input: ForkInput) =>
+    liveConversations.fork(id, input)
+  )
+  handle("mako:live-capture", (_event, id: string, path: string) =>
+    liveConversations.capture(id, path)
+  )
+  handle(
+    "mako:live-transfer",
+    async (_event, id: string, input: TransferInput) => {
+      const profile = await harnessProfile(input.provider)
+      return liveConversations.transfer(id, {
+        ...input,
+        tuning: resolveHarnessTuning(profile, input.tuning),
+      })
+    }
+  )
   handle("mako:live-clear-queue", (_event, id: string) =>
     liveConversations.clearQueue(id)
   )
@@ -692,7 +768,18 @@ function bindIpc() {
   handle("mako:read-live-file", (_event, id: string, path: string) => {
     const snapshot = liveConversations.snapshot(id)
     if (!snapshot) throw new Error("That conversation is unavailable")
+    const manifests = [
+      ...(snapshot.control?.transfers.flatMap((transfer) =>
+        transfer.state.kind === "accepted" ? [transfer.state.manifest] : []
+      ) ?? []),
+      ...(snapshot.control?.merges.map((merge) => merge.manifest) ?? []),
+      ...snapshot.requests.flatMap((request) => request.context ?? []),
+    ]
     const files = [
+      ...manifests.flatMap((manifest) => [
+        manifest.file,
+        ...(manifest.resources ?? []),
+      ]),
       ...attachmentFiles(snapshot.base?.entries ?? []),
       ...snapshot.blocks.flatMap((block) => {
         const attachments =
@@ -775,57 +862,30 @@ function bindIpc() {
   )
 
   handle("mako:thread-run", (_e, path: string) => threadRun(path))
-  handle(
-    "mako:thread-resume",
-    async (
-      _e,
-      path: string,
-      prompt: string,
-      tuning?: {
-        model?: string
-        effort?: string
-        fast?: boolean
-        options?: Record<string, string | boolean>
-      }
-    ) => {
-      const thread = await openThread(path)
-      if (!thread) throw new Error("This session could not be read")
-      const profile = await harnessProfile(thread.ref.harness)
-      return await resumeNative(
-        thread.ref,
-        prompt,
-        resolveHarnessTuning(profile, tuning)
-      )
-    }
-  )
   handle("mako:thread-abort-run", (_e, path: string) => abortNative(path))
   /**
    * Fork at an answer: the conversation up to that turn becomes a NEW
    * native session on the chosen harness — both lines stay open, and the
    * fork can wear a different agent than the original.
    */
-  handle(
-    "mako:thread-fork",
-    async (_e, path: string, upto: number, harness: string) => {
-      const [thread, artifact] = await Promise.all([
-        openThread(path),
-        transcriptArtifactFor(
-          path,
-          "Start a new branch after the final answer in this bundle.",
-          upto
-        ),
-      ])
-      if (!thread || !artifact)
-        throw new Error("This conversation could not be prepared for a fork")
-      expectLineage(harness, thread.ref.cwd, chainOf(thread.ref))
-      const prompt = [
-        `Read ${artifact.file} in full before doing anything else.`,
-        "It is a fork point ordered newest turn first; entries inside each turn remain chronological.",
-        "Start a new branch from the final answer in the bundle. Do not repeat work unless the next user message asks for it.",
-      ].join("\n")
-      return { prompt, cwd: thread.ref.cwd ?? "" }
-    }
-  )
+  handle("mako:thread-fork", async (_e, path: string, upto: number) => {
+    const [thread, artifact] = await Promise.all([
+      openThread(path),
+      transcriptArtifactFor(
+        path,
+        "Start a new branch after the final answer in this bundle.",
+        upto
+      ),
+    ])
+    if (!thread || !artifact)
+      throw new Error("This conversation could not be prepared for a fork")
+    const prompt = [
+      `Read ${artifact.file} in full before doing anything else.`,
+      "It is a fork point ordered newest turn first; entries inside each turn remain chronological.",
+      "Start a new branch from the final answer in the bundle. Do not repeat work unless the next user message asks for it.",
+    ].join("\n")
+    return { prompt, cwd: thread.ref.cwd ?? "" }
+  })
 
   handle("mako:automations", () => automationList())
   handle(
@@ -877,7 +937,7 @@ function bindIpc() {
   handle("mako:crashes", () => listCrashes())
   handle("mako:crashes-dir", () => crashesDir())
   handle("mako:clear-crashes", () => clearCrashes())
-  ipcMain.handle(
+  handle(
     "mako:report-crash",
     (
       _e,
@@ -902,6 +962,36 @@ function bindIpc() {
   })
 }
 
+async function readFilePreview(request: Request): Promise<Response> {
+  if (request.method !== "GET")
+    return new Response("Method not allowed", { status: 405 })
+  const artifact = resolveFilePreview(request.url)
+  if (artifact)
+    return fileResponse(
+      await net.fetch(pathToFileURL(artifact).toString(), {
+        signal: request.signal,
+      }),
+      artifact,
+      request
+    )
+  const path = workspacePreviewPath(request.url)
+  if (!path) return new Response("Not found", { status: 404 })
+  try {
+    return await withHost(async (host) => {
+      const absolute = await host.resolvePath(path)
+      return fileResponse(
+        await net.fetch(pathToFileURL(absolute).toString(), {
+          signal: request.signal,
+        }),
+        absolute,
+        request
+      )
+    })
+  } catch {
+    return new Response("Not found", { status: 404 })
+  }
+}
+
 installCrashReporting()
 
 app.whenReady().then(async () => {
@@ -914,31 +1004,12 @@ app.whenReady().then(async () => {
       "Desktop app for Claude Code, Codex, Cursor, Grok, Devin, and OpenCode.",
   })
   await ensureBackendConnectionEnvironment()
-  protocol.handle("mako-file", async (request) => {
-    if (request.method !== "GET")
-      return new Response("Method not allowed", { status: 405 })
-    const artifact = resolveFilePreview(request.url)
-    if (artifact)
-      return net.fetch(pathToFileURL(artifact).toString(), {
-        headers: request.headers,
-      })
-    const path = workspacePreviewPath(request.url)
-    if (!path) return new Response("Not found", { status: 404 })
-    try {
-      return await withHost(async (host) => {
-        const absolute = await host.resolvePath(path)
-        return net.fetch(pathToFileURL(absolute).toString(), {
-          headers: request.headers,
-        })
-      })
-    } catch {
-      return new Response("Not found", { status: 404 })
-    }
-  })
+  protocol.handle("mako-file", readFilePreview)
   terminalClient = new TerminalDaemonClient(
     join(__dirname, "terminal-daemon.js"),
     join(app.getPath("userData"), "terminal"),
     (event) => {
+      webHost?.terminal(event)
       if (!window?.isDestroyed())
         window?.webContents.send("mako:terminal-event", event)
     }
@@ -946,14 +1017,61 @@ app.whenReady().then(async () => {
   powerMonitor.on("resume", emitTerminalWake)
   powerMonitor.on("unlock-screen", emitTerminalWake)
   liveConversations = new LiveConversations({
+    checkpoint: nativeCheckpoint,
+    canResume: (binding) =>
+      canResumeBinding(
+        binding,
+        providerHost.processProbes.get(binding.provider)
+      ),
     appPath: app.getAppPath(),
     root: join(app.getPath("userData"), "conversations"),
+    tools: (bindingId, conversationId) => {
+      const tools = conversationMcp?.mint(bindingId, conversationId)
+      return tools
+        ? { ...tools, control: controlService?.mint(conversationId, bindingId) }
+        : undefined
+    },
+    providers: () =>
+      providerHost.liveDrivers.list().map((driver) => driver.provider),
     driver: (provider) => providerHost.liveDrivers.get(provider),
     history: pageThread,
     emit,
   })
+  nativeRequests = new NativeRequests(
+    join(app.getPath("userData"), "native-requests"),
+    {
+      read: async (path) => (await openThread(path))?.ref ?? null,
+      running: (path) => threadRun(path)?.status === "running",
+      execute: async (ref, text, tuning) => {
+        const profile = await harnessProfile(ref.harness)
+        await resumeNative(ref, text, {
+          ...resolveHarnessTuning(profile, tuning),
+          captureOutput: true,
+        })
+        const result = await waitForNativeRun(ref.path)
+        if (result.state.status !== "done")
+          throw new Error(
+            result.state.error ?? "Native execution did not complete"
+          )
+      },
+      changed: (requests) => emit({ type: "native-requests", requests }),
+      failed: (message) => emit({ type: "notice", level: "error", message }),
+    }
+  )
+  conversationMcp = await startConversationMcp(liveConversations)
+  controlService = await startControlService(
+    browserControl,
+    (conversationId, bindingId) => {
+      liveConversations.authorizeAgent(conversationId, bindingId)
+    }
+  )
+  browserControl.subscribe((browsers) =>
+    emit({ type: "browser-control", browsers })
+  )
   bindIpc()
-  await createWindow()
+  if (webSocket)
+    webHost = await startWebHost(webSocket, invokeHost, readFilePreview)
+  else await createWindow()
   installUpdates(emit)
   installThreads(emit)
   bindDrivers(emit)
@@ -976,13 +1094,18 @@ app.whenReady().then(async () => {
   void ready().then((live) => {
     watchWorkspace(live.active.workspace)
     return startSlackRelay({
+      conversations: new RelayConversations(
+        liveConversations,
+        join(app.getPath("userData"), "conversations", "remote-assets")
+      ),
       defaultCwd: () => live.active.workspace,
       deviceFile: join(app.getPath("userData"), "slack-relay", "device-id"),
       version: app.getVersion(),
     })
   })
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) void createWindow()
+    if (!webSocket && BrowserWindow.getAllWindows().length === 0)
+      void createWindow()
   })
 })
 
@@ -991,10 +1114,12 @@ app.on("window-all-closed", () => {
 })
 
 app.on("before-quit", () => {
+  webHost?.close()
   powerMonitor.removeListener("resume", emitTerminalWake)
   powerMonitor.removeListener("unlock-screen", emitTerminalWake)
   terminalClient?.dispose()
   stopCuaEmbedded()
+  controlService?.close()
   stopWorkspaceIpc()
   stopWatching()
   stopSlackRelay()
@@ -1002,6 +1127,8 @@ app.on("before-quit", () => {
   stopDrivers()
   stopAcp()
   stopCodexApps()
+  nativeRequests?.stop()
+  conversationMcp?.close()
   liveConversations?.stop()
   void pool.dispose()
 })

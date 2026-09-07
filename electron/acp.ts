@@ -1,3 +1,4 @@
+import type { ConversationTools } from "./providers/live-driver.js"
 /**
  * Interactive foreign agents, over ACP.
  *
@@ -175,6 +176,7 @@ export async function liveStart(
   cwd: string,
   options: {
     conversationId: string
+    conversationTools?: ConversationTools
     resume?: string
     title?: string
     tuning?: AcpTuning
@@ -304,8 +306,20 @@ export async function liveStart(
     if (mcpCapabilities?.http) transports.push("http")
     if (mcpCapabilities?.sse) transports.push("sse")
     live.mcpServers = providerHost.mcpSources.get(harness)
-      ? acpMcpServers(mcpSnapshot, harness, transports)
+      ? acpMcpServers(mcpSnapshot, harness, transports, options.conversationTools?.control, id)
       : []
+    if (options.conversationTools && mcpCapabilities?.http)
+      live.mcpServers.push({
+        type: "http",
+        name: "mako-conversations",
+        url: options.conversationTools.url,
+        headers: [
+          {
+            name: "Authorization",
+            value: `Bearer ${options.conversationTools.token}`,
+          },
+        ],
+      })
     const session = options.resume
       ? parseLoadedAcpSession(
           await startupStep(

@@ -1,27 +1,10 @@
 import { createHash } from "node:crypto"
 import { openAsBlob } from "node:fs"
-import {
-  mkdir,
-  open,
-  readFile,
-  realpath,
-  rm,
-  stat,
-} from "node:fs/promises"
-import {
-  basename,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-  sep,
-} from "node:path"
+import { mkdir, open, readFile, realpath, rm, stat } from "node:fs/promises"
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { z } from "zod"
 import type { RelayJobPayload } from "@mako/relay"
-import {
-  backendRelayPost,
-  backendRelayUpload,
-} from "./backend-connection.js"
+import { backendRelayPost, backendRelayUpload } from "./backend-connection.js"
 
 export async function stageRelayAttachments(
   payload: RelayJobPayload,
@@ -86,12 +69,11 @@ export async function stageRelayAttachments(
             offset += written.bytesWritten
           }
         }
-      } catch (error) {
+      } finally {
+        await reader.cancel().catch(() => {})
+        reader.releaseLock()
         await file.close()
-        await rm(path, { force: true })
-        throw error
       }
-      await file.close()
       total += received
       paths.push(path)
     }
@@ -162,17 +144,13 @@ export async function uploadRelayArtifacts({
       .update(local)
       .digest("hex")
       .slice(0, 32)
-    const response = await backendRelayUpload(
-      "/api/relay/artifact",
-      source,
-      {
-        artifactKey,
-        deviceId,
-        filename: basename(path),
-        jobId,
-        mimeType: "application/octet-stream",
-      }
-    )
+    const response = await backendRelayUpload("/api/relay/artifact", source, {
+      artifactKey,
+      deviceId,
+      filename: basename(path),
+      jobId,
+      mimeType: "application/octet-stream",
+    })
     if (!response.ok)
       throw new Error(`Relay artifact upload returned ${response.status}`)
   }

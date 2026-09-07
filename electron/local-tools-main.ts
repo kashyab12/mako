@@ -1,12 +1,12 @@
 import { spawn } from "node:child_process"
 import { access } from "node:fs/promises"
 import { homedir } from "node:os"
-import { delimiter, isAbsolute, join, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
+import { delimiter, isAbsolute, join } from "node:path"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
 import type { JsonValue } from "./codex-app-json.js"
+import { isMainModule } from "./main-module.js"
 
 const MAX_OUTPUT = 2 * 1024 * 1024
 const DEFAULT_TIMEOUT = 20_000
@@ -356,7 +356,6 @@ function reportStartupFailure(error: Error): void {
   process.exitCode = 1
 }
 
-const invoked = process.argv[1] ? resolve(process.argv[1]) : ""
-if (invoked === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   void startLocalToolsServer().catch(reportStartupFailure)
 }

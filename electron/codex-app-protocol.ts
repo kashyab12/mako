@@ -133,8 +133,11 @@ function handleNotification(
   switch (notification.method) {
     case "turn/started":
       context.currentTurnId = notification.turnId
-      if (context.state.status !== "running")
-        context.protocol.updateState({ status: "running", error: undefined })
+      context.protocol.updateState({
+        status: "running",
+        nativeRunId: notification.turnId,
+        error: undefined,
+      })
       return
     case "turn/completed":
       completeTurn(context, notification.turn)
@@ -453,6 +456,7 @@ export function rpcRequest(
     case "initialize":
       return beginRpcRequest(context, method, params, parseObjectResult)
     case "thread/start":
+    case "thread/fork":
     case "thread/resume":
       return beginRpcRequest(context, method, params, parseThreadResponse)
     case "turn/start":
