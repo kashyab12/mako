@@ -198,7 +198,7 @@ try {
   await writeFile(
     cachePath,
     JSON.stringify({
-      version: 5,
+      version: 6,
       entries: {
         [file.path]: {
           bytes: file.bytes,

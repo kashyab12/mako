@@ -27,7 +27,8 @@ metadata.exec(`
     first_user_message TEXT,
     cwd TEXT,
     updated_at_ms INTEGER,
-    thread_source TEXT
+    thread_source TEXT,
+    rollout_path TEXT
   )
 `)
 metadata
@@ -228,6 +229,22 @@ const lines = []
 await readLines(oversizedPath, 0, (raw) => lines.push(raw))
 assert.equal(lines.length, 1)
 assert.match(lines[0] ?? "", /after-oversized/)
+
+const resumedId = "01a07995-2e08-7360-8599-291f436c18d8"
+const originalPath = join(sessions, `rollout-2026-09-07T09-00-00-${resumedId}.jsonl`)
+const resumedPath = join(sessions, `rollout-2026-09-07T10-00-00-${resumedId}_01a07db0-30b5-7773-98d6-5ab7500df5e8.jsonl`)
+await writeFile(resumedPath, line("session_meta", { id: resumedId, cwd: home }) + line("response_item", { type: "message", role: "user", content: [{ text: "Current resumed prompt" }] }))
+// Touch the old rollout last: an mtime guess must not defeat Codex's current path.
+await writeFile(originalPath, line("session_meta", { id: resumedId, cwd: home }) + line("response_item", { type: "message", role: "user", content: [{ text: "Old prompt" }] }))
+const currentDb = new DatabaseSync(join(home, ".codex", "state_5.sqlite"))
+currentDb.prepare("INSERT INTO threads (id, title, cwd, updated_at_ms, thread_source, rollout_path) VALUES (?, ?, ?, ?, 'user', ?)").run(resumedId, "Resumed thread", home, Date.now(), resumedPath)
+currentDb.close()
+const resumedProvider = new CodexProvider(home)
+const discovered = await resumedProvider.discover()
+assert.equal(discovered.filter(file => file.path.includes(resumedId)).length, 1)
+assert.ok(discovered.some(file => file.path === resumedPath))
+assert.ok((await resumedProvider.read(resumedPath)).entries.some(entry => entry.kind === "user" && entry.text === "Current resumed prompt"))
+assert.ok((await resumedProvider.read(originalPath)).entries.some(entry => entry.kind === "user" && entry.text === "Old prompt"), "Explicit historical file reads remain available")
 
 await rm(home, { recursive: true, force: true })
 

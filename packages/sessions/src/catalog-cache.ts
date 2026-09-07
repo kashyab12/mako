@@ -17,7 +17,7 @@ interface JsonRecord {
 export function parseCache(raw: string): Map<string, CacheEntry> | null {
   try {
     const value: JsonValue = JSON.parse(raw)
-    if (!isJsonRecord(value) || readNumber(value, "version") !== 5) return null
+    if (!isJsonRecord(value) || readNumber(value, "version") !== 6) return null
     const stored = value.entries
     if (!isJsonRecord(stored)) return null
     const entries = new Map<string, CacheEntry>()

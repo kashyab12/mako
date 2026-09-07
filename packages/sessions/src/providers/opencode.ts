@@ -336,13 +336,7 @@ function sessionRows(
   sessionTable = "session"
 ): SessionRow[] {
   const rows = database
-    .prepare(
-      sessionQuery(
-        kind,
-        false,
-        sessionTable
-      )
-    )
+    .prepare(sessionQuery(kind, false, sessionTable))
     .all(limit)
   return rows
     .map(parseSessionRow)
@@ -356,13 +350,7 @@ function sessionRow(
   sessionTable = "session"
 ): SessionRow | null {
   const stored = database
-    .prepare(
-      sessionQuery(
-        kind,
-        true,
-        sessionTable
-      )
-    )
+    .prepare(sessionQuery(kind, true, sessionTable))
     .get(id)
   return stored ? parseSessionRow(stored) : null
 }

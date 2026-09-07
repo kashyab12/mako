@@ -67,7 +67,7 @@ export function daemonSocketPath(): string {
  * without it forever. Clients that see an older daemon retire it and let a
  * fresh one take the socket.
  */
-export const PROTOCOL_VERSION = 29
+export const PROTOCOL_VERSION = 30
 export const MAX_DAEMON_RSS = 512 * 1024 * 1024
 export function daemonMemoryUnsafe(rss: number): boolean {
   return rss > MAX_DAEMON_RSS

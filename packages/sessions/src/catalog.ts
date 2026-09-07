@@ -232,7 +232,7 @@ export class SessionCatalog {
       if (
         !held ||
         (held.archived && !ref.archived) ||
-        (held.archived === ref.archived &&
+        (Boolean(held.archived) === Boolean(ref.archived) &&
           (ref.updatedAt ?? "") > (held.updatedAt ?? ""))
       ) {
         byIdentity.set(key, ref)
@@ -752,7 +752,7 @@ export class SessionCatalog {
       for (const [path, entry] of this.byPath) entries[path] = entry
       await writeFile(
         this.cachePath,
-        JSON.stringify({ version: 5, entries }),
+        JSON.stringify({ version: 6, entries }),
         "utf8"
       )
     } catch {

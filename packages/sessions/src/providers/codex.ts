@@ -20,7 +20,7 @@ import { attachmentFromUrl, type AttachmentContent } from "../content.js"
  */
 
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import { stat } from "node:fs/promises"
 import type { SQLOutputValue } from "node:sqlite"
 import {
@@ -67,6 +67,7 @@ interface CodexSessionMeta extends CodexRolloutBase {
 }
 
 interface CodexThreadMetadata {
+  rolloutPath?: string
   title?: string
   cwd?: string
   updatedAt?: string
@@ -461,7 +462,7 @@ export class CodexProvider implements SessionProvider {
       try {
         const row = database
           .prepare(
-            "SELECT id, name, title, cwd, updated_at_ms FROM threads WHERE id = ? AND (thread_source IS NULL OR thread_source != 'subagent')"
+            "SELECT id, name, title, cwd, updated_at_ms, rollout_path FROM threads WHERE id = ? AND (thread_source IS NULL OR thread_source != 'subagent')"
           )
           .get(id)
         if (this.metadataMtime !== mtime) return this.metadata.get(id)
@@ -474,6 +475,7 @@ export class CodexProvider implements SessionProvider {
             ? titleFrom(storedTitle)
             : undefined
         const metadata = {
+          rolloutPath: sqliteText(row.rollout_path),
           title: titleFrom(sqliteText(row.name)) ?? conciseTitle,
           cwd: sqliteText(row.cwd),
           updatedAt: updatedAtMs
@@ -500,27 +502,47 @@ export class CodexProvider implements SessionProvider {
 
   async discover(): Promise<NativeFile[]> {
     const paths = await walkFiles(this.root, (name) => name.endsWith(".jsonl"))
-    const files = await Promise.all(
-      paths.map(async (path) => {
-        try {
-          const info = await stat(path)
-          return { path, bytes: info.size, mtimeMs: info.mtimeMs }
-        } catch {
-          return null
-        }
-      })
-    )
-    return files.filter((file): file is NativeFile => file !== null)
+    const byIdentity = new Map<string, NativeFile[]>()
+    for (let index = 0; index < paths.length; index += 8) {
+      const batch = await Promise.all(
+        paths.slice(index, index + 8).map(async (path) => {
+          const info = await stat(path).catch(() => null)
+          return info ? { path, bytes: info.size, mtimeMs: info.mtimeMs } : null
+        })
+      )
+      for (const file of batch) {
+        if (!file) continue
+        const id =
+          basename(file.path).match(
+            /[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}/i
+          )?.[0] ?? file.path
+        const group = byIdentity.get(id) ?? []
+        group.push(file)
+        byIdentity.set(id, group)
+      }
+    }
+    const groups = [...byIdentity]
+    const files: NativeFile[] = []
+    for (let index = 0; index < groups.length; index += 8) {
+      const batch = await Promise.all(
+        groups.slice(index, index + 8).map(async ([id, candidates]) => {
+          // Codex changes rollout paths when resuming. Its current path is authoritative;
+          // display timestamps are shared across aliases and cannot choose a transcript.
+          const current =
+            candidates.length > 1
+              ? (await this.threadMetadata(id))?.rolloutPath
+              : undefined
+          return (
+            candidates.find((file) => file.path === current) ??
+            candidates.sort((a, b) => b.mtimeMs - a.mtimeMs)[0]
+          )
+        })
+      )
+      for (const file of batch) if (file) files.push(file)
+    }
+    return files
   }
 
-  /**
-   * Bounded, but not fixed: the meta line comes first, while the first *real*
-   * user message can sit megabytes in, behind injected instruction blocks
-   * and attachment manifests. The peek streams lines and stops the moment it
-   * has an id, a model and a title — or at the byte budget, whichever comes
-   * first. An 8 MB budget titles every session observed in the wild without
-   * ever making a changed gigabyte file cost a gigabyte.
-   */
   async peek(file: NativeFile): Promise<ThreadRef | null> {
     const budget = 8 * 1024 * 1024
     let spent = 0
