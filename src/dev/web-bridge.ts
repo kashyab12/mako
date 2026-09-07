@@ -102,10 +102,9 @@ export async function installWebBridge(): Promise<void> {
       reader.releaseLock()
       for (const listener of events)
         listener({
-          type: "notice",
-          level: "error",
+          type: "host-disconnected",
           message:
-            "The Mako host disconnected. Your draft is still here. Restart npm run web, then reload to reconnect.",
+            "The Mako host disconnected. Restart the host, then reconnect.",
         })
     }
   })().catch(() => {})

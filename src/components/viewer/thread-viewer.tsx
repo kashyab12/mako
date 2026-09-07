@@ -236,7 +236,7 @@ function ThreadLoadingShell({
         </IconAction>
       </div>
       {error ? (
-        <div role="alert" className="p-6 text-ui text-muted-foreground">
+        <div role="alert" className="p-6 text-ui text-faint">
           <p>{error}</p>
           <Action
             tone="outline"
