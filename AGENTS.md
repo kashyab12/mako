@@ -265,6 +265,14 @@ files, and diffs for that thread, never more sessions.
 
 ## Working on the UI
 
-`npm run dev` then open `http://127.0.0.1:5173/?mock` to boot the desk against
-fixtures (`src/dev/mock-bridge.ts`) with no agent and no token spend.
-`npm run desktop` runs the real thing.
+`npm run dev` (or `npm run web`) starts the real Electron host behind a local web
+UI. Open the URL printed by Vite without `?mock`. Use real native threads,
+provider settings, git state, and host events for normal UI verification.
+Opening and inspecting threads does not start an agent; sending a prompt does.
+`npm run desktop` uses the same host through Electron preload.
+
+`npm run dev:fixtures` plus `?mock` is an explicit fixture mode for deterministic
+edge cases, not the default UI verification path. Changes to host handler
+arguments require `npm run generate:host-inputs`; `npm run test:web` checks drift
+and rejects invalid requests before dispatch. The web gateway stays loopback-only
+and same-origin; the host endpoint is a private local socket.

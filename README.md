@@ -131,12 +131,22 @@ npm install
 npm run desktop
 ```
 
-For interface work without starting an agent:
+For interface work in a browser with your real sessions and settings:
 
 ```bash
 npm run dev
-open 'http://127.0.0.1:5173/?mock'
+# Open the local URL printed by Vite, without ?mock.
 ```
+
+This starts the same host used by the desktop app and streams real session,
+provider, terminal, and git events into the web UI. Reading threads does not start
+an agent. Sending prompts, editing files, and git actions operate on real data.
+The web gateway listens on loopback and forwards same-origin requests through a
+private local socket. Run one desk host at a time for a given Mako data directory.
+
+For deterministic fixture cases, use `npm run dev:fixtures` and append `?mock`.
+Run `npm run generate:host-inputs` after changing host handler arguments and
+`npm run test:web` to verify the generated contract and local gateway.
 
 ## Useful shortcuts
 
