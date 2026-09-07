@@ -28,9 +28,15 @@ import {
 } from "../electron/providers/claude/process-probe.ts"
 import { parseCodexOpenSessionPaths } from "../electron/providers/codex/process-probe.ts"
 import { parseCursorOpenSessionPaths } from "../electron/providers/cursor/process-probe.ts"
-import { parseGrokActiveSessions } from "../electron/providers/grok/process-probe.ts"
+import {
+  grokProcessProbe,
+  parseGrokActiveSessions,
+} from "../electron/providers/grok/process-probe.ts"
 import type { ProviderAccountCapability } from "../electron/providers/account-capability.ts"
-import { processStartMatches } from "../electron/providers/process-liveness.ts"
+import {
+  processIdentityMatches,
+  processStartMatches,
+} from "../electron/providers/process-liveness.ts"
 import type { ProviderProcessProbe } from "../electron/providers/process-probe.ts"
 import { providerHost } from "../electron/providers/index.ts"
 import type { NativeRunner } from "../electron/providers/native-runner.ts"
@@ -175,6 +181,56 @@ try {
       ],
     }
   )
+  const originalPath = process.env.PATH
+  const originalGrokHome = process.env.GROK_HOME
+  try {
+    await writeFile(
+      join(registry, `${process.pid}.json`),
+      JSON.stringify({
+        pid: process.pid,
+        sessionId: "unverifiable",
+        state: "working",
+        startedAt: Date.now(),
+      })
+    )
+    process.env.PATH = registry
+    process.env.GROK_HOME = registry
+    await writeFile(
+      join(registry, "active_sessions.json"),
+      JSON.stringify([
+        {
+          pid: process.pid,
+          session_id: "grok-unverifiable",
+          opened_at: Date.now(),
+        },
+      ])
+    )
+    assert.deepEqual(
+      await grokProcessProbe.probe(new AbortController().signal),
+      { kind: "unavailable", reason: "failed" },
+      "A missing process-query executable is not an empty Grok registry"
+    )
+    await rm(join(registry, "active_sessions.json"))
+    await assert.rejects(
+      processIdentityMatches({
+        pid: process.pid,
+        startedAt: Date.now(),
+        signal: new AbortController().signal,
+      })
+    )
+    assert.deepEqual(
+      await claudeProcessProbeFor(claudeProbeHome).probe(
+        new AbortController().signal
+      ),
+      { kind: "unavailable", reason: "failed" },
+      "A failed identity query must not report live or idle activity"
+    )
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH
+    else process.env.PATH = originalPath
+    if (originalGrokHome === undefined) delete process.env.GROK_HOME
+    else process.env.GROK_HOME = originalGrokHome
+  }
 } finally {
   await rm(claudeProbeHome, { recursive: true, force: true })
 }

@@ -1,10 +1,17 @@
 import assert from "node:assert/strict"
-import { createMakoBridge, type ThreadPage, type ThreadRef } from "../electron/shared.ts"
+import {
+  createMakoBridge,
+  type ThreadPage,
+  type ThreadRef,
+} from "../electron/shared.ts"
 import { threadViewingActions } from "../src/state/thread-viewing.ts"
 import { threadsStore } from "../src/state/thread-store.ts"
 import { draftText, rememberDraft } from "../src/state/drafts.ts"
 
-const pending = new Map<string, ReturnType<typeof Promise.withResolvers<ThreadPage | null>>>()
+const pending = new Map<
+  string,
+  ReturnType<typeof Promise.withResolvers<ThreadPage | null>>
+>()
 const follows: string[] = []
 const bridge = createMakoBridge({
   invoke: async (channel, ...args) => {
@@ -14,16 +21,19 @@ const bridge = createMakoBridge({
       pending.set(key, request)
       return request.promise
     }
-    if (channel === "mako:follow-thread") follows.push(String(args[0]))
+    if (channel === "mako:thread-follow") follows.push(String(args[0]))
     return null
   },
-  onEvent: () => () => {}, onTerminalEvent: () => () => {}, pathForFile: () => null,
+  onEvent: () => () => {},
+  onTerminalEvent: () => () => {},
+  pathForFile: () => null,
 })
 Object.assign(globalThis, { window: { mako: bridge } })
 const first: ThreadRef = { harness: "claude", nativeId: "one", path: "/one" }
 const second: ThreadRef = { harness: "grok", nativeId: "two", path: "/two" }
 const waitFor = async (path: string) => {
-  for (let i = 0; i < 30 && !pending.has(path); i++) await new Promise(resolve => setTimeout(resolve, 5))
+  for (let i = 0; i < 30 && !pending.has(path); i++)
+    await new Promise((resolve) => setTimeout(resolve, 5))
   assert.ok(pending.has(path), "Page read must start")
 }
 const firstRead = threadViewingActions.view(first)
@@ -33,15 +43,65 @@ assert.equal(threadsStore.get().composerHarness, "claude")
 rememberDraft(first.path, "Keep this paragraph while the thread loads")
 const secondRead = threadViewingActions.view(second)
 await waitFor(second.path)
-pending.get(first.path)?.resolve({ ref: first, entries: [], start: 0, total: 0, hasEarlier: false })
+pending
+  .get(first.path)
+  ?.resolve({ ref: first, entries: [], start: 0, total: 0, hasEarlier: false })
 await firstRead
-assert.equal(threadsStore.get().opening?.ref.path, second.path, "A late first response cannot replace the selected conversation")
-pending.get(second.path)?.reject(new Error("Native store is temporarily unavailable"))
+assert.equal(
+  threadsStore.get().opening?.ref.path,
+  second.path,
+  "A late first response cannot replace the selected conversation"
+)
+pending
+  .get(second.path)
+  ?.reject(new Error("Native store is temporarily unavailable"))
 await secondRead
-assert.deepEqual(threadsStore.get().opening, { kind: "failed", ref: second, error: "Native store is temporarily unavailable" })
+assert.deepEqual(threadsStore.get().opening, {
+  kind: "failed",
+  ref: second,
+  error: "Native store is temporarily unavailable",
+})
 assert.equal(threadsStore.get().composerHarness, "grok")
-assert.equal(draftText(first.path), "Keep this paragraph while the thread loads")
-assert.deepEqual(follows, [], "Neither a superseded nor a failed read starts following")
+assert.equal(
+  draftText(first.path),
+  "Keep this paragraph while the thread loads"
+)
+assert.deepEqual(
+  follows,
+  [],
+  "Neither a superseded nor a failed read starts following"
+)
+pending.delete(second.path)
+const retry = threadViewingActions.view(second)
+await waitFor(second.path)
+pending
+  .get(second.path)
+  ?.resolve({ ref: second, entries: [], start: 0, total: 0, hasEarlier: false })
+await retry
+assert.equal(threadsStore.get().opening, null)
+assert.equal(threadsStore.get().viewing?.ref.path, second.path)
+assert.deepEqual(
+  follows,
+  [second.path],
+  "A successful retry follows exactly the requested session"
+)
+pending.delete(second.path)
+await threadViewingActions.view(second)
+await waitFor(second.path)
+pending.get(second.path)?.resolve(null)
+await new Promise((resolve) => setTimeout(resolve, 0))
+assert.equal(
+  threadsStore.get().opening?.kind,
+  "failed",
+  "A missing cached session must settle out of loading"
+)
+assert.equal(
+  threadsStore.get().viewing?.ref.path,
+  second.path,
+  "Saved messages remain readable after refresh failure"
+)
 threadViewingActions.closeViewer()
 assert.equal(threadsStore.get().opening, null)
-console.log("Thread opening: exact draft/provider ownership, out-of-order results, readable failure state and explicit close verified")
+console.log(
+  "Thread opening: exact draft/provider ownership, out-of-order results, readable failure state and explicit close verified"
+)
