@@ -1,0 +1,81 @@
+
+> mako@0.0.1 test:mcp
+> tsx scripts/test-mcp.ts && tsx scripts/test-browser-tools.ts && tsx scripts/test-browser-runtime.ts && tsx scripts/test-mcp-entry.ts
+
+MCP tests passed
+Browser MCP: uncertain mutation executes once, no daemon reload or replay
+Browser runtime: separate control state, serialized execution, canceled queue entry never starts, private cleanup, no inherited remote configuration
+Managed MCP entry points initialize and advertise tools through symlinks
+
+
+
+> mako@0.0.1 lint
+> eslint . && npm run lint:anti-slop
+
+
+/Users/kashyab/pi-ui/src/components/rail/file-tree.tsx
+  56:23  warning  Compilation Skipped: Use of incompatible library
+
+This API returns functions which cannot be memoized without leading to stale UI. To prevent this, by default React Compiler will skip memoizing this component/hook. However, you may see issues if values from this API are passed to other components/hooks that are memoized.
+
+/Users/kashyab/pi-ui/src/components/rail/file-tree.tsx:56:23
+  54 |   }, [deferred, files, openDirs])
+  55 |
+> 56 |   const virtualizer = useVirtualizer({
+     |                       ^^^^^^^^^^^^^^ TanStack Virtual's `useVirtualizer()` API returns functions that cannot be memoized safely
+  57 |     count: rows.length,
+  58 |     getScrollElement: () => scroller.current,
+  59 |     estimateSize: () => ROW_HEIGHT,  react-hooks/incompatible-library
+
+/Users/kashyab/pi-ui/src/components/search/search-view.tsx
+  217:23  warning  Compilation Skipped: Use of incompatible library
+
+This API returns functions which cannot be memoized without leading to stale UI. To prevent this, by default React Compiler will skip memoizing this component/hook. However, you may see issues if values from this API are passed to other components/hooks that are memoized.
+
+/Users/kashyab/pi-ui/src/components/search/search-view.tsx:217:23
+  215 |   }, [results])
+  216 |
+> 217 |   const virtualizer = useVirtualizer({
+      |                       ^^^^^^^^^^^^^^ TanStack Virtual's `useVirtualizer()` API returns functions that cannot be memoized safely
+  218 |     count: rows.length,
+  219 |     getScrollElement: () => scroller.current,
+  220 |     estimateSize: (index) =>  react-hooks/incompatible-library
+
+✖ 2 problems (0 errors, 2 warnings)
+
+
+> mako@0.0.1 lint:anti-slop
+> oxlint --config oxlint.config.ts src electron packages/sessions/src packages/relay/src packages/relay/test packages/backend/app packages/backend/agent packages/backend/scripts packages/backend/src packages/backend/test scripts
+
+
+
+
+> mako@0.0.1 build:electron
+> tsc -p tsconfig.electron.json
+
+
+
+PASS: native screenshot, observed field entry, button action, independent renderer readback, stale-reference refusal
+Evidence: /var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-control-e2e-AuYYwK
+
+
+PASS: native screenshot, observed field entry, button action, independent renderer readback, stale-reference refusal
+Evidence: /var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-control-e2e-Za0yMK
+
+
+PASS: independent browser clients, native screenshot, exact form submission, restart refusal and scoped reconnect
+Evidence: /var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-browser-e2e-F0WkAx
+
+
+Testing installed codex through Mako
+{"provider":"codex","available":true,"status":"passed","nativeId":"01a07da7-e3d2-7c41-ace5-14f040fbf0a6","toolCalls":["/bin/zsh -lc 'cat proof.txt'"],"proof":"e5944b55-26c8-4a64-9aba-ba3e7f5cadcb"}
+{"flow":"model-browser-mcp","provider":"codex","status":"passed","nativeId":"01a07da8-0ac8-7651-a8da-7ced60e189cd","toolCalls":["mako-browser-use: mako_browser_exec","mako-browser-use: mako_browser_exec","mako-browser-use: mako_browser_screenshot","mako-browser-use: mako_browser_exec","mako-browser-use: mako_browser_exec","mako-browser-use: mako_browser_exec","mako-browser-use: mako_browser_exec","mako-browser-use: mako_browser_screenshot","mako-browser-use: mako_browser_exec"],"submission":{"path":"/codex","proof":"d2d7eb23-93db-4e62-87c8-4222ddbba579","red":"4","blue":"2","trusted":["blue","proof","red"],"clicked":true}}
+Evidence: /var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-provider-e2e-a1DyBO
+Evidence retained: /var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-provider-e2e-a1DyBO
+
+
+Testing installed claude through Mako
+{"provider":"claude","available":true,"status":"passed","nativeId":"4dac77f5-0eb2-48f2-91b3-c35eb7bc0700","toolCalls":["Read File"],"proof":"8ceae8f2-8234-462a-beae-cc4e0f40e135"}
+{"flow":"model-browser-mcp","provider":"claude","status":"passed","nativeId":"b96cb498-ad85-4922-b115-06ea8a8e83de","toolCalls":["ToolSearch","mcp__mako-browser-use__mako_browser_exec","mcp__mako-browser-use__mako_browser_exec","mcp__mako-browser-use__mako_browser_exec","mcp__mako-browser-use__mako_browser_exec","mcp__mako-browser-use__mako_browser_screenshot","mcp__mako-browser-use__mako_browser_exec","mcp__mako-browser-use__mako_browser_exec","mcp__mako-browser-use__mako_browser_exec","mcp__mako-browser-use__mako_browser_exec","mcp__mako-browser-use__mako_browser_screenshot","mcp__mako-browser-use__mako_browser_exec"],"submission":{"path":"/claude","proof":"2916eeef-4d40-46a6-ad7a-9e3b361d457a","red":"4","blue":"2","trusted":["blue","proof","red"],"clicked":true}}
+Evidence: /var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-provider-e2e-Ul0tRS
+Evidence retained: /var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-provider-e2e-Ul0tRS

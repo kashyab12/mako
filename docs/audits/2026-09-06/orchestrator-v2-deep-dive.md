@@ -1,5 +1,7 @@
 # Orchestrator v2: corrected assessment
 
+Follow-up: [Mako versus T3 transfer comparison](mako-versus-t3-transfers.md) traces our existing native conversion, portable bundles, persisted lineage and fork paths, with three executable failure probes. It refines this report's Mako comparison and recommends a hybrid.
+
 Reviewed T3 Code PR #2829 at `415ed0f73b97f1655b6282492f81d0b2bba3a9cc`, confirmed against its remote head on this follow-up. The earlier repairs report described the reliability subset we adopted. That was an incomplete account of v2. Its larger contribution is an app-owned execution and conversation model spanning provider-native sessions, delegation, branches, context transfer, and recovery.
 
 This is source and test inspection, not a successful upstream test run. The PR remains open, and its author notes outstanding all-provider replay/schema alignment work. Some TODO checkboxes and design passages lag the implementation. Conversely, code existing is not proof of production readiness.

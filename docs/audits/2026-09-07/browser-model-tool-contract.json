@@ -1,0 +1,339 @@
+{
+  "browser": {
+    "instructions": null,
+    "tools": [
+      {
+        "name": "mako_browser_doctor",
+        "description": "Diagnose Mako's local Browser Use connection to Chrome. Local only; no hosted or cloud browsers.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "mako_browser_reconnect",
+        "description": "Reset this connection's browser binding after a daemon restart. The next execution starts on a fresh blank tab; existing tabs remain open.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "mako_browser_screenshot",
+        "description": "Capture the current exact tab in this connection and return its PNG image to the model. A new connection starts on a fresh blank tab.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "mako_browser_exec",
+        "description": "Run bounded Python in this connection's own Browser Use control session attached to local Chrome. A new connection starts on a fresh blank tab. Select any existing tab explicitly after inspecting its identity. Helpers such as ensure_real_tab, page_info, new_tab, cdp, js, click_at_xy, and wait_for_load are preloaded. Local only; never starts or offers a hosted browser.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100000
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "idempotentHint": false,
+          "openWorldHint": true
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ]
+  },
+  "macosHarness": {
+    "instructions": null,
+    "tools": [
+      {
+        "name": "mako_macos_apps",
+        "description": "List running macOS applications visible to macOS Harness.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "mako_macos_state",
+        "description": "Read compact state for an already-running application.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "app": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "app"
+          ],
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "mako_macos_see",
+        "description": "Capture an already-running application without activating it.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "app": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "app"
+          ],
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "mako_macos_click",
+        "description": "Send one coordinate click to an already-running application.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "app": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "app",
+            "x",
+            "y"
+          ],
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "idempotentHint": false,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "mako_macos_key",
+        "description": "Send a bounded key chord to an already-running application.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "app": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "keys": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "app",
+            "keys"
+          ],
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "idempotentHint": false,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "mako_macos_type",
+        "description": "Type text into an already-running application.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "app": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 100000
+            }
+          },
+          "required": [
+            "app",
+            "text"
+          ],
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "idempotentHint": false,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "mako_macos_script",
+        "description": "Run bounded AppleScript or JXA locally through macOS Harness.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100000
+            },
+            "language": {
+              "default": "AppleScript",
+              "type": "string",
+              "enum": [
+                "AppleScript",
+                "JavaScript"
+              ]
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "idempotentHint": false,
+          "openWorldHint": true
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "mako_macos_exec",
+        "description": "Run one bounded macOS Harness Python program for a desktop-app decision. The program may use preloaded mac, Path, and subprocess. Bundle reversible actions, then print one verification result.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100000
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "idempotentHint": false,
+          "openWorldHint": true
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ]
+  }
+}

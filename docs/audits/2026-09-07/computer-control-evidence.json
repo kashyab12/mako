@@ -1,0 +1,539 @@
+{
+  "correction": "The initial desktop test mistakenly selected the AXStaticText label with a broad regex. Its failure and the resulting Codex-advantage claim were invalid. The exact AXTextField selector passes.",
+  "mako_desktop": {
+    "root": "/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-control-e2e-AuYYwK",
+    "host": "Node launched by Codex; signed Mako release not certified",
+    "outcome": {
+      "status": "passed"
+    },
+    "proof": "72c76570-e55e-493c-b970-f1f2830ec0bd",
+    "events": [
+      {
+        "name": "check_permissions",
+        "arguments": {
+          "prompt": false
+        },
+        "milliseconds": 31,
+        "isError": false
+      },
+      {
+        "name": "start_session",
+        "arguments": {
+          "session": "mako-fixture-d4663fef-ae1f-4c29-9c17-35b0c023a0ec",
+          "capture_scope": "window"
+        },
+        "milliseconds": 1,
+        "isError": false
+      },
+      {
+        "name": "list_windows",
+        "arguments": {
+          "pid": 31022
+        },
+        "milliseconds": 55,
+        "isError": false
+      },
+      {
+        "name": "get_window_state",
+        "arguments": {
+          "pid": 31022,
+          "window_id": 30527,
+          "session": "mako-fixture-d4663fef-ae1f-4c29-9c17-35b0c023a0ec"
+        },
+        "milliseconds": 901,
+        "isError": false,
+        "image_block": true,
+        "snapshot": {
+          "snapshot_id": "s00000001",
+          "screenshot_frame_valid": true,
+          "screenshot_width": 1300,
+          "screenshot_height": 840
+        }
+      },
+      {
+        "name": "click",
+        "arguments": {
+          "pid": 31022,
+          "window_id": 30527,
+          "session": "mako-fixture-d4663fef-ae1f-4c29-9c17-35b0c023a0ec",
+          "element_token": "s00000001:5"
+        },
+        "milliseconds": 3370,
+        "isError": false,
+        "response": {
+          "delivery": {
+            "mode": "background"
+          },
+          "effect": "unverifiable",
+          "route": "accessibility"
+        }
+      },
+      {
+        "name": "type_text",
+        "arguments": {
+          "pid": 31022,
+          "window_id": 30527,
+          "session": "mako-fixture-d4663fef-ae1f-4c29-9c17-35b0c023a0ec",
+          "element_token": "s00000001:5",
+          "text": "72c76570-e55e-493c-b970-f1f2830ec0bd"
+        },
+        "milliseconds": 1745,
+        "isError": false,
+        "response": {
+          "delivery": {
+            "delivered_count": 36,
+            "mode": "background"
+          },
+          "effect": "unverifiable",
+          "escalation": {
+            "reason": "effect_unconfirmed",
+            "target": "pixel"
+          },
+          "route": "synthetic_events"
+        }
+      },
+      {
+        "name": "get_window_state",
+        "arguments": {
+          "pid": 31022,
+          "window_id": 30527,
+          "session": "mako-fixture-d4663fef-ae1f-4c29-9c17-35b0c023a0ec",
+          "include_screenshot": false
+        },
+        "milliseconds": 120,
+        "isError": false,
+        "image_block": false,
+        "snapshot": {
+          "snapshot_id": "s00000002"
+        }
+      },
+      {
+        "name": "click",
+        "arguments": {
+          "pid": 31022,
+          "window_id": 30527,
+          "session": "mako-fixture-d4663fef-ae1f-4c29-9c17-35b0c023a0ec",
+          "element_token": "s00000002:6"
+        },
+        "milliseconds": 2345,
+        "isError": false,
+        "response": {
+          "delivery": {
+            "mode": "background"
+          },
+          "effect": "unverifiable",
+          "route": "accessibility"
+        }
+      },
+      {
+        "name": "click",
+        "arguments": {
+          "pid": 31022,
+          "window_id": 30527,
+          "session": "mako-fixture-d4663fef-ae1f-4c29-9c17-35b0c023a0ec",
+          "element_token": "s00000001:5"
+        },
+        "milliseconds": 1,
+        "isError": true,
+        "response": {
+          "refusal": {
+            "code": "stale_element_token",
+            "message": "element_token is stale; call get_window_state again to refresh"
+          },
+          "status": "refused"
+        }
+      },
+      {
+        "name": "end_session",
+        "arguments": {
+          "session": "mako-fixture-d4663fef-ae1f-4c29-9c17-35b0c023a0ec"
+        },
+        "milliseconds": 2,
+        "isError": false
+      }
+    ]
+  },
+  "mako_desktop_fill": {
+    "root": "/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-control-e2e-Za0yMK",
+    "host": "Node launched by Codex; signed Mako release not certified",
+    "outcome": {
+      "status": "passed"
+    },
+    "proof": "1fd246fe-7806-4ba8-9525-7d23a2ed0d6e",
+    "events": [
+      {
+        "name": "check_permissions",
+        "arguments": {
+          "prompt": false
+        },
+        "milliseconds": 85,
+        "isError": false
+      },
+      {
+        "name": "start_session",
+        "arguments": {
+          "session": "mako-fixture-f2d8eda2-d0e9-4859-afdc-10144df30d4b",
+          "capture_scope": "window"
+        },
+        "milliseconds": 3,
+        "isError": false
+      },
+      {
+        "name": "list_windows",
+        "arguments": {
+          "pid": 45994
+        },
+        "milliseconds": 76,
+        "isError": false
+      },
+      {
+        "name": "get_window_state",
+        "arguments": {
+          "pid": 45994,
+          "window_id": 30865,
+          "session": "mako-fixture-f2d8eda2-d0e9-4859-afdc-10144df30d4b"
+        },
+        "milliseconds": 1733,
+        "isError": false,
+        "image_block": true,
+        "snapshot": {
+          "snapshot_id": "s00000001",
+          "screenshot_frame_valid": true,
+          "screenshot_width": 1300,
+          "screenshot_height": 840
+        }
+      },
+      {
+        "name": "set_value",
+        "arguments": {
+          "pid": 45994,
+          "window_id": 30865,
+          "session": "mako-fixture-f2d8eda2-d0e9-4859-afdc-10144df30d4b",
+          "element_token": "s00000001:5",
+          "value": "1fd246fe-7806-4ba8-9525-7d23a2ed0d6e"
+        },
+        "milliseconds": 2728,
+        "isError": false,
+        "response": {
+          "delivery": {
+            "mode": "background"
+          },
+          "effect": "unverifiable",
+          "escalation": {
+            "reason": "effect_unconfirmed",
+            "target": "pixel"
+          },
+          "route": "accessibility"
+        }
+      },
+      {
+        "name": "get_window_state",
+        "arguments": {
+          "pid": 45994,
+          "window_id": 30865,
+          "session": "mako-fixture-f2d8eda2-d0e9-4859-afdc-10144df30d4b",
+          "include_screenshot": false
+        },
+        "milliseconds": 300,
+        "isError": false,
+        "image_block": false,
+        "snapshot": {
+          "snapshot_id": "s00000002"
+        }
+      },
+      {
+        "name": "click",
+        "arguments": {
+          "pid": 45994,
+          "window_id": 30865,
+          "session": "mako-fixture-f2d8eda2-d0e9-4859-afdc-10144df30d4b",
+          "element_token": "s00000002:6"
+        },
+        "milliseconds": 2427,
+        "isError": false,
+        "response": {
+          "delivery": {
+            "mode": "background"
+          },
+          "effect": "unverifiable",
+          "route": "accessibility"
+        }
+      },
+      {
+        "name": "click",
+        "arguments": {
+          "pid": 45994,
+          "window_id": 30865,
+          "session": "mako-fixture-f2d8eda2-d0e9-4859-afdc-10144df30d4b",
+          "element_token": "s00000001:5"
+        },
+        "milliseconds": 2,
+        "isError": true,
+        "response": {
+          "refusal": {
+            "code": "stale_element_token",
+            "message": "element_token is stale; call get_window_state again to refresh"
+          },
+          "status": "refused"
+        }
+      },
+      {
+        "name": "end_session",
+        "arguments": {
+          "session": "mako-fixture-f2d8eda2-d0e9-4859-afdc-10144df30d4b"
+        },
+        "milliseconds": 3,
+        "isError": false
+      }
+    ]
+  },
+  "browser_before_isolation_fix": {
+    "root": "/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-browser-e2e-nOi3pf",
+    "outcome": {
+      "status": "failed",
+      "error": "Client B must not change client A's implicit browser target"
+    },
+    "events": [
+      {
+        "source": "tab = new_tab()\ngoto_url(\"http://127.0.0.1:52715/a\")\nprint('MAKO_TAB='+tab)",
+        "milliseconds": 356,
+        "isError": false,
+        "text": "MAKO_TAB=54967936C8BFF18806C6E15F62E0539B"
+      },
+      {
+        "source": "tab = new_tab()\ngoto_url(\"http://127.0.0.1:52715/b\")\nprint('MAKO_TAB='+tab)",
+        "milliseconds": 330,
+        "isError": false,
+        "text": "MAKO_TAB=7007F160B4BC9C47E9C551E6656741B5"
+      },
+      {
+        "source": "print(js('document.title'))",
+        "milliseconds": 167,
+        "isError": false,
+        "text": "\ud83d\udc34 Mako browser fixture B"
+      },
+      {
+        "source": "close_tab(\"54967936C8BFF18806C6E15F62E0539B\")",
+        "milliseconds": 162,
+        "isError": false,
+        "text": "Completed"
+      },
+      {
+        "source": "close_tab(\"7007F160B4BC9C47E9C551E6656741B5\")",
+        "milliseconds": 184,
+        "isError": false,
+        "text": "Completed"
+      }
+    ],
+    "submissions": []
+  },
+  "browser_after_fix": {
+    "root": "/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-browser-e2e-F0WkAx",
+    "outcome": {
+      "status": "passed"
+    },
+    "events": [
+      {
+        "source": "tab = new_tab(\"http://127.0.0.1:53102/a\")\nprint('MAKO_TAB='+tab)",
+        "milliseconds": 4059,
+        "isError": false,
+        "text": "MAKO_TAB=B448E3D800FE2C4DDDC42480A1E54370\n\n[browser-harness] update available: 0.1.8 -> 0.1.13\n[browser-harness] agents: run `browser-harness --update -y` to upgrade and restart the daemon\nbrowser-harness: Chrome is asking \"Allow remote debugging?\" \u2014 click Allow to continue."
+      },
+      {
+        "source": "tab = new_tab(\"http://127.0.0.1:53102/b\")\nprint('MAKO_TAB='+tab)",
+        "milliseconds": 2364,
+        "isError": false,
+        "text": "MAKO_TAB=51B10A3266236DDBDB6C6506F8B14E30\n\n[browser-harness] update available: 0.1.8 -> 0.1.13\n[browser-harness] agents: run `browser-harness --update -y` to upgrade and restart the daemon"
+      },
+      {
+        "source": "print(js('document.title'))",
+        "milliseconds": 410,
+        "isError": false,
+        "text": "\ud83d\udc34 Mako browser fixture A"
+      },
+      {
+        "name": "mako_browser_screenshot",
+        "isError": false,
+        "width": 2276,
+        "height": 1334
+      },
+      {
+        "source": "import json\nr=js(\"(()=>{const r=document.querySelector('#proof').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()\")\nclick_at_xy(r['x'],r['y'])\ntype_text(\"2455783a-39a3-4e16-8ce1-b6e49c2c2f24\")\nr=js(\"(()=>{const r=document.querySelector('#verify').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()\")\nclick_at_xy(r['x'],r['y'])\nprint(js(\"document.querySelector('#result').textContent\"))",
+        "milliseconds": 238,
+        "isError": false,
+        "text": "Completed"
+      },
+      {
+        "source": "import os, signal\nprint('Stopping owned daemon')\nos.kill(_mako_daemon['pid'],signal.SIGTERM)",
+        "milliseconds": 229,
+        "isError": false,
+        "text": "Stopping owned daemon"
+      },
+      {
+        "name": "restart refusal",
+        "isError": true,
+        "text": "Traceback (most recent call last):\n  File \"/Users/kashyab/.local/bin/browser-use\", line 10, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"/Users/kashyab/.local/share/uv/tools/browser-use/lib/python3.12/site-packages/browser_use/cli.py\", line 433, in main\n    result, command = _dispatch(args)\n                      ^^^^^^^^^^^^^^^\n  File \"/Users/kashyab/.local/share/uv/tools/browser-use/lib/python3.12/site-packages/browser_use/cli.py\", line 391, in _dispatch\n    return _run_browser_harness(), args[0] if args else 'run'\n           ^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kashyab/.local/share/uv/tools/browser-use/lib/python3.12/site-packages/browser_use/cli.py\", line 201, in _run_browser_harness\n    run.main()\n  File \"/Users/kashyab/.local/share/uv/tools/browser-use/lib/python3.12/site-packages/browser_harness/run.py\", line 247, in main\n    _run(args)\n  File \"/Users/kashyab/.local/share/uv/tools/browser-use/lib/python3.12/site-packages/browser_harness/run.py\", line 387, in _run\n    exec(code, globals())\n  File \"<string>\", line 13, in <module>\nRuntimeError: Browser connection restarted; call mako_browser_reconnect before continuing. No action was replayed."
+      },
+      {
+        "source": "print(js('document.title'))",
+        "milliseconds": 234,
+        "isError": false,
+        "text": "\ud83d\udc34 Mako browser fixture B"
+      },
+      {
+        "source": "print('MAKO_BLANK='+current_tab()['targetId'])\nprint(js('location.href'))",
+        "milliseconds": 509,
+        "isError": false,
+        "text": "MAKO_BLANK=A1D3C45CEBCA875627CFA95ACA98D093\nabout:blank"
+      },
+      {
+        "source": "close_tab(\"A1D3C45CEBCA875627CFA95ACA98D093\")",
+        "milliseconds": 565,
+        "isError": false,
+        "text": "Completed"
+      },
+      {
+        "source": "close_tab(\"B448E3D800FE2C4DDDC42480A1E54370\")",
+        "milliseconds": 357,
+        "isError": false,
+        "text": "Completed"
+      },
+      {
+        "source": "close_tab(\"51B10A3266236DDBDB6C6506F8B14E30\")",
+        "milliseconds": 266,
+        "isError": false,
+        "text": "Completed"
+      }
+    ],
+    "submissions": [
+      {
+        "url": "/a",
+        "body": "2455783a-39a3-4e16-8ce1-b6e49c2c2f24"
+      }
+    ]
+  },
+  "paid_browser_runs": [
+    {
+      "root": "/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-provider-e2e-a1DyBO",
+      "proof": "d2d7eb23-93db-4e62-87c8-4222ddbba579",
+      "submissions": [
+        {
+          "path": "/codex",
+          "proof": "d2d7eb23-93db-4e62-87c8-4222ddbba579",
+          "red": "4",
+          "blue": "2",
+          "trusted": [
+            "blue",
+            "proof",
+            "red"
+          ],
+          "clicked": true
+        }
+      ],
+      "results": [
+        {
+          "flow": "model-browser-mcp",
+          "provider": "codex",
+          "status": "passed",
+          "nativeId": "01a07da8-0ac8-7651-a8da-7ced60e189cd",
+          "toolCalls": [
+            "mako-browser-use: mako_browser_exec",
+            "mako-browser-use: mako_browser_exec",
+            "mako-browser-use: mako_browser_screenshot",
+            "mako-browser-use: mako_browser_exec",
+            "mako-browser-use: mako_browser_exec",
+            "mako-browser-use: mako_browser_exec",
+            "mako-browser-use: mako_browser_exec",
+            "mako-browser-use: mako_browser_screenshot",
+            "mako-browser-use: mako_browser_exec"
+          ],
+          "submission": {
+            "path": "/codex",
+            "proof": "d2d7eb23-93db-4e62-87c8-4222ddbba579",
+            "red": "4",
+            "blue": "2",
+            "trusted": [
+              "blue",
+              "proof",
+              "red"
+            ],
+            "clicked": true
+          }
+        }
+      ]
+    },
+    {
+      "root": "/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-provider-e2e-Ul0tRS",
+      "proof": "2916eeef-4d40-46a6-ad7a-9e3b361d457a",
+      "submissions": [
+        {
+          "path": "/claude",
+          "proof": "2916eeef-4d40-46a6-ad7a-9e3b361d457a",
+          "red": "4",
+          "blue": "2",
+          "trusted": [
+            "blue",
+            "proof",
+            "red"
+          ],
+          "clicked": true
+        }
+      ],
+      "results": [
+        {
+          "flow": "model-browser-mcp",
+          "provider": "claude",
+          "status": "passed",
+          "nativeId": "b96cb498-ad85-4922-b115-06ea8a8e83de",
+          "toolCalls": [
+            "ToolSearch",
+            "mcp__mako-browser-use__mako_browser_exec",
+            "mcp__mako-browser-use__mako_browser_exec",
+            "mcp__mako-browser-use__mako_browser_exec",
+            "mcp__mako-browser-use__mako_browser_exec",
+            "mcp__mako-browser-use__mako_browser_screenshot",
+            "mcp__mako-browser-use__mako_browser_exec",
+            "mcp__mako-browser-use__mako_browser_exec",
+            "mcp__mako-browser-use__mako_browser_exec",
+            "mcp__mako-browser-use__mako_browser_exec",
+            "mcp__mako-browser-use__mako_browser_screenshot",
+            "mcp__mako-browser-use__mako_browser_exec"
+          ],
+          "submission": {
+            "path": "/claude",
+            "proof": "2916eeef-4d40-46a6-ad7a-9e3b361d457a",
+            "red": "4",
+            "blue": "2",
+            "trusted": [
+              "blue",
+              "proof",
+              "red"
+            ],
+            "clicked": true
+          }
+        }
+      ]
+    }
+  ],
+  "codex_native_form_baseline": {
+    "result": "passed",
+    "fixture": "mako-control-e2e-mSYdeB",
+    "input": "codex-control-fixture-7491",
+    "independent_renderer_value": "codex-control-fixture-7491",
+    "limitation": "Functional smoke check; not a comparative latency or reliability benchmark"
+  },
+  "versions": {
+    "cua_driver": "0.19.3",
+    "browser_use": "0.1.8"
+  },
+  "browser_replay_regression": {
+    "process_invocations_before": 3,
+    "process_invocations_after": 1
+  },
+  "t3": {
+    "pr": 2829,
+    "state": "open",
+    "revision": "415ed0f73b97f1655b6282492f81d0b2bba3a9cc",
+    "upstream_tests_executed": false
+  }
+}

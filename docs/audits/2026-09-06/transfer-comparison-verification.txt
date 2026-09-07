@@ -1,0 +1,4 @@
+REPRODUCED: destination B takes transfer A lineage when native files arrive out of order.
+REPRODUCED: busy native reply accepts a structured attachment but queues only text. Textual file references may still survive.
+REPRODUCED: destination rejection happens after source close/removal, with no restoration in this path. Saved history is not deleted.
+3 current-behavior probes passed. No provider processes, native stores, or user files were changed.
