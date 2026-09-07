@@ -1,339 +1,793 @@
 {
-  "browser": {
-    "instructions": null,
-    "tools": [
-      {
-        "name": "mako_browser_doctor",
-        "description": "Diagnose Mako's local Browser Use connection to Chrome. Local only; no hosted or cloud browsers.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {},
-          "$schema": "http://json-schema.org/draft-07/schema#",
-          "additionalProperties": false
-        },
-        "annotations": {
-          "readOnlyHint": true,
-          "destructiveHint": false,
-          "idempotentHint": true,
-          "openWorldHint": false
-        },
-        "execution": {
-          "taskSupport": "forbidden"
-        }
+  "capturedAt": "2026-09-07T23:40:04.993Z",
+  "implementation": "host-owned CDP v2",
+  "instructions": "Mako browser control uses one host-owned Chrome connection across tasks. Start with mako_browser_status, connect the chosen browser if needed, then open a tab or inspect tabs and select an exact ID. Keep the returned {browser,tab,generation,lease} handle. Every later operation uses that handle; there is no implicit active tab. Switching providers in the same Mako task retains host bindings; rediscover handles if script state is gone. Page bindings enable focus emulation so hidden tabs receive real input without activating the physical tab; release disables it. Explicit CDP can change that emulation when testing focus-dependent behavior.\n\nUse observe for accessible UI and fresh element refs; use screenshot for visual content and coordinate grounding. Cross-check UI changes after actions. A new observation invalidates earlier refs, and navigation invalidates them too. Never guess refs, tab IDs or coordinates. A target-closed or stale-target error requires explicit rediscovery, never choosing the first available tab. A cancelled/timed-out action may have completed; observe before deciding what to do next. The host refuses further mutations on an uncertain binding until it is observed.\n\nFor flexible workflows use mako_browser_exec with asynchronous JavaScript. browser.<action>({arguments}) has the same arguments as the matching MCP tool, excluding action. Await every call. state is a persistent object local to this MCP client. console.log emits text; emitImage(await browser.screenshot({target: state.tab})) emits a real image. Example: state.tab = await browser.open({browser:'chrome',url:'http://127.0.0.1:5173'}); console.log(await browser.observe({target:state.tab})); emitImage(await browser.screenshot({target:state.tab}));\n\nScripts run in a terminable local worker with a 60-second limit. They are trusted local JavaScript, not an OS sandbox. Return small results. Worker state resets after timeout/error; host tab bindings and the shared connection remain. Use mako_browser_help for protocol command schemas. CDP enables advanced network inspection, page evaluation, input, emulation, JavaScript dialogs, frame inspection and download configuration without requiring another browser runtime. Use explicit target lifecycle tools instead of raw Target mutations. For request interception or dialogs, enable the relevant domain first, read events, and use cdp with concurrent:true to unblock the pending operation; otherwise calls on one target are serialized.\n\nFor native windows, OS dialogs or content outside a browser page, use Mako computer tools. Browser connection approval is separate from macOS Accessibility/Screen Recording and provider tool approval. Local browser control never automatically switches to a hosted browser.",
+  "tools": [
+    {
+      "name": "mako_browser_status",
+      "description": "Read browser connection state without connecting, prompting, or opening tabs. Browser IDs here identify the exact local browser installation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
       },
-      {
-        "name": "mako_browser_reconnect",
-        "description": "Reset this connection's browser binding after a daemon restart. The next execution starts on a fresh blank tab; existing tabs remain open.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {},
-          "$schema": "http://json-schema.org/draft-07/schema#",
-          "additionalProperties": false
-        },
-        "annotations": {
-          "readOnlyHint": false,
-          "destructiveHint": false,
-          "idempotentHint": true,
-          "openWorldHint": false
-        },
-        "execution": {
-          "taskSupport": "forbidden"
-        }
-      },
-      {
-        "name": "mako_browser_screenshot",
-        "description": "Capture the current exact tab in this connection and return its PNG image to the model. A new connection starts on a fresh blank tab.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {},
-          "$schema": "http://json-schema.org/draft-07/schema#",
-          "additionalProperties": false
-        },
-        "annotations": {
-          "readOnlyHint": false,
-          "destructiveHint": false,
-          "idempotentHint": true,
-          "openWorldHint": false
-        },
-        "execution": {
-          "taskSupport": "forbidden"
-        }
-      },
-      {
-        "name": "mako_browser_exec",
-        "description": "Run bounded Python in this connection's own Browser Use control session attached to local Chrome. A new connection starts on a fresh blank tab. Select any existing tab explicitly after inspecting its identity. Helpers such as ensure_real_tab, page_info, new_tab, cdp, js, click_at_xy, and wait_for_load are preloaded. Local only; never starts or offers a hosted browser.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "source": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 100000
-            }
-          },
-          "required": [
-            "source"
-          ],
-          "$schema": "http://json-schema.org/draft-07/schema#",
-          "additionalProperties": false
-        },
-        "annotations": {
-          "readOnlyHint": false,
-          "destructiveHint": true,
-          "idempotentHint": false,
-          "openWorldHint": true
-        },
-        "execution": {
-          "taskSupport": "forbidden"
-        }
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
       }
-    ]
-  },
-  "macosHarness": {
-    "instructions": null,
-    "tools": [
-      {
-        "name": "mako_macos_apps",
-        "description": "List running macOS applications visible to macOS Harness.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {},
-          "$schema": "http://json-schema.org/draft-07/schema#",
-          "additionalProperties": false
+    },
+    {
+      "name": "mako_browser_connect",
+      "description": "Connect the selected browser once for this Mako host session. Chrome may ask for approval. Concurrent tasks join the same pending connection. Closing an MCP client does not disconnect Chrome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "browser": {
+            "type": "string"
+          }
         },
-        "annotations": {
-          "readOnlyHint": true,
-          "destructiveHint": false,
-          "idempotentHint": true,
-          "openWorldHint": false
-        },
-        "execution": {
-          "taskSupport": "forbidden"
-        }
+        "required": [
+          "browser"
+        ],
+        "additionalProperties": false
       },
-      {
-        "name": "mako_macos_state",
-        "description": "Read compact state for an already-running application.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "app": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256
-            }
-          },
-          "required": [
-            "app"
-          ],
-          "$schema": "http://json-schema.org/draft-07/schema#",
-          "additionalProperties": false
-        },
-        "annotations": {
-          "readOnlyHint": true,
-          "destructiveHint": false,
-          "idempotentHint": true,
-          "openWorldHint": false
-        },
-        "execution": {
-          "taskSupport": "forbidden"
-        }
-      },
-      {
-        "name": "mako_macos_see",
-        "description": "Capture an already-running application without activating it.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "app": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256
-            }
-          },
-          "required": [
-            "app"
-          ],
-          "$schema": "http://json-schema.org/draft-07/schema#",
-          "additionalProperties": false
-        },
-        "annotations": {
-          "readOnlyHint": true,
-          "destructiveHint": false,
-          "idempotentHint": true,
-          "openWorldHint": false
-        },
-        "execution": {
-          "taskSupport": "forbidden"
-        }
-      },
-      {
-        "name": "mako_macos_click",
-        "description": "Send one coordinate click to an already-running application.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "app": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256
-            },
-            "x": {
-              "type": "number"
-            },
-            "y": {
-              "type": "number"
-            }
-          },
-          "required": [
-            "app",
-            "x",
-            "y"
-          ],
-          "$schema": "http://json-schema.org/draft-07/schema#",
-          "additionalProperties": false
-        },
-        "annotations": {
-          "readOnlyHint": false,
-          "destructiveHint": true,
-          "idempotentHint": false,
-          "openWorldHint": false
-        },
-        "execution": {
-          "taskSupport": "forbidden"
-        }
-      },
-      {
-        "name": "mako_macos_key",
-        "description": "Send a bounded key chord to an already-running application.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "app": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256
-            },
-            "keys": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256
-            }
-          },
-          "required": [
-            "app",
-            "keys"
-          ],
-          "$schema": "http://json-schema.org/draft-07/schema#",
-          "additionalProperties": false
-        },
-        "annotations": {
-          "readOnlyHint": false,
-          "destructiveHint": true,
-          "idempotentHint": false,
-          "openWorldHint": false
-        },
-        "execution": {
-          "taskSupport": "forbidden"
-        }
-      },
-      {
-        "name": "mako_macos_type",
-        "description": "Type text into an already-running application.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "app": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256
-            },
-            "text": {
-              "type": "string",
-              "maxLength": 100000
-            }
-          },
-          "required": [
-            "app",
-            "text"
-          ],
-          "$schema": "http://json-schema.org/draft-07/schema#",
-          "additionalProperties": false
-        },
-        "annotations": {
-          "readOnlyHint": false,
-          "destructiveHint": true,
-          "idempotentHint": false,
-          "openWorldHint": false
-        },
-        "execution": {
-          "taskSupport": "forbidden"
-        }
-      },
-      {
-        "name": "mako_macos_script",
-        "description": "Run bounded AppleScript or JXA locally through macOS Harness.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "source": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 100000
-            },
-            "language": {
-              "default": "AppleScript",
-              "type": "string",
-              "enum": [
-                "AppleScript",
-                "JavaScript"
-              ]
-            }
-          },
-          "required": [
-            "source"
-          ],
-          "$schema": "http://json-schema.org/draft-07/schema#",
-          "additionalProperties": false
-        },
-        "annotations": {
-          "readOnlyHint": false,
-          "destructiveHint": true,
-          "idempotentHint": false,
-          "openWorldHint": true
-        },
-        "execution": {
-          "taskSupport": "forbidden"
-        }
-      },
-      {
-        "name": "mako_macos_exec",
-        "description": "Run one bounded macOS Harness Python program for a desktop-app decision. The program may use preloaded mac, Path, and subprocess. Bundle reversible actions, then print one verification result.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "source": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 100000
-            }
-          },
-          "required": [
-            "source"
-          ],
-          "$schema": "http://json-schema.org/draft-07/schema#",
-          "additionalProperties": false
-        },
-        "annotations": {
-          "readOnlyHint": false,
-          "destructiveHint": true,
-          "idempotentHint": false,
-          "openWorldHint": true
-        },
-        "execution": {
-          "taskSupport": "forbidden"
-        }
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
       }
-    ]
-  }
+    },
+    {
+      "name": "mako_browser_tabs",
+      "description": "List existing page, iframe and worker targets in a connected browser, with identity, URL, title and whether a task has claimed them. Does not select or activate a tab.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "browser": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "browser"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "mako_browser_open",
+      "description": "Create and claim a new tab in a connected browser. Background by default. Returns the exact target handle for all later calls.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "browser": {
+            "type": "string"
+          },
+          "url": {
+            "default": "about:blank",
+            "type": "string"
+          },
+          "background": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "browser",
+          "url",
+          "background"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "mako_browser_select",
+      "description": "Claim the exact tab ID you inspected in tabs. Explicit takeover can transfer an idle tab from another task. Never selects a substitute or activates the tab.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "browser": {
+            "type": "string"
+          },
+          "tab": {
+            "type": "string"
+          },
+          "takeover": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "browser",
+          "tab",
+          "takeover"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "mako_browser_release",
+      "description": "Release this task's exact tab binding. Leaves the tab and the shared Chrome connection open.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "properties": {
+              "browser": {
+                "type": "string"
+              },
+              "tab": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "string"
+              },
+              "lease": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "browser",
+              "tab",
+              "generation",
+              "lease"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "mako_browser_observe",
+      "description": "Read the exact tab's title, URL and bounded accessibility nodes. Fresh opaque refs can be used for clicking, typing or uploads. Observation replaces earlier refs for this tab.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "properties": {
+              "browser": {
+                "type": "string"
+              },
+              "tab": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "string"
+              },
+              "lease": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "browser",
+              "tab",
+              "generation",
+              "lease"
+            ],
+            "additionalProperties": false
+          },
+          "maxNodes": {
+            "default": 250,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "target",
+          "maxNodes"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "mako_browser_screenshot",
+      "description": "Return an actual image plus its exact target identity. JPEG is the compact default; PNG and full-page capture are available. Does not change the selected target or reconnect.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "properties": {
+              "browser": {
+                "type": "string"
+              },
+              "tab": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "string"
+              },
+              "lease": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "browser",
+              "tab",
+              "generation",
+              "lease"
+            ],
+            "additionalProperties": false
+          },
+          "format": {
+            "default": "jpeg",
+            "type": "string",
+            "enum": [
+              "png",
+              "jpeg"
+            ]
+          },
+          "quality": {
+            "default": 80,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "fullPage": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "target",
+          "format",
+          "quality",
+          "fullPage"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "mako_browser_evaluate",
+      "description": "Evaluate JavaScript in the exact tab and return the CDP result by value. Supports async expressions. May modify page state; use observations to read ordinary UI.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "properties": {
+              "browser": {
+                "type": "string"
+              },
+              "tab": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "string"
+              },
+              "lease": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "browser",
+              "tab",
+              "generation",
+              "lease"
+            ],
+            "additionalProperties": false
+          },
+          "expression": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100000
+          }
+        },
+        "required": [
+          "target",
+          "expression"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "mako_browser_cdp",
+      "description": "Send a Chrome DevTools Protocol command to this exact target. Supports DOM, Runtime, Input, Network, Emulation, Page dialogs, downloads and other protocol domains. Browser/SystemInfo commands act on the browser. Target lifecycle uses open/select/release/close so ownership remains explicit. Use concurrent:true to answer a paused Fetch request or JavaScript dialog while another command is waiting. No failed command is replayed.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "properties": {
+              "browser": {
+                "type": "string"
+              },
+              "tab": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "string"
+              },
+              "lease": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "browser",
+              "tab",
+              "generation",
+              "lease"
+            ],
+            "additionalProperties": false
+          },
+          "method": {
+            "type": "string",
+            "pattern": "^[A-Za-z]+\\.[A-Za-z]+$"
+          },
+          "params": {
+            "default": {},
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            }
+          },
+          "concurrent": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "target",
+          "method",
+          "params"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "mako_browser_events",
+      "description": "Read a bounded, non-destructive event history for this exact tab. Pass the previous cursor; gap reports evicted history. Use cdp to enable needed domains, e.g. Network.enable. Page events are enabled automatically.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "properties": {
+              "browser": {
+                "type": "string"
+              },
+              "tab": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "string"
+              },
+              "lease": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "browser",
+              "tab",
+              "generation",
+              "lease"
+            ],
+            "additionalProperties": false
+          },
+          "after": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "target",
+          "after"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "mako_browser_navigate",
+      "description": "Navigate this exact tab. By default waits for this navigation’s load event (up to 30 seconds); waitUntil:commit returns after navigation commits; reports same-document navigation or downloads separately. Observe afterwards to verify the result. Supports http, https and about URLs.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "properties": {
+              "browser": {
+                "type": "string"
+              },
+              "tab": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "string"
+              },
+              "lease": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "browser",
+              "tab",
+              "generation",
+              "lease"
+            ],
+            "additionalProperties": false
+          },
+          "url": {
+            "type": "string"
+          },
+          "waitUntil": {
+            "type": "string",
+            "enum": [
+              "load",
+              "commit"
+            ]
+          }
+        },
+        "required": [
+          "target",
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "mako_browser_close",
+      "description": "Close this exact tab. Its old handle becomes invalid. Does not close Chrome or another task's tab.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "properties": {
+              "browser": {
+                "type": "string"
+              },
+              "tab": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "string"
+              },
+              "lease": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "browser",
+              "tab",
+              "generation",
+              "lease"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "mako_browser_click",
+      "description": "Click a fresh observation ref or exact viewport CSS coordinates in the bound tab. Ref clicks verify the element is present and not covered. Coordinates come from this tab's latest screenshot. Does not move the physical pointer.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "properties": {
+              "browser": {
+                "type": "string"
+              },
+              "tab": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "string"
+              },
+              "lease": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "browser",
+              "tab",
+              "generation",
+              "lease"
+            ],
+            "additionalProperties": false
+          },
+          "at": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "ref": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "ref"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "button": {
+            "default": "left",
+            "type": "string",
+            "enum": [
+              "left",
+              "right",
+              "middle"
+            ]
+          },
+          "count": {
+            "default": 1,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          }
+        },
+        "required": [
+          "target",
+          "at",
+          "button",
+          "count"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "mako_browser_type",
+      "description": "Insert text through Chrome's Input domain. An optional fresh ref focuses that exact element first. Without a ref, types into the already-focused element of this tab.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "properties": {
+              "browser": {
+                "type": "string"
+              },
+              "tab": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "string"
+              },
+              "lease": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "browser",
+              "tab",
+              "generation",
+              "lease"
+            ],
+            "additionalProperties": false
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 100000
+          },
+          "ref": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "mako_browser_upload",
+      "description": "Set explicit absolute local file paths on an observed file-input ref in this exact tab. Empty files clears the input. This may upload file contents to the page.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "properties": {
+              "browser": {
+                "type": "string"
+              },
+              "tab": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "string"
+              },
+              "lease": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "browser",
+              "tab",
+              "generation",
+              "lease"
+            ],
+            "additionalProperties": false
+          },
+          "ref": {
+            "type": "string"
+          },
+          "files": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          }
+        },
+        "required": [
+          "target",
+          "ref",
+          "files"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "mako_browser_exec",
+      "description": "Run flexible async JavaScript with the documented browser API, persistent state, console.log and emitImage. Await all calls. Trusted local code; 60-second worker limit. Browser actions retain exact task ownership and are never replayed.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100000
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "mako_browser_help",
+      "description": "Read installed Chrome protocol schemas. With no domain, lists domains. With a domain, lists commands/events; with method, returns that command and referenced domain types.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    }
+  ]
 }

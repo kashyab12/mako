@@ -1,3 +1,5 @@
+> Historical audit of the removed Python/Browser Use implementation. The replacement and current verification are documented in [the updated assessment](orchestrator-browser-computer-comparison.md). The unresolved findings below describe the old implementation, not the current host-owned CDP service. The dependency reproductions are retained as evidence for why it was replaced.
+
 # Browser permissions and model tools audit
 
 Audited September 7, 2026. This is an investigation of the current implementation, not a claim that the findings below are fixed.
