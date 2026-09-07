@@ -32,7 +32,13 @@ export function AttachmentStrip({
   )
 }
 
-function Card({ item, onRemove }: { item: Attachment; onRemove: (id: string) => void }) {
+function Card({
+  item,
+  onRemove,
+}: {
+  item: Attachment
+  onRemove: (id: string) => void
+}) {
   return (
     <div
       title={`Attachment ${item.index} · ${item.name} · ${formatBytes(item.size)}`}
@@ -43,7 +49,11 @@ function Card({ item, onRemove }: { item: Attachment; onRemove: (id: string) => 
       )}
     >
       {item.preview ? (
-        <img src={item.preview} alt={item.name} className="h-full w-14 shrink-0 object-cover" />
+        <img
+          src={item.preview}
+          alt={item.name}
+          className="h-full w-14 shrink-0 object-cover"
+        />
       ) : (
         <span className="flex h-full w-11 shrink-0 items-center justify-center bg-surface/60 text-faint">
           <Glyph item={item} />
@@ -51,10 +61,14 @@ function Card({ item, onRemove }: { item: Attachment; onRemove: (id: string) => 
       )}
 
       <span className="flex min-w-0 flex-col pr-3">
-        <span className="tabular text-label text-faint">Attachment {item.index}</span>
-        <span className="max-w-[10rem] truncate text-ui text-foreground/85">{item.name}</span>
+        <span className="tabular text-label text-faint">
+          Attachment {item.index}
+        </span>
+        <span className="max-w-[10rem] truncate text-ui text-foreground/85">
+          {item.name}
+        </span>
         <span className="text-label text-faint">
-          {item.pending ? "reading…" : formatBytes(item.size)}
+          {item.error ?? (item.pending ? "reading…" : formatBytes(item.size))}
         </span>
       </span>
 
@@ -76,7 +90,9 @@ function Card({ item, onRemove }: { item: Attachment; onRemove: (id: string) => 
 
 /** Picking the glyph inside a component keeps the element type stable. */
 function Glyph({ item }: { item: Attachment }) {
-  const Icon: ComponentType<{ className?: string }> = item.mimeType.startsWith("video/")
+  const Icon: ComponentType<{ className?: string }> = item.mimeType.startsWith(
+    "video/"
+  )
     ? FileVideoIcon
     : item.mimeType.startsWith("audio/")
       ? FileAudioIcon

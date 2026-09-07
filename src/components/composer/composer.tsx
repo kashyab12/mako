@@ -1,3 +1,4 @@
+import { toast } from "sonner"
 import {
   useCallback,
   useEffect,
@@ -27,16 +28,16 @@ import {
   appendThreadReferences,
   prefetchThreadReferences,
 } from "@/lib/thread-references"
-import type { AcpPromptAttachment } from "@/lib/types"
+import type { PromptAttachment } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { acp, acpStore, activeAcp, activeLiveAcp, useAcp } from "@/state/acp"
 import {
-  acp,
-  acpStore,
-  activeAcp,
-  activeLiveAcp,
-  useAcp,
-} from "@/state/acp"
-import { draftText, rememberDraft } from "@/state/drafts"
+  draftText,
+  rememberDraft,
+  retainRejectedDraft,
+  takeRejectedDraft,
+  useDrafts,
+} from "@/state/drafts"
 import {
   actions,
   shallowEqual,
@@ -44,7 +45,6 @@ import {
   useSession,
 } from "@/state/session"
 import { threads, threadsStore, useThreads } from "@/state/threads"
-import { stageFile } from "@/state/workspace"
 import { AtSignIcon, PaperclipIcon, XIcon } from "lucide-react"
 
 interface CommandMention {
@@ -70,7 +70,7 @@ declare global {
   }
 }
 
-function toAcpPromptAttachment(item: Attachment): AcpPromptAttachment {
+function toAcpPromptAttachment(item: Attachment): PromptAttachment {
   return {
     name: item.name,
     mimeType: item.mimeType,
@@ -111,6 +111,9 @@ export function Composer() {
   const scroller = useRef<HTMLDivElement>(null)
   const filePicker = useRef<HTMLInputElement>(null)
   const attachments = useAttachments(draftKey)
+  const rejectedDrafts = useDrafts((state) =>
+    state.rejected.filter((item) => item.key === draftKey)
+  )
   const expanded =
     focused ||
     Boolean(draft.trim()) ||
@@ -290,18 +293,17 @@ export function Composer() {
       const settledItems = attachments.items.some((item) => item.pending)
         ? await attachments.settled()
         : attachments.items
-      const staged = await Promise.all(
-        settledItems.map(async (item) => {
-          if (item.stagedPath || item.kind !== "image" || !item.data)
-            return item
-          try {
-            const file = await stageFile(item.name, item.data)
-            return { ...item, stagedPath: file.path }
-          } catch {
-            return item
-          }
-        })
-      )
+      if (
+        settledItems.some(
+          (item) => item.pending || item.error || !item.stagedPath
+        )
+      ) {
+        toast.error(
+          "Your attachments are not ready. Wait for staging or remove the failed attachment."
+        )
+        return
+      }
+      const staged = settledItems
       const attachmentPrompt = buildForeignPrompt(text, staged)
       const full = await appendThreadReferences(
         attachmentPrompt,
@@ -325,9 +327,14 @@ export function Composer() {
         ok =
           harness === viewingRef.harness && !viewingRef.archived
             ? mode
-              ? await threads.interruptAndSend(viewingRef, full)
-              : await threads.reply(viewingRef, full)
-            : await threads.moveAndSend(viewingRef, harness, full)
+              ? await threads.interruptAndSend(viewingRef, full, acpAttachments)
+              : await threads.reply(viewingRef, full, acpAttachments)
+            : await threads.moveAndSend(
+                viewingRef,
+                harness,
+                full,
+                acpAttachments
+              )
       } else if (activeConversation) {
         if (harness !== activeConversation.harness) {
           if (liveSession) ok = await acp.handoff(harness, full)
@@ -358,19 +365,30 @@ export function Composer() {
       }
       if (ok) attachments.discard(restorableDraft.attachments)
       else {
-        rememberDraft(submittedDraftKey, restorableDraft.text)
         const currentDraftKey =
           activeAcp(acpStore.get())?.draftKey ??
           threadsStore.get().viewing?.ref.path ??
           sessionStore.get().meta?.sessionId ??
           "new"
-        const currentText = draftRef.current.trim()
-          ? `${restorableDraft.text}\n\n${draftRef.current}`
-          : restorableDraft.text
-        rememberDraft(currentDraftKey, currentText)
-        draftRef.current = currentText
-        setDraft(currentText)
-        attachments.reattach(restorableDraft.attachments)
+        // This callback still owns the submitted attachment bucket, even after navigation.
+        if (!draftText(submittedDraftKey).trim()) {
+          rememberDraft(submittedDraftKey, restorableDraft.text)
+          attachments.reattach(restorableDraft.attachments)
+        } else {
+          retainRejectedDraft(
+            submittedDraftKey,
+            restorableDraft.text,
+            restorableDraft.attachments
+          )
+        }
+        if (currentDraftKey === submittedDraftKey && !draftRef.current.trim()) {
+          draftRef.current = restorableDraft.text
+          setDraft(restorableDraft.text)
+        } else {
+          toast.error(
+            "The message was not sent. Your original draft is saved in its conversation."
+          )
+        }
       }
       return
     },
@@ -402,10 +420,7 @@ export function Composer() {
     [draft, mention, update]
   )
 
-  const stopCurrentTurn = useCallback(
-    () => actions.stopCurrentTurn(),
-    []
-  )
+  const stopCurrentTurn = useCallback(() => actions.stopCurrentTurn(), [])
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // The mention menu owns navigation keys while it is open.
@@ -460,21 +475,13 @@ export function Composer() {
   }
 
   const busy = status.streaming || status.compacting
-  const liveHarness = useAcp(
-    (state) => activeAcp(state)?.harness ?? null
-  )
+  const liveHarness = useAcp((state) => activeAcp(state)?.harness ?? null)
   const liveRunning = useAcp((state) => {
     const active = activeAcp(state)
-    return (
-      active?.kind === "starting" || active?.session.status === "running"
-    )
+    return active?.kind === "starting" || active?.session.status === "running"
   })
-  const liveStarting = useAcp(
-    (state) => activeAcp(state)?.kind === "starting"
-  )
-  const stopping = useAcp(
-    (state) => activeLiveAcp(state)?.canceling ?? false
-  )
+  const liveStarting = useAcp((state) => activeAcp(state)?.kind === "starting")
+  const stopping = useAcp((state) => activeLiveAcp(state)?.canceling ?? false)
   const liveThreadPath = useAcp((state) => activeAcp(state)?.threadPath)
   const routedHarness = useThreads(
     (state) => state.viewing?.ref.harness ?? null
@@ -501,21 +508,22 @@ export function Composer() {
     Boolean(state.viewing?.ref.archived)
   )
   const newHarness = useThreads((state) => state.composerHarness)
-  const placeholder = liveOwnsComposer && liveHarness
-    ? liveStarting
-      ? `${harnessTitle(liveHarness)} is starting — Enter queues your message`
-      : liveRunning
-        ? `${harnessTitle(liveHarness)} is working — Enter queues your message`
-        : `Reply — ${harnessTitle(liveHarness)} answers live`
-    : routedHarness
-      ? newHarness !== routedHarness
-        ? `Reply — moves this conversation to ${harnessTitle(newHarness)}`
-        : viewingArchived
-          ? `Reply — revives this archived conversation in ${harnessTitle(routedHarness)}`
-          : viewingRunning
-            ? `${harnessTitle(routedHarness)} is working — Enter queues, ${isMac ? "⌘" : "Ctrl+"}Enter interrupts`
-            : `Reply — ${harnessTitle(routedHarness)} answers`
-      : `Ask ${harnessTitle(newHarness)} for a change`
+  const placeholder =
+    liveOwnsComposer && liveHarness
+      ? liveStarting
+        ? `${harnessTitle(liveHarness)} is starting — Enter queues your message`
+        : liveRunning
+          ? `${harnessTitle(liveHarness)} is working — Enter queues your message`
+          : `Reply — ${harnessTitle(liveHarness)} answers live`
+      : routedHarness
+        ? newHarness !== routedHarness
+          ? `Reply — moves this conversation to ${harnessTitle(newHarness)}`
+          : viewingArchived
+            ? `Reply — revives this archived conversation in ${harnessTitle(routedHarness)}`
+            : viewingRunning
+              ? `${harnessTitle(routedHarness)} is working — Enter queues, ${isMac ? "⌘" : "Ctrl+"}Enter interrupts`
+              : `Reply — ${harnessTitle(routedHarness)} answers`
+        : `Ask ${harnessTitle(newHarness)} for a change`
 
   return (
     <div className="shrink-0 px-6 pt-1 pb-4">
@@ -592,6 +600,26 @@ export function Composer() {
            * native caret, IME, undo, and spellcheck — a contenteditable would
            * trade all four for the same visual result.
            */}
+          {rejectedDrafts.map((rejected) => (
+            <button
+              key={rejected.id}
+              type="button"
+              className="pressable mx-2 mb-1 text-left text-ui text-caution"
+              onClick={() => {
+                const recovered = takeRejectedDraft(rejected.id)
+                if (!recovered) return
+                update(
+                  [draftRef.current, recovered.text]
+                    .filter(Boolean)
+                    .join("\n\n")
+                )
+                attachments.reattach(recovered.attachments)
+              }}
+            >
+              Restore unsent message:{" "}
+              {rejected.text.slice(0, 80) || "Attachments"}
+            </button>
+          ))}
           <AttachmentStrip
             items={attachments.items}
             onRemove={attachments.remove}
