@@ -14,7 +14,7 @@ import {
 } from "@/state/prefs"
 import { actions, shallowEqual, useSession } from "@/state/session"
 import { useTabs, type TabInfo } from "@/state/tabs"
-import { activeAcp, useAcp } from "@/state/acp"
+import { acpForThread, activeAcp, useAcp } from "@/state/acp"
 import { threadStatus, threads, useThreads } from "@/state/threads"
 
 /**
@@ -84,13 +84,15 @@ export const ThreadRow = memo(function ThreadRow({
   const status = useThreads((state) => threadStatus(ref, state))
   const working = status.kind === "working"
   const activeElsewhere =
-    status.kind === "observed" || status.kind === "external-active"
+    status.kind === "external-active"
   const isPinned = usePrefs((prefs) => prefs.pinnedThreads.includes(ref.path))
   const active = useSession((state) => state.meta?.sessionFile === ref.path)
   const selectedPath = useThreads(
     (state) => state.opening?.path ?? state.viewing?.ref.path
   )
   const livePath = useAcp((state) => activeAcp(state)?.threadPath)
+  const liveProvider = useAcp((state) => acpForThread(state, ref.path)?.harness)
+  const selectedLive = useAcp((state) => Boolean(state.activeKey && acpForThread(state, ref.path)?.key === state.activeKey))
 
   const open = () => {
     void threads.view(ref)
@@ -100,7 +102,7 @@ export const ThreadRow = memo(function ThreadRow({
   // the selection — the native tab keeps its state but not its highlight,
   // because two lit rows read as a broken click.
   const focusedPath = selectedPath ?? livePath
-  const lit = focusedPath ? focusedPath === ref.path : active
+  const lit = selectedPath ? selectedPath === ref.path : selectedLive || (focusedPath ? focusedPath === ref.path : active)
 
   return (
     <div
@@ -145,7 +147,7 @@ export const ThreadRow = memo(function ThreadRow({
           />
         ))}
         <HarnessIcon
-          harness={ref.harness}
+          harness={liveProvider ?? ref.harness}
           className={cn("size-3", (working || activeElsewhere) && "animate-live")}
         />
       </span>

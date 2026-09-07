@@ -1,5 +1,9 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { RunningThreads } from "@/components/rail/active-threads"
 import { ThreadRow } from "@/components/rail/thread-row"
 import { harnessLabel } from "@/components/rail/harness-meta"
@@ -19,23 +23,17 @@ import {
 import { actions, useSession } from "@/state/session"
 import { useAcp } from "@/state/acp"
 import {
+  canonicalThreadRefs,
   sameAcpPresence,
   selectAcpPresence,
 } from "@/state/acp-presence"
 import { useWorkspaceFocus } from "@/components/stage/workspace-focus-context"
-import {
-  setPref,
-  togglePinnedProject,
-  usePrefs,
-} from "@/state/prefs"
+import { setPref, togglePinnedProject, usePrefs } from "@/state/prefs"
 import { cn } from "@/lib/utils"
 import { Blank } from "@/components/ui/kit"
 import { formatChord } from "@/extend/commands"
 import { DraftThreads } from "@/components/rail/draft-threads"
-import {
-  FolderActivity,
-  RailSkeleton,
-} from "@/components/rail/rail-activity"
+import { FolderActivity, RailSkeleton } from "@/components/rail/rail-activity"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import {
   CheckIcon,
@@ -99,7 +97,7 @@ export function AgentThreads() {
   // not the whole archive in one avalanche.
   const [pages, setPages] = useState<Record<string, number>>({})
   const deferred = useDeferredValue(query)
-  const all = useThreads((state) => state.threads)
+  const nativeRefs = useThreads((state) => state.threads)
   const liveAgents = useAcp(selectAcpPresence, sameAcpPresence)
   const loaded = useThreads((state) => state.loaded)
   const working = useThreads((state) => state.working)
@@ -108,6 +106,10 @@ export function AgentThreads() {
   const externalActivity = useThreads((state) => state.externalActivity)
   const filter = usePrefs((prefs) => prefs.agentHarnessFilter)
   const pinned = usePrefs((prefs) => prefs.pinnedThreads)
+  const all = useMemo(
+    () => canonicalThreadRefs(nativeRefs, liveAgents, pinned),
+    [nativeRefs, liveAgents, pinned]
+  )
   const pinnedProjects = usePrefs((prefs) => prefs.pinnedProjects)
   const collapsed = usePrefs((prefs) => prefs.collapsedGroups)
   const scope = usePrefs((prefs) => prefs.railScope)
@@ -125,9 +127,10 @@ export function AgentThreads() {
 
   useEffect(() => {
     const rows = () =>
-      [...(rail.current?.querySelectorAll<HTMLElement>("[data-thread-row]") ?? [])].filter(
-        (row) => row.offsetParent !== null
-      )
+      [
+        ...(rail.current?.querySelectorAll<HTMLElement>("[data-thread-row]") ??
+          []),
+      ].filter((row) => row.offsetParent !== null)
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.isComposing) return
       const mod = event.metaKey || event.ctrlKey
@@ -185,6 +188,7 @@ export function AgentThreads() {
     return liveAgents.filter(
       (presence) =>
         (!presence.threadPath || !nativePaths.has(presence.threadPath)) &&
+        !presence.nativePaths?.some((path) => nativePaths.has(path)) &&
         (!presence.nativeId ||
           !nativeIdentities.has(`${presence.harness}:${presence.nativeId}`))
     )
@@ -231,8 +235,7 @@ export function AgentThreads() {
         needsInput: status.kind === "needs-permission",
         failed: status.kind === "failed",
         unread: status.kind === "review" && status.unread,
-        active:
-          status.kind === "observed" || status.kind === "external-active",
+        active: status.kind === "external-active",
       }
     }
     return { priorities: nextPriorities, threadActivity: nextActivity }
@@ -276,7 +279,8 @@ export function AgentThreads() {
   const hiddenFolders = workspaceFolders.length - shownFolders.length
 
   useEffect(() => {
-    const rows = rail.current?.querySelectorAll<HTMLElement>("[data-thread-row]")
+    const rows =
+      rail.current?.querySelectorAll<HTMLElement>("[data-thread-row]")
     rows?.forEach((row, index) => {
       if (index < 9) row.dataset.jumpIndex = String(index + 1)
       else delete row.dataset.jumpIndex
@@ -295,7 +299,9 @@ export function AgentThreads() {
             : null
         if (!current) return
         const rows = [
-          ...(rail.current?.querySelectorAll<HTMLElement>("[data-thread-row]") ?? []),
+          ...(rail.current?.querySelectorAll<HTMLElement>(
+            "[data-thread-row]"
+          ) ?? []),
         ].filter((row) => row.offsetParent !== null)
         const at = rows.indexOf(current)
         const next = rows[at + (event.key === "ArrowDown" ? 1 : -1)]
@@ -331,122 +337,134 @@ export function AgentThreads() {
           }
           className="scroll-fade-scroller min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3"
         >
-        {!loaded && matched.length === 0 ? (
-          <RailSkeleton />
-        ) : matched.length === 0 ? (
-          searchActive || filter.length > 0 ? (
-            <p className="px-3 pt-8 text-center text-ui leading-relaxed text-faint">
-              Nothing matches.
-            </p>
+          {!loaded && matched.length === 0 ? (
+            <RailSkeleton />
+          ) : matched.length === 0 ? (
+            searchActive || filter.length > 0 ? (
+              <p className="px-3 pt-8 text-center text-ui leading-relaxed text-faint">
+                Nothing matches.
+              </p>
+            ) : (
+              <Blank
+                icon={<MessagesSquareIcon />}
+                title="No conversations yet"
+                body="Threads from every agent land here."
+                hints={[
+                  {
+                    label: "Ask for a change",
+                    keys: formatChord("mod+l"),
+                    onSelect: () =>
+                      window.dispatchEvent(
+                        new CustomEvent("mako:focus-composer")
+                      ),
+                  },
+                  {
+                    label: "Open a folder",
+                    keys: formatChord("mod+o"),
+                    onSelect: () => void actions.pickWorkspace(),
+                  },
+                ]}
+              />
+            )
+          ) : searchActive ? (
+            <div className="pt-1">
+              {matched.slice(0, 80).map((ref) => (
+                <ThreadRow key={ref.path} threadRef={ref} showFolder />
+              ))}
+            </div>
           ) : (
-            <Blank
-              icon={<MessagesSquareIcon />}
-              title="No conversations yet"
-              body="Threads from every agent land here."
-              hints={[
-                {
-                  label: "Ask for a change",
-                  keys: formatChord("mod+l"),
-                  onSelect: () => window.dispatchEvent(new CustomEvent("mako:focus-composer")),
-                },
-                {
-                  label: "Open a folder",
-                  keys: formatChord("mod+o"),
-                  onSelect: () => void actions.pickWorkspace(),
-                },
-              ]}
-            />
-          )
-        ) : searchActive ? (
-          <div className="pt-1">
-            {matched.slice(0, 80).map((ref) => (
-              <ThreadRow key={ref.path} threadRef={ref} showFolder />
-            ))}
-          </div>
-        ) : (
-          <>
-            <DraftThreads />
-            <RunningThreads refs={activeThreads} liveAgents={unboundLiveAgents} />
-            {quietPinned.length > 0 ? (
-              <section className="pt-1 pb-2">
-                <p className="flex h-7 items-center gap-1.5 px-1.5 text-label font-medium text-faint">
-                  <PinIcon className="size-3 fill-current opacity-60" />
-                  Pinned
-                </p>
-                {shownPinned.map((ref) => (
-                  <ThreadRow key={ref.path} threadRef={ref} showFolder />
-                ))}
-                {hiddenPinned > 0 || showAllPinned ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllPinned((current) => !current)}
-                    className="flex h-6 w-full items-center rounded-md pl-7 text-left text-label text-faint transition-colors duration-100 hover:bg-fill-hover hover:text-muted-foreground"
-                  >
-                    {showAllPinned ? "Fewer pinned" : `${hiddenPinned} more pinned`}
-                  </button>
-                ) : null}
-              </section>
-            ) : null}
-            {shownFolders.map((folder) => (
-              <FolderSection
-                key={folder.key}
-                folder={folder}
-                branch={folder.current ? focusedBranch : undefined}
-                now={now}
-                hiddenPaths={activePaths}
-                collapsed={collapsed.includes(`ws:${folder.key}`)}
-                onToggle={() => {
-                  const key = `ws:${folder.key}`
-                  setPref(
-                    "collapsedGroups",
-                    collapsed.includes(key)
-                      ? collapsed.filter((entry) => entry !== key)
-                      : [...collapsed, key]
-                  )
-                }}
-                onNew={() => {
-                  if (folder.cwd) void actions.newConversationIn(folder.cwd)
-                }}
-                onPin={() => {
-                  if (folder.cwd) togglePinnedProject(folder.cwd)
-                }}
-                pages={pages[folder.key] ?? 0}
-                onPages={(next) => setPages((prev) => ({ ...prev, [folder.key]: next }))}
+            <>
+              <DraftThreads />
+              <RunningThreads
+                refs={activeThreads}
+                liveAgents={unboundLiveAgents}
               />
-            ))}
-            {hiddenFolders > 0 || showAllFolders ? (
-              <button
-                type="button"
-                onClick={() => setShowAllFolders((current) => !current)}
-                className="mb-1 flex h-7 w-full items-center rounded-md px-1.5 text-left text-label text-faint transition-colors duration-100 hover:bg-fill-hover hover:text-muted-foreground"
-              >
-                {showAllFolders ? "Fewer folders" : `${hiddenFolders} more folders`}
-              </button>
-            ) : null}
-            {sessions ? (
-              <FolderSection
-                folder={sessions}
-                now={now}
-                hiddenPaths={activePaths}
-                collapsed={collapsed.includes(`ws:${sessions.key}`)}
-                onToggle={() => {
-                  const key = `ws:${sessions.key}`
-                  setPref(
-                    "collapsedGroups",
-                    collapsed.includes(key)
-                      ? collapsed.filter((entry) => entry !== key)
-                      : [...collapsed, key]
-                  )
-                }}
-                pages={pages[sessions.key] ?? 0}
-                onPages={(next) =>
-                  setPages((prev) => ({ ...prev, [sessions.key]: next }))
-                }
-              />
-            ) : null}
-          </>
-        )}
-      </div>
+              {quietPinned.length > 0 ? (
+                <section className="pt-1 pb-2">
+                  <p className="flex h-7 items-center gap-1.5 px-1.5 text-label font-medium text-faint">
+                    <PinIcon className="size-3 fill-current opacity-60" />
+                    Pinned
+                  </p>
+                  {shownPinned.map((ref) => (
+                    <ThreadRow key={ref.path} threadRef={ref} showFolder />
+                  ))}
+                  {hiddenPinned > 0 || showAllPinned ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllPinned((current) => !current)}
+                      className="flex h-6 w-full items-center rounded-md pl-7 text-left text-label text-faint transition-colors duration-100 hover:bg-fill-hover hover:text-muted-foreground"
+                    >
+                      {showAllPinned
+                        ? "Fewer pinned"
+                        : `${hiddenPinned} more pinned`}
+                    </button>
+                  ) : null}
+                </section>
+              ) : null}
+              {shownFolders.map((folder) => (
+                <FolderSection
+                  key={folder.key}
+                  folder={folder}
+                  branch={folder.current ? focusedBranch : undefined}
+                  now={now}
+                  hiddenPaths={activePaths}
+                  collapsed={collapsed.includes(`ws:${folder.key}`)}
+                  onToggle={() => {
+                    const key = `ws:${folder.key}`
+                    setPref(
+                      "collapsedGroups",
+                      collapsed.includes(key)
+                        ? collapsed.filter((entry) => entry !== key)
+                        : [...collapsed, key]
+                    )
+                  }}
+                  onNew={() => {
+                    if (folder.cwd) void actions.newConversationIn(folder.cwd)
+                  }}
+                  onPin={() => {
+                    if (folder.cwd) togglePinnedProject(folder.cwd)
+                  }}
+                  pages={pages[folder.key] ?? 0}
+                  onPages={(next) =>
+                    setPages((prev) => ({ ...prev, [folder.key]: next }))
+                  }
+                />
+              ))}
+              {hiddenFolders > 0 || showAllFolders ? (
+                <button
+                  type="button"
+                  onClick={() => setShowAllFolders((current) => !current)}
+                  className="mb-1 flex h-7 w-full items-center rounded-md px-1.5 text-left text-label text-faint transition-colors duration-100 hover:bg-fill-hover hover:text-muted-foreground"
+                >
+                  {showAllFolders
+                    ? "Fewer folders"
+                    : `${hiddenFolders} more folders`}
+                </button>
+              ) : null}
+              {sessions ? (
+                <FolderSection
+                  folder={sessions}
+                  now={now}
+                  hiddenPaths={activePaths}
+                  collapsed={collapsed.includes(`ws:${sessions.key}`)}
+                  onToggle={() => {
+                    const key = `ws:${sessions.key}`
+                    setPref(
+                      "collapsedGroups",
+                      collapsed.includes(key)
+                        ? collapsed.filter((entry) => entry !== key)
+                        : [...collapsed, key]
+                    )
+                  }}
+                  pages={pages[sessions.key] ?? 0}
+                  onPages={(next) =>
+                    setPages((prev) => ({ ...prev, [sessions.key]: next }))
+                  }
+                />
+              ) : null}
+            </>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -507,7 +525,9 @@ function RailHeader({
 
   return (
     <div className="flex h-9 shrink-0 items-center px-2 pt-1.5">
-      <span className="px-1.5 text-label font-medium text-faint">Workspaces</span>
+      <span className="px-1.5 text-label font-medium text-faint">
+        Workspaces
+      </span>
       <span className="flex-1" />
       <button
         type="button"
@@ -537,7 +557,13 @@ function RailHeader({
  * folder, or only the one being worked). The glyph carries a dot while any
  * narrowing is on, so a filtered rail never reads as an empty machine.
  */
-function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter: string[] }) {
+function HarnessFilter({
+  counts,
+  filter,
+}: {
+  counts: Map<string, number>
+  filter: string[]
+}) {
   const [open, setOpen] = useState(false)
   const sortBy = usePrefs((prefs) => prefs.railSortBy)
   const scope = usePrefs((prefs) => prefs.railScope)
@@ -547,7 +573,9 @@ function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter
   const row = (active: boolean) =>
     cn(
       "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-ui transition-colors duration-100",
-      active ? "bg-fill-selected text-foreground" : "text-foreground/85 hover:bg-fill-hover"
+      active
+        ? "bg-fill-selected text-foreground"
+        : "text-foreground/85 hover:bg-fill-hover"
     )
 
   return (
@@ -580,14 +608,22 @@ function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter
                 onClick={() =>
                   setPref(
                     "agentHarnessFilter",
-                    active ? filter.filter((entry) => entry !== harness) : [...filter, harness]
+                    active
+                      ? filter.filter((entry) => entry !== harness)
+                      : [...filter, harness]
                   )
                 }
                 className={row(active)}
               >
-                <HarnessIcon harness={harness} className="size-3.5" tinted={active} />
+                <HarnessIcon
+                  harness={harness}
+                  className="size-3.5"
+                  tinted={active}
+                />
                 <span className="flex-1">{harnessLabel(harness)}</span>
-                {active ? <CheckIcon className="size-3 text-foreground" /> : null}
+                {active ? (
+                  <CheckIcon className="size-3 text-foreground" />
+                ) : null}
                 <span className="tabular text-label text-faint">{count}</span>
               </button>
             )
@@ -608,7 +644,9 @@ function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter
             className={row(sortBy === value)}
           >
             <span className="flex-1">{label}</span>
-            {sortBy === value ? <CheckIcon className="size-3 text-foreground" /> : null}
+            {sortBy === value ? (
+              <CheckIcon className="size-3 text-foreground" />
+            ) : null}
           </button>
         ))}
 
@@ -626,7 +664,9 @@ function HarnessFilter({ counts, filter }: { counts: Map<string, number>; filter
             className={row(scope === value)}
           >
             <span className="flex-1">{label}</span>
-            {scope === value ? <CheckIcon className="size-3 text-foreground" /> : null}
+            {scope === value ? (
+              <CheckIcon className="size-3 text-foreground" />
+            ) : null}
           </button>
         ))}
 
@@ -711,7 +751,9 @@ function FolderSection({
           <span
             className={cn(
               "min-w-0 flex-1 truncate text-ui",
-              folder.current ? "font-medium text-foreground" : "text-foreground/80"
+              folder.current
+                ? "font-medium text-foreground"
+                : "text-foreground/80"
             )}
           >
             {folder.name}
@@ -763,7 +805,9 @@ function FolderSection({
                 : "opacity-0 group-hover/folder:opacity-100 focus:opacity-100"
             )}
           >
-            <PinIcon className={cn("size-3", folder.pinned && "fill-current")} />
+            <PinIcon
+              className={cn("size-3", folder.pinned && "fill-current")}
+            />
           </button>
         ) : null}
       </div>
@@ -785,7 +829,9 @@ function FolderSection({
               className="flex h-6 w-full items-center rounded-md pl-8 text-left text-label text-faint transition-colors duration-100 hover:bg-fill-hover hover:text-muted-foreground"
             >
               More
-              <span className="tabular ml-1 text-label text-faint/60">{hidden}</span>
+              <span className="tabular ml-1 text-label text-faint/60">
+                {hidden}
+              </span>
             </button>
           ) : pages > 0 ? (
             <button

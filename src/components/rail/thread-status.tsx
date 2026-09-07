@@ -55,14 +55,11 @@ export function ThreadStatusMark({
         </span>
       )
     case "observed":
+      return <span title="The native session file changed recently; running state is unconfirmed" className="shrink-0 text-label text-faint">Updated</span>
     case "external-active":
       return (
         <span
-          title={
-            status.kind === "external-active"
-              ? "Active in another app"
-              : "Live activity"
-          }
+          title="Running in another app"
           className="flex shrink-0 items-center gap-1 text-label text-faint"
         >
           <Loader2Icon className="size-3 animate-spin" />
@@ -70,6 +67,7 @@ export function ThreadStatusMark({
         </span>
       )
     case "external-open":
+      return <span title="Open in another app; no running turn reported" className="shrink-0 text-label text-faint">Open</span>
     case "idle":
       return updatedAt ? (
         <span className="tabular shrink-0 text-label text-faint">
