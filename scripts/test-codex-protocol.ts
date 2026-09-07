@@ -223,5 +223,73 @@ assert.deepEqual(updates.at(-1), {
   text: "hello",
 })
 
+const confirmation: JsonObject = {
+  threadId: "thread-1",
+  turnId: "turn-1",
+  serverName: "fixture",
+  mode: "form",
+  message: "Allow the fixture tool?",
+  meta: { codex_approval_kind: "mcp_tool_call" },
+  requestedSchema: { type: "object", properties: {}, required: [] },
+}
+handleServerRequest(
+  permissionContext,
+  permissionCallbacks,
+  "confirm",
+  "mcpServer/elicitation/request",
+  confirmation
+)
+const confirmationEvent = permissionEvents.at(-1)
+assert.ok(confirmationEvent?.type === "acp-permission")
+assert.ok(
+  confirmationEvent.request.options.some(
+    (option) => option.kind === "allow_once"
+  )
+)
+resolvePermission(permissionContext, permissionCallbacks, "confirm", {
+  kind: "choice",
+  optionId: "accept",
+})
+assert.deepEqual(permissionResults.at(-1), {
+  action: "accept",
+  content: {},
+  _meta: null,
+})
+for (const patch of [
+  { mode: "url" },
+  { meta: {} },
+  {
+    requestedSchema: {
+      type: "object",
+      properties: { secret: { type: "string" } },
+      required: ["secret"],
+    },
+  },
+]) {
+  handleServerRequest(
+    permissionContext,
+    permissionCallbacks,
+    "unsupported",
+    "mcpServer/elicitation/request",
+    { ...confirmation, ...patch }
+  )
+  const event = permissionEvents.at(-1)
+  assert.ok(event?.type === "acp-permission")
+  assert.equal(
+    event.request.options.some((option) => option.kind === "allow_once"),
+    false
+  )
+  resolvePermission(permissionContext, permissionCallbacks, "unsupported", {
+    kind: "choice",
+    optionId: "decline",
+  })
+  assert.deepEqual(permissionResults.at(-1), {
+    action: "decline",
+    content: null,
+    _meta: null,
+  })
+}
+assert.equal(state.nativeRunId, "turn-1")
+
 child.kill("SIGTERM")
 console.log("Codex JSON-RPC parsing, framing, and streaming checks passed")

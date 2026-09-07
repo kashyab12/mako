@@ -531,10 +531,19 @@ async function testMakoRuntimeProjection(): Promise<void> {
     acpServers.find((server) => server.name === "mako-browser-use")?.env,
     [{ name: "ELECTRON_RUN_AS_NODE", value: "1" }]
   )
+  const conversationUrl = "http://127.0.0.1:43123/mcp"
+  const scopedServers = z.object({ mcp_servers: z.record(z.string(), z.json()) })
+    .parse(codexMcpConfig(snapshot, conversationUrl)).mcp_servers
+  assert.deepEqual(scopedServers["mako-conversations"], {
+    url: conversationUrl,
+    bearer_token_env_var: "MAKO_CONVERSATIONS_TOKEN",
+  })
   const codex = codexMcpConfig(snapshot)
   const servers = z
     .object({ mcp_servers: z.record(z.string(), z.json()) })
     .parse(codex).mcp_servers
+  for (const [name, definition] of Object.entries(servers))
+    assert.deepEqual(scopedServers[name], definition, "conversation tools preserve existing server configuration")
   assert.deepEqual(Object.keys(servers).sort(), [
     "mako-browser-use",
     "mako-local-control",
@@ -732,7 +741,8 @@ function testIntegrationCatalog(): void {
       url: "https://mako.example/api/mcp",
       version: "0.1.0",
       environment: "test",
-    }
+    },
+    [{ id: "chrome", name: "Google Chrome", connection: { status: "connected", generation: "fixture" } }]
   )
   assert.deepEqual(
     granted.integrations.find((entry) => entry.id === "slack")?.connection,
@@ -759,6 +769,7 @@ function testIntegrationCatalog(): void {
       environment: "test",
     }
   )
+  assert.equal(denied.integrations.find((entry) => entry.id === "local-browser")?.connection.kind, "setup", "Installed browser tools must not imply an approved Chrome connection")
   assert.equal(
     denied.integrations.find((entry) => entry.id === "computer-use")
       ?.connection.kind,
@@ -767,17 +778,13 @@ function testIntegrationCatalog(): void {
 }
 
 function testLocalSchemas(): void {
-  assert.equal(BROWSER_TOOL_INPUTS.doctor.safeParse({}).success, true)
+  assert.equal(BROWSER_TOOL_INPUTS.help.safeParse({}).success, true)
   assert.equal(
-    BROWSER_TOOL_INPUTS.exec.safeParse({ source: "print(page_info())" })
+    BROWSER_TOOL_INPUTS.exec.safeParse({ source: "return await browser.status()" })
       .success,
     true
   )
-  for (const source of [
-    'start_remote_daemon("cloud")',
-    'os.environ["BROWSER_USE_CLOUD"] = "1"',
-    'os.environ["BH_REMOTE"] = "1"',
-  ]) {
+  for (const source of ["", "x".repeat(100_001)]) {
     assert.equal(
       BROWSER_TOOL_INPUTS.exec.safeParse({ source }).success,
       false

@@ -34,8 +34,6 @@ import {
 import { cacheOf, dropCache, writeCache } from "../src/state/tabs.ts"
 import {
   appendOptimisticReply,
-  bindQueuedReplySender,
-  releaseQueuedReply,
   removeOptimisticReply,
 } from "../src/state/thread-queue.ts"
 import {
@@ -88,6 +86,7 @@ function applyPermission(request: LivePermissionRequest) {
   })
 }
 import {
+  canonicalThreadRefs,
   sameAcpPresence,
   selectAcpPresence,
 } from "../src/state/acp-presence.ts"
@@ -470,12 +469,27 @@ applyUpdates("acp-echo", [
   { kind: "user", text: "same prompt" },
 ])
 assert.deepEqual(acpStore.get().conversations[acpEcho.key]?.blocks, [
-  { type: "user", text: "same prompt", attachments: undefined },
-  { type: "user", text: "same prompt", attachments: undefined },
+  {
+    type: "user",
+    text: "same prompt",
+    attachments: undefined,
+    provider: undefined,
+    requestId: undefined,
+    contextFiles: undefined,
+  },
+  {
+    type: "user",
+    text: "same prompt",
+    attachments: undefined,
+    provider: undefined,
+    requestId: undefined,
+    contextFiles: undefined,
+  },
 ])
 const backgroundA = {
   ...acpEcho,
   key: "acp-background-a",
+  harness: "claude",
   draftKey: "draft-background-a",
   threadPath: "/background-a",
   blocks: [],
@@ -489,6 +503,7 @@ const backgroundA = {
 const backgroundB = {
   ...acpEcho,
   key: "acp-background-b",
+  harness: "codex",
   draftKey: "draft-background-b",
   threadPath: "/background-b",
   blocks: [],
@@ -915,7 +930,7 @@ assert.deepEqual(
     ...statusState,
     observed: { "/codex-one": true, "/codex-two": true },
   }).map((ref) => ref.nativeId),
-  ["codex-two", "codex-one"]
+  []
 )
 threadsStore.set({
   threads: liveCodexRefs,
@@ -991,21 +1006,38 @@ assert.equal(threadsStore.get().viewing?.entries.length, 1)
 removeOptimisticReply(queuedRef, "move now")
 assert.equal(threadsStore.get().viewing?.entries.length, 0)
 
-let queuedSend: { ref: ThreadRef; prompt: string } | null = null
-bindQueuedReplySender(async (ref, prompt) => {
-  queuedSend = { ref, prompt }
-  return true
-})
-threadsStore.set({
-  queuedReplies: {
-    [queuedRef.path]: { ref: queuedRef, prompts: ["second turn"] },
-  },
-})
-releaseQueuedReply(queuedRef.path)
-await new Promise((resolve) => setTimeout(resolve, 80))
-assert.deepEqual(queuedSend, { ref: queuedRef, prompt: "second turn" })
-assert.equal(threadsStore.get().queuedReplies[queuedRef.path], undefined)
-
 console.log(
   "stage layout, tool mapping, subagent formatting, and explicit activity passed"
+)
+
+const aliases = [
+  { path: "/source" },
+  { path: "/destination" },
+  { path: "/unrelated" },
+]
+const canonicalPresence = [
+  {
+    ...presenceBeforeToken[0]!,
+    threadPath: "/destination",
+    nativePaths: ["/source", "/destination"],
+  },
+]
+assert.deepEqual(canonicalThreadRefs(aliases, canonicalPresence, []), [
+  aliases[1],
+  aliases[2],
+])
+assert.deepEqual(
+  canonicalThreadRefs(aliases, canonicalPresence, ["/source"]),
+  [aliases[0], aliases[2]],
+  "a pinned native alias remains the canonical row"
+)
+assert.equal(
+  sameAcpPresence(
+    canonicalPresence,
+    canonicalPresence.map((presence) => ({
+      ...presence,
+      nativePaths: [...presence.nativePaths],
+    }))
+  ),
+  true
 )

@@ -1,3 +1,7 @@
+import {
+  codexExecutableCandidates,
+  resolveCodexExecutable,
+} from "../electron/providers/codex/executable.ts"
 import assert from "node:assert/strict"
 import {
   chmod,
@@ -41,11 +45,17 @@ async function waitFor(check: () => boolean): Promise<void> {
 }
 
 assert.equal(
-  processStartMatches("2026-08-30T12:00:00.000Z", Date.parse("2026-08-30T12:00:20.000Z")),
+  processStartMatches(
+    "2026-08-30T12:00:00.000Z",
+    Date.parse("2026-08-30T12:00:20.000Z")
+  ),
   true
 )
 assert.equal(
-  processStartMatches("2026-08-30T12:00:00.000Z", Date.parse("2026-08-30T12:02:00.000Z")),
+  processStartMatches(
+    "2026-08-30T12:00:00.000Z",
+    Date.parse("2026-08-30T12:02:00.000Z")
+  ),
   false
 )
 assert.deepEqual(
@@ -61,6 +71,8 @@ assert.deepEqual(
 assert.deepEqual(
   parseClaudeActiveSessions([
     { sessionId: "claude-one", state: "working" },
+    { sessionId: "claude-idle", status: "idle" },
+    { sessionId: "claude-unknown" },
     {
       sessionId: "claude-two",
       status: "waiting",
@@ -69,6 +81,8 @@ assert.deepEqual(
   ]),
   [
     { nativeId: "claude-one", status: "active", detail: undefined },
+    { nativeId: "claude-idle", status: "open", detail: undefined },
+    { nativeId: "claude-unknown", status: "open", detail: undefined },
     {
       nativeId: "claude-two",
       status: "needs-input",
@@ -94,7 +108,7 @@ assert.deepEqual(
     ],
     (pid) => pid === 10
   ),
-  [{ nativeId: "grok-one", status: "active" }]
+  [{ nativeId: "grok-one", status: "open" }]
 )
 let probeAvailable = true
 let probeNeedsInput = false
@@ -132,11 +146,7 @@ await waitFor(() => activityUpdates.length === 2)
 probeAvailable = false
 await waitFor(() => activityUpdates.length === 3)
 activityEngine.stop()
-assert.deepEqual(activityUpdates, [
-  ["live:active"],
-  ["live:needs-input"],
-  [],
-])
+assert.deepEqual(activityUpdates, [["live:active"], ["live:needs-input"], []])
 
 const claudeProbeHome = await mkdtemp(join(tmpdir(), "mako-claude-probe-"))
 try {
@@ -212,6 +222,14 @@ try {
   await rm(executableHome, { recursive: true, force: true })
 }
 
+const missingCodex = { CODEX_EXECUTABLE: join(executableHome, "missing-codex") }
+assert.deepEqual(codexExecutableCandidates(missingCodex), [])
+assert.equal(await resolveCodexExecutable(missingCodex), null)
+await assert.rejects(
+  providerHost.profiles.get("codex")!.load(missingCodex),
+  /selected Codex executable/
+)
+
 const cacheDir = await mkdtemp(join(tmpdir(), "mako-provider-cache-"))
 const cachePath = join(cacheDir, "profiles.json")
 const cachedProfile = {
@@ -231,7 +249,9 @@ try {
   const cacheFileSchema = z.object({
     snapshots: z.record(z.string(), z.unknown()),
   })
-  const stored = cacheFileSchema.parse(JSON.parse(await readFile(cachePath, "utf8")))
+  const stored = cacheFileSchema.parse(
+    JSON.parse(await readFile(cachePath, "utf8"))
+  )
   assert.equal(Object.keys(stored.snapshots).length, 1)
 } finally {
   await rm(cacheDir, { recursive: true, force: true })
@@ -264,10 +284,7 @@ assert.deepEqual(
   providerHost.processProbes.list().map((probe) => probe.provider),
   ["claude", "codex", "cursor", "grok"]
 )
-assert.equal(
-  providerHost.nativeRunners.get("claude")?.fastMode,
-  "unsupported"
-)
+assert.equal(providerHost.nativeRunners.get("claude")?.fastMode, "unsupported")
 assert.deepEqual(
   providerHost.accountCapabilities
     .list()
@@ -284,23 +301,26 @@ const accountCapability: ProviderAccountCapability =
 assert.equal(accountCapability.mode, "selectable")
 
 const claude = providerHost.nativeRunners.get("claude")!
-assert.deepEqual(claude.resume("session", "continue", {
-  model: "opus",
-  effort: "high",
-}), {
-  command: "claude",
-  args: [
-    "-p",
-    "continue",
-    "--resume",
-    "session",
-    "--dangerously-skip-permissions",
-    "--model",
-    "opus",
-    "--effort",
-    "high",
-  ],
-})
+assert.deepEqual(
+  claude.resume("session", "continue", {
+    model: "opus",
+    effort: "high",
+  }),
+  {
+    command: "claude",
+    args: [
+      "-p",
+      "continue",
+      "--resume",
+      "session",
+      "--dangerously-skip-permissions",
+      "--model",
+      "opus",
+      "--effort",
+      "high",
+    ],
+  }
+)
 
 const codex = providerHost.nativeRunners.get("codex")!
 assert.deepEqual(
@@ -363,19 +383,16 @@ assert.deepEqual(grok.resume("session", "continue", { effort: "high" }), {
 })
 
 const devin = providerHost.nativeRunners.get("devin")!
-assert.deepEqual(
-  devin.fresh("start", { model: "adaptive" }).args,
-  [
-    "-p",
-    "start",
-    "--permission-mode",
-    "smart",
-    "--respect-workspace-trust",
-    "false",
-    "--model",
-    "adaptive",
-  ]
-)
+assert.deepEqual(devin.fresh("start", { model: "adaptive" }).args, [
+  "-p",
+  "start",
+  "--permission-mode",
+  "smart",
+  "--respect-workspace-trust",
+  "false",
+  "--model",
+  "adaptive",
+])
 
 const openCode = providerHost.nativeRunners.get("opencode")!
 const openCodeFresh = openCode.fresh("start", { model: "openai/gpt" })

@@ -198,7 +198,7 @@ async function durabilityAndBatching() {
         JSON.stringify(saved.blocks),
         JSON.stringify(
           snapshot.blocks.concat([
-            { type: "user", text: "running", attachments: [] },
+            { type: "user", provider: "test-provider", requestId: saved.requests[0]?.id, contextFiles: [], text: "running", attachments: [] },
           ])
         )
       )
