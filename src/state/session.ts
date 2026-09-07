@@ -1,3 +1,4 @@
+import { hostConnectionStore } from "@/state/host-connection"
 import { applyLiveBatch, hydrateLiveSummaries } from "@/state/live-recovery"
 import { createHook, createStore, shallowEqual } from "@/state/store"
 import type {
@@ -112,6 +113,10 @@ export function currentTurnRunning(): boolean {
  * not a render.
  */
 function apply(event: HostEvent) {
+  if (event.type === "host-disconnected") {
+    hostConnectionStore.set({ kind: "disconnected", message: event.message })
+    return
+  }
   if (event.type === "browser-control") {
     mcpStore.set({ browsers: event.browsers })
     return
@@ -414,6 +419,7 @@ export const actions = {
       const active =
         boot.tabs.find((tab) => tab.id === boot.activeTabId) ?? boot.tabs[0]
       if (!active) throw new Error("The host started without a conversation")
+      hostConnectionStore.set({ kind: "connected" })
       store.set({
         phase: "ready",
         meta: active.session.meta,
