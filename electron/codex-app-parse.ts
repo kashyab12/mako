@@ -1,3 +1,4 @@
+import { attachmentFromCodexContent } from "./providers/codex/content.js"
 import {
   booleanValue,
   isJsonObject,
@@ -413,6 +414,14 @@ function parseThreadItem(value: JsonValue | undefined): ThreadItem | null {
           }
         : null
     }
+    case "imageView":
+    case "imageGeneration": {
+      return {
+        type: "attachment",
+        id,
+        attachment: attachmentFromCodexContent(root),
+      }
+    }
     case "plan": {
       const text = stringValue(root.text)
       return text === undefined ? null : { type, id, text }
@@ -429,6 +438,8 @@ function parseUserContent(value: JsonValue): UserMessageContent | null {
   const text = optionalString(root.text)
   if (!type.valid || !text.valid) return null
   const content: UserMessageContent = {}
+  if (type.value && type.value !== "text")
+    content.attachment = attachmentFromCodexContent(root)
   if (type.value !== undefined) content.type = type.value
   if (text.value !== undefined) content.text = text.value
   return content

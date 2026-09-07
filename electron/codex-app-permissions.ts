@@ -8,9 +8,9 @@ import {
   type JsonValue,
 } from "./codex-app-json.js"
 import type {
-  AcpPermissionRequest,
-  AcpPermissionResponse,
-  HostEvent,
+  LivePermissionRequest,
+  LivePermissionResponse,
+  LiveDriverEvent,
 } from "./shared.js"
 
 type CommandDecision =
@@ -116,7 +116,7 @@ export interface PermissionContext {
 }
 
 export interface PermissionCallbacks<C extends PermissionContext> {
-  emit(context: C, event: HostEvent): void
+  emit(context: C, event: LiveDriverEvent): void
   sendResult(context: C, id: JsonRpcId, result: ServerRequestResult): void
   sendError(context: C, id: JsonRpcId, code: number, message: string): void
 }
@@ -173,7 +173,7 @@ export function resolvePermission<C extends PermissionContext>(
   context: C,
   callbacks: PermissionCallbacks<C>,
   requestId: string,
-  response: AcpPermissionResponse
+  response: LivePermissionResponse
 ): void {
   const pending = context.serverRequests.get(requestId)
   if (!pending) return
@@ -474,7 +474,7 @@ function registerServerRequest<
       : undefined,
   }
   context.serverRequests.set(requestId, pending)
-  const request: AcpPermissionRequest = {
+  const request: LivePermissionRequest = {
     id: requestId,
     sessionId: context.id,
     title: boundedText(title, 1000),

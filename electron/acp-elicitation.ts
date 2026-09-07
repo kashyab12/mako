@@ -4,7 +4,7 @@ import {
   type ElicitationContentValue,
   type ElicitationPropertySchema,
 } from "@agentclientprotocol/sdk"
-import type { AcpInputQuestion } from "./shared.js"
+import type { LiveInputQuestion } from "./shared.js"
 
 function elicitationOptions(
   values: string[] | null | undefined,
@@ -12,7 +12,7 @@ function elicitationOptions(
     | Array<{ const: string; title: string; description?: string | null }>
     | null
     | undefined
-): AcpInputQuestion["options"] {
+): LiveInputQuestion["options"] {
   if (titled)
     return titled.map((option) => ({
       label: option.title,
@@ -30,7 +30,7 @@ export function elicitationQuestion(
   id: string,
   property: ElicitationPropertySchema,
   required: boolean
-): AcpInputQuestion | null {
+): LiveInputQuestion | null {
   if (ElicitationProperty.isString(property)) {
     return {
       id,
@@ -105,7 +105,7 @@ export function elicitationQuestion(
 }
 
 export function elicitationContent(
-  questions: AcpInputQuestion[],
+  questions: LiveInputQuestion[],
   answers: Record<string, string[]>
 ): Record<string, ElicitationContentValue> | null {
   const content: Record<string, ElicitationContentValue> = {}

@@ -1,10 +1,11 @@
+import type { AttachmentContent } from "@mako/sessions"
 import type {
   ContentBlock,
   SessionNotification,
   SessionUpdate,
 } from "@agentclientprotocol/sdk"
 import { normalizeAcpOptions } from "./harnesses.js"
-import type { AcpSessionState, AcpUpdate, HostEvent } from "./shared.js"
+import type { LiveSessionState, LiveUpdate, LiveDriverEvent } from "./shared.js"
 
 interface AcpToolOutputBoundary {
   value: Extract<
@@ -23,25 +24,35 @@ interface AcpToolOutputBoundary {
 export function forward<LiveSession extends { id: string }>(
   live: LiveSession,
   notification: SessionNotification,
-  emit: (event: HostEvent) => void,
-  updateState: (
-    live: LiveSession,
-    patch: Partial<AcpSessionState>
-  ) => void
+  emit: (event: LiveDriverEvent) => void,
+  updateState: (live: LiveSession, patch: Partial<LiveSessionState>) => void
 ): void {
   const raw = notification.update
-  let update: AcpUpdate
+  let update: LiveUpdate
   switch (raw.sessionUpdate) {
     case "user_message_chunk":
       // Replayed history (session/load streams the past back). Live user
-      // turns are emitted by acpPrompt itself and never arrive this way.
-      update = { kind: "user", text: contentText(raw.content) }
+      // turns are emitted by livePrompt itself and never arrive this way.
+      update =
+        raw.content.type === "text"
+          ? { kind: "user", text: raw.content.text }
+          : {
+              kind: "user",
+              text: "",
+              attachments: [contentAttachment(raw.content)],
+            }
       break
     case "agent_message_chunk":
-      update = { kind: "text", text: contentText(raw.content) }
+      update =
+        raw.content.type === "text"
+          ? { kind: "text", text: raw.content.text }
+          : { kind: "attachment", attachment: contentAttachment(raw.content) }
       break
     case "agent_thought_chunk":
-      update = { kind: "thinking", text: contentText(raw.content) }
+      update =
+        raw.content.type === "text"
+          ? { kind: "thinking", text: raw.content.text }
+          : { kind: "attachment", attachment: contentAttachment(raw.content) }
       break
     case "tool_call":
       update = {
@@ -50,6 +61,7 @@ export function forward<LiveSession extends { id: string }>(
         title: raw.title ?? "tool",
         toolKind: raw.kind,
         status: raw.status ?? "pending",
+        ...toolContent(raw.content),
         input:
           raw.rawInput === undefined
             ? undefined
@@ -66,7 +78,10 @@ export function forward<LiveSession extends { id: string }>(
           raw.rawInput === undefined
             ? undefined
             : JSON.stringify(raw.rawInput, null, 2),
-        output: parseAcpToolOutput({ value: raw.rawOutput }),
+        ...toolContent(raw.content),
+        output:
+          toolContent(raw.content).output ??
+          parseAcpToolOutput({ value: raw.rawOutput }),
       }
       break
     case "plan":
@@ -89,7 +104,11 @@ export function forward<LiveSession extends { id: string }>(
     default:
       return // Command lists and the rest are not rendered yet.
   }
-  if ((update.kind !== "text" && update.kind !== "user") || update.text) {
+  if (
+    (update.kind !== "text" && update.kind !== "user") ||
+    update.text ||
+    (update.kind === "user" && update.attachments?.length)
+  ) {
     emit({ type: "acp-update", id: live.id, update })
   }
 }
@@ -100,11 +119,78 @@ function parseAcpToolOutput(
   const { value } = boundary
   if (value === undefined) return undefined
   if (Object.prototype.toString.call(value) === "[object String]") {
-    return String(value).slice(0, 256_000)
+    return String(value)
   }
-  return JSON.stringify(value, null, 2).slice(0, 256_000)
+  return JSON.stringify(value, null, 2)
 }
 
-function contentText(content: ContentBlock): string {
-  return content.type === "text" ? content.text : ""
+function contentAttachment(
+  content: Exclude<ContentBlock, { type: "text" }>
+): AttachmentContent {
+  switch (content.type) {
+    case "image":
+    case "audio":
+      return {
+        type: "attachment",
+        name: content.type,
+        mimeType: content.mimeType,
+        source: { kind: "inline", data: content.data },
+      }
+    case "resource_link":
+      return {
+        type: "attachment",
+        name: content.title ?? content.name,
+        mimeType: content.mimeType ?? "application/octet-stream",
+        source: content.uri.startsWith("file://")
+          ? {
+              kind: "file",
+              path: decodeURIComponent(new URL(content.uri).pathname),
+            }
+          : { kind: "url", url: content.uri },
+      }
+    case "resource": {
+      const resource = content.resource
+      return {
+        type: "attachment",
+        name: resource.uri,
+        mimeType: resource.mimeType ?? "application/octet-stream",
+        source: {
+          kind: "inline",
+          data:
+            "blob" in resource
+              ? resource.blob
+              : Buffer.from(resource.text).toString("base64"),
+        },
+      }
+    }
+  }
+}
+
+interface ToolContent {
+  output?: string
+  attachments?: AttachmentContent[]
+}
+
+function toolContent(
+  content: Extract<
+    SessionUpdate,
+    { sessionUpdate: "tool_call_update" }
+  >["content"]
+): ToolContent {
+  if (!content) return {}
+  const text: string[] = []
+  const attachments: AttachmentContent[] = []
+  for (const part of content) {
+    if (part.type === "content") {
+      if (part.content.type === "text") text.push(part.content.text)
+      else attachments.push(contentAttachment(part.content))
+    } else if (part.type === "diff") {
+      text.push(`File: ${part.path}\n${part.oldText ?? ""}\n${part.newText}`)
+    } else if (part.type === "terminal")
+      text.push(`Terminal: ${part.terminalId}`)
+  }
+  return {
+    output: text.length ? text.join("\n") : undefined,
+    attachments: attachments.length ? attachments : undefined,
+  }
 }

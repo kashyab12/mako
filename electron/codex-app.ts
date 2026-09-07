@@ -5,10 +5,7 @@ import { StringDecoder } from "node:string_decoder"
 import { app } from "electron"
 import { accountEnv } from "./accounts.js"
 import { discoverMcpRegistry } from "./mcp-registry.js"
-import {
-  environmentForExecutable,
-  resolveExecutable,
-} from "./executable.js"
+import { environmentForExecutable, resolveExecutable } from "./executable.js"
 import { codexMcpConfig, mergeCodexConfig } from "./mcp-runtime.js"
 import {
   clearTurnServerRequests,
@@ -36,11 +33,11 @@ import type {
   Tuning,
 } from "./codex-app-types.js"
 import type {
-  AcpPermissionResponse,
-  AcpPromptAttachment,
-  AcpSessionState,
-  AcpUpdate,
-  HostEvent,
+  LivePermissionResponse,
+  PromptAttachment,
+  LiveSessionState,
+  LiveUpdate,
+  LiveDriverEvent,
   McpRegistrySnapshot,
 } from "./shared.js"
 
@@ -49,8 +46,9 @@ type Live = {
   cwd: string
   child: ChildProcessWithoutNullStreams
   threadId: string | null
+  promptSequence: number
   currentTurnId: string | null
-  state: AcpSessionState
+  state: LiveSessionState
   tuning?: Tuning
   mcpSnapshot: McpRegistrySnapshot
   nextRequestId: number
@@ -62,7 +60,7 @@ type Live = {
   decoder: StringDecoder
   protocol: ProtocolCallbacks
   startupTimer: ReturnType<typeof setTimeout> | null
-  replayUpdates: AcpUpdate[] | null
+  replayUpdates: LiveUpdate[] | null
   exited: boolean
 }
 
@@ -70,8 +68,7 @@ const STARTUP_TIMEOUT_MS = 10_000
 const MAX_STDERR_BUFFER = 16 * 1024
 const MAX_PROMPT_CHARS = 1_000_000
 const sessions = new Map<string, Live>()
-let sessionCounter = 0
-let sendEvent: (event: HostEvent) => void = () => {}
+let sendEvent: (event: LiveDriverEvent) => void = () => {}
 
 const permissionCallbacks: PermissionCallbacks<Live> = {
   emit: (_live, event) => emit(event),
@@ -79,19 +76,24 @@ const permissionCallbacks: PermissionCallbacks<Live> = {
   sendError: (live, id, code, message) => sendRpcError(live, id, code, message),
 }
 
-export function bindCodexApp(send: (event: HostEvent) => void): void {
+export function bindCodexApp(send: (event: LiveDriverEvent) => void): void {
   sendEvent = send
 }
 
-export function codexAppState(id: string): AcpSessionState | null {
+export function codexAppState(id: string): LiveSessionState | null {
   return sessions.get(id)?.state ?? null
 }
 
 export async function codexAppStart(
   cwd: string,
-  options: { resume?: string; title?: string; tuning?: Tuning } = {}
-): Promise<AcpSessionState> {
-  const id = `codex-app-${++sessionCounter}`
+  options: {
+    conversationId: string
+    resume?: string
+    title?: string
+    tuning?: Tuning
+  }
+): Promise<LiveSessionState> {
+  const id = options.conversationId
   const workingDir = cwd && existsSync(cwd) ? cwd : homedir()
   const mcpSnapshot = await discoverMcpRegistry(workingDir, app.getAppPath())
   const env = await accountEnv("codex", process.env)
@@ -109,6 +111,7 @@ export async function codexAppStart(
     cwd: workingDir,
     child,
     threadId: null,
+    promptSequence: 0,
     currentTurnId: null,
     state: {
       id,
@@ -116,6 +119,7 @@ export async function codexAppStart(
       cwd: workingDir,
       title: options.title,
       status: "starting",
+      connection: "starting",
       modes: [],
       currentMode: null,
       configOptions: [],
@@ -161,7 +165,7 @@ export async function codexAppStart(
     clearStartupTimer(live)
     live.threadId = response.thread.id
     if (response.thread.cwd !== undefined) live.cwd = response.thread.cwd
-    const replayUpdates: AcpUpdate[] = []
+    const replayUpdates: LiveUpdate[] = []
     live.replayUpdates = replayUpdates
     try {
       replayHistory(live, response.thread.turns ?? [])
@@ -173,6 +177,7 @@ export async function codexAppStart(
     updateState(live, {
       nativeId: response.thread.id,
       status: "ready",
+      connection: "connected",
       cwd: live.cwd,
       error: undefined,
     })
@@ -193,7 +198,7 @@ export async function codexAppStart(
 export async function codexAppPrompt(
   id: string,
   text: string,
-  attachments: AcpPromptAttachment[] = []
+  attachments: PromptAttachment[] = []
 ): Promise<void> {
   const live = sessions.get(id)
   if (!live?.threadId || live.exited)
@@ -204,6 +209,7 @@ export async function codexAppPrompt(
   if (text.length > MAX_PROMPT_CHARS)
     throw new Error("The prompt is too large for the Codex app-server adapter")
 
+  const sequence = ++live.promptSequence
   updateState(live, {
     status: "running",
     error: undefined,
@@ -225,13 +231,15 @@ export async function codexAppPrompt(
       cwd: live.cwd,
       ...turnTuning(live.tuning),
     })
-    if (isRunning(live)) live.currentTurnId = result.turn.id
+    if (isRunning(live) && live.promptSequence === sequence)
+      live.currentTurnId = result.turn.id
   } catch (error) {
+    if (live.promptSequence !== sequence) return
     const message =
       error instanceof Error && error.message
         ? error.message
         : "Codex rejected the turn"
-    updateState(live, { status: "ready", error: message, lastStop: "failed" })
+    updateState(live, { status: "failed", error: message, lastStop: "failed" })
     throw new Error(message, { cause: error })
   }
 }
@@ -239,7 +247,7 @@ export async function codexAppPrompt(
 export function codexAppPermission(
   id: string,
   requestId: string,
-  response: AcpPermissionResponse
+  response: LivePermissionResponse
 ): void {
   const live = sessions.get(id)
   if (!live) return
@@ -349,13 +357,22 @@ function handleProcessEnd(live: Live, message: string): void {
   if (live.exited) return
   const wasClosed = live.state.status === "closed"
   disposeLive(live, new Error(message))
-  if (!wasClosed) updateState(live, { status: "failed", error: message })
+  if (!wasClosed)
+    updateState(live, {
+      status: "failed",
+      connection: "disconnected",
+      error: message,
+    })
 }
 
 function failLive(live: Live, message: string): void {
   if (!live.exited) disposeLive(live, new Error(message))
   if (live.state.status !== "closed")
-    updateState(live, { status: "failed", error: message })
+    updateState(live, {
+      status: "failed",
+      connection: "disconnected",
+      error: message,
+    })
 }
 
 function disposeLive(live: Live, error: Error): void {
@@ -378,12 +395,12 @@ function clearStartupTimer(live: Live): void {
   live.startupTimer = null
 }
 
-function updateState(live: Live, patch: Partial<AcpSessionState>): void {
+function updateState(live: Live, patch: Partial<LiveSessionState>): void {
   live.state = { ...live.state, ...patch }
   emit({ type: "acp-session", session: live.state })
 }
 
-function emitUpdate(live: Live, update: AcpUpdate): void {
+function emitUpdate(live: Live, update: LiveUpdate): void {
   if (
     (update.kind === "text" ||
       update.kind === "thinking" ||
@@ -398,7 +415,7 @@ function emitUpdate(live: Live, update: AcpUpdate): void {
   emit({ type: "acp-update", id: live.id, update })
 }
 
-function emit(event: HostEvent): void {
+function emit(event: LiveDriverEvent): void {
   try {
     sendEvent(event)
   } catch {

@@ -1,4 +1,15 @@
-import { copyFile, mkdir, open, readFile, readdir, stat, writeFile } from "node:fs/promises"
+import { filePreviewUrl } from "./file-previews.js"
+import { resolveMakoArtifact } from "./artifact-paths.js"
+import {
+  copyFile,
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  realpath,
+  stat,
+  writeFile,
+} from "node:fs/promises"
 import { homedir } from "node:os"
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import type { FileContents, StagedFile, WorkspaceFile } from "./shared.js"
@@ -51,8 +62,21 @@ const FILE_CACHE_MS = 5_000
 const WALK_MAX_DEPTH = 8
 const WALK_MAX_FILES = 20_000
 const WALK_SKIP = new Set([
-  "node_modules", ".git", "dist", "build", "out", "target", ".next", ".venv",
-  "venv", "__pycache__", ".cache", "vendor", "Pods", ".turbo", "coverage",
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  "out",
+  "target",
+  ".next",
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".cache",
+  "vendor",
+  "Pods",
+  ".turbo",
+  "coverage",
 ])
 
 export class WorkspaceFiles {
@@ -85,7 +109,8 @@ export class WorkspaceFiles {
   async list(): Promise<WorkspaceFile[]> {
     for (;;) {
       const now = Date.now()
-      if (this.fileCache && now - this.fileCache.at < FILE_CACHE_MS) return this.fileCache.files
+      if (this.fileCache && now - this.fileCache.at < FILE_CACHE_MS)
+        return this.fileCache.files
 
       const cwd = this.cwdValue
       const gitPaths = await this.git.listFiles()
@@ -94,7 +119,9 @@ export class WorkspaceFiles {
         : // Not a repo: a bounded walk, skipping the usual heavy directories.
           await walkWorkspace(cwd, cwd, 0)
       const changed = new Set(
-        (await this.git.status().catch(() => null))?.files.map((file) => file.path) ?? []
+        (await this.git.status().catch(() => null))?.files.map(
+          (file) => file.path
+        ) ?? []
       )
       const files = paths
         .sort((a, b) => a.localeCompare(b))
@@ -152,8 +179,15 @@ export class WorkspaceFiles {
    * takes longer to draw than to read. Both are reported rather than silently
    * applied — a truncated file that does not say so is a lie about the code.
    */
-  async read(path: string): Promise<FileContents> {
-    const absolute = await this.resolvePath(path)
+  async read(
+    path: string,
+    referencedFiles: readonly string[] = []
+  ): Promise<FileContents> {
+    const granted = referencedFiles.includes(path) ? await realpath(path) : null
+    const absolute =
+      granted ??
+      (await resolveMakoArtifact(path)) ??
+      (await this.resolvePath(path))
     const info = await stat(absolute)
     if (info.isDirectory()) throw new Error(`${path} is a directory`)
     const extension = extname(path).toLowerCase()
@@ -161,10 +195,6 @@ export class WorkspaceFiles {
       ([candidate]) => candidate === extension
     )?.[1]
     if (media) {
-      const encoded = path
-        .split(/[\\/]/)
-        .map((part) => encodeURIComponent(part))
-        .join("/")
       return {
         path,
         contents: "",
@@ -173,7 +203,7 @@ export class WorkspaceFiles {
         truncated: false,
         media: media.media,
         mimeType: media.mimeType,
-        previewUrl: `mako-file://workspace/${encoded}`,
+        previewUrl: filePreviewUrl(absolute),
       }
     }
 
@@ -185,7 +215,13 @@ export class WorkspaceFiles {
       // A NUL byte in the first few KB is the same heuristic git uses, and it
       // is right far more often than sniffing extensions.
       if (buffer.subarray(0, 8000).includes(0)) {
-        return { path, contents: "", size: info.size, binary: true, truncated: false }
+        return {
+          path,
+          contents: "",
+          size: info.size,
+          binary: true,
+          truncated: false,
+        }
       }
       return {
         path,
@@ -201,8 +237,10 @@ export class WorkspaceFiles {
 
   /** Absolute path for a workspace-relative one, for reveal/open. */
   async resolvePath(path: string): Promise<string> {
-    const root = resolve((await this.git.root()) ?? this.cwdValue)
-    const absolute = resolve(root, path)
+    const lexicalRoot = resolve((await this.git.root()) ?? this.cwdValue)
+    const root = await realpath(lexicalRoot).catch(() => lexicalRoot)
+    const lexical = resolve(root, path)
+    const absolute = await realpath(lexical).catch(() => lexical)
     const fromRoot = relative(root, absolute)
     if (
       fromRoot === ".." ||
@@ -225,7 +263,11 @@ export async function readText(path: string): Promise<string | null> {
   }
 }
 
-export async function walkWorkspace(root: string, dir: string, depth: number): Promise<string[]> {
+export async function walkWorkspace(
+  root: string,
+  dir: string,
+  depth: number
+): Promise<string[]> {
   if (depth > WALK_MAX_DEPTH) return []
   let entries
   try {

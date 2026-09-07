@@ -1,3 +1,4 @@
+import { attachmentFiles } from "@mako/sessions"
 /**
  * The machine's sessions, whoever wrote them.
  *
@@ -36,6 +37,8 @@ import {
   type ThreadPage,
   type ThreadRef,
 } from "@mako/sessions"
+import { WorkspaceGit } from "./host-git.js"
+import { WorkspaceFiles } from "./host-workspace.js"
 import { annotate, bindLineage, loadLineage } from "./lineage.js"
 import { ProviderActivityEngine } from "./provider-activity-engine.js"
 import { providerHost } from "./providers/index.js"
@@ -48,6 +51,7 @@ import {
 } from "./daemon-login.js"
 import type {
   ExternalThreadActivity,
+  FileContents,
   HostEvent,
   ThreadFileContext,
   ThreadInlineContext,
@@ -140,7 +144,8 @@ function reconcileProviderActivity(): void {
         detail: session.detail,
       }
       const held = next.get(ref.path)
-      if (!held || activity.status === "needs-input") next.set(ref.path, activity)
+      if (!held || activity.status === "needs-input")
+        next.set(ref.path, activity)
     }
   }
   for (const path of new Set([...emittedActivity.keys(), ...next.keys()])) {
@@ -281,7 +286,11 @@ async function connectViaDaemon(): Promise<boolean> {
           // It exited between the liveness check and the signal.
         }
       }
-      for (let attempt = 0; attempt < 100 && processIsAlive(pid); attempt += 1) {
+      for (
+        let attempt = 0;
+        attempt < 100 && processIsAlive(pid);
+        attempt += 1
+      ) {
         await new Promise((resolve) => setTimeout(resolve, 50))
       }
       return false
@@ -355,7 +364,8 @@ function recoverDaemon(): Promise<void> {
     emit({
       type: "notice",
       level: "error",
-      message: "Session sync could not restart. Mako is watching locally until the next launch.",
+      message:
+        "Session sync could not restart. Mako is watching locally until the next launch.",
     })
   })().finally(() => {
     recoveringDaemon = null
@@ -442,6 +452,24 @@ export function listThreads(
         .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
     : (catalog?.list(filter) ?? [])
   return refs.slice(0, LIST_CAP).map(annotate)
+}
+
+export async function readThreadFile(
+  threadPath: string,
+  filePath: string
+): Promise<FileContents> {
+  const ref = daemon
+    ? mirror.get(threadPath)
+    : catalog?.list().find((candidate) => candidate.path === threadPath)
+  const cwd = ref?.workspace ?? ref?.cwd
+  const thread = await openThread(threadPath)
+  const files = attachmentFiles(thread?.entries ?? [])
+  if (!cwd && !files.includes(filePath))
+    throw new Error("This conversation has no readable workspace")
+  return new WorkspaceFiles(cwd ?? "/", new WorkspaceGit(cwd ?? "/")).read(
+    filePath,
+    files
+  )
 }
 
 export async function pageThread(
@@ -631,7 +659,7 @@ export async function transcriptArtifactFor(
     bundle.assets.map(async (asset) => {
       const file = join(root, asset.path)
       await mkdir(dirname(file), { recursive: true })
-      await writeFile(file, asset.content, "utf8")
+      await writeFile(file, asset.content, asset.encoding ?? "utf8")
     })
   )
   await mkdir(root, { recursive: true })
@@ -663,14 +691,11 @@ export async function transcriptInlineFor(
 ): Promise<ThreadInlineContext | null> {
   const opened = await openThread(path)
   if (!opened) return null
-  const bundle = renderTranscriptBundle(
-    opened,
-    {
-      ...transcriptOptions(opened.ref.harness, undefined),
-      mainBudget: INLINE_MAIN_BUDGET,
-      totalBudget: INLINE_TOTAL_BUDGET,
-    }
-  )
+  const bundle = renderTranscriptBundle(opened, {
+    ...transcriptOptions(opened.ref.harness, undefined),
+    mainBudget: INLINE_MAIN_BUDGET,
+    totalBudget: INLINE_TOTAL_BUDGET,
+  })
   return {
     kind: "inline",
     content: inlineTranscript(bundle, INLINE_DELIVERY_BUDGET),
@@ -761,7 +786,10 @@ function inlineTranscript(bundle: TranscriptBundle, budget: number): string {
 
   const transcriptPrefix = "\n\n## Transcript index\n\n"
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    const available = Math.max(0, budget - header().length - transcriptPrefix.length)
+    const available = Math.max(
+      0,
+      budget - header().length - transcriptPrefix.length
+    )
     if (markdown.length <= available) break
     markdown = markdown.slice(0, available)
     markdownOmitted = bundle.markdown.length - markdown.length
@@ -772,7 +800,9 @@ function inlineTranscript(bundle: TranscriptBundle, budget: number): string {
     const section = assetSections.get(asset.path)
     if (!section) continue
     included.add(asset.path)
-    const candidate = `${header()}${transcriptPrefix}${markdown}\n\n---\n\n${[...included]
+    const candidate = `${header()}${transcriptPrefix}${markdown}\n\n---\n\n${[
+      ...included,
+    ]
       .map((path) => assetSections.get(path))
       .filter((value): value is string => value !== undefined)
       .join("\n\n---\n\n")}`

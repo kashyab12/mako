@@ -1,3 +1,5 @@
+import type { LiveCapability } from "./shared.js"
+import type { LiveStartOptions, LiveSnapshot, LiveRequest } from "./shared.js"
 import { contextBridge, ipcRenderer, webUtils } from "electron"
 import type {
   Automation,
@@ -26,9 +28,8 @@ import type {
   SkillRegistrySnapshot,
   SkillSyncPreview,
   SkillSyncTarget,
-  AcpPermissionResponse,
-  AcpPromptAttachment,
-  AcpSessionState,
+  LivePermissionResponse,
+  PromptAttachment,
   Thread,
   ThreadContextOptions,
   ThreadFileContext,
@@ -91,14 +92,18 @@ const api = {
       ready: boolean
       threads: ThreadRef[]
       activity: Record<string, ExternalThreadActivity>
-    }>(
-      "mako:threads",
-      filter
-    ),
+    }>("mako:threads", filter),
   openThread: (path: string) =>
     invokeTrustedHost<Thread | null>("mako:thread-open", path),
+  readThreadFile: (threadPath: string, filePath: string) =>
+    invokeTrustedHost<FileContents>("mako:thread-file", threadPath, filePath),
   pageThread: (path: string, before?: number, limit?: number) =>
-    invokeTrustedHost<ThreadPage | null>("mako:thread-page", path, before, limit),
+    invokeTrustedHost<ThreadPage | null>(
+      "mako:thread-page",
+      path,
+      before,
+      limit
+    ),
   threadContexts,
   followThread: (path: string, fromByte: number) =>
     invokeTrustedHost<void>("mako:thread-follow", path, fromByte),
@@ -164,33 +169,42 @@ const api = {
     invokeTrustedHost<void>("mako:thread-abort-run", path),
 
   /* Interactive foreign agents (ACP). */
-  acpHarnesses: () => invokeTrustedHost<string[]>("mako:acp-harnesses"),
-  acpStart: (
-    harness: string,
-    cwd: string,
-    options?: {
-      resume?: string
-      title?: string
-      tuning?: {
-        model?: string
-        effort?: string
-        fast?: boolean
-        options?: Record<string, string | boolean>
-      }
-    }
-  ) =>
-    invokeTrustedHost<AcpSessionState>("mako:acp-start", harness, cwd, options),
-  acpPrompt: (id: string, text: string, attachments?: AcpPromptAttachment[]) =>
-    invokeTrustedHost<void>("mako:acp-prompt", id, text, attachments),
-  acpPermission: (
+  liveCapabilities: () =>
+    invokeTrustedHost<LiveCapability[]>("mako:live-capabilities"),
+  liveStart: (harness: string, cwd: string, options: LiveStartOptions) =>
+    invokeTrustedHost<LiveSnapshot>("mako:live-start", harness, cwd, options),
+  liveClearQueue: (id: string) =>
+    invokeTrustedHost<LiveSnapshot>("mako:live-clear-queue", id),
+  liveEarlier: (id: string) =>
+    invokeTrustedHost<LiveSnapshot>("mako:live-earlier", id),
+  liveBind: (id: string, path: string) =>
+    invokeTrustedHost<LiveSnapshot>("mako:live-bind", id, path),
+  readLiveFile: (id: string, path: string) =>
+    invokeTrustedHost<FileContents>("mako:read-live-file", id, path),
+  liveSnapshot: (id: string) =>
+    invokeTrustedHost<LiveSnapshot | null>("mako:live-snapshot", id),
+  livePrompt: (
     id: string,
     requestId: string,
-    response: AcpPermissionResponse
-  ) => invokeTrustedHost<void>("mako:acp-permission", id, requestId, response),
-  acpSetMode: (id: string, modeId: string) =>
-    invokeTrustedHost<void>("mako:acp-mode", id, modeId),
-  acpCancel: (id: string) => invokeTrustedHost<void>("mako:acp-cancel", id),
-  acpClose: (id: string) => invokeTrustedHost<void>("mako:acp-close", id),
+    text: string,
+    attachments?: PromptAttachment[]
+  ) =>
+    invokeTrustedHost<LiveRequest>(
+      "mako:live-prompt",
+      id,
+      requestId,
+      text,
+      attachments
+    ),
+  livePermission: (
+    id: string,
+    requestId: string,
+    response: LivePermissionResponse
+  ) => invokeTrustedHost<void>("mako:live-permission", id, requestId, response),
+  liveSetMode: (id: string, modeId: string) =>
+    invokeTrustedHost<void>("mako:live-mode", id, modeId),
+  liveCancel: (id: string) => invokeTrustedHost<void>("mako:live-cancel", id),
+  liveClose: (id: string) => invokeTrustedHost<void>("mako:live-close", id),
 
   /* Harness accounts: several logins per CLI. */
   accounts: () => invokeTrustedHost<HarnessAccount[]>("mako:accounts"),

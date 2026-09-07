@@ -1,3 +1,10 @@
+import { attachmentFiles } from "@mako/sessions"
+import { WorkspaceFiles } from "./host-workspace.js"
+import { WorkspaceGit } from "./host-git.js"
+import { resolveFilePreview } from "./file-previews.js"
+import { providerHost } from "./providers/index.js"
+import { LiveConversations } from "./live-conversations.js"
+import type { LiveStartOptions } from "./shared.js"
 import {
   app,
   BrowserWindow,
@@ -56,7 +63,6 @@ import {
 } from "./github.js"
 import { HostPool } from "./pool.js"
 import { listExternalEditors, openInExternalEditor } from "./editors.js"
-import { resolveExecutable } from "./executable.js"
 import { workspacePreviewPath } from "./workspace-preview.js"
 import {
   daemonStatus,
@@ -68,6 +74,7 @@ import {
   listThreads,
   openThread,
   pageThread,
+  readThreadFile,
   stopThreads,
   transcriptArtifactFor,
   transcriptInlineFor,
@@ -100,28 +107,8 @@ import {
 import { daemonLoginEnabled, setDaemonLogin } from "./daemon-login.js"
 import { TerminalDaemonClient } from "./terminal-client.js"
 import { ensureCuaEmbedded, stopCuaEmbedded } from "./cua-embedded.js"
-import {
-  acpCancel,
-  acpClose,
-  acpHarnesses,
-  acpPrompt,
-  acpRespondPermission,
-  acpSetMode,
-  acpStart,
-  acpState,
-  bindAcp,
-  stopAcp,
-} from "./acp.js"
-import {
-  bindCodexApp,
-  codexAppCancel,
-  codexAppClose,
-  codexAppPermission,
-  codexAppPrompt,
-  codexAppStart,
-  codexAppState,
-  stopCodexApps,
-} from "./codex-app.js"
+import { bindAcp, stopAcp } from "./acp.js"
+import { bindCodexApp, stopCodexApps } from "./codex-app.js"
 import {
   deletePlugin,
   listPlugins,
@@ -148,8 +135,8 @@ import { registerIpc as handle } from "./ipc/register.js"
 import { installSessionIpc } from "./ipc/session.js"
 import { installWorkspaceIpc, stopWorkspaceIpc } from "./ipc/workspace.js"
 import type {
-  AcpPermissionResponse,
-  AcpPromptAttachment,
+  LivePermissionResponse,
+  PromptAttachment,
   HostEvent,
   McpSyncTarget,
   SkillSyncTarget,
@@ -196,6 +183,7 @@ function appIcon() {
   return undefined
 }
 
+let liveConversations: LiveConversations
 let window: BrowserWindow | null = null
 let terminalClient: TerminalDaemonClient | null = null
 const pool = new HostPool(emit)
@@ -369,6 +357,7 @@ async function createWindow() {
 
 function bindIpc() {
   installSessionIpc({
+    liveSummaries: () => liveConversations.summaries(),
     ready,
     withHost,
     platform: process.platform,
@@ -443,6 +432,9 @@ function bindIpc() {
     activity: threadActivitySnapshot(),
   }))
   handle("mako:thread-open", (_e, path: string) => openThread(path))
+  handle("mako:thread-file", (_e, threadPath: string, filePath: string) =>
+    readThreadFile(threadPath, filePath)
+  )
   handle(
     "mako:thread-page",
     (_e, path: string, before?: number, limit?: number) =>
@@ -464,7 +456,13 @@ function bindIpc() {
   )
   handle("mako:thread-unfollow", () => unfollowThread())
   handle("mako:thread-resumable", () => [
-    ...new Set([...resumableHarnesses(), ...acpHarnesses()]),
+    ...new Set([
+      ...resumableHarnesses(),
+      ...providerHost.liveDrivers
+        .list()
+        .filter((driver) => driver.available(app.getAppPath()))
+        .map((driver) => driver.provider),
+    ]),
   ])
   handle("mako:thread-continue-targets", async () =>
     (await harnessProfiles())
@@ -661,66 +659,87 @@ function bindIpc() {
       })
   )
 
-  /* Interactive foreign agents over ACP. */
-  handle("mako:acp-harnesses", () => [
-    ...(resolveExecutable("codex") ? ["codex"] : []),
-    ...acpHarnesses(),
-  ])
+  handle("mako:live-capabilities", () =>
+    providerHost.liveDrivers
+      .list()
+      .filter((driver) => driver.available(app.getAppPath()))
+      .map((driver) => ({
+        provider: driver.provider,
+        canResume: driver.canResume,
+      }))
+  )
   handle(
-    "mako:acp-start",
-    async (
-      _e,
-      harness: string,
-      cwd: string,
-      options?: {
-        resume?: string
-        title?: string
-        tuning?: {
-          model?: string
-          effort?: string
-          fast?: boolean
-          options?: Record<string, string | boolean>
-        }
-      }
-    ) => {
+    "mako:live-start",
+    async (_event, harness: string, cwd: string, options: LiveStartOptions) => {
       await ensureMakoLocalControl().catch(() => null)
       const profile = await harnessProfile(harness)
-      const resolved = {
+      await liveConversations.start(harness, cwd, {
         ...options,
-        tuning: resolveHarnessTuning(profile, options?.tuning),
-      }
-      return harness === "codex"
-        ? codexAppStart(cwd, resolved)
-        : acpStart(harness, cwd, resolved)
+        tuning: resolveHarnessTuning(profile, options.tuning),
+      })
+      return liveConversations.snapshot(options.conversationId)
     }
   )
-  handle(
-    "mako:acp-state",
-    (_e, id: string) => codexAppState(id) ?? acpState(id)
+  handle("mako:live-clear-queue", (_event, id: string) =>
+    liveConversations.clearQueue(id)
+  )
+  handle("mako:live-earlier", (_event, id: string) =>
+    liveConversations.earlier(id)
+  )
+  handle("mako:live-bind", (_event, id: string, path: string) =>
+    liveConversations.bind(id, path)
+  )
+  handle("mako:read-live-file", (_event, id: string, path: string) => {
+    const snapshot = liveConversations.snapshot(id)
+    if (!snapshot) throw new Error("That conversation is unavailable")
+    const files = [
+      ...attachmentFiles(snapshot.base?.entries ?? []),
+      ...snapshot.blocks.flatMap((block) => {
+        const attachments =
+          block.type === "attachment"
+            ? [block.attachment]
+            : block.type === "tool" || block.type === "user"
+              ? (block.attachments ?? [])
+              : []
+        return attachments.flatMap((attachment) =>
+          attachment.source.kind === "file" ? [attachment.source.path] : []
+        )
+      }),
+    ]
+    return new WorkspaceFiles(
+      snapshot.session.cwd,
+      new WorkspaceGit(snapshot.session.cwd)
+    ).read(path, files)
+  })
+  handle("mako:live-snapshot", (_event, id: string) =>
+    liveConversations.snapshot(id)
   )
   handle(
-    "mako:acp-prompt",
-    (_e, id: string, text: string, attachments?: AcpPromptAttachment[]) =>
-      id.startsWith("codex-app-")
-        ? codexAppPrompt(id, text, attachments)
-        : acpPrompt(id, text, attachments)
+    "mako:live-state",
+    (_event, id: string) => liveConversations.snapshot(id)?.session ?? null
   )
   handle(
-    "mako:acp-permission",
-    (_e, id: string, requestId: string, response: AcpPermissionResponse) =>
-      id.startsWith("codex-app-")
-        ? codexAppPermission(id, requestId, response)
-        : acpRespondPermission(id, requestId, response)
+    "mako:live-prompt",
+    (
+      _event,
+      id: string,
+      requestId: string,
+      text: string,
+      attachments?: PromptAttachment[]
+    ) => liveConversations.submit(id, requestId, text, attachments)
   )
-  handle("mako:acp-mode", (_e, id: string, modeId: string) =>
-    acpSetMode(id, modeId)
+  handle(
+    "mako:live-permission",
+    (_event, id: string, requestId: string, response: LivePermissionResponse) =>
+      liveConversations.permission(id, requestId, response)
   )
-  handle("mako:acp-cancel", (_e, id: string) =>
-    id.startsWith("codex-app-") ? codexAppCancel(id) : acpCancel(id)
+  handle("mako:live-mode", (_event, id: string, modeId: string) =>
+    liveConversations.setMode(id, modeId)
   )
-  handle("mako:acp-close", (_e, id: string) =>
-    id.startsWith("codex-app-") ? codexAppClose(id) : acpClose(id)
+  handle("mako:live-cancel", (_event, id: string) =>
+    liveConversations.cancel(id)
   )
+  handle("mako:live-close", (_event, id: string) => liveConversations.close(id))
 
   /** A new conversation on another harness, from the main composer. */
   handle(
@@ -898,6 +917,11 @@ app.whenReady().then(async () => {
   protocol.handle("mako-file", async (request) => {
     if (request.method !== "GET")
       return new Response("Method not allowed", { status: 405 })
+    const artifact = resolveFilePreview(request.url)
+    if (artifact)
+      return net.fetch(pathToFileURL(artifact).toString(), {
+        headers: request.headers,
+      })
     const path = workspacePreviewPath(request.url)
     if (!path) return new Response("Not found", { status: 404 })
     try {
@@ -921,13 +945,20 @@ app.whenReady().then(async () => {
   )
   powerMonitor.on("resume", emitTerminalWake)
   powerMonitor.on("unlock-screen", emitTerminalWake)
+  liveConversations = new LiveConversations({
+    appPath: app.getAppPath(),
+    root: join(app.getPath("userData"), "conversations"),
+    driver: (provider) => providerHost.liveDrivers.get(provider),
+    history: pageThread,
+    emit,
+  })
   bindIpc()
   await createWindow()
   installUpdates(emit)
   installThreads(emit)
   bindDrivers(emit)
-  bindAcp(emit)
-  bindCodexApp(emit)
+  bindAcp((event) => liveConversations.observe(event))
+  bindCodexApp((event) => liveConversations.observe(event))
   bindAutomations(emit, async (cwd, prompt) => {
     const resumable = new Set(resumableHarnesses())
     const profile = (await harnessProfiles()).find(
@@ -971,5 +1002,6 @@ app.on("before-quit", () => {
   stopDrivers()
   stopAcp()
   stopCodexApps()
+  liveConversations?.stop()
   void pool.dispose()
 })

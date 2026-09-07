@@ -20,7 +20,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { pathToFileURL } from "node:url"
-import { Readable, Writable } from "node:stream"
+import { acpReadable, acpWritable } from "./acp-stream.js"
 import { app } from "electron"
 import {
   ClientSideConnection,
@@ -44,27 +44,21 @@ import {
 } from "@agentclientprotocol/sdk"
 import { accountEnv } from "./accounts.js"
 import { resolveAcpConfigValue } from "./acp-config.js"
-import {
-  elicitationContent,
-  elicitationQuestion,
-} from "./acp-elicitation.js"
+import { elicitationContent, elicitationQuestion } from "./acp-elicitation.js"
 import { forward } from "./acp-notifications.js"
 import { normalizeAcpOptions } from "./harnesses.js"
 import { providerHost } from "./providers/index.js"
 import type { AcpTuning } from "./providers/acp-source.js"
 import { discoverMcpRegistry } from "./mcp-registry.js"
-import {
-  environmentForExecutable,
-  resolveExecutable,
-} from "./executable.js"
+import { environmentForExecutable, resolveExecutable } from "./executable.js"
 import { acpMcpServers } from "./mcp-runtime.js"
 import type { McpTransport } from "./shared.js"
 import type {
-  AcpPermissionRequest,
-  AcpPermissionResponse,
-  AcpPromptAttachment,
-  AcpSessionState,
-  HostEvent,
+  LivePermissionRequest,
+  LivePermissionResponse,
+  PromptAttachment,
+  LiveSessionState,
+  LiveDriverEvent,
 } from "./shared.js"
 
 interface ClaudeCodeOptions {
@@ -84,14 +78,6 @@ interface LegacySessionModelRequest {
   modelId: string
 }
 
-export function acpHarnesses(): string[] {
-  const appPath = app.getAppPath()
-  return providerHost.acpSources
-    .list()
-    .filter((source) => source.available(appPath))
-    .map((source) => source.provider)
-}
-
 interface Live {
   id: string
   harness: string
@@ -99,8 +85,8 @@ interface Live {
   child: ChildProcessWithoutNullStreams
   connection: Connection | null
   sessionId: string | null
-  state: AcpSessionState
-  pendingPermissions: Map<string, (response: AcpPermissionResponse) => void>
+  state: LiveSessionState
+  pendingPermissions: Map<string, (response: LivePermissionResponse) => void>
   promptCapabilities: {
     image?: boolean
     audio?: boolean
@@ -112,10 +98,12 @@ interface Live {
 
 const sessions = new Map<string, Live>()
 const STARTUP_TIMEOUT_MS = 20_000
-let counter = 0
-let emit: (event: HostEvent) => void = () => {}
+let emit: (event: LiveDriverEvent) => void = () => {}
 
-function startupStep<Value>(work: Promise<Value>, harness: string): Promise<Value> {
+function startupStep<Value>(
+  work: Promise<Value>,
+  harness: string
+): Promise<Value> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error(`${harness} did not start within 20 seconds`)),
@@ -134,7 +122,7 @@ function startupStep<Value>(work: Promise<Value>, harness: string): Promise<Valu
   })
 }
 
-export function bindAcp(send: (event: HostEvent) => void): void {
+export function bindAcp(send: (event: LiveDriverEvent) => void): void {
   emit = send
 }
 
@@ -155,14 +143,14 @@ async function requestElicitation(
   )
     return { action: "cancel" }
   const requestId = `${live.id}-input-${live.pendingPermissions.size}-${Date.now()}`
-  const request: AcpPermissionRequest = {
+  const request: LivePermissionRequest = {
     id: requestId,
     sessionId: live.id,
     title: params.message,
     options: [],
     questions,
   }
-  const response = await new Promise<AcpPermissionResponse>((resolve) => {
+  const response = await new Promise<LivePermissionResponse>((resolve) => {
     live.pendingPermissions.set(requestId, resolve)
     emit({ type: "acp-permission", request })
   })
@@ -172,7 +160,7 @@ async function requestElicitation(
   return content ? { action: "accept", content } : { action: "decline" }
 }
 
-export function acpState(id: string): AcpSessionState | null {
+export function acpState(id: string): LiveSessionState | null {
   return sessions.get(id)?.state ?? null
 }
 
@@ -182,15 +170,16 @@ export function acpState(id: string): AcpSessionState | null {
  * this, which makes "keep working on this exact session, interactively" real
  * rather than a transcript hand-off.
  */
-export async function acpStart(
+export async function liveStart(
   harness: string,
   cwd: string,
   options: {
+    conversationId: string
     resume?: string
     title?: string
     tuning?: AcpTuning
-  } = {}
-): Promise<AcpSessionState> {
+  }
+): Promise<LiveSessionState> {
   const source = providerHost.acpSources.get(harness)
   const spec = await source?.launch({
     appPath: app.getAppPath(),
@@ -200,7 +189,7 @@ export async function acpStart(
   })
   if (!spec) throw new Error(`${harness} does not speak ACP here yet`)
 
-  const id = `acp-${++counter}`
+  const id = options.conversationId
   const workingDir = cwd && existsSync(cwd) ? cwd : homedir()
   const mcpSnapshot = await discoverMcpRegistry(workingDir, app.getAppPath())
 
@@ -234,6 +223,7 @@ export async function acpStart(
       cwd: workingDir,
       title: options.title,
       status: "starting",
+      connection: "starting",
       modes: [],
       currentMode: null,
       configOptions: [],
@@ -253,6 +243,7 @@ export async function acpStart(
     if (live.state.status === "closed") return
     update(live, {
       status: "failed",
+      connection: "disconnected",
       error: lastLine(stderr) || `${spec.command} exited`,
     })
   })
@@ -260,7 +251,7 @@ export async function acpStart(
   const client: Client = {
     async requestPermission(params: RequestPermissionRequest) {
       const requestId = `${id}-perm-${live.pendingPermissions.size}-${Date.now()}`
-      const request: AcpPermissionRequest = {
+      const request: LivePermissionRequest = {
         id: requestId,
         sessionId: id,
         title: params.toolCall?.title ?? "The agent wants to use a tool",
@@ -271,7 +262,7 @@ export async function acpStart(
           kind: option.kind,
         })),
       }
-      const response = await new Promise<AcpPermissionResponse>((resolve) => {
+      const response = await new Promise<LivePermissionResponse>((resolve) => {
         live.pendingPermissions.set(requestId, resolve)
         emit({ type: "acp-permission", request })
       })
@@ -290,7 +281,7 @@ export async function acpStart(
 
   const connection = new ClientSideConnection(
     () => client,
-    ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(child.stdout))
+    ndJsonStream(acpWritable(child.stdin), acpReadable(child.stdout))
   )
   live.connection = connection
 
@@ -361,6 +352,7 @@ export async function acpStart(
     update(live, {
       nativeId: session.sessionId,
       status: "ready",
+      connection: "connected",
       modes:
         session.modes?.availableModes.map((mode) => ({
           id: mode.id,
@@ -539,10 +531,10 @@ async function setLegacySessionModel(
 }
 
 /** Send the next message. Resolves when the provider accepts the turn. */
-export async function acpPrompt(
+export async function livePrompt(
   id: string,
   text: string,
-  attachments: AcpPromptAttachment[] = []
+  attachments: PromptAttachment[] = []
 ): Promise<void> {
   const live = sessions.get(id)
   if (!live?.sessionId || !live.connection)
@@ -583,7 +575,7 @@ export async function acpPrompt(
     .catch((error) => {
       if (live.state.status !== "closed") {
         update(live, {
-          status: "ready",
+          status: "failed",
           error: error instanceof Error ? error.message : String(error),
         })
       }
@@ -595,25 +587,25 @@ export async function acpPrompt(
 export function acpRespondPermission(
   id: string,
   requestId: string,
-  response: AcpPermissionResponse
+  response: LivePermissionResponse
 ): void {
   sessions.get(id)?.pendingPermissions.get(requestId)?.(response)
 }
 
-export async function acpSetMode(id: string, modeId: string): Promise<void> {
+export async function liveSetMode(id: string, modeId: string): Promise<void> {
   const live = sessions.get(id)
   if (!live?.sessionId || !live.connection) return
   await live.connection.setSessionMode({ sessionId: live.sessionId, modeId })
   update(live, { currentMode: modeId })
 }
 
-export async function acpCancel(id: string): Promise<void> {
+export async function liveCancel(id: string): Promise<void> {
   const live = sessions.get(id)
   if (!live?.sessionId || !live.connection) return
   await live.connection.cancel({ sessionId: live.sessionId })
 }
 
-export function acpClose(id: string): void {
+export function liveClose(id: string): void {
   const live = sessions.get(id)
   if (!live) return
   update(live, { status: "closed" })
@@ -624,14 +616,14 @@ export function acpClose(id: string): void {
 }
 
 export function stopAcp(): void {
-  for (const id of sessions.keys()) acpClose(id)
+  for (const id of sessions.keys()) liveClose(id)
 }
 
-function update(live: Live, patch: Partial<AcpSessionState>): void {
+function update(live: Live, patch: Partial<LiveSessionState>): void {
   updateState(live, patch)
 }
 
-function updateState(live: Live, patch: Partial<AcpSessionState>): void {
+function updateState(live: Live, patch: Partial<LiveSessionState>): void {
   live.state = { ...live.state, ...patch }
   emit({ type: "acp-session", session: live.state })
 }

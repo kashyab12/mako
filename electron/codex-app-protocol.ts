@@ -188,7 +188,11 @@ function completeTurn(context: ProtocolContext, turn: Turn): void {
   for (const key of context.items.keys()) {
     if (key.startsWith(`${turn.id}\u0000`)) context.items.delete(key)
   }
-  context.protocol.updateState({ status: "ready", lastStop: stop, error })
+  context.protocol.updateState({
+    status: error || stop === "failed" ? "failed" : "ready",
+    lastStop: stop,
+    error,
+  })
 }
 
 function streamDelta(
@@ -206,7 +210,11 @@ function streamDelta(
     tracker.thinkingDelta = true
     tracker.thinking = appendComparable(tracker.thinking, notification.delta)
   }
-  context.protocol.emitUpdate({ kind, text: notification.delta })
+  context.protocol.emitUpdate({
+    kind,
+    id: tracker.acpId,
+    text: notification.delta,
+  })
 }
 
 function streamToolOutput(
@@ -254,31 +262,29 @@ function handleItem(
         const text = item.content
           .map((part) => (part.type === "text" ? (part.text ?? "") : ""))
           .join("\n")
-        if (text) context.protocol.emitUpdate({ kind: "user", text })
+        const attachments = item.content.flatMap((part) =>
+          part.attachment ? [part.attachment] : []
+        )
+        if (text || attachments.length)
+          context.protocol.emitUpdate({ kind: "user", text, attachments })
       }
       return
-    case "agentMessage":
+    case "attachment":
       if (completed)
-        emitFinalText(
-          context,
-          "text",
-          item.text,
-          tracker.textDelta,
-          tracker.text
-        )
+        context.protocol.emitUpdate({
+          kind: "attachment",
+          attachment: item.attachment,
+        })
+      return
+    case "agentMessage":
+      if (completed) emitFinalText(context, "text", item.text, tracker.acpId)
       return
     case "reasoning":
       if (completed) {
         const final = [...item.summary, ...item.content]
           .filter(Boolean)
           .join("\n\n")
-        emitFinalText(
-          context,
-          "thinking",
-          final,
-          tracker.thinkingDelta,
-          tracker.thinking
-        )
+        emitFinalText(context, "thinking", final, tracker.acpId)
       }
       return
     case "commandExecution":
@@ -374,7 +380,7 @@ function finishTool(
     kind: "tool-update",
     id: tracker.acpId,
     status: toolStatus(status),
-    output: output ? boundedText(output, MAX_TOOL_OUTPUT) : undefined,
+    output: output || undefined,
   })
 }
 
@@ -382,32 +388,19 @@ function emitFinalText(
   context: ProtocolContext,
   kind: "text" | "thinking",
   final: string,
-  hadDelta: boolean,
-  streamed: string | null
+  id: string
 ): void {
-  if (!final) return
-  if (!hadDelta) {
-    emitTextChunks(context, kind, final)
+  // A completed item is authoritative, including corrections and empty replacements.
+  if (!final) {
+    context.protocol.emitUpdate({ kind, id, text: "", replace: true })
     return
   }
-  if (
-    streamed !== null &&
-    final.startsWith(streamed) &&
-    final.length > streamed.length
-  ) {
-    emitTextChunks(context, kind, final.slice(streamed.length))
-  }
-}
-
-function emitTextChunks(
-  context: ProtocolContext,
-  kind: "text" | "thinking",
-  text: string
-): void {
-  for (let offset = 0; offset < text.length; offset += MAX_TOOL_OUTPUT) {
+  for (let offset = 0; offset < final.length; offset += MAX_TOOL_OUTPUT) {
     context.protocol.emitUpdate({
       kind,
-      text: text.slice(offset, offset + MAX_TOOL_OUTPUT),
+      id,
+      text: final.slice(offset, offset + MAX_TOOL_OUTPUT),
+      replace: offset === 0,
     })
   }
 }
@@ -556,7 +549,7 @@ function appendComparable(
 
 function boundedJson(value: JsonValue): string {
   try {
-    return boundedText(JSON.stringify(value, null, 2), MAX_TOOL_OUTPUT)
+    return JSON.stringify(value, null, 2)
   } catch {
     return "[unserializable output]"
   }

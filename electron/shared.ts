@@ -11,3 +11,6 @@ export * from "./contracts/host-events-boot.js"
 export * from "./contracts/mcp-skills-integrations.js"
 export * from "./contracts/providers-acp.js"
 export * from "./contracts/terminal.js"
+
+export * from "./contracts/live-conversations.js"
+export * from "./contracts/live-content.js"

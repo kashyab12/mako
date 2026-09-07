@@ -1,7 +1,8 @@
+import type { AttachmentContent } from "@mako/sessions"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import type { StringDecoder } from "node:string_decoder"
 import type { JsonObject, JsonRpcId, JsonValue } from "./codex-app-json.js"
-import type { AcpSessionState, AcpUpdate } from "./shared.js"
+import type { LiveSessionState, LiveUpdate } from "./shared.js"
 
 export type Tuning = {
   model?: string
@@ -10,7 +11,11 @@ export type Tuning = {
   options?: Record<string, string | boolean>
 }
 
-type UserMessageContent = { type?: string; text?: string }
+type UserMessageContent = {
+  type?: string
+  text?: string
+  attachment?: AttachmentContent
+}
 type FileChange = { path?: string; diff?: string; kind?: JsonValue }
 type McpToolError = { message?: string }
 
@@ -55,6 +60,7 @@ export type ThreadItem =
       contentItems: JsonValue[] | null
       success: boolean | null
     }
+  | { type: "attachment"; id: string; attachment: AttachmentContent }
   | { type: "plan"; id: string; text: string }
   | { type: "unsupported"; id: string; sourceType: string }
 
@@ -142,8 +148,8 @@ export type ItemTracker = {
 
 export interface ProtocolCallbacks {
   handleFatal(message: string): void
-  updateState(patch: Partial<AcpSessionState>): void
-  emitUpdate(update: AcpUpdate): void
+  updateState(patch: Partial<LiveSessionState>): void
+  emitUpdate(update: LiveUpdate): void
   handleServerRequest(id: JsonRpcId, method: string, params: JsonObject): void
   resolveServerRequest(id: JsonRpcId): void
   clearTurnServerRequests(turnId: string): void
@@ -153,7 +159,7 @@ export interface ProtocolContext {
   child: ChildProcessWithoutNullStreams
   threadId: string | null
   currentTurnId: string | null
-  state: AcpSessionState
+  state: LiveSessionState
   nextRequestId: number
   pending: Map<string, PendingRpc>
   items: Map<string, ItemTracker>
