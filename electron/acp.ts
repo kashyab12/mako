@@ -306,7 +306,13 @@ export async function liveStart(
     if (mcpCapabilities?.http) transports.push("http")
     if (mcpCapabilities?.sse) transports.push("sse")
     live.mcpServers = providerHost.mcpSources.get(harness)
-      ? acpMcpServers(mcpSnapshot, harness, transports, options.conversationTools?.control, id)
+      ? acpMcpServers(
+          mcpSnapshot,
+          harness,
+          transports,
+          options.conversationTools?.control,
+          id
+        )
       : []
     if (options.conversationTools && mcpCapabilities?.http)
       live.mcpServers.push({
@@ -584,7 +590,8 @@ export async function livePrompt(
   const turn = Promise.resolve()
     .then(() => connection.prompt({ sessionId, prompt }))
     .then((result) => {
-      update(live, { status: "ready", lastStop: result.stopReason })
+      if (live.state.status !== "closed")
+        update(live, { status: "ready", lastStop: result.stopReason })
     })
     .catch((error) => {
       if (live.state.status !== "closed") {

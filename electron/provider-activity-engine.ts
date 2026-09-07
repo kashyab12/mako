@@ -31,8 +31,8 @@ function normalizeSessions(
     const current = byKey.get(key)
     if (
       !current ||
-      current.status !== "needs-input" ||
-      session.status === "needs-input"
+      session.status === "needs-input" ||
+      (current.status === "open" && session.status === "active")
     )
       byKey.set(key, session)
   }

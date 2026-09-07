@@ -21,8 +21,13 @@ export async function probeOpenFiles({
     const child = spawn(
       command,
       ["-Fn", ...processNames.flatMap((name) => ["-c", name])],
-      { signal, stdio: ["ignore", "pipe", "ignore"] }
+      { signal, stdio: ["ignore", "pipe", "pipe"] }
     )
+    let diagnostic = ""
+    child.stderr.setEncoding("utf8")
+    child.stderr.on("data", (chunk: string) => {
+      diagnostic = (diagnostic + chunk).slice(0, 4096)
+    })
     const paths = new Set<string>()
     let carry = ""
     child.stdout.setEncoding("utf8")
@@ -44,7 +49,7 @@ export async function probeOpenFiles({
       })
     )
     child.once("close", (code) => {
-      if (code === 0 || code === 1)
+      if (!signal.aborted && !diagnostic.trim() && (code === 0 || code === 1))
         resolve({
           kind: "available",
           paths: [...paths],
