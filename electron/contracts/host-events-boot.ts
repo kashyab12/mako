@@ -36,6 +36,7 @@ export interface ExternalThreadActivity {
 }
 
 export type HostEventBody =
+  | { type: "host-disconnected"; message: string }
   | { type: "live-batch"; batch: LiveBatch }
   | { type: "session"; session: SessionState }
   | { type: "meta"; meta: SessionMeta }
