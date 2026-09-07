@@ -12,6 +12,9 @@ async function start() {
   if (import.meta.env.DEV && new URLSearchParams(location.search).has("mock")) {
     const { installMockBridge } = await import("./dev/mock-bridge.ts")
     installMockBridge()
+  } else if (import.meta.env.DEV && !window.mako) {
+    const { installWebBridge } = await import("./dev/web-bridge.ts")
+    await installWebBridge()
   }
 
   watchForFailures()
@@ -25,4 +28,16 @@ async function start() {
   )
 }
 
-void start()
+void start().catch((error) => {
+  createRoot(document.getElementById("root")!).render(
+    <div className="p-8 text-ui text-foreground">
+      <p>{error instanceof Error ? error.message : "Mako could not start"}</p>
+      <button
+        className="pressable mt-4 rounded border border-hairline px-3 py-2"
+        onClick={() => location.reload()}
+      >
+        Retry connection
+      </button>
+    </div>
+  )
+})
