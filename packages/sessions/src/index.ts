@@ -20,6 +20,7 @@ export {
   type ThreadRef,
   type TurnUsage,
 } from "./format.js"
+export { normalizeToolOutput } from "./tool-output.js"
 export { SessionCatalog, type CatalogEvent } from "./catalog.js"
 export { SessionArchive } from "./archive.js"
 export {
@@ -44,7 +45,13 @@ export {
   type TranscriptOptions,
   type TranscriptSpill,
 } from "./transcript.js"
-export { emitClaudeSession, emitCodexSession, emitCursorSession, emitGrokSession, type EmitResult } from "./emit.js"
+export {
+  emitClaudeSession,
+  emitCodexSession,
+  emitCursorSession,
+  emitGrokSession,
+  type EmitResult,
+} from "./emit.js"
 export { type NativeFile, type SessionProvider } from "./providers/types.js"
 export { CodexProvider } from "./providers/codex.js"
 export { CursorProvider } from "./providers/cursor.js"
@@ -78,3 +85,10 @@ export function defaultCatalog(
   )
   return catalog
 }
+
+export { AttachmentContentSchema, AttachmentSourceSchema } from "./content.js"
+export type { AttachmentContent } from "./content.js"
+
+export { ThreadEntrySchema, ThreadRefSchema } from "./thread-schema.js"
+
+export { attachmentFiles } from "./attachment-files.js"

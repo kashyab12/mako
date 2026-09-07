@@ -67,7 +67,7 @@ export function daemonSocketPath(): string {
  * without it forever. Clients that see an older daemon retire it and let a
  * fresh one take the socket.
  */
-export const PROTOCOL_VERSION = 28
+export const PROTOCOL_VERSION = 29
 export const MAX_DAEMON_RSS = 512 * 1024 * 1024
 export function daemonMemoryUnsafe(rss: number): boolean {
   return rss > MAX_DAEMON_RSS
@@ -221,7 +221,8 @@ export async function serveCatalog(
                 version: PROTOCOL_VERSION,
                 rss: memory.rss,
                 heapUsed: memory.heapUsed,
-                eventLoopP99Ms: Number(eventLoopDelay.percentile(99)) / 1_000_000,
+                eventLoopP99Ms:
+                  Number(eventLoopDelay.percentile(99)) / 1_000_000,
               },
             })
             return
@@ -354,7 +355,11 @@ export interface DaemonClient {
   refresh(): Promise<DaemonStats>
   list(filter?: { cwd?: string; harness?: string }): Promise<ThreadRef[]>
   open(path: string): Promise<Thread | null>
-  page(path: string, before?: number, limit?: number): Promise<ThreadPage | null>
+  page(
+    path: string,
+    before?: number,
+    limit?: number
+  ): Promise<ThreadPage | null>
   follow(path: string, fromByte: number): Promise<void>
   unfollow(path?: string): Promise<void>
   /** Ask the daemon to exit — used to replace an older vintage. */

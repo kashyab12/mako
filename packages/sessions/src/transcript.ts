@@ -4,6 +4,8 @@
  * byte-for-byte in deterministic sidecar assets instead of being clipped.
  */
 
+import { attachmentDescription } from "./content.js"
+import type { AttachmentContent } from "./content.js"
 import type { EntryBlock, Thread, ThreadEntry, TurnUsage } from "./format.js"
 
 /** Characters available to the Markdown index by default. */
@@ -32,12 +34,13 @@ export interface TranscriptOptions {
 export interface TranscriptAsset {
   /** Stable relative path referenced by the Markdown. */
   path: string
-  mediaType: "text/plain; charset=utf-8"
+  mediaType: string
+  encoding?: "base64"
   /** Complete, unmodified tool field. */
   content: string
   characters: number
-  toolOrdinal: number
-  field: "input" | "output"
+  toolOrdinal?: number
+  field?: "input" | "output"
 }
 
 export interface TranscriptSpill {
@@ -115,10 +118,19 @@ interface RenderedDocument {
  * recent turn. If the latest turn alone exceeds a budget, it remains whole
  * and the overrun is declared.
  */
-export function renderTranscriptBundle(thread: Thread, options: TranscriptOptions = {}): TranscriptBundle {
-  const mainBudget = budgetOf(options.mainBudget ?? options.budget, DEFAULT_MAIN_BUDGET)
+export function renderTranscriptBundle(
+  thread: Thread,
+  options: TranscriptOptions = {}
+): TranscriptBundle {
+  const mainBudget = budgetOf(
+    options.mainBudget ?? options.budget,
+    DEFAULT_MAIN_BUDGET
+  )
   const totalBudget = budgetOf(options.totalBudget, DEFAULT_TOTAL_BUDGET)
-  const inlinePayloadLimit = budgetOf(options.inlinePayloadLimit, DEFAULT_INLINE_PAYLOAD_LIMIT)
+  const inlinePayloadLimit = budgetOf(
+    options.inlinePayloadLimit,
+    DEFAULT_INLINE_PAYLOAD_LIMIT
+  )
   const conversation = inspectConversation(thread.entries)
 
   let firstIncludedTurn = conversation.turns.length
@@ -127,12 +139,28 @@ export function renderTranscriptBundle(thread: Thread, options: TranscriptOption
   if (conversation.turns.length > 0) {
     firstIncludedTurn = conversation.turns.length - 1
     while (firstIncludedTurn > 0) {
-      const candidate = renderDocument(thread, options, conversation, firstIncludedTurn - 1, false, inlinePayloadLimit, false)
+      const candidate = renderDocument(
+        thread,
+        options,
+        conversation,
+        firstIncludedTurn - 1,
+        false,
+        inlinePayloadLimit,
+        false
+      )
       if (!fits(candidate, mainBudget, totalBudget)) break
       firstIncludedTurn -= 1
     }
     if (firstIncludedTurn === 0 && conversation.preamble.length > 0) {
-      const candidate = renderDocument(thread, options, conversation, firstIncludedTurn, true, inlinePayloadLimit, false)
+      const candidate = renderDocument(
+        thread,
+        options,
+        conversation,
+        firstIncludedTurn,
+        true,
+        inlinePayloadLimit,
+        false
+      )
       if (fits(candidate, mainBudget, totalBudget)) includePreamble = true
     }
   } else if (conversation.preamble.length > 0) {
@@ -165,9 +193,15 @@ export function renderTranscriptBundle(thread: Thread, options: TranscriptOption
     left.path < right.path ? -1 : left.path > right.path ? 1 : 0
   const assets = rendered.assets.sort(byPath)
   const spills = rendered.spills.sort(byPath)
-  const sidecarCharacters = assets.reduce((sum, asset) => sum + asset.characters, 0)
+  const sidecarCharacters = assets.reduce(
+    (sum, asset) => sum + asset.characters,
+    0
+  )
   const totalCharacters = rendered.markdown.length + sidecarCharacters
-  const includedTurns = conversation.turns.slice(firstIncludedTurn).map((turn) => turn.number).reverse()
+  const includedTurns = conversation.turns
+    .slice(firstIncludedTurn)
+    .map((turn) => turn.number)
+    .reverse()
 
   return {
     markdown: rendered.markdown,
@@ -193,12 +227,20 @@ export function renderTranscriptBundle(thread: Thread, options: TranscriptOption
  * Compatibility renderer for callers that can accept only one string. Tool
  * payloads stay inline so discarding a sidecar array cannot discard content.
  */
-export function renderTranscript(thread: Thread, options: TranscriptOptions = {}): string {
-  return renderTranscriptBundle(thread, {
+export function renderTranscript(
+  thread: Thread,
+  options: TranscriptOptions = {}
+): string {
+  const bundle = renderTranscriptBundle(thread, {
     ...options,
     inlinePayloadLimit: Number.POSITIVE_INFINITY,
     totalBudget: Number.POSITIVE_INFINITY,
-  }).markdown
+  })
+  const attachments = bundle.assets.map(
+    (asset) =>
+      `\n\n## Attachment payload: ${asset.path}\nMedia type: ${asset.mediaType}\nEncoding: ${asset.encoding ?? "utf8"}\n${fenced(asset.content, "text")}`
+  )
+  return bundle.markdown + attachments.join("")
 }
 
 function inspectConversation(entries: ThreadEntry[]): Conversation {
@@ -207,7 +249,9 @@ function inspectConversation(entries: ThreadEntry[]): Conversation {
   const toolOrdinals = new Map<EntryBlock, number>()
   const leading = entries[0]
   const leadingHistoryNotice =
-    leading?.kind === "event" && leading.label === EARLIER_HISTORY_LABEL ? leading : undefined
+    leading?.kind === "event" && leading.label === EARLIER_HISTORY_LABEL
+      ? leading
+      : undefined
   let current: Turn | undefined
   let toolOrdinal = 0
 
@@ -279,12 +323,25 @@ function renderDocument(
 
   if (conversation.leadingHistoryNotice) {
     parts.push("", "### Source truncation notice (pinned)", "")
-    parts.push(`Timestamp: ${conversation.leadingHistoryNotice.at ?? "not recorded"}`)
-    parts.push("", "Label:", fenced(conversation.leadingHistoryNotice.label, "text"))
+    parts.push(
+      `Timestamp: ${conversation.leadingHistoryNotice.at ?? "not recorded"}`
+    )
+    parts.push(
+      "",
+      "Label:",
+      fenced(conversation.leadingHistoryNotice.label, "text")
+    )
     if (conversation.leadingHistoryNotice.detail !== undefined) {
-      parts.push("", "Detail:", fenced(conversation.leadingHistoryNotice.detail, "text"))
+      parts.push(
+        "",
+        "Detail:",
+        fenced(conversation.leadingHistoryNotice.detail, "text")
+      )
     }
-    parts.push("", "This notice came from the source EntrySink and is retained even when old turns are dropped here.")
+    parts.push(
+      "",
+      "This notice came from the source EntrySink and is retained even when old turns are dropped here."
+    )
   }
 
   if (firstIncludedTurn > 0) {
@@ -305,17 +362,43 @@ function renderDocument(
   }
 
   if (options.instruction !== undefined) {
-    parts.push("", "## What to do next", "", fenced(options.instruction, "text"))
+    parts.push(
+      "",
+      "## What to do next",
+      "",
+      fenced(options.instruction, "text")
+    )
   }
 
   const renderedTurns: string[] = []
-  for (let index = conversation.turns.length - 1; index >= firstIncludedTurn; index -= 1) {
+  for (
+    let index = conversation.turns.length - 1;
+    index >= firstIncludedTurn;
+    index -= 1
+  ) {
     const turn = conversation.turns[index]
     if (!turn) continue
-    renderedTurns.push(renderTurn(turn, conversation.turns.length, conversation.toolOrdinals, inlinePayloadLimit, assets, spills))
+    renderedTurns.push(
+      renderTurn(
+        turn,
+        conversation.turns.length,
+        conversation.toolOrdinals,
+        inlinePayloadLimit,
+        assets,
+        spills
+      )
+    )
   }
   if (includePreamble) {
-    renderedTurns.push(renderPreamble(conversation.preamble, conversation.toolOrdinals, inlinePayloadLimit, assets, spills))
+    renderedTurns.push(
+      renderPreamble(
+        conversation.preamble,
+        conversation.toolOrdinals,
+        inlinePayloadLimit,
+        assets,
+        spills
+      )
+    )
   }
 
   if (spills.length > 0) {
@@ -355,7 +438,16 @@ function renderTurn(
     "Text (verbatim):",
     fenced(turn.user.text, "text"),
   ]
-  renderEntries(parts, turn.rest, toolOrdinals, inlinePayloadLimit, assets, spills)
+  for (const attachment of turn.user.attachments ?? [])
+    renderAttachment(parts, attachment, assets)
+  renderEntries(
+    parts,
+    turn.rest,
+    toolOrdinals,
+    inlinePayloadLimit,
+    assets,
+    spills
+  )
   return parts.join("\n")
 }
 
@@ -371,7 +463,14 @@ function renderPreamble(
     "",
     "These source entries preceded the first user turn and remain in chronological order.",
   ]
-  renderEntries(parts, entries, toolOrdinals, inlinePayloadLimit, assets, spills)
+  renderEntries(
+    parts,
+    entries,
+    toolOrdinals,
+    inlinePayloadLimit,
+    assets,
+    spills
+  )
   return parts.join("\n")
 }
 
@@ -389,8 +488,17 @@ function renderEntries(
     if (entry.kind === "user") continue
     if (entry.kind === "event") {
       eventNumber += 1
-      parts.push("", `### Event ${eventNumber}`, "", `Timestamp: ${entry.at ?? "not recorded"}`, "", "Label:", fenced(entry.label, "text"))
-      if (entry.detail !== undefined) parts.push("", "Detail:", fenced(entry.detail, "text"))
+      parts.push(
+        "",
+        `### Event ${eventNumber}`,
+        "",
+        `Timestamp: ${entry.at ?? "not recorded"}`,
+        "",
+        "Label:",
+        fenced(entry.label, "text")
+      )
+      if (entry.detail !== undefined)
+        parts.push("", "Detail:", fenced(entry.detail, "text"))
       continue
     }
 
@@ -409,12 +517,25 @@ function renderEntries(
     for (const [blockIndex, block] of entry.blocks.entries()) {
       const blockNumber = blockIndex + 1
       if (block.type === "text") {
-        parts.push("", `#### Block ${blockNumber} — assistant text`, "", fenced(block.text, "text"))
+        parts.push(
+          "",
+          `#### Block ${blockNumber} — assistant text`,
+          "",
+          fenced(block.text, "text")
+        )
       } else if (block.type === "thinking") {
-        parts.push("", `#### Block ${blockNumber} — reasoning/thinking`, "", fenced(block.text, "text"))
+        parts.push(
+          "",
+          `#### Block ${blockNumber} — reasoning/thinking`,
+          "",
+          fenced(block.text, "text")
+        )
+      } else if (block.type === "attachment") {
+        renderAttachment(parts, block, assets)
       } else {
         const toolOrdinal = toolOrdinals.get(block)
-        if (toolOrdinal === undefined) throw new Error("Transcript tool ordinal was not assigned")
+        if (toolOrdinal === undefined)
+          throw new Error("Transcript tool ordinal was not assigned")
         parts.push(
           "",
           `#### Block ${blockNumber} — Tool ${ordinal(toolOrdinal)}`,
@@ -422,13 +543,59 @@ function renderEntries(
           "Name:",
           fenced(block.name, "text"),
           "",
-          `Error: ${block.error === undefined ? "not recorded" : String(block.error)}`
+          `Error: ${block.error === undefined ? "not recorded" : String(block.error)}`,
+          `Canceled: ${block.canceled === undefined ? "not recorded" : String(block.canceled)}`
         )
-        renderToolField(parts, block.input, "input", toolOrdinal, inlinePayloadLimit, assets, spills)
-        renderToolField(parts, block.output, "output", toolOrdinal, inlinePayloadLimit, assets, spills)
+        renderToolField(
+          parts,
+          block.input,
+          "input",
+          toolOrdinal,
+          inlinePayloadLimit,
+          assets,
+          spills
+        )
+        renderToolField(
+          parts,
+          block.output,
+          "output",
+          toolOrdinal,
+          inlinePayloadLimit,
+          assets,
+          spills
+        )
+        for (const attachment of block.attachments ?? [])
+          renderAttachment(parts, attachment, assets)
       }
     }
   }
+}
+
+function renderAttachment(
+  parts: string[],
+  attachment: AttachmentContent,
+  assets: TranscriptAsset[]
+): void {
+  parts.push(
+    "",
+    "Attachment:",
+    fenced(attachmentDescription(attachment), "text")
+  )
+  if (attachment.source.kind !== "inline") return
+  const name =
+    attachment.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100) || "attachment"
+  const path = `transcript-assets/attachment-${assets.length + 1}-${name}`
+  assets.push({
+    path,
+    mediaType: attachment.mimeType,
+    encoding: "base64",
+    content: attachment.source.data,
+    characters: attachment.source.data.length,
+  })
+  parts.push(
+    "",
+    `[Original attachment](${path}) — ${attachment.mimeType}, complete sidecar`
+  )
 }
 
 function renderToolField(
@@ -446,7 +613,11 @@ function renderToolField(
     return
   }
   if (value.length <= inlinePayloadLimit) {
-    parts.push("", `${label} (${value.length} characters, complete inline):`, fenced(value, "text"))
+    parts.push(
+      "",
+      `${label} (${value.length} characters, complete inline):`,
+      fenced(value, "text")
+    )
     return
   }
 
@@ -459,7 +630,13 @@ function renderToolField(
     toolOrdinal,
     field,
   })
-  spills.push({ path, characters: value.length, toolOrdinal, field, loss: "none" })
+  spills.push({
+    path,
+    characters: value.length,
+    toolOrdinal,
+    field,
+    loss: "none",
+  })
   parts.push(
     "",
     `${label}: [${path}](${path}) — ${value.length} characters, complete sidecar, renderer truncation: none`
@@ -471,13 +648,21 @@ function renderUsage(usage: TurnUsage | undefined): string[] {
   const metrics: string[] = []
   if (usage.input !== undefined) metrics.push(`input ${usage.input}`)
   if (usage.output !== undefined) metrics.push(`output ${usage.output}`)
-  if (usage.cacheRead !== undefined) metrics.push(`cache read ${usage.cacheRead}`)
-  if (usage.cacheWrite !== undefined) metrics.push(`cache write ${usage.cacheWrite}`)
+  if (usage.cacheRead !== undefined)
+    metrics.push(`cache read ${usage.cacheRead}`)
+  if (usage.cacheWrite !== undefined)
+    metrics.push(`cache write ${usage.cacheWrite}`)
   if (usage.costUsd !== undefined) metrics.push(`cost USD ${usage.costUsd}`)
-  return [`Usage: ${metrics.length > 0 ? metrics.join("; ") : "recorded with no metrics"}`]
+  return [
+    `Usage: ${metrics.length > 0 ? metrics.join("; ") : "recorded with no metrics"}`,
+  ]
 }
 
-function lossesFor(conversation: Conversation, firstIncludedTurn: number, includePreamble: boolean): TranscriptLoss[] {
+function lossesFor(
+  conversation: Conversation,
+  firstIncludedTurn: number,
+  includePreamble: boolean
+): TranscriptLoss[] {
   const losses: TranscriptLoss[] = []
   if (conversation.leadingHistoryNotice) {
     const loss: Extract<TranscriptLoss, { kind: "source-truncation" }> = {
@@ -487,7 +672,8 @@ function lossesFor(conversation: Conversation, firstIncludedTurn: number, includ
     if (conversation.leadingHistoryNotice.detail !== undefined) {
       loss.detail = conversation.leadingHistoryNotice.detail
     }
-    if (conversation.leadingHistoryNotice.at !== undefined) loss.at = conversation.leadingHistoryNotice.at
+    if (conversation.leadingHistoryNotice.at !== undefined)
+      loss.at = conversation.leadingHistoryNotice.at
     losses.push(loss)
   }
   if (firstIncludedTurn > 0) {
@@ -499,7 +685,10 @@ function lossesFor(conversation: Conversation, firstIncludedTurn: number, includ
     })
   }
   if (!includePreamble && conversation.preamble.length > 0) {
-    losses.push({ kind: "preamble-dropped", entries: conversation.preamble.length })
+    losses.push({
+      kind: "preamble-dropped",
+      entries: conversation.preamble.length,
+    })
   }
   return losses
 }
@@ -507,13 +696,16 @@ function lossesFor(conversation: Conversation, firstIncludedTurn: number, includ
 /** A fence longer than every backtick run in the content cannot close early. */
 function fenced(content: string, language: string): string {
   let longest = 0
-  for (const match of content.matchAll(/`+/g)) longest = Math.max(longest, match[0].length)
+  for (const match of content.matchAll(/`+/g))
+    longest = Math.max(longest, match[0].length)
   const fence = "`".repeat(Math.max(3, longest + 1))
   return `${fence}${language}\n${content}${content.endsWith("\n") ? "" : "\n"}${fence}`
 }
 
 function markdownScalar(value: string): string {
-  return value.length === 0 ? '""' : value.replace(/([\\`*_[\]<>])/g, "\\$1").replace(/\r?\n/g, " ")
+  return value.length === 0
+    ? '""'
+    : value.replace(/([\\`*_[\]<>])/g, "\\$1").replace(/\r?\n/g, " ")
 }
 
 function ordinal(value: number): string {
@@ -530,7 +722,17 @@ function formatBudget(value: number | undefined, fallback: number): string {
   return Number.isFinite(budget) ? String(budget) : "unlimited"
 }
 
-function fits(document: RenderedDocument, mainBudget: number, totalBudget: number): boolean {
-  const sidecarCharacters = document.assets.reduce((sum, asset) => sum + asset.characters, 0)
-  return document.markdown.length <= mainBudget && document.markdown.length + sidecarCharacters <= totalBudget
+function fits(
+  document: RenderedDocument,
+  mainBudget: number,
+  totalBudget: number
+): boolean {
+  const sidecarCharacters = document.assets.reduce(
+    (sum, asset) => sum + asset.characters,
+    0
+  )
+  return (
+    document.markdown.length <= mainBudget &&
+    document.markdown.length + sidecarCharacters <= totalBudget
+  )
 }

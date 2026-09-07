@@ -1,3 +1,4 @@
+import { ThreadEntrySchema } from "./thread-schema.js"
 import type {
   Thread,
   ThreadEntry,
@@ -84,11 +85,7 @@ interface AckPending extends PendingBase {
 }
 
 export type PendingRequest =
-  | PingPending
-  | ListPending
-  | OpenPending
-  | PagePending
-  | AckPending
+  PingPending | ListPending | OpenPending | PagePending | AckPending
 
 export type ParsedDaemonResponse =
   | { kind: "ping"; pending: PingPending; result: DaemonStats }
@@ -250,7 +247,11 @@ function parseThread(value: JsonValue | undefined): Thread | null {
   if (!isJsonRecord(value)) return null
   const ref = parseThreadRef(value.ref)
   const entries = parseArray(value.entries, parseThreadEntry)
-  return ref && entries ? { ref, entries } : null
+  if (!ref || !entries) return null
+  const result: Thread = { ref, entries }
+  const checkpoint = readNumber(value, "checkpoint")
+  if (checkpoint !== undefined) result.checkpoint = checkpoint
+  return result
 }
 
 function parseThreadPage(value: JsonValue | undefined): ThreadPage | null {
@@ -260,13 +261,18 @@ function parseThreadPage(value: JsonValue | undefined): ThreadPage | null {
   const start = readNumber(value, "start")
   const total = readNumber(value, "total")
   const hasEarlier = readBoolean(value, "hasEarlier")
-  return ref &&
-    entries &&
-    start !== undefined &&
-    total !== undefined &&
-    hasEarlier !== undefined
-    ? { ref, entries, start, total, hasEarlier }
-    : null
+  if (
+    !ref ||
+    !entries ||
+    start === undefined ||
+    total === undefined ||
+    hasEarlier === undefined
+  )
+    return null
+  const result: ThreadPage = { ref, entries, start, total, hasEarlier }
+  const checkpoint = readNumber(value, "checkpoint")
+  if (checkpoint !== undefined) result.checkpoint = checkpoint
+  return result
 }
 
 function parseThreadRef(value: JsonValue | undefined): ThreadRef | null {
@@ -295,6 +301,8 @@ function parseThreadRef(value: JsonValue | undefined): ThreadRef | null {
   if (startedAt !== undefined) ref.startedAt = startedAt
   if (updatedAt !== undefined) ref.updatedAt = updatedAt
   if (bytes !== undefined) ref.bytes = bytes
+  const revision = readString(value, "revision")
+  if (revision !== undefined) ref.revision = revision
   if (locked !== undefined) ref.locked = locked
   if (active !== undefined) ref.active = active
   if (lineage) ref.lineage = lineage
@@ -314,82 +322,8 @@ function parseThreadOrigin(value: JsonValue): ThreadOrigin | null {
 }
 
 function parseThreadEntry(value: JsonValue): ThreadEntry | null {
-  if (!isJsonRecord(value)) return null
-  const kind = readString(value, "kind")
-  const at = readString(value, "at")
-  if (kind === "user") {
-    const text = readString(value, "text")
-    if (text === undefined) return null
-    const entry: ThreadEntry = { kind, text }
-    if (at !== undefined) entry.at = at
-    return entry
-  }
-  if (kind === "assistant") {
-    const blocks = parseArray(value.blocks, parseEntryBlock)
-    if (!blocks) return null
-    const entry: ThreadEntry = { kind, blocks }
-    const model = readString(value, "model")
-    const usage = parseTurnUsage(value.usage)
-    if (at !== undefined) entry.at = at
-    if (model !== undefined) entry.model = model
-    if (usage) entry.usage = usage
-    return entry
-  }
-  if (kind === "event") {
-    const label = readString(value, "label")
-    if (label === undefined) return null
-    const entry: ThreadEntry = { kind, label }
-    const detail = readString(value, "detail")
-    if (at !== undefined) entry.at = at
-    if (detail !== undefined) entry.detail = detail
-    return entry
-  }
-  return null
-}
-
-function parseEntryBlock(
-  value: JsonValue
-): Extract<ThreadEntry, { kind: "assistant" }>["blocks"][number] | null {
-  if (!isJsonRecord(value)) return null
-  const type = readString(value, "type")
-  if (type === "text" || type === "thinking") {
-    const text = readString(value, "text")
-    return text === undefined ? null : { type, text }
-  }
-  if (type !== "tool") return null
-  const name = readString(value, "name")
-  if (name === undefined) return null
-  const block: Extract<ThreadEntry, { kind: "assistant" }>["blocks"][number] = {
-    type,
-    name,
-  }
-  const input = readString(value, "input")
-  const output = readString(value, "output")
-  const error = readBoolean(value, "error")
-  if (input !== undefined) block.input = input
-  if (output !== undefined) block.output = output
-  if (error !== undefined) block.error = error
-  return block
-}
-
-function parseTurnUsage(
-  value: JsonValue | undefined
-): Extract<ThreadEntry, { kind: "assistant" }>["usage"] | null {
-  if (!isJsonRecord(value)) return null
-  const usage: NonNullable<
-    Extract<ThreadEntry, { kind: "assistant" }>["usage"]
-  > = {}
-  const input = readNumber(value, "input")
-  const output = readNumber(value, "output")
-  const cacheRead = readNumber(value, "cacheRead")
-  const cacheWrite = readNumber(value, "cacheWrite")
-  const costUsd = readNumber(value, "costUsd")
-  if (input !== undefined) usage.input = input
-  if (output !== undefined) usage.output = output
-  if (cacheRead !== undefined) usage.cacheRead = cacheRead
-  if (cacheWrite !== undefined) usage.cacheWrite = cacheWrite
-  if (costUsd !== undefined) usage.costUsd = costUsd
-  return usage
+  const parsed = ThreadEntrySchema.safeParse(value)
+  return parsed.success ? parsed.data : null
 }
 
 function parseArray<T>(

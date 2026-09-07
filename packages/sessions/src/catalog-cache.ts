@@ -3,6 +3,7 @@ import type { ThreadOrigin, ThreadRef } from "./format.js"
 export interface CacheEntry {
   bytes: number
   mtimeMs: number
+  revision?: string
   ref: ThreadRef | null
 }
 
@@ -16,7 +17,7 @@ interface JsonRecord {
 export function parseCache(raw: string): Map<string, CacheEntry> | null {
   try {
     const value: JsonValue = JSON.parse(raw)
-    if (!isJsonRecord(value) || readNumber(value, "version") !== 4) return null
+    if (!isJsonRecord(value) || readNumber(value, "version") !== 5) return null
     const stored = value.entries
     if (!isJsonRecord(stored)) return null
     const entries = new Map<string, CacheEntry>()
@@ -36,9 +37,10 @@ function parseCacheEntry(value: JsonValue | undefined): CacheEntry | null {
   const bytes = readNumber(value, "bytes")
   const mtimeMs = readNumber(value, "mtimeMs")
   if (bytes === undefined || mtimeMs === undefined) return null
-  if (value.ref === null) return { bytes, mtimeMs, ref: null }
+  const revision = readString(value, "revision")
+  if (value.ref === null) return { bytes, mtimeMs, revision, ref: null }
   const ref = parseCachedThreadRef(value.ref)
-  return ref ? { bytes, mtimeMs, ref } : null
+  return ref ? { bytes, mtimeMs, revision, ref } : null
 }
 
 function parseCachedThreadRef(value: JsonValue | undefined): ThreadRef | null {
@@ -64,6 +66,8 @@ function parseCachedThreadRef(value: JsonValue | undefined): ThreadRef | null {
   if (startedAt !== undefined) ref.startedAt = startedAt
   if (updatedAt !== undefined) ref.updatedAt = updatedAt
   if (bytes !== undefined) ref.bytes = bytes
+  const revision = readString(value, "revision")
+  if (revision !== undefined) ref.revision = revision
   if (locked !== undefined) ref.locked = locked
   if (lineage) ref.lineage = lineage
   if (modelProvider !== undefined) ref.modelProvider = modelProvider

@@ -1,3 +1,8 @@
+import { extractAttachmentEnvelope } from "./attachment-envelope.js"
+import type { z } from "zod"
+import type { EntryBlockSchema, ThreadEntrySchema } from "./thread-schema.js"
+export type { AttachmentContent } from "./content.js"
+
 /**
  * The canonical shape of a coding-agent conversation.
  *
@@ -15,7 +20,8 @@
  */
 
 /** Which harness a session came from. Open — new harnesses appear monthly. */
-export type Harness = "codex" | "claude" | "cursor" | "grok" | "devin" | (string & {})
+export type Harness =
+  "codex" | "claude" | "cursor" | "grok" | "devin" | (string & {})
 
 /** Token counts and spend for one assistant turn, when the harness records them. */
 export interface TurnUsage {
@@ -33,10 +39,7 @@ export interface TurnUsage {
  * and display, "what was run and what came back" is a single fact. Harnesses
  * that stream them separately are merged during translation.
  */
-export type EntryBlock =
-  | { type: "text"; text: string }
-  | { type: "thinking"; text: string }
-  | { type: "tool"; name: string; input?: string; output?: string; error?: boolean }
+export type EntryBlock = z.infer<typeof EntryBlockSchema>
 
 /**
  * One entry of a conversation.
@@ -46,10 +49,7 @@ export type EntryBlock =
  * change, a compaction, a mode switch). Anything a harness records that fits
  * none of these is provider bookkeeping and stays in the native file.
  */
-export type ThreadEntry =
-  | { kind: "user"; at?: string; text: string }
-  | { kind: "assistant"; at?: string; model?: string; usage?: TurnUsage; blocks: EntryBlock[] }
-  | { kind: "event"; at?: string; label: string; detail?: string }
+export type ThreadEntry = z.infer<typeof ThreadEntrySchema>
 
 /**
  * Where a conversation has been before it got here.
@@ -83,6 +83,8 @@ export interface ThreadRef {
   updatedAt?: string
   /** Bytes of the native store — a cheap staleness check and a size hint. */
   bytes?: number
+  /** Provider-owned change token; includes sidecars for database stores. */
+  revision?: string
   /** The provider reports that another live client holds this native session. */
   locked?: boolean
   active?: boolean
@@ -100,11 +102,14 @@ export interface ThreadRef {
 
 /** A full conversation: the identity plus every entry, in order. */
 export interface Thread {
+  /** Complete provider record boundary captured with this snapshot. */
+  checkpoint?: number
   ref: ThreadRef
   entries: ThreadEntry[]
 }
 
 export interface ThreadPage {
+  checkpoint?: number
   ref: ThreadRef
   entries: ThreadEntry[]
   start: number
@@ -114,7 +119,12 @@ export interface ThreadPage {
 
 export function userTextFrom(text: string | undefined): string | undefined {
   if (!text) return undefined
-  const lines = text.trim().split("\n")
+  // Strip only complete leading metadata envelopes, preserving the request after them.
+  let body = text.trim()
+  const envelope =
+    /^<(skill|rules|available_skills|recommended_plugins|environment_context|user_instructions|system_info|system_instruction|app-context|multi_agent_mode|additional_metadata|task-notification|command-name|command-message|local-command|system-reminder)(?:\s[^>]*)?>[\s\S]*?<\/\1>\s*/i
+  while (envelope.test(body)) body = body.replace(envelope, "").trimStart()
+  const lines = body.split("\n")
   const firstAt = lines.findIndex((line) => line.trim())
   const first = lines[firstAt]?.trim()
   if (!first) return undefined
@@ -140,16 +150,22 @@ export function userTextFrom(text: string | undefined): string | undefined {
     /^#{1,6}\s*(?:my\s+request|request)\s*:?\s*$/i.test(line.trim())
   )
   if (requestAt >= 0) {
-    const request = lines.slice(requestAt + 1).join("\n").trim()
+    const request = lines
+      .slice(requestAt + 1)
+      .join("\n")
+      .trim()
     return request || undefined
   }
   if (/^#{1,6}\s*files?\s+mentioned\s+by\s+the\s+user\s*:?$/i.test(first))
     return undefined
   if (/^\[(?:image|attachment|file)(?:\s+#?\d+)?\]$/i.test(first)) {
-    const request = lines.slice(firstAt + 1).join("\n").trim()
+    const request = lines
+      .slice(firstAt + 1)
+      .join("\n")
+      .trim()
     return request || undefined
   }
-  return text.trim()
+  return body.trim()
 }
 
 /** First genuine request line — never an injected envelope or attachment label. */
@@ -183,9 +199,14 @@ export function titleFrom(text: string | undefined): string | undefined {
 }
 
 /** Clip tool payloads: catalogues and handoffs need shape, not megabytes. */
-export function clip(text: string | undefined, max = 256_000): string | undefined {
+export function clip(
+  text: string | undefined,
+  max = 256_000
+): string | undefined {
   if (text === undefined) return undefined
-  return text.length > max ? `${text.slice(0, max)}\n… [${text.length - max} more characters]` : text
+  return text.length > max
+    ? `${text.slice(0, max)}\n… [${text.length - max} more characters]`
+    : text
 }
 
 /**
@@ -214,11 +235,43 @@ export class EntrySink {
   }
 
   snapshot(): ThreadEntry[] {
-    let characters = this.entries.reduce((sum, entry) => sum + entryCharacters(entry), 0)
+    for (const entry of this.entries) {
+      if (entry.kind === "user") {
+        const portable = extractAttachmentEnvelope(entry.text)
+        if (portable.attachments.length) {
+          entry.text = portable.text
+          entry.attachments = [
+            ...(entry.attachments ?? []),
+            ...portable.attachments,
+          ]
+        }
+      } else if (entry.kind === "assistant") {
+        if (
+          entry.blocks.some(
+            (block) =>
+              block.type === "text" && block.text.includes("<mako-attachments>")
+          )
+        )
+          entry.blocks = entry.blocks.flatMap((block): EntryBlock[] => {
+            if (block.type !== "text") return [block]
+            const portable = extractAttachmentEnvelope(block.text)
+            return portable.attachments.length
+              ? [{ type: "text", text: portable.text }, ...portable.attachments]
+              : [block]
+          })
+      }
+    }
+    let characters = this.entries.reduce(
+      (sum, entry) => sum + entryCharacters(entry),
+      0
+    )
     while (this.entries.length > 1 && characters > this.maxCharacters) {
       const count = Math.max(1, Math.ceil(this.entries.length / 8))
       const removed = this.entries.slice(0, count)
-      characters -= removed.reduce((sum, entry) => sum + entryCharacters(entry), 0)
+      characters -= removed.reduce(
+        (sum, entry) => sum + entryCharacters(entry),
+        0
+      )
       this.drop(count)
     }
     return this.droppedEntries > 0
@@ -245,10 +298,20 @@ export class EntrySink {
 }
 
 function entryCharacters(entry: ThreadEntry): number {
-  if (entry.kind === "user") return entry.text.length
-  if (entry.kind === "event") return entry.label.length + (entry.detail?.length ?? 0)
+  if (entry.kind === "user")
+    return entry.text.length + JSON.stringify(entry.attachments ?? []).length
+  if (entry.kind === "event")
+    return entry.label.length + (entry.detail?.length ?? 0)
   return entry.blocks.reduce((sum, block) => {
-    if (block.type === "text" || block.type === "thinking") return sum + block.text.length
-    return sum + block.name.length + (block.input?.length ?? 0) + (block.output?.length ?? 0)
+    if (block.type === "text" || block.type === "thinking")
+      return sum + block.text.length
+    if (block.type === "attachment") return sum + JSON.stringify(block).length
+    return (
+      sum +
+      JSON.stringify(block.attachments ?? []).length +
+      block.name.length +
+      (block.input?.length ?? 0) +
+      (block.output?.length ?? 0)
+    )
   }, 0)
 }

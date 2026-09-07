@@ -76,14 +76,16 @@ async function main(): Promise<void> {
   collectionFallback.unref?.()
   scheduleCollection()
 
-  const stop = () => {
+  let stopping = false
+  const stop = async () => {
+    if (stopping) return
+    stopping = true
     if (collectionTimer) clearTimeout(collectionTimer)
     clearInterval(collectionFallback)
     stopCollectionEvents()
-    catalog.stop()
-    const timer = setTimeout(() => process.exit(0), 500)
-    timer.unref?.()
-    server.close(() => process.exit(0))
+    server.close()
+    await catalog.stop()
+    process.exit(0)
   }
   process.on("SIGINT", stop)
   process.on("SIGTERM", stop)

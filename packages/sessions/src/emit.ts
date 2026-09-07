@@ -1,3 +1,5 @@
+import { describeAttachments } from "./attachment-envelope.js"
+import { persistThreadAttachments } from "./attachment-storage.js"
 /**
  * Native session emitters — the deepest form of continuation.
  *
@@ -72,7 +74,13 @@ function flatten(entries: ThreadEntry[]): Message[] {
   const messages: Message[] = []
   for (const entry of entries) {
     if (entry.kind === "user") {
-      messages.push({ role: "user", text: entry.text, at: entry.at })
+      messages.push({
+        role: "user",
+        text: [entry.text, describeAttachments(entry.attachments ?? [])]
+          .filter(Boolean)
+          .join("\n\n"),
+        at: entry.at,
+      })
       continue
     }
     if (entry.kind === "event") {
@@ -83,11 +91,20 @@ function flatten(entries: ThreadEntry[]): Message[] {
     }
     const parts: string[] = []
     for (const block of entry.blocks) {
-      if (block.type === "text" && block.text.trim()) parts.push(block.text.trim())
+      if (block.type === "attachment") parts.push(describeAttachments([block]))
+      if (block.type === "text" && block.text.trim())
+        parts.push(block.text.trim())
       if (block.type === "tool") {
-        const lines = [`[tool: ${block.name}${block.error ? " — failed" : ""}]`]
+        const status = block.error
+          ? " — failed"
+          : block.canceled
+            ? " — canceled"
+            : ""
+        const lines = [`[tool: ${block.name}${status}]`]
         if (block.input) lines.push(`input: ${clip(block.input, 600)}`)
-        if (block.output?.trim()) lines.push(`output:\n${clip(block.output.trim(), 2000)}`)
+        if (block.output?.trim())
+          lines.push(`output:\n${clip(block.output.trim(), 2000)}`)
+        lines.push(describeAttachments(block.attachments ?? []))
         parts.push(lines.join("\n"))
       }
       // Thinking is the original model's private state; it does not replay.
@@ -123,7 +140,10 @@ export async function emitClaudeSession(
 
   const lines: string[] = []
   let parentUuid: string | null = null
-  for (const message of flatten(thread.entries)) {
+  for (const message of flatten(
+    (await persistThreadAttachments(thread, join(home, ".mako", "attachments")))
+      .entries
+  )) {
     const uuid = randomUUID()
     const entry: PersistedClaudeEntry = {
       type: message.role,
@@ -178,10 +198,20 @@ export async function emitCodexSession(
       type: "session_meta",
       // cli_version is required by Codex's session-meta schema; without it
       // the resume machinery refuses the file outright.
-      payload: { id: sessionId, timestamp: iso, cwd, originator: "mako", cli_version: "0.147.0", source: "exec" },
+      payload: {
+        id: sessionId,
+        timestamp: iso,
+        cwd,
+        originator: "mako",
+        cli_version: "0.147.0",
+        source: "exec",
+      },
     }),
   ]
-  for (const message of flatten(thread.entries)) {
+  for (const message of flatten(
+    (await persistThreadAttachments(thread, join(home, ".mako", "attachments")))
+      .entries
+  )) {
     lines.push(
       JSON.stringify({
         timestamp: message.at ?? iso,
@@ -190,7 +220,10 @@ export async function emitCodexSession(
           type: "message",
           role: message.role,
           content: [
-            { type: message.role === "user" ? "input_text" : "output_text", text: message.text },
+            {
+              type: message.role === "user" ? "input_text" : "output_text",
+              text: message.text,
+            },
           ],
         },
       })
@@ -222,18 +255,39 @@ export async function emitGrokSession(
   const home = options.home ?? homedir()
   const sessionId = randomUUID()
   const now = new Date().toISOString()
-  const dir = join(home, ".grok", "sessions", encodeURIComponent(cwd), sessionId)
+  const dir = join(
+    home,
+    ".grok",
+    "sessions",
+    encodeURIComponent(cwd),
+    sessionId
+  )
   await mkdir(dir, { recursive: true })
 
-  const messages = flatten(thread.entries)
+  const messages = flatten(
+    (await persistThreadAttachments(thread, join(home, ".mako", "attachments")))
+      .entries
+  )
   const lines = messages.map((message) =>
     JSON.stringify(
       message.role === "user"
-        ? { type: "user", content: [{ type: "text", text: `<user_query>\n${message.text}\n</user_query>` }] }
+        ? {
+            type: "user",
+            content: [
+              {
+                type: "text",
+                text: `<user_query>\n${message.text}\n</user_query>`,
+              },
+            ],
+          }
         : { type: "assistant", content: message.text }
     )
   )
-  await writeFile(join(dir, "chat_history.jsonl"), `${lines.join("\n")}\n`, "utf8")
+  await writeFile(
+    join(dir, "chat_history.jsonl"),
+    `${lines.join("\n")}\n`,
+    "utf8"
+  )
   await writeFile(
     join(dir, "summary.json"),
     JSON.stringify({
@@ -263,7 +317,9 @@ export async function emitCursorSession(
   options: EmitOptions = {}
 ): Promise<EmitResult> {
   const sqlite = await import("node:sqlite").catch(() => {
-    throw new Error("Writing Cursor sessions needs Node's built-in SQLite (Node 22.5+)")
+    throw new Error(
+      "Writing Cursor sessions needs Node's built-in SQLite (Node 22.5+)"
+    )
   })
   const { createHash } = await import("node:crypto")
 
@@ -281,17 +337,30 @@ export async function emitCursorSession(
     )
     const put = database.prepare("INSERT INTO blobs (id, data) VALUES (?, ?)")
     const hashes: Buffer[] = []
-    for (const message of flatten(thread.entries)) {
+    for (const message of flatten(
+      (
+        await persistThreadAttachments(
+          thread,
+          join(home, ".mako", "attachments")
+        )
+      ).entries
+    )) {
       const data = Buffer.from(
         JSON.stringify(
           message.role === "user"
             ? {
                 role: "user",
                 content: [
-                  { type: "text", text: `<user_query>\n${message.text}\n</user_query>` },
+                  {
+                    type: "text",
+                    text: `<user_query>\n${message.text}\n</user_query>`,
+                  },
                 ],
               }
-            : { role: "assistant", content: [{ type: "text", text: message.text }] }
+            : {
+                role: "assistant",
+                content: [{ type: "text", text: message.text }],
+              }
         )
       )
       const id = createHash("sha256").update(data).digest("hex")
@@ -309,7 +378,8 @@ export async function emitCursorSession(
       bytes.push(Number(current))
       return Buffer.from(bytes)
     }
-    const tag = (field: number, wire: number): Buffer => varint((field << 3) | wire)
+    const tag = (field: number, wire: number): Buffer =>
+      varint((field << 3) | wire)
     const bytesField = (field: number, buffer: Buffer): Buffer =>
       Buffer.concat([tag(field, 2), varint(buffer.length), buffer])
 

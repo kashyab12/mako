@@ -98,9 +98,7 @@ function workspaceOf(cwd: string | undefined): string | undefined {
 function withWorkspace(ref: ThreadRef | null): ThreadRef | null {
   if (!ref) return null
   const workspace = workspaceOf(ref.cwd)
-  return workspace && workspace !== ref.workspace
-    ? { ...ref, workspace }
-    : ref
+  return workspace && workspace !== ref.workspace ? { ...ref, workspace } : ref
 }
 
 function withThreadWorkspace(thread: Thread | null): Thread | null {
@@ -131,6 +129,7 @@ export class SessionCatalog {
     path: string
     bytes: number
     mtimeMs: number
+    revision?: string
     thread: Thread
   } | null = null
 
@@ -157,6 +156,7 @@ export class SessionCatalog {
     this.byPath.set(file.path, {
       bytes: file.bytes,
       mtimeMs: file.mtimeMs,
+      revision: file.revision,
       ref,
     })
     return true
@@ -183,13 +183,15 @@ export class SessionCatalog {
           if (
             cached &&
             cached.bytes === file.bytes &&
-            cached.mtimeMs === file.mtimeMs
-          )
+            cached.mtimeMs === file.mtimeMs &&
+            cached.revision === file.revision
+          ) {
+            if (cached.ref) this.capture(cached.ref)
             return
-          const ref = withWorkspace(
-            await provider.peek(file).catch(() => null)
-          )
+          }
+          const ref = withWorkspace(await provider.peek(file).catch(() => null))
           if (!this.commit(file, ref)) return
+          if (ref) this.capture(ref)
           if (options.emitChanges && ref) {
             this.emit({ type: cached?.ref ? "updated" : "added", ref })
           }
@@ -250,7 +252,8 @@ export class SessionCatalog {
       stamp &&
       held.path === path &&
       held.bytes === stamp.bytes &&
-      held.mtimeMs === stamp.mtimeMs
+      held.mtimeMs === stamp.mtimeMs &&
+      held.revision === stamp.revision
         ? held.thread
         : null
     const provider = this.ownerOf(path)
@@ -265,13 +268,14 @@ export class SessionCatalog {
           path,
           bytes: stamp.bytes,
           mtimeMs: stamp.mtimeMs,
+          revision: stamp.revision,
           thread: native,
         }
       }
       if (trackForFollow) {
         this.opened = {
           path,
-          throughByte: native.ref.bytes ?? 0,
+          throughByte: native.checkpoint ?? native.ref.bytes ?? 0,
           entryCount: native.entries.length,
         }
       }
@@ -282,8 +286,12 @@ export class SessionCatalog {
     return this.archive ? this.archive.read(path) : null
   }
 
-  async page(path: string, before?: number, limit = 100): Promise<ThreadPage | null> {
-    const thread = await this.open(path, false)
+  async page(
+    path: string,
+    before?: number,
+    limit = 100
+  ): Promise<ThreadPage | null> {
+    const thread = await this.open(path)
     if (!thread) return null
     const total = thread.entries.length
     const end = Math.min(total, Math.max(0, before ?? total))
@@ -291,6 +299,7 @@ export class SessionCatalog {
     const start = Math.max(0, end - size)
     return {
       ref: thread.ref,
+      checkpoint: thread.checkpoint,
       entries: thread.entries.slice(start, end),
       start,
       total,
@@ -372,9 +381,7 @@ export class SessionCatalog {
     }
   }
 
-  stop(): void {
-    this.archive?.stop()
-    for (const provider of this.providers) provider.close?.()
+  async stop(): Promise<void> {
     for (const watcher of this.watchers) watcher.close()
     this.watchers = []
     if (this.pollTimer) {
@@ -388,6 +395,11 @@ export class SessionCatalog {
       clearTimeout(this.saveTimer)
       this.saveTimer = null
       void this.saveCache()
+    }
+    try {
+      await this.archive?.stop()
+    } finally {
+      for (const provider of this.providers) provider.close?.()
     }
   }
 
@@ -429,14 +441,11 @@ export class SessionCatalog {
     clearTimeout(this.pending.get(key))
     this.pending.set(
       key,
-      setTimeout(
-        () => {
-          this.pending.delete(key)
-          if (provider.rescanRoot) void this.rescanProvider(provider)
-          else void this.refresh(provider, path)
-        },
-        provider.rescanDebounceMs ?? WATCH_DEBOUNCE_MS
-      )
+      setTimeout(() => {
+        this.pending.delete(key)
+        if (provider.rescanRoot) void this.rescanProvider(provider)
+        else void this.refresh(provider, path)
+      }, provider.rescanDebounceMs ?? WATCH_DEBOUNCE_MS)
     )
   }
 
@@ -455,7 +464,10 @@ export class SessionCatalog {
           await this.rescanProviderOnce(provider)
           if (state.requested) {
             await new Promise((resolve) =>
-              setTimeout(resolve, provider.rescanDebounceMs ?? WATCH_DEBOUNCE_MS)
+              setTimeout(
+                resolve,
+                provider.rescanDebounceMs ?? WATCH_DEBOUNCE_MS
+              )
             )
           }
         } while (state.requested)
@@ -479,7 +491,8 @@ export class SessionCatalog {
         !followed &&
         cached &&
         cached.bytes === file.bytes &&
-        cached.mtimeMs === file.mtimeMs
+        cached.mtimeMs === file.mtimeMs &&
+        cached.revision === file.revision
       )
         continue
       const ref = withWorkspace(await provider.peek(file).catch(() => null))
@@ -569,7 +582,10 @@ export class SessionCatalog {
     const cached = this.byPath.get(path)
     const follow = this.follows.get(path)
     const unchanged =
-      cached && cached.bytes === file.bytes && cached.mtimeMs === file.mtimeMs
+      cached &&
+      cached.bytes === file.bytes &&
+      cached.mtimeMs === file.mtimeMs &&
+      cached.revision === file.revision
     if (
       unchanged &&
       (!follow?.follower || follow.follower.offset >= file.bytes)
@@ -689,13 +705,16 @@ export class SessionCatalog {
       listener(update.entries, update.replace, update.replaceFrom)
   }
 
+  private capture(ref: ThreadRef): void {
+    if (!ref.archived && !ref.locked)
+      this.archive?.note(ref, () => this.open(ref.path, false))
+  }
+
   private emit(event: CatalogEvent): void {
     // Archive once the writer releases its lock. Re-translating a giant live
     // conversation on every checkpoint competes with the agent writing it.
     if (this.archive && (event.type === "added" || event.type === "updated")) {
-      const ref = event.ref
-      if (!ref.archived && !ref.locked)
-        this.archive.note(ref, () => this.open(ref.path, false))
+      this.capture(event.ref)
     }
     for (const listener of this.listeners) listener(event)
   }
@@ -733,7 +752,7 @@ export class SessionCatalog {
       for (const [path, entry] of this.byPath) entries[path] = entry
       await writeFile(
         this.cachePath,
-        JSON.stringify({ version: 4, entries }),
+        JSON.stringify({ version: 5, entries }),
         "utf8"
       )
     } catch {
