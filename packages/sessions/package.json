@@ -6,12 +6,19 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
-    ".": "./dist/index.js"
+    ".": "./dist/index.js",
+    "./tool-output": "./dist/tool-output.js",
+    "./content": "./dist/content.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b",
-    "test": "npm run -s build && node test/transcript.mjs && node test/streaming-correctness.mjs && node test/grok-updates.mjs && node test/devin-cli.mjs && node test/opencode.mjs && node test/codex-large.mjs && node test/daemon.mjs && node test/resume-matrix.mjs",
+    "test": "npm run -s build && node test/storage-integrity.mjs && node test/content-fidelity.mjs && node test/transcript.mjs && node test/streaming-correctness.mjs && node test/grok-updates.mjs && node test/devin-cli.mjs && node test/opencode.mjs && node test/codex-large.mjs && node test/daemon.mjs && node test/resume-matrix.mjs",
     "test:matrix": "npm run -s build && node test/resume-matrix.mjs"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
   }
 }
