@@ -2,6 +2,7 @@ import {DevinLocalProvider} from '../dist/providers/devin-local.js'
 import assert from 'node:assert/strict'
 import {mkdtemp,mkdir,writeFile,rm,readFile} from 'node:fs/promises'
 import {join} from 'node:path'
+import {createHash} from 'node:crypto'
 import {pathToFileURL} from 'node:url'
 import {tmpdir} from 'node:os'
 import {persistThreadAttachments} from '../dist/attachment-storage.js'
@@ -37,6 +38,23 @@ try {
   assert.equal(loaded.entries.filter(e=>e.kind==='assistant').flatMap(e=>e.blocks).filter(b=>b.type==='attachment').length,1,name+' assistant attachment')
   assert.equal(JSON.stringify(loaded.entries).includes('<mako-attachments>'),false,name+' envelope hidden')
   console.log('PASS '+name+' user and assistant attachment round trip')
+ }
+ const input='input-'+ 'x'.repeat(5000)+'-input-tail'
+ const output='output-'+ 'y'.repeat(100000)+'-output-tail\n'
+ const toolThread={ref,entries:[{kind:'user',text:'run the fixture'},{kind:'assistant',blocks:[{type:'tool',name:'fixture',input,output}]}]}
+ for (const [name,emit,Provider] of [['claude',emitClaudeSession,ClaudeProvider],['codex',emitCodexSession,CodexProvider],['cursor',emitCursorSession,CursorProvider],['grok',emitGrokSession,GrokProvider]]) {
+  const home=join(root,`payload-${name}`)
+  const emitted=await emit(toolThread,{home,cwd:root})
+  const loaded=await new Provider(home).read(emitted.path)
+  const text=JSON.stringify(loaded.entries)
+  for(const payload of [input,output]) {
+   const digest=createHash('sha256').update(payload).digest('hex')
+   const path=join(home,'.mako','native-import-artifacts',`${digest}.txt`)
+   assert.equal(await readFile(path,'utf8'),payload)
+   assert.ok(text.includes(path),`${name} retains an exact reference to the complete tool payload`)
+  }
+  assert.equal(text.includes('[truncated]'),false)
+  console.log(`PASS ${name} complete large tool input/output sidecars`)
  }
  const content={type:'image',data:Buffer.from('test').toString('base64'),mimeType:'image/png'}
  const devin=join(root,'devin');await mkdir(join(devin,'acp-events'),{recursive:true});const dpath=join(devin,'acp-events','session.ndjson')
