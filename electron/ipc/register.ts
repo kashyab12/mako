@@ -1,29 +1,37 @@
 import { ipcMain } from "electron"
 import { breadcrumb, record } from "../crash.js"
+import { hostCallInputs } from "../contracts/host-call-inputs.js"
 
-/**
- * Every IPC call, wrapped once.
- *
- * Two things fall out of doing this in one place rather than at forty call
- * sites: a breadcrumb per call, so a crash report says what the app was doing;
- * and a recorded report for any handler that throws, which until now surfaced
- * only as a toast and left nothing behind to read afterwards.
- *
- * The breadcrumb is the channel name and nothing else. Arguments would mean
- * keeping the user's prompts and source on disk, which the crash file promises
- * not to do.
- */
-export function registerIpc(
-  channel: string,
-  listener: Parameters<typeof ipcMain.handle>[1]
+type HostChannel = keyof typeof hostCallInputs
+type HostArguments<Channel extends HostChannel> =
+  (typeof hostCallInputs)[Channel]["_output"]
+const calls = new Map<string, (args: unknown[]) => Promise<string>>()
+
+/** Web replies are encoded here so Electron keeps its original structured values. */
+export function invokeHost(channel: string, args: unknown[]): Promise<string> {
+  const call = calls.get(channel)
+  if (!call) throw new Error("Unknown Mako host method")
+  return call(args)
+}
+
+/** Both transports validate arguments against the generated handler contract. */
+export function registerIpc<Channel extends HostChannel, Result>(
+  channel: Channel,
+  listener: (_event: undefined, ...args: HostArguments<Channel>) => Result
 ): void {
-  ipcMain.handle(channel, async (event, ...args) => {
+  const call = async (args: unknown[]) => {
+    // SAFETY: the schema is selected by this exact Channel and parses every argument; TypeScript loses that key/output correlation when indexing the heterogeneous table.
+    const parsed = hostCallInputs[channel].parse(args) as HostArguments<Channel>
     breadcrumb(channel)
     try {
-      return await listener(event, ...args)
+      return await listener(undefined, ...parsed)
     } catch (error) {
       record("main-uncaught", error, channel)
       throw error
     }
-  })
+  }
+  calls.set(channel, async (args) =>
+    JSON.stringify({ ok: true, value: await call(args) })
+  )
+  ipcMain.handle(channel, (_event, ...args) => call(args))
 }

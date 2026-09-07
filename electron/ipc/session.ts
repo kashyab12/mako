@@ -1,5 +1,4 @@
 import type { LiveSummary } from "../shared.js"
-import { ipcMain } from "electron"
 import type { AgentHost } from "../host.js"
 import type { HostPool } from "../pool.js"
 import type { BootPayload, TabSnapshot, ThinkingLevel } from "../shared.js"
@@ -93,7 +92,7 @@ export function installSessionIpc(context: SessionIpcContext): void {
     withHost((host) => host.setName(name))
   )
 
-  ipcMain.handle(
+  registerIpc(
     "mako:prompt",
     (
       _event,
