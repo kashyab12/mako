@@ -12,10 +12,13 @@ export interface WorkspaceIpcContext {
 }
 
 let fileWatcher: FSWatcher | null = null
+let fileWatchTimer: NodeJS.Timeout | null = null
 
 export function stopWorkspaceIpc(): void {
   fileWatcher?.close()
   fileWatcher = null
+  if (fileWatchTimer) clearTimeout(fileWatchTimer)
+  fileWatchTimer = null
 }
 
 export function installWorkspaceIpc(context: WorkspaceIpcContext): void {

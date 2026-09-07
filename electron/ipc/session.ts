@@ -1,3 +1,4 @@
+import type { LiveSummary } from "../shared.js"
 import { ipcMain } from "electron"
 import type { AgentHost } from "../host.js"
 import type { HostPool } from "../pool.js"
@@ -5,6 +6,7 @@ import type { BootPayload, TabSnapshot, ThinkingLevel } from "../shared.js"
 import { registerIpc } from "./register.js"
 
 export interface SessionIpcContext {
+  liveSummaries(): LiveSummary[]
   ready(): Promise<HostPool>
   withHost<TResult>(
     operation: (host: AgentHost) => TResult | Promise<TResult>
@@ -23,6 +25,7 @@ export function installSessionIpc(context: SessionIpcContext): void {
       live.active.listModels(),
     ])
     return {
+      live: context.liveSummaries(),
       tabs,
       activeTabId: live.activeId,
       models,
@@ -100,9 +103,7 @@ export function installSessionIpc(context: SessionIpcContext): void {
     ) => withHost((host) => host.prompt(text, mode, images))
   )
   registerIpc("mako:abort", () => withHost((host) => host.abort()))
-  registerIpc("mako:clear-queue", () =>
-    withHost((host) => host.clearQueue())
-  )
+  registerIpc("mako:clear-queue", () => withHost((host) => host.clearQueue()))
   // Branching opens a tab rather than replacing this one. Exploring the same
   // question two ways only works if both answers stay on screen.
   registerIpc(
@@ -125,9 +126,7 @@ export function installSessionIpc(context: SessionIpcContext): void {
     withHost((host) => host.setAutoCompaction(enabled))
   )
 
-  registerIpc("mako:list-models", () =>
-    withHost((host) => host.listModels())
-  )
+  registerIpc("mako:list-models", () => withHost((host) => host.listModels()))
   registerIpc("mako:set-model", (_event, provider: string, id: string) =>
     withHost((host) => host.setModel(provider, id))
   )
