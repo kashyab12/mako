@@ -359,8 +359,8 @@ export const MCP: McpRegistrySnapshot = {
       id: "mock-browser-use",
       name: "mako-browser-use",
       transport: "stdio",
-      command: "/Users/you/.local/bin/browser-use",
-      args: [],
+      command: "/Applications/Mako.app/Contents/MacOS/Mako",
+      args: ["browser-tools-main.js"],
       envNames: [],
       headerNames: [],
       origins: [
@@ -374,14 +374,21 @@ export const MCP: McpRegistrySnapshot = {
       portable: true,
       managed: true,
       availability: "available",
-      detail: "Uses the existing local Chrome through Browser Use and CDP",
+      detail:
+        "Built-in browser tools share one approved local connection across tasks",
     },
     {
       id: "mock-local-control",
       name: "mako-local-control",
       transport: "stdio",
-      command: "/Users/you/.local/bin/cua-driver",
-      args: ["mcp", "--embedded", "--socket", "/tmp/mako-cua.sock"],
+      command: "/Applications/Mako.app/Contents/MacOS/Mako",
+      args: [
+        "computer-tools-main.js",
+        "--driver",
+        "cua-driver",
+        "--socket",
+        "/tmp/mako-cua.sock",
+      ],
       envNames: [],
       headerNames: [],
       origins: [

@@ -1,3 +1,9 @@
+import type { NativeRequestInput, NativeRequest } from "../../electron/shared"
+import type {
+  DelegateInput,
+  ForkInput,
+  TransferInput,
+} from "../../electron/shared"
 import type { LiveSnapshot, LiveStartOptions, LiveRequest } from "@/lib/types"
 import { reduceLiveUpdates } from "../../electron/contracts/live-content"
 import type {
@@ -94,6 +100,7 @@ export function installMockBridge() {
   let terminalSessions = initialTerminalSessions()
   const capabilities = createCapabilities()
 
+  const nativeRequests: NativeRequest[] = []
   const liveSnapshots = new Map<string, LiveSnapshot>()
   const boot: BootPayload = {
     live: [],
@@ -211,6 +218,7 @@ export function installMockBridge() {
       size: 1,
     }),
     pathForFile: () => null,
+    resolveFileUrl: (url) => url,
     unwatchFile: async () => {},
     readFile: async (path: string) => ({
       path,
@@ -354,6 +362,27 @@ export function installMockBridge() {
       accessibility: true,
       screenRecording: "granted" as const,
     }),
+    browserControlStatus: async () => [
+      {
+        id: "chrome",
+        name: "Google Chrome",
+        connection: { status: "disconnected" as const },
+      },
+    ],
+    connectBrowser: async () => [
+      {
+        id: "chrome",
+        name: "Google Chrome",
+        connection: { status: "connected" as const, generation: "fixture" },
+      },
+    ],
+    disconnectBrowser: async () => [
+      {
+        id: "chrome",
+        name: "Google Chrome",
+        connection: { status: "disconnected" as const },
+      },
+    ],
     integrations: async () => INTEGRATIONS,
     discoverMcp: async () => MCP,
     previewMcpSync: async (serverId, target) => ({
@@ -861,6 +890,265 @@ export function installMockBridge() {
       liveSnapshots.set(session.id, snapshot)
       return snapshot
     },
+    liveCapture: async (id: string, path: string) => {
+      const existing = [...liveSnapshots.values()].find(
+        (snapshot) => snapshot.threadPath === path
+      )
+      if (existing) return existing
+      const base = await window.mako?.pageThread(path)
+      if (!base) throw new Error("Missing mock source")
+      const snapshot: LiveSnapshot = {
+        session: {
+          id,
+          harness: base.ref.harness,
+          cwd: base.ref.cwd ?? "",
+          title: base.ref.title,
+          status: "ready",
+          connection: "disconnected",
+          modes: [],
+          currentMode: null,
+          configOptions: [],
+        },
+        revision: 0,
+        createdAt: Date.now(),
+        base,
+        threadPath: path,
+        blocks: [],
+        requests: [],
+        permissions: [],
+      }
+      liveSnapshots.set(id, snapshot)
+      return snapshot
+    },
+    nativeReceipt: async (id: string) =>
+      nativeRequests.find((request) => request.input.id === id) ?? null,
+    nativeDismiss: async (id: string) => {
+      const request = nativeRequests.find((request) => request.input.id === id)
+      if (request) request.status = "dismissed"
+    },
+    nativeRequests: async () => nativeRequests,
+    nativeSubmit: async (input: NativeRequestInput) => {
+      const thread = await window.mako?.openThread(input.path)
+      if (!thread) throw new Error("Missing mock native thread")
+      const request: NativeRequest = {
+        input,
+        ref: thread.ref,
+        status: "completed",
+      }
+      nativeRequests.push(request)
+      return request
+    },
+    liveDelegate: async (id: string, input: DelegateInput) => {
+      const parent = liveSnapshots.get(id)
+      if (!parent) throw new Error("Missing mock parent")
+      const control = parent.control ?? {
+        children: [],
+        merges: [],
+        activeBindingId: id,
+        bindings: [],
+        transfers: [],
+      }
+      const next: LiveSnapshot = {
+        ...parent,
+        revision: parent.revision + 1,
+        control: {
+          ...control,
+          children: [
+            ...control.children,
+            {
+              id: input.id,
+              task: input.task,
+              provider: input.provider,
+              parentRequestId: parent.requests.at(-1)?.id ?? id,
+              status: "completed",
+              delivery: "delivered",
+              deliveryId: crypto.randomUUID(),
+            },
+          ],
+        },
+      }
+      liveSnapshots.set(id, next)
+      return next
+    },
+    liveCancelChild: async (id: string, childId: string) => {
+      const parent = liveSnapshots.get(id)
+      if (!parent?.control) throw new Error("Missing mock parent")
+      const next: LiveSnapshot = {
+        ...parent,
+        revision: parent.revision + 1,
+        control: {
+          ...parent.control,
+          children: parent.control.children.map((child) =>
+            child.id === childId
+              ? { ...child, status: "canceled", delivery: "dismissed" }
+              : child
+          ),
+        },
+      }
+      liveSnapshots.set(id, next)
+      return next
+    },
+    liveMergeFork: async (id: string, mergeId: string) => {
+      const source = liveSnapshots.get(id)
+      const parent = source?.control?.ancestry
+        ? liveSnapshots.get(source.control.ancestry.parentId)
+        : undefined
+      if (!parent) throw new Error("Missing mock parent")
+      const control = parent.control ?? {
+        children: [],
+        merges: [],
+        activeBindingId: parent.session.id,
+        bindings: [],
+        transfers: [],
+      }
+      const next: LiveSnapshot = {
+        ...parent,
+        revision: parent.revision + 1,
+        control: {
+          ...control,
+          merges: [
+            ...control.merges,
+            {
+              id: mergeId,
+              sourceId: id,
+              sourceRevision: source?.revision ?? 0,
+              status: "pending",
+              manifest: {
+                file: "/mock/fork.md",
+                digest: "fixture",
+                sourceRevision: source?.revision ?? 0,
+                fromBlock: 0,
+                toBlock: source?.blocks.length ?? 0,
+                includesBase: false,
+                losses: [],
+              },
+            },
+          ],
+        },
+      }
+      liveSnapshots.set(parent.session.id, next)
+      return next
+    },
+    liveFork: async (id: string, input: ForkInput) => {
+      const parent = liveSnapshots.get(id)
+      if (!parent) throw new Error("Missing mock source")
+      const fork: LiveSnapshot = {
+        ...parent,
+        session: {
+          ...parent.session,
+          id: input.id,
+          title: "Fork",
+          harness: input.provider,
+          connection: "disconnected",
+        },
+        control: {
+          children: [],
+          merges: [],
+          ancestry: {
+            kind: "fork",
+            parentId: id,
+            sourceRevision: parent.revision,
+            point: JSON.stringify(input.point),
+          },
+          activeBindingId: input.id,
+          bindings: [],
+          transfers: [],
+        },
+        revision: 0,
+        threadPath: undefined,
+        requests: [],
+      }
+      liveSnapshots.set(input.id, fork)
+      return fork
+    },
+    liveTransfer: async (id: string, input: TransferInput) => {
+      const snapshot = liveSnapshots.get(id)
+      if (!snapshot) throw new Error("Missing mock session")
+      const control = snapshot.control ?? {
+        activeBindingId: id,
+        bindings: [
+          {
+            id,
+            provider: snapshot.session.harness,
+            coveredBlocks: snapshot.blocks.length,
+            includesBase: true,
+          },
+        ],
+        transfers: [],
+      }
+      if (control.transfers.some((transfer) => transfer.input.id === input.id))
+        return snapshot
+      const bindingId = crypto.randomUUID()
+      const next: LiveSnapshot = {
+        ...snapshot,
+        revision: snapshot.revision + 1,
+        session: {
+          ...snapshot.session,
+          harness: input.provider,
+          connection: "connected",
+          status: "ready",
+        },
+        requests: [
+          ...snapshot.requests,
+          {
+            id: input.id,
+            text: input.text,
+            attachments: input.attachments,
+            status: "completed",
+          },
+        ],
+        control: {
+          children: [],
+          merges: [],
+          ...control,
+          activeBindingId: bindingId,
+          bindings: [
+            ...control.bindings,
+            {
+              id: bindingId,
+              provider: input.provider,
+              coveredBlocks: snapshot.blocks.length,
+              includesBase: true,
+            },
+          ],
+          transfers: [
+            ...control.transfers,
+            {
+              input,
+              createdAt: Date.now(),
+              state: {
+                kind: "accepted",
+                bindingId,
+                manifest: {
+                  file: "/mock/context.md",
+                  digest: "fixture",
+                  sourceRevision: snapshot.revision,
+                  fromBlock: 0,
+                  toBlock: snapshot.blocks.length,
+                  includesBase: true,
+                  losses: [],
+                },
+              },
+            },
+          ],
+        },
+        blocks: [
+          ...snapshot.blocks,
+          {
+            type: "user",
+            provider: input.provider,
+            requestId: input.id,
+            text: input.text,
+          },
+          {
+            type: "text",
+            text: `Finished with ${input.provider}: ${input.text}`,
+          },
+        ],
+      }
+      liveSnapshots.set(id, next)
+      return next
+    },
     liveClearQueue: async (id: string) => {
       const snapshot = liveSnapshots.get(id)
       if (!snapshot) throw new Error("Missing mock session")
@@ -1053,11 +1341,6 @@ export function installMockBridge() {
           ],
         },
       ],
-    }),
-    resumeThread: async (path: string) => ({
-      path,
-      harness: "codex",
-      status: "running" as const,
     }),
     abortThreadRun: async () => {},
     usage: async () => ({
