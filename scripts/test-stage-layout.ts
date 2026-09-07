@@ -6,8 +6,15 @@ import {
   fitsBeside,
 } from "../src/components/stage/stage-width.ts"
 import {
+  decodeFileCitation,
+  linkFileCitations,
+  markdownFileTarget,
+} from "../src/lib/file-citations.ts"
+import {
   argAt,
   isSubagentLaunch,
+  normalizeToolOutput,
+  parseToolExecutionOutput,
   subagentResultId,
   subagentResultText,
   summarizeToolWork,
@@ -49,14 +56,37 @@ import {
   pendingThreadInput,
   threadToMessages,
 } from "../src/lib/foreign-thread.ts"
-import {
-  acp,
-  acpStore,
-  applyAcpPermission,
-  applyAcpSession,
-  applyAcpUpdates,
-  type LiveAcpConversation,
-} from "../src/state/acp.ts"
+import { acp, acpStore, type LiveAcpConversation } from "../src/state/acp.ts"
+import { applyLiveBatch } from "../src/state/live-recovery.ts"
+import type {
+  LiveUpdate,
+  LivePermissionRequest,
+  LiveSessionState,
+} from "../src/lib/types.ts"
+function applySession(session: LiveSessionState) {
+  applyLiveBatch({
+    id: session.id,
+    revision: (acpStore.get().conversations[session.id]?.revision ?? 0) + 1,
+    updates: [],
+    session,
+  })
+}
+function applyUpdates(id: string, updates: LiveUpdate[]) {
+  applyLiveBatch({
+    id,
+    revision: (acpStore.get().conversations[id]?.revision ?? 0) + 1,
+    updates,
+  })
+}
+function applyPermission(request: LivePermissionRequest) {
+  applyLiveBatch({
+    id: request.sessionId,
+    revision:
+      (acpStore.get().conversations[request.sessionId]?.revision ?? 0) + 1,
+    updates: [],
+    permissions: [request],
+  })
+}
 import {
   sameAcpPresence,
   selectAcpPresence,
@@ -71,23 +101,23 @@ import type {
 } from "../src/lib/types.ts"
 
 const css = readFileSync(new URL("../src/index.css", import.meta.url), "utf8")
+const threadViewerSource = readFileSync(
+  new URL("../src/components/viewer/thread-viewer.tsx", import.meta.url),
+  "utf8"
+)
+const threadViewingSource = readFileSync(
+  new URL("../src/state/thread-viewing.ts", import.meta.url),
+  "utf8"
+)
 assert.doesNotMatch(css, /\binfinite\b/)
-assert.equal(
-  composerActionKind({ running: false, hasContent: false }),
-  "send"
-)
-assert.equal(
-  composerActionKind({ running: false, hasContent: true }),
-  "send"
-)
-assert.equal(
-  composerActionKind({ running: true, hasContent: false }),
-  "stop"
-)
-assert.equal(
-  composerActionKind({ running: true, hasContent: true }),
-  "queue"
-)
+assert.match(threadViewerSource, /Loading messages…/)
+assert.match(threadViewerSource, /Syncing messages…/)
+assert.doesNotMatch(threadViewerSource, /Opening \{opening/)
+assert.match(threadViewingSource, /Showing saved messages/)
+assert.equal(composerActionKind({ running: false, hasContent: false }), "send")
+assert.equal(composerActionKind({ running: false, hasContent: true }), "send")
+assert.equal(composerActionKind({ running: true, hasContent: false }), "stop")
+assert.equal(composerActionKind({ running: true, hasContent: true }), "queue")
 assert.equal(
   composerTurnRunning({
     builtinRunning: false,
@@ -181,7 +211,10 @@ const restoredTerminals = [
   terminalSession("dead-current", "/repo/a", "exited"),
   terminalSession("live-other", "/repo/b", "running"),
 ]
-assert.equal(runningTerminalForWorkspace(restoredTerminals, "/repo/a"), undefined)
+assert.equal(
+  runningTerminalForWorkspace(restoredTerminals, "/repo/a"),
+  undefined
+)
 assert.equal(
   runningTerminalForWorkspace(restoredTerminals, "/repo/b")?.id,
   "live-other"
@@ -199,24 +232,12 @@ assert.equal(
   clampCompanionWidth({ width: 520, available: 1400, min: 400 }),
   520
 )
-assert.equal(
-  clampCompanionWidth({ width: 520, available: 800, min: 400 }),
-  400
-)
+assert.equal(clampCompanionWidth({ width: 520, available: 800, min: 400 }), 400)
 assert.equal(fitsBeside(851, 400), true)
 assert.equal(fitsBeside(850, 400), false)
-assert.equal(
-  clampDockHeight({ height: 280, available: 900, min: 180 }),
-  280
-)
-assert.equal(
-  clampDockHeight({ height: 600, available: 500, min: 180 }),
-  240
-)
-assert.equal(
-  clampDockHeight({ height: 120, available: 300, min: 180 }),
-  180
-)
+assert.equal(clampDockHeight({ height: 280, available: 900, min: 180 }), 280)
+assert.equal(clampDockHeight({ height: 600, available: 500, min: 180 }), 240)
+assert.equal(clampDockHeight({ height: 120, available: 300, min: 180 }), 180)
 assert.equal(
   clampDockHeight({ height: 350, available: undefined, min: 180 }),
   350
@@ -238,7 +259,10 @@ assert.equal(
   subagentResultText('<subagent sessionID="ses_partial">'),
   "Subagent result was incomplete."
 )
-assert.equal(argAt('{"description":"Read package name"}', "description"), "Read package name")
+assert.equal(
+  argAt('{"description":"Read package name"}', "description"),
+  "Read package name"
+)
 assert.equal(
   isSubagentLaunch({ id: "1", name: "TaskUpdate", pending: false }),
   false
@@ -249,10 +273,76 @@ assert.equal(
 )
 assert.equal(toolLabel("exec_command"), "Shell")
 assert.equal(toolLabel("TaskUpdate"), "Update task")
+assert.equal(toolLabel("WAIT"), "Wait for command")
+assert.equal(
+  isSubagentLaunch({
+    id: "wait",
+    name: "wait",
+    arguments: { cell_id: "706" },
+    pending: false,
+  }),
+  false
+)
+assert.equal(
+  normalizeToolOutput(
+    JSON.stringify([
+      {
+        type: "input_text",
+        text: "Script completed\nWall time 0.0 seconds\nOutput:\n",
+      },
+      { type: "input_text", text: "step_name status\nassemble running" },
+    ])
+  ),
+  "Script completed\nWall time 0.0 seconds\nOutput:\n\nstep_name status\nassemble running"
+)
+assert.equal(
+  normalizeToolOutput(
+    JSON.stringify({
+      chunk_id: "chunk",
+      wall_time_seconds: 1,
+      session_id: 7,
+      output: "final output",
+    })
+  ),
+  "final output"
+)
+assert.deepEqual(
+  parseToolExecutionOutput(
+    "Script completed\nWall time 0.0 seconds\nOutput:\nrows: 390"
+  ),
+  {
+    status: "Script completed",
+    duration: "0.0 seconds",
+    output: "rows: 390",
+  }
+)
+const linkedCitation = linkFileCitations(
+  'Final cleaned CSV: :codex-file-citation{path="/work/output.csv" purpose="output"}'
+)
+const citationHref = /\((mako-citation:[^)]+)\)/.exec(linkedCitation)?.[1]
+assert.deepEqual(decodeFileCitation(citationHref), {
+  path: "/work/output.csv",
+  purpose: "output",
+})
+assert.deepEqual(markdownFileTarget("/work/src/index.ts#L12-L18"), {
+  path: "/work/src/index.ts",
+  line: 12,
+  endLine: 18,
+})
 assert.deepEqual(
   summarizeToolWork([
-    { id: "edit-a", name: "edit", arguments: { file_path: "src/a.ts" }, pending: false },
-    { id: "edit-a-2", name: "write", arguments: { path: "src/a.ts" }, pending: false },
+    {
+      id: "edit-a",
+      name: "edit",
+      arguments: { file_path: "src/a.ts" },
+      pending: false,
+    },
+    {
+      id: "edit-a-2",
+      name: "write",
+      arguments: { path: "src/a.ts" },
+      pending: false,
+    },
     { id: "shell", name: "exec_command", pending: false },
     { id: "read", name: "read", pending: false },
     { id: "search", name: "grep", pending: false },
@@ -309,6 +399,15 @@ assert.equal(
   )[0]?.provider,
   "devin"
 )
+assert.equal(
+  threadToMessages([
+    {
+      kind: "assistant",
+      blocks: [{ type: "tool", name: "shell", canceled: true }],
+    },
+  ])[0]?.blocks.find((block) => block.type === "toolResult")?.isCanceled,
+  true
+)
 assert.deepEqual(
   acpConversation.messages[1]?.blocks.map((block) => block.type),
   ["thinking", "toolCall", "toolResult", "text"]
@@ -330,15 +429,16 @@ const canceledTool = acpBlocksToMessages(
   false
 )
 assert.equal(
-  canceledTool.messages[0]?.blocks.find(
-    (block) => block.type === "toolResult"
-  )?.isCanceled,
+  canceledTool.messages[0]?.blocks.find((block) => block.type === "toolResult")
+    ?.isCanceled,
   true
 )
 
 const acpEcho = {
   kind: "live",
   key: "acp-echo",
+  hydrated: true,
+  revision: 0,
   draftKey: "draft-echo",
   harness: "grok",
   cwd: "/repo",
@@ -348,6 +448,7 @@ const acpEcho = {
   updatedAt: 1,
   session: {
     id: "acp-echo",
+    connection: "connected",
     harness: "grok",
     cwd: "/repo",
     status: "running",
@@ -363,38 +464,15 @@ const acpEcho = {
 acpStore.set({
   activeKey: acpEcho.key,
   conversations: { [acpEcho.key]: acpEcho },
-  bufferedUpdates: {},
-  bufferedPermissions: {},
 })
-applyAcpUpdates("acp-echo", [
+applyUpdates("acp-echo", [
   { kind: "user", text: "same prompt" },
   { kind: "user", text: "same prompt" },
 ])
 assert.deepEqual(acpStore.get().conversations[acpEcho.key]?.blocks, [
-  { type: "user", text: "same prompt" },
+  { type: "user", text: "same prompt", attachments: undefined },
+  { type: "user", text: "same prompt", attachments: undefined },
 ])
-acpStore.set({
-  conversations: {
-    [acpEcho.key]: {
-      ...acpStore.get().conversations[acpEcho.key]!,
-      blocks: [{ type: "user", text: "Visible question" }],
-      hiddenUserPrompt: "Read the generated transcript, then answer.",
-    },
-  },
-})
-applyAcpUpdates("acp-echo", [
-  { kind: "user", text: "Read the generated transcript, then answer." },
-  { kind: "text", text: "Ready" },
-])
-assert.deepEqual(acpStore.get().conversations[acpEcho.key]?.blocks, [
-  { type: "user", text: "Visible question" },
-  { type: "text", text: "Ready" },
-])
-assert.equal(
-  acpStore.get().conversations[acpEcho.key]?.hiddenUserPrompt,
-  null
-)
-
 const backgroundA = {
   ...acpEcho,
   key: "acp-background-a",
@@ -428,14 +506,12 @@ acpStore.set({
     [backgroundA.key]: backgroundA,
     [backgroundB.key]: backgroundB,
   },
-  bufferedUpdates: {},
-  bufferedPermissions: {},
 })
 const stableBackgroundB = acpStore.get().conversations[backgroundB.key]
 const presenceBeforeToken = selectAcpPresence(acpStore.get())
-applyAcpUpdates(backgroundA.key, [{ kind: "text", text: "Background token" }])
+applyUpdates(backgroundA.key, [{ kind: "text", text: "Background token" }])
 assert.deepEqual(acpStore.get().conversations[backgroundA.key]?.blocks, [
-  { type: "text", text: "Background token" },
+  { type: "text", text: "Background token", id: undefined },
 ])
 assert.equal(
   sameAcpPresence(presenceBeforeToken, selectAcpPresence(acpStore.get())),
@@ -447,7 +523,7 @@ assert.equal(
   stableBackgroundB,
   "a background token must not replace the active conversation object"
 )
-applyAcpPermission({
+applyPermission({
   id: "permission-a",
   sessionId: backgroundA.key,
   title: "Run tests",
@@ -459,11 +535,17 @@ assert.equal(
     : undefined,
   "permission-a"
 )
-assert.equal(threadsStore.get().attention["/background-a"]?.kind, "needs-permission")
+assert.equal(
+  threadsStore.get().attention["/background-a"]?.kind,
+  "needs-permission"
+)
 assert.equal(acpStore.get().activeKey, backgroundB.key)
 assert.equal(acp.activateThread("/background-a"), true)
 assert.equal(acpStore.get().activeKey, backgroundA.key)
-assert.equal(threadsStore.get().attention["/background-a"]?.kind, "needs-permission")
+assert.equal(
+  threadsStore.get().attention["/background-a"]?.kind,
+  "needs-permission"
+)
 acpStore.set({ activeKey: backgroundB.key })
 const queuedA = acpStore.get().conversations[backgroundA.key]
 if (!queuedA || queuedA.kind !== "live") throw new Error("missing background A")
@@ -477,7 +559,7 @@ acpStore.set({
     },
   },
 })
-applyAcpSession({ ...backgroundA.session, status: "ready" })
+applySession({ ...backgroundA.session, status: "ready" })
 await Promise.resolve()
 await Promise.resolve()
 const restoredA = acpStore.get().conversations[backgroundA.key]
@@ -498,28 +580,14 @@ if (restoredA?.kind === "live") {
     },
   })
 }
-applyAcpSession({ ...backgroundA.session, status: "ready" })
+applySession({ ...backgroundA.session, status: "ready" })
 assert.equal(threadsStore.get().attention["/background-a"]?.kind, "review")
 assert.equal(acpStore.get().activeKey, backgroundB.key)
 acpStore.set({
   activeKey: null,
   conversations: {},
-  bufferedUpdates: {},
-  bufferedPermissions: {},
 })
 threadsStore.set({ working: {}, attention: {} })
-applyAcpPermission({
-  id: "permission-before-promotion",
-  sessionId: "acp-not-promoted",
-  title: "Choose access",
-  options: [],
-})
-assert.equal(
-  acpStore.get().bufferedPermissions["acp-not-promoted"]?.id,
-  "permission-before-promotion"
-)
-acpStore.set({ bufferedPermissions: {} })
-
 const interleavedResponse = [
   {
     id: "work-before",
@@ -749,7 +817,11 @@ assert.deepEqual(
     pinnedThreads: [],
     pinnedFolders: ["/repo/"],
     sortBy: "recent",
-  }).map((folder) => ({ cwd: folder.cwd, current: folder.current, pinned: folder.pinned })),
+  }).map((folder) => ({
+    cwd: folder.cwd,
+    current: folder.current,
+    pinned: folder.pinned,
+  })),
   [{ cwd: "/repo", current: true, pinned: true }]
 )
 assert.deepEqual(
@@ -765,8 +837,20 @@ assert.deepEqual(
 )
 const activeFolders = groupThreadFolders({
   refs: [
-    { ...folderRefs[0]!, path: "/quiet", cwd: "/quiet", workspace: "/quiet", updatedAt: "2026-08-30T12:00:00Z" },
-    { ...folderRefs[1]!, path: "/live", cwd: "/live", workspace: "/live", updatedAt: "2026-08-29T12:00:00Z" },
+    {
+      ...folderRefs[0]!,
+      path: "/quiet",
+      cwd: "/quiet",
+      workspace: "/quiet",
+      updatedAt: "2026-08-30T12:00:00Z",
+    },
+    {
+      ...folderRefs[1]!,
+      path: "/live",
+      cwd: "/live",
+      workspace: "/live",
+      updatedAt: "2026-08-29T12:00:00Z",
+    },
   ],
   pinnedThreads: [],
   pinnedFolders: [],
@@ -922,4 +1006,6 @@ await new Promise((resolve) => setTimeout(resolve, 80))
 assert.deepEqual(queuedSend, { ref: queuedRef, prompt: "second turn" })
 assert.equal(threadsStore.get().queuedReplies[queuedRef.path], undefined)
 
-console.log("stage layout, tool mapping, subagent formatting, and explicit activity passed")
+console.log(
+  "stage layout, tool mapping, subagent formatting, and explicit activity passed"
+)

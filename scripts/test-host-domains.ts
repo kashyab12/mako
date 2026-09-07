@@ -1,7 +1,15 @@
+import { resolveFilePreview } from "../electron/file-previews.ts"
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
@@ -69,7 +77,10 @@ try {
   const workspaceGit = new WorkspaceGit(firstRepo)
   const workspaceFiles = new WorkspaceFiles(firstRepo, workspaceGit)
 
-  await writeFile(join(firstRepo, "tracked.txt"), "alpha needle\nchanged line\n")
+  await writeFile(
+    join(firstRepo, "tracked.txt"),
+    "alpha needle\nchanged line\n"
+  )
   const diff = await workspaceGit.diff("tracked.txt")
   assert.equal(diff.oldFile?.contents, "alpha needle\n")
   assert.equal(diff.newFile?.contents, "alpha needle\nchanged line\n")
@@ -79,9 +90,19 @@ try {
   assert.equal(allDiffs.truncated, 0)
 
   await workspaceGit.stage(["tracked.txt"])
-  assert.equal((await workspaceGit.status()).files.find((file) => file.path === "tracked.txt")?.staged, true)
+  assert.equal(
+    (await workspaceGit.status()).files.find(
+      (file) => file.path === "tracked.txt"
+    )?.staged,
+    true
+  )
   await workspaceGit.unstage(["tracked.txt"])
-  assert.equal((await workspaceGit.status()).files.find((file) => file.path === "tracked.txt")?.staged, false)
+  assert.equal(
+    (await workspaceGit.status()).files.find(
+      (file) => file.path === "tracked.txt"
+    )?.staged,
+    false
+  )
 
   await git(firstRepo, "mv", "tracked.txt", "renamed.txt")
   await writeFile(join(firstRepo, "notes.txt"), "untracked needle\n")
@@ -90,20 +111,49 @@ try {
   assert.ok(renamed)
   assert.equal(renamed.oldName, "tracked.txt")
   assert.equal(renamed.path, "renamed.txt")
-  assert.equal(status.files.find((file) => file.path === "notes.txt")?.status, "untracked")
+  assert.equal(
+    status.files.find((file) => file.path === "notes.txt")?.status,
+    "untracked"
+  )
 
   const listed = await workspaceFiles.list()
-  assert.equal(listed.some((file) => file.path === "renamed.txt"), true)
-  assert.equal(listed.some((file) => file.path === "notes.txt"), true)
-  assert.equal((await workspaceFiles.read("notes.txt")).contents, "untracked needle\n")
-  await writeFile(join(firstRepo, "preview.png"), Buffer.from([137, 80, 78, 71]))
+  assert.equal(
+    listed.some((file) => file.path === "renamed.txt"),
+    true
+  )
+  assert.equal(
+    listed.some((file) => file.path === "notes.txt"),
+    true
+  )
+  assert.equal(
+    (await workspaceFiles.read("notes.txt")).contents,
+    "untracked needle\n"
+  )
+  assert.equal(
+    (await workspaceFiles.read(join(await realpath(firstRepo), "notes.txt")))
+      .contents,
+    "untracked needle\n"
+  )
+  await writeFile(
+    join(firstRepo, "preview.png"),
+    Buffer.from([137, 80, 78, 71])
+  )
   const image = await workspaceFiles.read("preview.png")
   assert.equal(image.media, "image")
   assert.equal(image.mimeType, "image/png")
-  assert.equal(image.previewUrl, "mako-file://workspace/preview.png")
+  assert.equal(
+    resolveFilePreview(image.previewUrl!),
+    join(await realpath(firstRepo), "preview.png")
+  )
+  assert.equal(resolveFilePreview(image.previewUrl! + "tampered"), null)
   await writeFile(join(directory, "outside.txt"), "outside\n")
   await assert.rejects(
     workspaceFiles.read("../outside.txt"),
+    /outside this workspace/
+  )
+  await symlink(join(directory, "outside.txt"), join(firstRepo, "outside-link"))
+  await assert.rejects(
+    workspaceFiles.read("outside-link"),
     /outside this workspace/
   )
 
@@ -114,15 +164,27 @@ try {
     "needle",
     { threads: false }
   )
-  assert.equal(searched.files.some((file) => file.path === "renamed.txt"), true)
-  assert.equal(searched.files.some((file) => file.path === "notes.txt"), true)
+  assert.equal(
+    searched.files.some((file) => file.path === "renamed.txt"),
+    true
+  )
+  assert.equal(
+    searched.files.some((file) => file.path === "notes.txt"),
+    true
+  )
 
   await workspaceGit.stageAll()
-  assert.equal((await workspaceGit.status()).files.every((file) => file.staged), true)
+  assert.equal(
+    (await workspaceGit.status()).files.every((file) => file.staged),
+    true
+  )
   await workspaceGit.commit("Rename tracked file")
   const log = await workspaceGit.log()
   assert.equal(log[0]?.subject, "Rename tracked file")
-  assert.equal((await workspaceGit.commitFiles(log[0]?.hash ?? "")).length > 0, true)
+  assert.equal(
+    (await workspaceGit.commitFiles(log[0]?.hash ?? "")).length > 0,
+    true
+  )
 
   const pushed = await workspaceGit.push()
   assert.equal(pushed.branch, "main")
@@ -140,11 +202,20 @@ try {
   workspaceGit.setCwd(secondRepo)
   workspaceFiles.setCwd(secondRepo)
   const [, switchedFiles] = await Promise.all([pendingRoot, pendingFiles])
-  assert.deepEqual(switchedFiles.map((file) => file.path), ["second.txt"])
+  assert.deepEqual(
+    switchedFiles.map((file) => file.path),
+    ["second.txt"]
+  )
   const secondFiles = await workspaceFiles.list()
-  assert.deepEqual(secondFiles.map((file) => file.path), ["second.txt"])
+  assert.deepEqual(
+    secondFiles.map((file) => file.path),
+    ["second.txt"]
+  )
   assert.equal((await workspaceGit.status()).root, await realpath(secondRepo))
-  assert.equal(secondFiles.some((file) => file.path === "renamed.txt"), false)
+  assert.equal(
+    secondFiles.some((file) => file.path === "renamed.txt"),
+    false
+  )
 
   const hostEvents: HostEvent[] = []
   const host = new AgentHost("watch-test", (event) => hostEvents.push(event))

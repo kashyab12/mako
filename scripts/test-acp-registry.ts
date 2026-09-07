@@ -1,142 +1,173 @@
 import assert from "node:assert/strict"
-import type { AcpSessionState } from "../src/lib/types.ts"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import type {
+  HostEvent,
+  LiveSessionState,
+  LiveStartOptions,
+  PromptAttachment,
+} from "../src/lib/types.ts"
+import { LiveConversations } from "../electron/live-conversations.ts"
+import type { ProviderLiveDriver } from "../electron/providers/live-driver.ts"
 
-interface StartRequest {
-  harness: string
-  cwd: string
-  result: PromiseWithResolvers<AcpSessionState>
+const root = mkdtempSync(join(tmpdir(), "mako-live-registry-"))
+const sent: Array<{ id: string; text: string }> = []
+const sessions = new Map<string, LiveSessionState>()
+let receive: (event: HostEvent) => void = () => {}
+const driver: ProviderLiveDriver = {
+  canResume: true,
+  provider: "test",
+  available: () => true,
+  start: async (cwd, options) => {
+    const state: LiveSessionState = {
+      id: options.conversationId,
+      harness: "test",
+      cwd,
+      status: "ready",
+      connection: "connected",
+      modes: [],
+      currentMode: null,
+      configOptions: [],
+    }
+    sessions.set(state.id, state)
+    return state
+  },
+  prompt: async (id, text) => {
+    sent.push({ id, text })
+    const session = sessions.get(id)
+    if (!session) throw new Error("Missing test session")
+    owner.observe({
+      type: "acp-session",
+      session: { ...session, status: "running" },
+    })
+  },
+  cancel: async () => {},
+  close: () => {},
+  permission: async () => {},
+  setMode: async () => {},
 }
-
-const starts: StartRequest[] = []
-const prompts: Array<{ id: string; text: string }> = []
-const closed: string[] = []
-let applySession: ((session: AcpSessionState) => void) | undefined
-
+const owner = new LiveConversations({
+  appPath: root,
+  root,
+  driver: () => driver,
+  history: async () => null,
+  emit: (event) => receive(event),
+})
+let loseStartReply = false
 Object.assign(globalThis, {
   window: {
     mako: {
-      acpStart: (harness: string, cwd: string) => {
-        const result = Promise.withResolvers<AcpSessionState>()
-        starts.push({ harness, cwd, result })
-        return result.promise
+      onEvent: (callback: (event: HostEvent) => void) => {
+        receive = callback
+        return () => {}
       },
-      acpPrompt: async (id: string, text: string) => {
-        prompts.push({ id, text })
-        const session = sessions.get(id)
-        if (!session) throw new Error("missing fake session")
-        const running = { ...session, status: "running" as const }
-        sessions.set(id, running)
-        applySession?.(running)
+      daemonStatus: async () => null,
+      boot: async () => {
+        throw new Error("Fixture stops boot after subscribing")
       },
-      acpClose: async (id: string) => {
-        closed.push(id)
-        sessions.delete(id)
+      liveStart: async (
+        provider: string,
+        cwd: string,
+        options: LiveStartOptions
+      ) => {
+        const session = await owner.start(provider, cwd, options)
+        if (loseStartReply)
+          throw new Error("Start reply lost after durable acceptance")
+        return owner.snapshot(session.id)
       },
-      acpCancel: async () => {},
-      acpPermission: async () => {},
-      acpSetMode: async () => {},
+      livePrompt: async (
+        id: string,
+        requestId: string,
+        text: string,
+        attachments: PromptAttachment[]
+      ) => owner.submit(id, requestId, text, attachments),
+      liveSnapshot: async (id: string) => owner.snapshot(id),
+      liveClose: async (id: string) => owner.close(id),
+      liveCancel: async (id: string) => owner.cancel(id),
     },
   },
 })
-
-const {
-  acp,
-  acpStore,
-  activeLiveAcp,
-  applyAcpPermission,
-  applyAcpSession,
-  applyAcpUpdates,
-} = await import("../src/state/acp.ts")
-applySession = applyAcpSession
-const sessions = new Map<string, AcpSessionState>()
-
-const state = (
-  id: string,
-  harness: string,
-  cwd: string,
-  status: AcpSessionState["status"] = "ready"
-): AcpSessionState => ({
-  id,
-  nativeId: `native-${id}`,
-  harness,
-  cwd,
-  status,
-  modes: [],
-  currentMode: null,
-  configOptions: [],
-})
-
-const startA = acp.startFresh("claude", "/a", "first A", [], "first A", "/a")
-const startB = acp.startFresh("codex", "/b", "first B", [], "first B", "/b")
-assert.equal(starts.length, 2)
-assert.equal(Object.keys(acpStore.get().conversations).length, 2)
-assert.equal(acpStore.get().conversations[acpStore.get().activeKey ?? ""]?.harness, "codex")
-
-applyAcpPermission({
-  id: "permission-before-ready",
-  sessionId: "acp-a",
-  title: "Read a file",
-  options: [{ optionId: "allow", name: "Allow" }],
-})
-const sessionA = state("acp-a", "claude", "/a")
-const sessionB = state("acp-b", "codex", "/b")
-sessions.set(sessionA.id, sessionA)
-sessions.set(sessionB.id, sessionB)
-starts[0]?.result.resolve(sessionA)
-starts[1]?.result.resolve(sessionB)
-assert.equal(await startA, true)
-assert.equal(await startB, true)
-assert.deepEqual(prompts, [
-  { id: "acp-a", text: "first A" },
-  { id: "acp-b", text: "first B" },
-])
-assert.equal(Object.keys(acpStore.get().conversations).length, 2)
-assert.equal(
-  acpStore.get().conversations["acp-a"]?.kind === "live"
-    ? acpStore.get().conversations["acp-a"]?.permission?.id
-    : undefined,
-  "permission-before-ready"
-)
-
-acp.activate("acp-b")
-const stableB = acpStore.get().conversations["acp-b"]
-applyAcpUpdates("acp-a", [{ kind: "text", text: "background A" }])
-assert.equal(acpStore.get().conversations["acp-b"], stableB)
-assert.deepEqual(acpStore.get().conversations["acp-a"]?.blocks, [
-  { type: "user", text: "first A" },
-  { type: "text", text: "background A" },
-])
-
-assert.equal(await acp.send("queued B"), true)
-const queuedB = activeLiveAcp(acpStore.get())
-assert.equal(queuedB?.queued[0]?.text, "queued B")
-applyAcpSession({ ...sessionB, status: "ready", lastStop: "end_turn" })
-await Promise.resolve()
-assert.deepEqual(prompts.at(-1), { id: "acp-b", text: "queued B" })
-assert.equal(activeLiveAcp(acpStore.get())?.queued.length, 0)
-assert.equal(
-  acpStore.get().conversations["acp-a"]?.kind === "live"
-    ? acpStore.get().conversations["acp-a"]?.permission?.id
-    : undefined,
-  "permission-before-ready"
-)
-
-acp.activate("acp-a")
-assert.equal(acp.close(), true)
-assert.deepEqual(closed, ["acp-a"])
-assert.equal(acpStore.get().conversations["acp-a"], undefined)
-assert.equal(acpStore.get().conversations["acp-b"]?.kind, "live")
-
-const failedStart = acp.startFresh("grok", "/c", "first C", [], "first C", "/c")
-const queuedDuringStart = acp.send("second C")
-starts.at(-1)?.result.reject(new Error("start rejected"))
-assert.equal(await failedStart, false)
-assert.equal(await queuedDuringStart, false)
-assert.equal(
-  Object.values(acpStore.get().conversations).some(
-    (conversation) => conversation.threadPath === "/c"
-  ),
-  false
-)
-
-console.log("concurrent ACP registry isolation, queueing, permissions, and cleanup passed")
+const { actions } = await import("../src/state/session.ts")
+const { acp, acpStore, activeLiveAcp } = await import("../src/state/acp.ts")
+const tick = () => new Promise<void>((resolve) => setImmediate(resolve))
+try {
+  await actions.boot()
+  assert.equal(
+    await acp.startFresh("test", "/a", "first A", [], "first A"),
+    true
+  )
+  await tick()
+  const a = activeLiveAcp(acpStore.get())!
+  assert.equal(
+    await acp.startFresh("test", "/b", "first B", [], "first B"),
+    true
+  )
+  await tick()
+  const b = activeLiveAcp(acpStore.get())!
+  assert.notEqual(a.key, b.key)
+  assert.deepEqual(
+    sent.map((request) => request.text),
+    ["first A", "first B"]
+  )
+  const stableB = acpStore.get().conversations[b.key]
+  owner.observe({
+    type: "acp-update",
+    id: a.key,
+    update: { kind: "text", text: "background A" },
+  })
+  owner.snapshot(a.key)
+  assert.equal(acpStore.get().conversations[b.key], stableB)
+  assert.equal(acpStore.get().conversations[a.key]?.blocks.at(-1)?.type, "text")
+  owner.observe({
+    type: "acp-permission",
+    request: {
+      id: "permission-a",
+      sessionId: a.key,
+      title: "Read a file",
+      options: [{ optionId: "allow", name: "Allow" }],
+    },
+  })
+  assert.equal(
+    acpStore.get().conversations[a.key]?.kind === "live" &&
+      acpStore.get().conversations[a.key]?.permission?.id,
+    "permission-a"
+  )
+  assert.equal(await acp.send("queued B"), true)
+  assert.equal(activeLiveAcp(acpStore.get())?.queued[0]?.text, "queued B")
+  assert.equal(sent.length, 2)
+  owner.observe({ type: "acp-session", session: sessions.get(b.key)! })
+  await tick()
+  assert.equal(sent.at(-1)?.text, "queued B")
+  assert.equal(activeLiveAcp(acpStore.get())?.queued.length, 0)
+  acpStore.set({
+    conversations: {
+      ...acpStore.get().conversations,
+      [b.key]: {
+        ...activeLiveAcp(acpStore.get())!,
+        sending: true,
+        canceling: true,
+      },
+    },
+  })
+  owner.observe({ type: "acp-session", session: sessions.get(b.key)! })
+  assert.equal(activeLiveAcp(acpStore.get())?.sending, false)
+  assert.equal(activeLiveAcp(acpStore.get())?.canceling, false)
+  loseStartReply = true
+  assert.equal(
+    await acp.startFresh("test", "/c", "accepted C", [], "accepted C"),
+    true
+  )
+  await tick()
+  assert.equal(
+    sent.filter((request) => request.text === "accepted C").length,
+    1
+  )
+  assert.equal(activeLiveAcp(acpStore.get())?.requests?.[0]?.text, "accepted C")
+  console.log(
+    "Live bridge delivery, concurrent isolation, host queueing, permissions, lifecycle, and lost-start-reply recovery passed"
+  )
+} finally {
+  owner.stop()
+  rmSync(root, { recursive: true, force: true })
+}

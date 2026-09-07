@@ -7,7 +7,11 @@ import {
   type PermissionCallbacks,
   type PermissionContext,
 } from "../electron/codex-app-permissions.ts"
-import { boundedText, numberValue, type JsonObject } from "../electron/codex-app-json.ts"
+import {
+  boundedText,
+  numberValue,
+  type JsonObject,
+} from "../electron/codex-app-json.ts"
 import {
   parseJsonRpcEnvelope,
   parseNotification,
@@ -18,8 +22,8 @@ import {
   type ProtocolContext,
 } from "../electron/codex-app-protocol.ts"
 import type {
-  AcpSessionState,
-  AcpUpdate,
+  LiveSessionState,
+  LiveUpdate,
   HostEvent,
 } from "../electron/shared.ts"
 
@@ -27,7 +31,12 @@ assert.deepEqual(parseJsonRpcEnvelope("not-json"), { kind: "invalid" })
 assert.deepEqual(parseJsonRpcEnvelope("[]"), { kind: "ignored" })
 assert.deepEqual(
   parseJsonRpcEnvelope(
-    JSON.stringify({ jsonrpc: "2.0", id: 7, method: "account/read", params: { fresh: true } })
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: 7,
+      method: "account/read",
+      params: { fresh: true },
+    })
   ),
   {
     kind: "request",
@@ -37,7 +46,9 @@ assert.deepEqual(
   }
 )
 assert.deepEqual(
-  parseJsonRpcEnvelope(JSON.stringify({ jsonrpc: "2.0", id: "7", result: { ok: true } })),
+  parseJsonRpcEnvelope(
+    JSON.stringify({ jsonrpc: "2.0", id: "7", result: { ok: true } })
+  ),
   { kind: "response", id: "7", result: { ok: true }, error: null }
 )
 assert.equal(numberValue(Number.NaN), undefined)
@@ -84,7 +95,10 @@ const permissionEvent = permissionEvents.at(-1)
 assert.equal(permissionEvent?.type, "acp-permission")
 if (permissionEvent?.type === "acp-permission") {
   assert.equal(permissionEvent.request.questions?.[0]?.allowOther, true)
-  assert.equal(permissionEvent.request.questions?.[0]?.options[0]?.label, "Staging")
+  assert.equal(
+    permissionEvent.request.questions?.[0]?.options[0]?.label,
+    "Staging"
+  )
 }
 resolvePermission(permissionContext, permissionCallbacks, "question-1", {
   kind: "answers",
@@ -105,7 +119,11 @@ const parsedThread = parseThreadResponse({
         status: "completed",
         error: null,
         items: [
-          { type: "userMessage", id: "user-1", content: [{ type: "text", text: "hello" }] },
+          {
+            type: "userMessage",
+            id: "user-1",
+            content: [{ type: "text", text: "hello" }],
+          },
           { type: "agentMessage", id: "agent-1", text: "world" },
           { type: "contextCompaction", id: "compact-1" },
         ],
@@ -122,13 +140,19 @@ if (parsedThread.valid) {
     sourceType: "contextCompaction",
   })
 }
-assert.equal(parseThreadResponse({ thread: { cwd: "/tmp/project" } }).valid, false)
-assert.equal(parseNotification("item/agentMessage/delta", { threadId: "thread-1" }), null)
+assert.equal(
+  parseThreadResponse({ thread: { cwd: "/tmp/project" } }).valid,
+  false
+)
+assert.equal(
+  parseNotification("item/agentMessage/delta", { threadId: "thread-1" }),
+  null
+)
 
 const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 10_000)"], {
   stdio: ["pipe", "pipe", "pipe"],
 })
-const state: AcpSessionState = {
+const state: LiveSessionState = {
   id: "session-1",
   harness: "codex",
   cwd: "/tmp/project",
@@ -137,8 +161,12 @@ const state: AcpSessionState = {
   currentMode: null,
   configOptions: [],
 }
-const updates: AcpUpdate[] = []
-const requests: Array<{ id: string | number; method: string; params: JsonObject }> = []
+const updates: LiveUpdate[] = []
+const requests: Array<{
+  id: string | number
+  method: string
+  params: JsonObject
+}> = []
 const context: ProtocolContext = {
   child,
   threadId: "thread-1",
@@ -176,16 +204,24 @@ assert.equal(requests[0]?.method, "approval/request")
 
 consumeStdout(
   context,
-  Buffer.from(`${JSON.stringify({ method: "turn/started", params: { threadId: "thread-1", turn: { id: "turn-1" } } })}\n`)
+  Buffer.from(
+    `${JSON.stringify({ method: "turn/started", params: { threadId: "thread-1", turn: { id: "turn-1" } } })}\n`
+  )
 )
 assert.equal(context.currentTurnId, "turn-1")
 assert.equal(state.status, "running")
 
 consumeStdout(
   context,
-  Buffer.from(`${JSON.stringify({ method: "item/agentMessage/delta", params: { threadId: "thread-1", turnId: "turn-1", itemId: "agent-1", delta: "hello" } })}\n`)
+  Buffer.from(
+    `${JSON.stringify({ method: "item/agentMessage/delta", params: { threadId: "thread-1", turnId: "turn-1", itemId: "agent-1", delta: "hello" } })}\n`
+  )
 )
-assert.deepEqual(updates.at(-1), { kind: "text", text: "hello" })
+assert.deepEqual(updates.at(-1), {
+  kind: "text",
+  id: "codex:turn-1:agent-1",
+  text: "hello",
+})
 
 child.kill("SIGTERM")
 console.log("Codex JSON-RPC parsing, framing, and streaming checks passed")
