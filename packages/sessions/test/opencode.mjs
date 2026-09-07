@@ -510,7 +510,7 @@ try {
 
   const v2Thread = await provider.read(v2File.path)
   assert.deepEqual(v2Thread?.entries, [
-    { kind: "user", at: "1970-01-01T01:40:00.000Z", text: "v2 prompt" },
+    { kind: "user", id: "msg_v2_user", attachments: [], at: "1970-01-01T01:40:00.000Z", text: "v2 prompt" },
     {
       kind: "assistant",
       at: "1970-01-01T01:48:20.000Z",
@@ -524,7 +524,7 @@ try {
   assert.ok(legacyThread)
   assert.equal(legacyThread.ref.modelProvider, "anthropic")
   assert.deepEqual(legacyThread.entries, [
-    { kind: "user", at: "1970-01-01T00:16:40.000Z", text: "legacy prompt" },
+    { kind: "user", id: "msg_legacy_user", attachments: [], at: "1970-01-01T00:16:40.000Z", text: "legacy prompt" },
     {
       kind: "assistant",
       at: "1970-01-01T00:33:20.000Z",
@@ -535,6 +535,7 @@ try {
         {
           type: "tool",
           name: "bash",
+          id: "call_legacy",
           input: '{"command":"pwd"}',
           output: "/projects/legacy-root/app",
         },
@@ -557,7 +558,7 @@ try {
   const currentThread = await provider.read(currentFile.path)
   assert.ok(currentThread)
   assert.deepEqual(currentThread.entries, [
-    { kind: "user", at: "1970-01-01T01:06:40.000Z", text: "current prompt" },
+    { kind: "user", id: "msg_current_user", attachments: [], at: "1970-01-01T01:06:40.000Z", text: "current prompt" },
     {
       kind: "assistant",
       at: "1970-01-01T01:23:20.000Z",
@@ -568,6 +569,7 @@ try {
         {
           type: "tool",
           name: "read",
+          id: "tool_1",
           input: '{"path":"README.md"}',
           output: "current tool output",
         },
@@ -702,7 +704,7 @@ try {
   const currentAppend = await currentFollower.next()
   assert.equal(currentAppend.replace, false)
   assert.deepEqual(currentAppend.entries, [
-    { kind: "user", at: "1970-01-01T02:30:00.000Z", text: "follow-up" },
+    { kind: "user", id: "msg_current_append", at: "1970-01-01T02:30:00.000Z", text: "follow-up", attachments: [] },
   ])
   currentIncremental = apply(currentIncremental, currentAppend)
 
@@ -755,6 +757,7 @@ try {
   assert.deepEqual(replacedTool, {
     type: "tool",
     name: "read",
+    id: "tool_1",
     input: '{"path":"README.md"}',
     output: "read failed",
     error: true,

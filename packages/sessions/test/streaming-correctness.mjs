@@ -104,7 +104,7 @@ async function pagedTailIsBoundedAndComplete() {
     Array.from({ length: 250 }, (_, index) => `entry-${index}`)
   )
   assert.equal(first.hasEarlier, false)
-  catalog.stop()
+  await catalog.stop()
 }
 
 async function concurrentRefreshRace() {
@@ -154,7 +154,7 @@ async function concurrentRefreshRace() {
 
   assert.deepEqual(received, ["A", "B"])
   assert.deepEqual(provider.tailOffsets, [0, 2])
-  catalog.stop()
+  await catalog.stop()
 }
 
 async function cursorNeverRegresses() {
@@ -174,7 +174,7 @@ async function cursorNeverRegresses() {
   await refresh(catalog, provider, path)
 
   assert.deepEqual(provider.tailOffsets, [5, 5])
-  catalog.stop()
+  await catalog.stop()
 }
 
 const CASES = [
@@ -449,7 +449,7 @@ async function peekChurn() {
   assert.equal(provider.peekCalls, 1)
   assert.equal(ref.bytes, info.size)
   assert.equal(ref.updatedAt, new Date(info.mtimeMs).toISOString())
-  catalog.stop()
+  await catalog.stop()
 }
 
 async function sharedStoreRescansSerialize() {
@@ -504,7 +504,7 @@ async function sharedStoreRescansSerialize() {
   await Promise.all([first, second])
   assert.equal(maxConcurrent, 1)
   assert.equal(catalog.list()[0]?.bytes, 2)
-  catalog.stop()
+  await catalog.stop()
 }
 
 async function codexLifecycleMarkersSurvive() {
@@ -637,7 +637,7 @@ async function cursorWatcherDeliversReplacement() {
     ),
     true
   )
-  catalog.stop()
+  await catalog.stop()
 }
 
 async function cursorDiscoversAcpSessions() {
@@ -707,7 +707,7 @@ async function catalogCanonicalizesWorkspaceRoots() {
   assert.equal(opened?.ref.workspace, workspace)
   assert.equal((await catalog.open(path))?.ref.workspace, workspace)
   assert.equal(reads, 1)
-  catalog.stop()
+  await catalog.stop()
 }
 
 async function externalWatcherDeliversAppend() {
@@ -731,7 +731,7 @@ async function externalWatcherDeliversAppend() {
   await new Promise((resolve) => setTimeout(resolve, 50))
   await appendFile(path, "external\n")
   assert.deepEqual(await delivered, [{ kind: "user", text: "external" }])
-  catalog.stop()
+  await catalog.stop()
 }
 
 async function entrySinkBoundsMutatedPayloads() {

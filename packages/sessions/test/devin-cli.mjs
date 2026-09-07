@@ -198,7 +198,7 @@ try {
   await writeFile(
     cachePath,
     JSON.stringify({
-      version: 4,
+      version: 5,
       entries: {
         [file.path]: {
           bytes: file.bytes,
@@ -225,7 +225,7 @@ try {
   )
   const [cachedRef] = await cached.scan()
   assert.equal(cachedRef.locked, true)
-  cached.stop()
+  await cached.stop()
   provider.close()
   console.log("Devin CLI tests clean: streamed rows, tools, thinking, locks, and incremental follow verified.")
 } finally {

@@ -133,6 +133,83 @@ const child = await new CodexProvider(home).peek({
 })
 assert.equal(child, null)
 
+const customToolPath = join(sessions, "custom-tool.jsonl")
+await writeFile(
+  customToolPath,
+  line("session_meta", { id: "custom-tool", cwd: home }) +
+    line("response_item", {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: "Run the command" }],
+    }) +
+    line("response_item", {
+      type: "custom_tool_call",
+      call_id: "custom-1",
+      name: "wait",
+      input: "{\"cell_id\":\"706\"}",
+    }) +
+    line("response_item", {
+      type: "custom_tool_call_output",
+      call_id: "custom-1",
+      output: JSON.stringify([
+        { type: "input_text", text: "Script completed\nOutput:\n" },
+        { type: "input_text", text: "390 rows" },
+      ]),
+    }) +
+    line("response_item", {
+      type: "local_shell_call",
+      call_id: "shell-1",
+      action: { command: ["bun", "test"] },
+    }) +
+    line("response_item", {
+      type: "function_call_output",
+      call_id: "shell-1",
+      output: "tests passed",
+    }) +
+    line("response_item", {
+      type: "tool_search_call",
+      call_id: "search-1",
+      arguments: { query: "spreadsheet" },
+      execution: "server",
+      status: "completed",
+    }) +
+    line("response_item", {
+      type: "tool_search_output",
+      call_id: "search-1",
+      output: "found spreadsheet tool",
+    })
+)
+const customTool = await new CodexProvider(home).read(customToolPath)
+const customBlock = customTool?.entries
+  .find((entry) => entry.kind === "assistant")
+  ?.blocks.find((block) => block.type === "tool")
+assert.deepEqual(customBlock, {
+  type: "tool",
+  id: "custom-1",
+  name: "wait",
+  input: "{\"cell_id\":\"706\"}",
+  output: "Script completed\nOutput:\n\n390 rows",
+})
+const customTools = customTool?.entries.flatMap((entry) =>
+  entry.kind === "assistant"
+    ? entry.blocks.filter((block) => block.type === "tool")
+    : []
+)
+assert.deepEqual(customTools?.find((block) => block.name === "exec_command"), {
+  type: "tool",
+  name: "exec_command",
+  id: "shell-1",
+  input: "{\"command\":\"bun test\"}",
+  output: "tests passed",
+})
+assert.deepEqual(customTools?.find((block) => block.name === "ToolSearch"), {
+  type: "tool",
+  name: "ToolSearch",
+  id: "search-1",
+  input: "{\"query\":\"spreadsheet\"}",
+  output: "found spreadsheet tool",
+})
+
 const oversizedPath = join(sessions, "oversized-line.jsonl")
 const oversized = await open(oversizedPath, "w")
 await oversized.write(Buffer.from("{"), 0, 1, 0)

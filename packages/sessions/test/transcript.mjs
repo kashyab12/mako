@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import {
   renderTranscript,
   renderTranscriptBundle,
+  normalizeToolOutput,
   titleFrom,
   userTextFrom,
 } from "../dist/index.js"
@@ -12,6 +13,27 @@ const longInput = `{"path":"/tmp/work","query":"${"needle-".repeat(20)}"}`
 const longOutput = `first line\n${"complete-output-".repeat(30)}\nlast line`
 const fenceText = "Fence proof follows:\n```````\nthis must remain content\n```````"
 const firstUser = "  user text stays verbatim  \n\nincluding edge whitespace  "
+
+assert.equal(
+  normalizeToolOutput(
+    JSON.stringify([
+      { type: "input_text", text: "Script completed\nOutput:\n" },
+      { type: "input_text", text: "rows: 390" },
+    ])
+  ),
+  "Script completed\nOutput:\n\nrows: 390"
+)
+assert.equal(
+  normalizeToolOutput(
+    JSON.stringify({
+      chunk_id: "chunk",
+      wall_time_seconds: 1,
+      session_id: 7,
+      output: "nested output",
+    })
+  ),
+  "nested output"
+)
 
 const attachedRequest = `
 # Files mentioned by the user:
