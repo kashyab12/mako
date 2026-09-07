@@ -4,10 +4,11 @@ import type {
 } from "../../electron/shared.ts"
 
 export type {
-  AcpPermissionRequest,
-  AcpPromptAttachment,
-  AcpSessionState,
-  AcpUpdate,
+  LiveCapability,
+  LivePermissionRequest,
+  PromptAttachment,
+  LiveSessionState,
+  LiveUpdate,
   EntryBlock,
   Harness,
   Thread,
@@ -113,3 +114,11 @@ export function harnessModelByIdentity(
       model.variants?.some((variant) => variant.id === identity)
   )
 }
+
+export type {
+  LiveSnapshot,
+  LiveSummary,
+  LiveBatch,
+  LiveStartOptions,
+  LiveRequest,
+} from "../../electron/shared"

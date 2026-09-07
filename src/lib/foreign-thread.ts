@@ -18,7 +18,11 @@ export function pendingThreadInput(entries: ThreadEntry[]): string | null {
   for (let entryIndex = entries.length - 1; entryIndex >= 0; entryIndex -= 1) {
     const entry = entries[entryIndex]
     if (entry?.kind !== "assistant") continue
-    for (let blockIndex = entry.blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
+    for (
+      let blockIndex = entry.blocks.length - 1;
+      blockIndex >= 0;
+      blockIndex -= 1
+    ) {
       const block = entry.blocks[blockIndex]
       if (block?.type !== "tool" || !isInputTool(block.name)) continue
       return block.output === undefined ? block.name : null
@@ -37,12 +41,17 @@ export function threadToMessages(
   for (let localIndex = 0; localIndex < entries.length; localIndex += 1) {
     const entry = entries[localIndex]!
     const entryIndex = indexStart + localIndex
-    const messageId = `foreign-entry-${entryIndex}`
+    const messageId = entry.id
+      ? `native-${entry.kind}-${entry.id}`
+      : `foreign-entry-${entryIndex}`
     if (entry.kind === "user") {
       const message: ChatMessage = {
         id: messageId,
         role: "user",
-        blocks: [{ type: "text", text: entry.text }],
+        blocks: [
+          { type: "text", text: entry.text },
+          ...(entry.attachments ?? []),
+        ],
       }
       if (entry.at) message.timestamp = Date.parse(entry.at) || undefined
       messages.push(message)
@@ -52,26 +61,50 @@ export function threadToMessages(
       messages.push({
         id: messageId,
         role: "system",
-        blocks: [{ type: "text", text: entry.detail ? `${entry.label} — ${entry.detail}` : entry.label }],
+        blocks: [
+          {
+            type: "text",
+            text: entry.detail
+              ? `${entry.label} — ${entry.detail}`
+              : entry.label,
+          },
+        ],
       })
       continue
     }
     const blocks: Block[] = []
-    for (let blockIndex = 0; blockIndex < entry.blocks.length; blockIndex += 1) {
+    for (
+      let blockIndex = 0;
+      blockIndex < entry.blocks.length;
+      blockIndex += 1
+    ) {
       const block = entry.blocks[blockIndex]!
+      if (block.type === "attachment") blocks.push(block)
       if (block.type === "text") blocks.push({ type: "text", text: block.text })
-      if (block.type === "thinking") blocks.push({ type: "thinking", thinking: block.text })
+      if (block.type === "thinking")
+        blocks.push({ type: "thinking", thinking: block.text })
       if (block.type === "tool") {
-        const callId = `${messageId}-tool-${blockIndex}`
-        blocks.push({ type: "toolCall", id: callId, name: block.name, arguments: block.input })
-        if (block.output !== undefined) {
+        const callId = `${messageId}-tool-${block.id ?? blockIndex}`
+        blocks.push({
+          type: "toolCall",
+          id: callId,
+          name: block.name,
+          arguments: block.input,
+        })
+        if (
+          block.output !== undefined ||
+          block.error === true ||
+          block.canceled === true
+        ) {
           const result: Block = {
             type: "toolResult",
             id: callId,
             name: block.name,
-            text: block.output,
+            text: block.output ?? "",
+            attachments: block.attachments,
           }
           if (block.error) result.isError = true
+          if (block.canceled) result.isCanceled = true
           blocks.push(result)
         }
       }

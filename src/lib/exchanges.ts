@@ -56,7 +56,10 @@ export function responseSections(messages: ChatMessage[]): ResponseSection[] {
     }
 
     for (const block of message.blocks) {
-      if (message.role === "assistant" && block.type === "text" && block.text) {
+      if (
+        message.role === "assistant" &&
+        ((block.type === "text" && block.text) || block.type === "attachment")
+      ) {
         flushMessageWork()
         flushWork()
         const prose = splitMessage(message, [block])
@@ -80,7 +83,10 @@ export function responseSections(messages: ChatMessage[]): ResponseSection[] {
   return sections
 }
 
-export function toExchanges(messages: ChatMessage[]): Exchange[] {
+export function toExchanges(
+  messages: ChatMessage[],
+  previous: Exchange[] = []
+): Exchange[] {
   const exchanges: Exchange[] = []
   let current: Exchange | null = null
 
@@ -100,7 +106,12 @@ export function toExchanges(messages: ChatMessage[]): Exchange[] {
     if (!current) {
       // The agent spoke first — a resumed session, or a system note before any
       // prompt. It still needs somewhere to live.
-      current = { id: `lead-${message.id}`, response: [], system: [], timestamp: message.timestamp }
+      current = {
+        id: `lead-${message.id}`,
+        response: [],
+        system: [],
+        timestamp: message.timestamp,
+      }
       exchanges.push(current)
     }
 
@@ -108,7 +119,20 @@ export function toExchanges(messages: ChatMessage[]): Exchange[] {
     else current.response.push(message)
   }
 
-  return exchanges
+  const byId = new Map(previous.map((exchange) => [exchange.id, exchange]))
+  return exchanges.map((exchange) => {
+    const old = byId.get(exchange.id)
+    return old &&
+      old.prompt === exchange.prompt &&
+      old.response.length === exchange.response.length &&
+      old.system.length === exchange.system.length &&
+      old.response.every(
+        (message, index) => message === exchange.response[index]
+      ) &&
+      old.system.every((message, index) => message === exchange.system[index])
+      ? old
+      : exchange
+  })
 }
 
 /** Everything the agent said in an exchange, as plain text for the clipboard. */

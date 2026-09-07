@@ -5,20 +5,8 @@ export interface AcpPlanEntry {
   status: string
 }
 
-export type AcpBlock =
-  | { type: "user"; text: string }
-  | { type: "text"; text: string }
-  | { type: "thinking"; text: string }
-  | {
-      type: "tool"
-      id: string
-      title: string
-      toolKind?: string
-      status: string
-      input?: string
-      output?: string
-    }
-  | { type: "plan"; entries: AcpPlanEntry[] }
+import type { LiveBlock as AcpBlock } from "../../electron/contracts/live-content"
+export type { LiveBlock as AcpBlock } from "../../electron/contracts/live-content"
 
 export interface AcpConversation {
   messages: ChatMessage[]
@@ -33,6 +21,7 @@ export function acpBlocksToMessages(
   const messages: ChatMessage[] = []
   let plan: AcpPlanEntry[] = []
   let assistant: ChatMessage | null = null
+  let turn = 0
 
   const append = (block: Block, index: number) => {
     if (!assistant) {
@@ -51,15 +40,22 @@ export function acpBlocksToMessages(
     const block = blocks[index]!
     switch (block.type) {
       case "user":
+        turn += 1
         assistant = null
         messages.push({
           id: `acp-user-${index}`,
           role: "user",
-          blocks: [{ type: "text", text: block.text }],
+          blocks: [
+            { type: "text", text: block.text },
+            ...(block.attachments ?? []),
+          ],
         })
         break
       case "text":
         append({ type: "text", text: block.text }, index)
+        break
+      case "attachment":
+        append(block.attachment, index)
         break
       case "thinking":
         append({ type: "thinking", thinking: block.text }, index)
@@ -69,7 +65,7 @@ export function acpBlocksToMessages(
         append(
           {
             type: "toolCall",
-            id: block.id,
+            id: `${turn}:${block.id}`,
             name,
             arguments: block.input,
           },
@@ -78,19 +74,18 @@ export function acpBlocksToMessages(
         const failed = block.status === "failed"
         const canceled = /cancel/i.test(block.status)
         const finished =
-          block.output !== undefined ||
-          failed ||
-          canceled ||
-          /complete|done/i.test(block.status)
-        if (finished) {
+          failed || canceled || /complete|done/i.test(block.status)
+        if (finished || block.output !== undefined) {
           append(
             {
               type: "toolResult",
-              id: block.id,
+              id: `${turn}:${block.id}`,
               name,
               text: block.output ?? (failed ? block.title : ""),
               isError: failed,
               isCanceled: canceled,
+              streaming: !finished,
+              attachments: block.attachments,
             },
             index
           )

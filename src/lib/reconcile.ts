@@ -14,12 +14,16 @@ import type { Block, ChatMessage } from "@/lib/types"
  * is compared directly so in-place provider rewrites cannot preserve stale
  * output merely because the replacement has the same length.
  */
-export function reconcileMessages(previous: ChatMessage[], next: ChatMessage[]): ChatMessage[] {
+export function reconcileMessages(
+  previous: ChatMessage[],
+  next: ChatMessage[]
+): ChatMessage[] {
   if (previous.length === 0) return next
 
+  const byId = new Map(previous.map((message) => [message.id, message]))
   let reused = 0
-  const out = next.map((message, index) => {
-    const old = previous[index]
+  const out = next.map((message) => {
+    const old = byId.get(message.id)
     if (old && sameMessage(old, message)) {
       reused += 1
       return old
@@ -29,11 +33,23 @@ export function reconcileMessages(previous: ChatMessage[], next: ChatMessage[]):
 
   // Nothing was reusable (a compaction, a branch switch): take the new array
   // wholesale rather than handing back a copy with identical contents.
+  if (
+    out.length === previous.length &&
+    out.every((message, index) => message === previous[index])
+  )
+    return previous
   return reused === 0 ? next : out
 }
 
 function sameMessage(a: ChatMessage, b: ChatMessage): boolean {
   if (a.id !== b.id) return false
+  if (a === b) return true
+  if (
+    a.model !== b.model ||
+    a.provider !== b.provider ||
+    a.toolName !== b.toolName
+  )
+    return false
   if (a.role !== b.role) return false
   if (a.timestamp !== b.timestamp) return false
   if (a.error !== b.error) return false
@@ -48,18 +64,32 @@ function sameMessage(a: ChatMessage, b: ChatMessage): boolean {
 }
 
 function sameBlock(a: Block, b: Block): boolean {
-  if (a.type !== b.type) return false
-  if (a.id !== b.id) return false
-  if (a.name !== b.name) return false
-  if (a.isError !== b.isError) return false
-  if (a.text !== b.text) return false
-  if (a.thinking !== b.thinking) return false
-  if (a.mimeType !== b.mimeType) return false
-  if (
-    a.arguments !== b.arguments &&
-    JSON.stringify(a.arguments) !== JSON.stringify(b.arguments)
-  ) {
-    return false
+  if (a === b) return true
+  switch (a.type) {
+    case "text":
+      return b.type === "text" && a.text === b.text
+    case "thinking":
+      return b.type === "thinking" && a.thinking === b.thinking
+    case "attachment":
+      return b.type === "attachment" && JSON.stringify(a) === JSON.stringify(b)
+    case "toolCall":
+      return (
+        b.type === "toolCall" &&
+        a.id === b.id &&
+        a.name === b.name &&
+        (a.arguments === b.arguments ||
+          JSON.stringify(a.arguments) === JSON.stringify(b.arguments))
+      )
+    case "toolResult":
+      return (
+        b.type === "toolResult" &&
+        a.id === b.id &&
+        a.name === b.name &&
+        a.text === b.text &&
+        a.isError === b.isError &&
+        a.isCanceled === b.isCanceled &&
+        a.streaming === b.streaming &&
+        JSON.stringify(a.attachments) === JSON.stringify(b.attachments)
+      )
   }
-  return true
 }

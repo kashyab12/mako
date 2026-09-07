@@ -1,5 +1,5 @@
 import type {
-  AcpSessionState,
+  LiveSessionState,
   HarnessProfile,
   SessionMeta,
   Thread,
@@ -111,7 +111,7 @@ export function contextAccounting({
 }: {
   meta?: SessionMeta
   viewing: Thread | null
-  acpSession: AcpSessionState | null
+  acpSession: LiveSessionState | null
   acpStarting: boolean
   composerHarness: string
   profiles: Record<string, HarnessProfile>

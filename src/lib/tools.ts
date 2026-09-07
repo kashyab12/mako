@@ -1,5 +1,8 @@
+import { normalizeToolOutput } from "@mako/sessions/tool-output"
 import type { Block, ChatMessage } from "@/lib/types"
 import type { ToolCall } from "@/extend/slots"
+
+export { normalizeToolOutput }
 
 type ToolScalar = boolean | number | string | null
 type ToolContent = ToolScalar | ToolArguments | ToolContent[]
@@ -51,6 +54,7 @@ const TOOL_LABELS = new Map([
   ["task", "Agent"],
   ["run_subagent", "Background agent"],
   ["AwaitShell", "Wait for shell"],
+  ["wait", "Wait for command"],
   ["write_stdin", "Terminal input"],
   ["TodoWrite", "Plan"],
   ["CreatePlan", "Plan"],
@@ -59,6 +63,9 @@ const TOOL_LABELS = new Map([
   ["ToolSearch", "Find tool"],
   ["ScheduleWakeup", "Schedule"],
 ])
+const NORMALIZED_TOOL_LABELS = new Map(
+  [...TOOL_LABELS].map(([name, label]) => [name.toLowerCase(), label])
+)
 
 function parseToolContent<Content>(value: Content): ToolContent | undefined {
   let serialized: string | undefined
@@ -76,7 +83,9 @@ function parseToolContent<Content>(value: Content): ToolContent | undefined {
   }
 }
 
-function isToolArguments(content: ToolContent | undefined): content is ToolArguments {
+function isToolArguments(
+  content: ToolContent | undefined
+): content is ToolArguments {
   return (
     content !== undefined &&
     content !== null &&
@@ -85,7 +94,9 @@ function isToolArguments(content: ToolContent | undefined): content is ToolArgum
   )
 }
 
-function parseToolArguments<Content>(value: Content): ToolArguments | undefined {
+function parseToolArguments<Content>(
+  value: Content
+): ToolArguments | undefined {
   const content = parseToolContent(value)
   if (isToolArguments(content)) return content
   const nested = stringContent(content)
@@ -108,13 +119,9 @@ function parseToolEdit(content: ToolContent): ToolEdit {
   const edit = isToolArguments(content) ? content : undefined
   return {
     oldText:
-      stringContent(edit?.oldText) ??
-      stringContent(edit?.old_string) ??
-      "",
+      stringContent(edit?.oldText) ?? stringContent(edit?.old_string) ?? "",
     newText:
-      stringContent(edit?.newText) ??
-      stringContent(edit?.new_string) ??
-      "",
+      stringContent(edit?.newText) ?? stringContent(edit?.new_string) ?? "",
   }
 }
 
@@ -138,7 +145,11 @@ export function foldTools(messages: ChatMessage[]): ChatMessage[] {
             name: message.toolName,
             isError: message.isError,
             text: message.blocks
-              .map((block) => block.text ?? "")
+              .map((block) =>
+                block.type === "text" || block.type === "toolResult"
+                  ? block.text
+                  : ""
+              )
               .filter(Boolean)
               .join("\n"),
           },
@@ -169,13 +180,16 @@ export function pairTools(blocks: Block[]): ToolCall[] {
       continue
     }
     if (block.type !== "toolResult") continue
-    const id = block.id || order.find((key) => byId.get(key)?.pending) || `result-${order.length}`
+    const id =
+      block.id ||
+      order.find((key) => byId.get(key)?.pending) ||
+      `result-${order.length}`
     const existing = byId.get(id)
     if (existing) {
       existing.result = block.text
       existing.isError = block.isError
       existing.isCanceled = block.isCanceled
-      existing.pending = false
+      existing.pending = block.streaming === true
     } else {
       order.push(id)
       byId.set(id, {
@@ -184,7 +198,7 @@ export function pairTools(blocks: Block[]): ToolCall[] {
         result: block.text,
         isError: block.isError,
         isCanceled: block.isCanceled,
-        pending: false,
+        pending: block.streaming === true,
       })
     }
   }
@@ -284,7 +298,42 @@ export function primaryArgument<Content>(value: Content): string {
   return candidate === undefined || candidate === null ? "" : String(candidate)
 }
 
-export function argAt<Content>(value: Content, key: string): string | undefined {
+export interface ToolExecutionOutput {
+  status: string
+  duration?: string
+  output: string
+}
+
+export function parseToolExecutionOutput(
+  text: string | undefined
+): ToolExecutionOutput | null {
+  const normalized = normalizeToolOutput(text)
+  const match =
+    /^(Script (?:completed|failed))\nWall time ([^\n]+)\nOutput:\n?([\s\S]*)$/.exec(
+      normalized
+    )
+  return match
+    ? {
+        status: match[1] ?? "Script completed",
+        duration: match[2],
+        output: match[3] ?? "",
+      }
+    : null
+}
+
+export function hasToolArguments<Content>(value: Content): boolean {
+  return parseToolArguments(value) !== undefined
+}
+
+export function formatToolArguments<Content>(value: Content): string {
+  const parsed = parseToolArguments(value)
+  return parsed ? JSON.stringify(parsed, null, 2) : ""
+}
+
+export function argAt<Content>(
+  value: Content,
+  key: string
+): string | undefined {
   return stringContent(parseToolArguments(value)?.[key])
 }
 
@@ -315,7 +364,6 @@ export const SUBAGENT_CONTROL_TOOLS = [
   "send_message",
   "list_agents",
   "wait_agent",
-  "wait",
 ] as const
 
 export const SUBAGENT_TOOLS = [
@@ -324,21 +372,29 @@ export const SUBAGENT_TOOLS = [
 ] as const
 
 export function isSubagentLaunch(call: ToolCall): boolean {
-  if (SUBAGENT_LAUNCH_TOOLS.some((candidate) => candidate === call.name)) {
+  const name = call.name.toLowerCase()
+  if (
+    SUBAGENT_LAUNCH_TOOLS.some((candidate) => candidate.toLowerCase() === name)
+  ) {
     return true
   }
   return (
-    call.name === "subagent" &&
+    name === "subagent" &&
     Boolean(
       argAt(call.arguments, "task") ??
-        argAt(call.arguments, "prompt") ??
-        argAt(call.arguments, "description")
+      argAt(call.arguments, "prompt") ??
+      argAt(call.arguments, "description") ??
+      argAt(call.arguments, "agent_id") ??
+      argAt(call.arguments, "agentId")
     )
   )
 }
 
 export function isSubagentTool(name: string): boolean {
-  return SUBAGENT_TOOLS.some((candidate) => candidate === name)
+  const normalized = name.toLowerCase()
+  return SUBAGENT_TOOLS.some(
+    (candidate) => candidate.toLowerCase() === normalized
+  )
 }
 
 export function reportedSubagentCount(call: ToolCall): number {
@@ -352,12 +408,16 @@ export function reportedSubagentCount(call: ToolCall): number {
   }
 }
 
-export function subagentResultId(result: string | undefined): string | undefined {
+export function subagentResultId(
+  result: string | undefined
+): string | undefined {
   if (!result) return undefined
   return /<subagent\s+[^>]*sessionID="([^"]+)"/.exec(result)?.[1]
 }
 
-export function subagentResultText(result: string | undefined): string | undefined {
+export function subagentResultText(
+  result: string | undefined
+): string | undefined {
   if (!result) return undefined
   const error = /<task_error>([\s\S]*?)<\/task_error>/.exec(result)?.[1]
   if (error?.trim()) return error.trim()
@@ -371,7 +431,7 @@ export function subagentResultText(result: string | undefined): string | undefin
 }
 
 export function toolLabel(name: string): string {
-  const label = TOOL_LABELS.get(name)
+  const label = NORMALIZED_TOOL_LABELS.get(name.toLowerCase())
   if (label) return label
   if (name.startsWith("mako_macos_")) {
     return `macOS ${name.slice("mako_macos_".length).replaceAll("_", " ")}`
@@ -396,5 +456,7 @@ export function editsOf(call: ToolCall): ToolEdit[] {
   if (Array.isArray(args.edits)) return args.edits.map(parseToolEdit)
   const oldText = stringContent(args.oldText) ?? stringContent(args.old_string)
   const newText = stringContent(args.newText) ?? stringContent(args.new_string)
-  return oldText === undefined || newText === undefined ? [] : [{ oldText, newText }]
+  return oldText === undefined || newText === undefined
+    ? []
+    : [{ oldText, newText }]
 }
