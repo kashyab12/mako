@@ -46,7 +46,8 @@ export function CommandPalette() {
   const [cursor, setCursor] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
 
-  const files = useWorkspaceFiles(open && mode === "files")
+  const fileIndex = useWorkspaceFiles(open && mode === "files")
+  const { files } = fileIndex
   const deskCommands = useCommands()
   const keybindings = usePrefs((prefs) => prefs.keybindings)
   const favoriteModels = usePrefs((prefs) => prefs.favoriteModels)
@@ -252,7 +253,7 @@ export function CommandPalette() {
         <div ref={listRef} className="max-h-[22rem] overflow-y-auto overscroll-contain p-1.5">
           {results.length === 0 ? (
             <p className="px-2 py-8 text-center text-ui text-faint">
-              {mode === "files" && files.length === 0 ? "Reading the project…" : "No matches"}
+              {mode === "files" && fileIndex.kind === "loading" ? "Reading the project…" : mode === "files" && fileIndex.kind === "failed" ? fileIndex.error : "No matches"}
             </p>
           ) : (
             results.map((entry, index) => {

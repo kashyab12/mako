@@ -3,7 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 import { Blank } from "@/components/ui/kit"
 import { buildWorkspaceTree, pathToOpenKeys, type WorkspaceRow } from "@/lib/workspace-tree"
 import { rank } from "@/lib/fuzzy"
-import { useWorkspaceFiles } from "@/state/files"
+import { retryWorkspaceFiles, useWorkspaceFiles } from "@/state/files"
 import { prefsStore, setPref, usePrefs } from "@/state/prefs"
 import { viewer, useViewer } from "@/state/viewer"
 import { cn } from "@/lib/utils"
@@ -31,7 +31,8 @@ export function FileTree() {
   const focus = useWorkspaceFocus()
   const [query, setQuery] = useState("")
   const deferred = useDeferredValue(query)
-  const files = useWorkspaceFiles(focus.ready, focus.cwd)
+  const fileIndex = useWorkspaceFiles(focus.ready, focus.cwd)
+  const { files } = fileIndex
   const openDirs = usePrefs((prefs) => prefs.openDirs)
   const active = useViewer((state) => state.path)
   const scroller = useRef<HTMLDivElement>(null)
@@ -130,11 +131,36 @@ export function FileTree() {
       {rows.length === 0 ? (
         <Blank
           icon={<FolderIcon />}
-          title={query ? "No matching files" : files.length === 0 ? "Reading the project…" : "Nothing here"}
+          action={
+            fileIndex.kind === "failed" && focus.cwd ? (
+              <button
+                type="button"
+                className="pressable text-ui"
+                onClick={() => {
+                  if (focus.cwd) retryWorkspaceFiles(focus.cwd)
+                }}
+              >
+                Retry
+              </button>
+            ) : undefined
+          }
+          title={
+            fileIndex.kind === "loading"
+              ? "Reading the project…"
+              : fileIndex.kind === "failed"
+                ? "Could not read project files"
+                : query
+                  ? "No matching files"
+                  : "No files"
+          }
           body={
-            query
-              ? "Try part of the file name, or a folder along its path."
-              : "This folder has no files the agent can see. Ignored paths are not listed."
+            fileIndex.kind === "failed"
+              ? fileIndex.error
+              : fileIndex.kind === "loading"
+                ? undefined
+                : query
+                  ? "Try part of the file name, or a folder along its path."
+                  : "This folder has no files the agent can see. Ignored paths are not listed."
           }
         />
       ) : (

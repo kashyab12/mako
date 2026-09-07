@@ -11,13 +11,21 @@ export function ConversationSection() {
         title="Show reasoning"
         description="Collapsed by default; this hides it entirely"
       >
-        <Toggle on={showThinking} onChange={() => togglePref("showThinking")} />
+        <Toggle
+          label="Show reasoning"
+          on={showThinking}
+          onChange={() => togglePref("showThinking")}
+        />
       </SettingRow>
       <SettingRow
         title="Open the diff on select"
         description="Off keeps the changes panel as a plain list"
       >
-        <Toggle on={autoDiff} onChange={() => togglePref("autoOpenDiff")} />
+        <Toggle
+          label="Open the diff on select"
+          on={autoDiff}
+          onChange={() => togglePref("autoOpenDiff")}
+        />
       </SettingRow>
     </ListCard>
   )

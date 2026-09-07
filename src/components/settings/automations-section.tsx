@@ -48,6 +48,7 @@ export function AutomationsSection() {
             >
               <div className="flex items-center gap-2">
                 <Toggle
+                  label={entry.name}
                   on={entry.enabled}
                   disabled={!automationTriggerAvailable(entry.trigger)}
                   onChange={() =>

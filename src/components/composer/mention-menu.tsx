@@ -42,7 +42,7 @@ export function MentionMenu({
   const skills = useSession((state) => state.capabilities.skills)
   const commands = useSession((state) => state.capabilities.commands)
   const threads = useThreads((state) => state.threads)
-  const files = useWorkspaceFiles(kind === "@")
+  const { files } = useWorkspaceFiles(kind === "@")
   const referenceItems = useMemo(
     () => [
       ...threads.map((thread) => ({

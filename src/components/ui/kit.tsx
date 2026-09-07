@@ -139,10 +139,12 @@ export function Eyebrow({ className, ...props }: ComponentProps<"div">) {
 /* ------------------------------------------------------------------ */
 
 export function Toggle({
+  label,
   on,
   onChange,
   disabled,
 }: {
+  label: string
   on: boolean
   onChange: () => void
   disabled?: boolean
@@ -151,6 +153,7 @@ export function Toggle({
     <button
       type="button"
       role="switch"
+      aria-label={label}
       aria-checked={on}
       disabled={disabled}
       onClick={onChange}
