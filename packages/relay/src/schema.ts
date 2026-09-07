@@ -28,7 +28,12 @@ export const RemoteAttachmentSchema = z.object({
   kind: z.enum(["audio", "file", "image", "video"]),
   name: z.string().min(1).max(255),
   mimeType: z.string().min(1).max(255).optional(),
-  size: z.number().int().nonnegative().max(100 * 1024 * 1024).optional(),
+  size: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(100 * 1024 * 1024)
+    .optional(),
 })
 export type RemoteAttachment = z.infer<typeof RemoteAttachmentSchema>
 
@@ -197,10 +202,18 @@ export const RelayCursorSchema = z.object({
 })
 export type RelayCursor = z.infer<typeof RelayCursorSchema>
 
+export const RelayPlanStatusSchema = z.enum([
+  "pending",
+  "in_progress",
+  "completed",
+  "failed",
+  "canceled",
+])
+
 const RelayPlanEntrySchema = z.object({
   id: z.string().min(1).max(160),
   title: z.string().min(1).max(256),
-  status: z.enum(["pending", "in_progress", "completed", "failed", "canceled"]),
+  status: RelayPlanStatusSchema,
 })
 
 const RelayPermissionOptionSchema = z.object({
@@ -222,7 +235,13 @@ export const RelayCanonicalEventSchema = z.discriminatedUnion("kind", [
     kind: z.literal("tool"),
     id: z.string().min(1).max(160),
     title: z.string().min(1).max(256),
-    status: z.enum(["pending", "in_progress", "completed", "failed", "canceled"]),
+    status: z.enum([
+      "pending",
+      "in_progress",
+      "completed",
+      "failed",
+      "canceled",
+    ]),
     detail: z.string().max(2_000).optional(),
     output: z.string().max(4_000).optional(),
   }),
@@ -240,7 +259,15 @@ export const RelayCanonicalEventSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("lifecycle"),
-    status: z.enum(["queued", "starting", "running", "suspended", "completed", "failed", "stopped"]),
+    status: z.enum([
+      "queued",
+      "starting",
+      "running",
+      "suspended",
+      "completed",
+      "failed",
+      "stopped",
+    ]),
     detail: z.string().max(2_000).optional(),
   }),
 ])

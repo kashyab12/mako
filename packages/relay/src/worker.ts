@@ -36,7 +36,10 @@ export interface RelayExecutor {
 }
 
 export interface RelayTransport {
-  lease(request: RelayLeaseRequest, signal: AbortSignal): Promise<RelayLease | null>
+  lease(
+    request: RelayLeaseRequest,
+    signal: AbortSignal
+  ): Promise<RelayLease | null>
   renew(lease: RelayLease, request: RelayLeaseRequest): Promise<string>
   sendEvents(batch: RelayEventBatch): Promise<void>
   control(lease: RelayLease, deviceId: string): Promise<RelayControl | null>
@@ -115,7 +118,8 @@ export class HeadlessRelayWorker {
         continue
       }
       if (!signal.aborted) {
-        const wait = this.options.idleDelay?.(emptyPolls) ??
+        const wait =
+          this.options.idleDelay?.(emptyPolls) ??
           Math.min(1_500 * 2 ** emptyPolls, 15_000)
         await delay(wait, signal)
       }
@@ -191,6 +195,12 @@ export class HeadlessRelayWorker {
         signal: turn.signal,
         emit,
       })
+    } catch (error) {
+      execution = {
+        harness: lease.payload.selection.harness ?? request.defaultHarness,
+        result: error instanceof Error ? error.message : String(error),
+        status: turn.signal.aborted ? "stopped" : "failed",
+      }
     } finally {
       clearInterval(renewTimer)
       clearInterval(controlTimer)
