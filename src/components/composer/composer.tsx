@@ -84,7 +84,10 @@ const isMac = navigator.platform.startsWith("Mac")
 
 export function Composer() {
   const sessionId = useSession((state) => state.meta?.sessionId)
-  const viewingPath = useThreads((state) => state.viewing?.ref.path)
+  const viewingPath = useThreads(
+    (state) => state.opening?.ref.path ?? state.viewing?.ref.path
+  )
+  const opening = useThreads((state) => state.opening)
   const liveDraftKey = useAcp((state) => activeAcp(state)?.draftKey)
   const draftKey = liveDraftKey ?? viewingPath ?? sessionId ?? "new"
   const status = useSession(
@@ -268,6 +271,12 @@ export function Composer() {
 
   const submit = useCallback(
     async (mode?: "steer" | "followUp") => {
+      if (threadsStore.get().opening) {
+        toast.error(
+          "Wait for this conversation to load before sending. Your draft is saved."
+        )
+        return
+      }
       const submittedDraftKey = draftKey
       const text = draft.trim()
       if (!text && attachments.items.length === 0) return
@@ -367,6 +376,7 @@ export function Composer() {
       else {
         const currentDraftKey =
           activeAcp(acpStore.get())?.draftKey ??
+          threadsStore.get().opening?.ref.path ??
           threadsStore.get().viewing?.ref.path ??
           sessionStore.get().meta?.sessionId ??
           "new"
@@ -484,7 +494,7 @@ export function Composer() {
   const stopping = useAcp((state) => activeLiveAcp(state)?.canceling ?? false)
   const liveThreadPath = useAcp((state) => activeAcp(state)?.threadPath)
   const routedHarness = useThreads(
-    (state) => state.viewing?.ref.harness ?? null
+    (state) => state.opening?.ref.harness ?? state.viewing?.ref.harness ?? null
   )
   const routedPath = useThreads((state) => state.viewing?.ref.path)
   const liveOwnsComposer = Boolean(
@@ -508,8 +518,9 @@ export function Composer() {
     Boolean(state.viewing?.ref.archived)
   )
   const newHarness = useThreads((state) => state.composerHarness)
-  const placeholder =
-    liveOwnsComposer && liveHarness
+  const placeholder = opening
+    ? `Draft a reply for ${harnessTitle(opening.ref.harness)} — ${opening.kind === "loading" ? "loading conversation…" : "conversation could not load"}`
+    : liveOwnsComposer && liveHarness
       ? liveStarting
         ? `${harnessTitle(liveHarness)} is starting — Enter queues your message`
         : liveRunning
@@ -700,7 +711,7 @@ export function Composer() {
               <ContextDial />
               <ComposerActionButton
                 action={primaryAction}
-                ready={hasContent}
+                ready={hasContent && !opening}
                 stopping={liveOwnsComposer && stopping}
                 onSend={() => void submit()}
                 onStop={() => void stopCurrentTurn()}

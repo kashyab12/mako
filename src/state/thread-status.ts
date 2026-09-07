@@ -42,7 +42,7 @@ export function threadStatus(
   state: ThreadsState = threadsStore.get()
 ): ThreadStatus {
   const attention = state.attention[ref.path]
-  if (attention) return attention
+  if (attention?.kind === "needs-permission") return attention
   const working = state.working[ref.path]
   if (working) return working
   const external = state.externalActivity[ref.path]
@@ -53,8 +53,9 @@ export function threadStatus(
       detail: external.detail,
     }
   if (external?.status === "active") return EXTERNAL_ACTIVE_STATUS
+  if (ref.active === true && !external) return EXTERNAL_ACTIVE_STATUS
+  if (attention) return attention
   if (external?.status === "open") return EXTERNAL_OPEN_STATUS
-  if (ref.active === true) return EXTERNAL_ACTIVE_STATUS
   if (ref.locked) return EXTERNAL_OPEN_STATUS
   if (ref.active === false) return IDLE_STATUS
   return state.observed[ref.path] ? OBSERVED_STATUS : IDLE_STATUS

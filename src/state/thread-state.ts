@@ -63,8 +63,10 @@ export interface ThreadsState {
   loaded: boolean
   /** The foreign thread open in the viewer overlay, if any. */
   viewing: ViewedThread | null
-  opening: ThreadRef | null
-  viewingBusy: boolean
+  opening:
+    | { kind: "loading"; ref: ThreadRef }
+    | { kind: "failed"; ref: ThreadRef; error: string }
+    | null
   /** Harnesses whose CLI can be driven headlessly from here. */
   resumable: string[]
   /** Harnesses a conversation can be continued on. */

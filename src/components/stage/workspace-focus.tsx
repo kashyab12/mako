@@ -11,7 +11,7 @@ export function WorkspaceFocusProvider({ children }: { children: ReactNode }) {
   const sessionCwd = useSession((state) => state.meta?.cwd)
   const sessionTitle = useSession((state) => state.meta?.sessionName)
   const viewing = useThreads(
-    (state) => state.opening ?? state.viewing?.ref
+    (state) => state.opening?.ref ?? state.viewing?.ref
   )
   const liveId = useAcp((state) => activeAcp(state)?.key)
   const liveCwd = useAcp((state) => activeAcp(state)?.cwd)

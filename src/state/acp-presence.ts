@@ -38,9 +38,10 @@ export function selectAcpPresence(state: AcpState): AcpPresence[] {
         title: conversation.title,
         threadPath: conversation.threadPath,
         nativePaths: conversation.nativePaths,
-        status: conversation.permission
-          ? "needs-permission"
-          : conversation.session.status,
+        status:
+          conversation.permission && conversation.session.status !== "failed"
+            ? "needs-permission"
+            : conversation.session.status,
       }
       return [presence]
     })

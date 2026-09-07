@@ -23,7 +23,9 @@ export function ThreadStatusMark({
           className="flex shrink-0 items-center gap-1 text-label text-ember/80"
         >
           <Loader2Icon className="size-3 animate-spin" />
-          <span className="max-w-24 truncate">{status.detail ?? "Working"}</span>
+          <span className="max-w-24 truncate">
+            {status.detail ?? "Working"}
+          </span>
           <Elapsed since={status.since} />
         </span>
       )
@@ -55,7 +57,14 @@ export function ThreadStatusMark({
         </span>
       )
     case "observed":
-      return <span title="The native session file changed recently; running state is unconfirmed" className="shrink-0 text-label text-faint">Updated</span>
+      return (
+        <span
+          title="The native session file changed recently; running state is unconfirmed"
+          className="shrink-0 text-label text-faint"
+        >
+          Updated
+        </span>
+      )
     case "external-active":
       return (
         <span
@@ -67,7 +76,14 @@ export function ThreadStatusMark({
         </span>
       )
     case "external-open":
-      return <span title="Open in another app; no running turn reported" className="shrink-0 text-label text-faint">Open</span>
+      return (
+        <span
+          title="Open in another app; no running turn reported"
+          className="shrink-0 text-label text-faint"
+        >
+          Open
+        </span>
+      )
     case "idle":
       return updatedAt ? (
         <span className="tabular shrink-0 text-label text-faint">

@@ -169,7 +169,7 @@ function createExchangeBuilder() {
 export function ThreadViewer() {
   const thread = useThreads((state) => state.viewing)
   const opening = useThreads((state) => state.opening)
-  const busy = useThreads((state) => state.viewingBusy)
+  const busy = opening?.kind === "loading"
 
   useEffect(() => {
     if (!thread && !busy) return
@@ -184,7 +184,13 @@ export function ThreadViewer() {
     return () => window.removeEventListener("keydown", onKey)
   }, [busy, thread])
 
-  if (busy && !thread) return <ThreadLoadingShell opening={opening} />
+  if (opening && (!thread || opening.kind === "failed"))
+    return (
+      <ThreadLoadingShell
+        opening={opening.ref}
+        error={opening.kind === "failed" ? opening.error : undefined}
+      />
+    )
   if (!thread) return null
 
   return (
@@ -199,9 +205,15 @@ export function ThreadViewer() {
   )
 }
 
-function ThreadLoadingShell({ opening }: { opening: ThreadRef | null }) {
+function ThreadLoadingShell({
+  opening,
+  error,
+}: {
+  opening: ThreadRef
+  error?: string
+}) {
   return (
-    <div aria-busy="true" className="flex min-h-0 flex-1 flex-col bg-surface">
+    <div aria-busy={!error} className="flex min-h-0 flex-1 flex-col bg-surface">
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-hairline px-3.5">
         {opening ? (
           <HarnessIcon harness={opening.harness} className="size-3.5" />
@@ -211,7 +223,7 @@ function ThreadLoadingShell({ opening }: { opening: ThreadRef | null }) {
             {opening?.title ?? "Conversation"}
           </p>
           <p role="status" className="text-label text-faint">
-            Loading messages…
+            {error ? "Could not load this conversation" : "Loading messages…"}
           </p>
         </div>
         <IconAction
@@ -223,26 +235,40 @@ function ThreadLoadingShell({ opening }: { opening: ThreadRef | null }) {
           <XIcon />
         </IconAction>
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <div className="mx-auto flex h-full w-full max-w-content flex-col justify-end gap-8 px-6 py-8">
-          <div className="ml-auto flex w-2/3 flex-col items-end gap-2">
-            <span className="skeleton h-3 w-3/4 rounded" />
-            <span className="skeleton h-3 w-1/2 rounded" />
-          </div>
-          <div className="flex w-5/6 flex-col gap-2">
-            <span className="skeleton h-3 w-full rounded" />
-            <span className="skeleton h-3 w-11/12 rounded" />
-            <span className="skeleton h-3 w-2/3 rounded" />
+      {error ? (
+        <div role="alert" className="p-6 text-ui text-muted-foreground">
+          <p>{error}</p>
+          <Action
+            tone="outline"
+            size="md"
+            className="mt-3"
+            onClick={() => void threads.view(opening)}
+          >
+            Retry loading
+          </Action>
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="mx-auto flex h-full w-full max-w-content flex-col justify-end gap-8 px-6 py-8">
+            <div className="ml-auto flex w-2/3 flex-col items-end gap-2">
+              <span className="skeleton h-3 w-3/4 rounded" />
+              <span className="skeleton h-3 w-1/2 rounded" />
+            </div>
+            <div className="flex w-5/6 flex-col gap-2">
+              <span className="skeleton h-3 w-full rounded" />
+              <span className="skeleton h-3 w-11/12 rounded" />
+              <span className="skeleton h-3 w-2/3 rounded" />
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
 
 function SessionBar() {
   const thread = useThreads((state) => state.viewing)
-  const syncing = useThreads((state) => state.viewingBusy)
+  const syncing = useThreads((state) => state.opening?.kind === "loading")
   const sessionStatus = useThreads((state) =>
     thread ? threadStatus(thread.ref, state) : null
   )

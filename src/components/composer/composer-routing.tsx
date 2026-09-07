@@ -9,7 +9,9 @@ const EMPTY_QUEUE: never[] = []
 
 /** The selected provider answers the next turn in the current conversation. */
 export function ComposerRouting() {
-  const viewing = useThreads((state) => state.viewing?.ref)
+  const viewing = useThreads(
+    (state) => state.opening?.ref ?? state.viewing?.ref
+  )
   const viewingQueued = useThreads((state) =>
     state.viewing
       ? state.nativeRequests.filter(

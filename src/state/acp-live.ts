@@ -30,6 +30,10 @@ export function syncThreadStatus(
     threadPath,
     session.status === "running" || session.status === "starting"
   )
+  if (session.status === "closed") {
+    setThreadAttention(threadPath, null)
+    return
+  }
   if (conversation.permission) {
     setThreadAttention(threadPath, {
       kind: "needs-permission",
@@ -50,6 +54,7 @@ export function syncThreadStatus(
     })
     return
   }
+  if (session.status === "ready") setThreadAttention(threadPath, null)
   if (
     previousStatus === "running" &&
     session.status === "ready" &&

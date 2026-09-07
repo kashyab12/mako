@@ -142,7 +142,7 @@ export function uniqueThreadRefs(list: ThreadRef[]) {
     if (
       !held ||
       (held.archived && !ref.archived) ||
-      (held.archived === ref.archived &&
+      (Boolean(held.archived) === Boolean(ref.archived) &&
         (ref.updatedAt ?? "") > (held.updatedAt ?? ""))
     )
       byIdentity.set(key, ref)

@@ -6,12 +6,7 @@ import { HarnessIcon } from "@/components/ui/provider-icon"
 import { workspaceName } from "@/lib/format"
 import type { ThreadRef } from "@/lib/types"
 import { cn } from "@/lib/utils"
-import {
-  prefsStore,
-  setPref,
-  togglePinned,
-  usePrefs,
-} from "@/state/prefs"
+import { prefsStore, setPref, togglePinned, usePrefs } from "@/state/prefs"
 import { actions, shallowEqual, useSession } from "@/state/session"
 import { useTabs, type TabInfo } from "@/state/tabs"
 import { acpForThread, activeAcp, useAcp } from "@/state/acp"
@@ -46,9 +41,15 @@ const Attached = memo(function Attached({ path }: { path: string }) {
   return (
     <>
       {tab.working ? (
-        <span aria-label="Working" className="size-1.5 shrink-0 animate-live rounded-full bg-ember" />
+        <span
+          aria-label="Working"
+          className="animate-live size-1.5 shrink-0 rounded-full bg-ember"
+        />
       ) : tab.unread && !tab.active ? (
-        <span aria-label="Finished while you were away" className="size-1.5 shrink-0 rounded-full bg-foreground/45" />
+        <span
+          aria-label="Finished while you were away"
+          className="size-1.5 shrink-0 rounded-full bg-foreground/45"
+        />
       ) : null}
       {tab.only ? null : (
         <button
@@ -83,16 +84,19 @@ export const ThreadRow = memo(function ThreadRow({
   // the same promise a tab's dot makes: something is working behind this row.
   const status = useThreads((state) => threadStatus(ref, state))
   const working = status.kind === "working"
-  const activeElsewhere =
-    status.kind === "external-active"
+  const activeElsewhere = status.kind === "external-active"
   const isPinned = usePrefs((prefs) => prefs.pinnedThreads.includes(ref.path))
   const active = useSession((state) => state.meta?.sessionFile === ref.path)
   const selectedPath = useThreads(
-    (state) => state.opening?.path ?? state.viewing?.ref.path
+    (state) => state.opening?.ref.path ?? state.viewing?.ref.path
   )
   const livePath = useAcp((state) => activeAcp(state)?.threadPath)
   const liveProvider = useAcp((state) => acpForThread(state, ref.path)?.harness)
-  const selectedLive = useAcp((state) => Boolean(state.activeKey && acpForThread(state, ref.path)?.key === state.activeKey))
+  const selectedLive = useAcp((state) =>
+    Boolean(
+      state.activeKey && acpForThread(state, ref.path)?.key === state.activeKey
+    )
+  )
 
   const open = () => {
     void threads.view(ref)
@@ -102,7 +106,9 @@ export const ThreadRow = memo(function ThreadRow({
   // the selection — the native tab keeps its state but not its highlight,
   // because two lit rows read as a broken click.
   const focusedPath = selectedPath ?? livePath
-  const lit = selectedPath ? selectedPath === ref.path : selectedLive || (focusedPath ? focusedPath === ref.path : active)
+  const lit = selectedPath
+    ? selectedPath === ref.path
+    : selectedLive || (focusedPath ? focusedPath === ref.path : active)
 
   return (
     <div
@@ -120,8 +126,13 @@ export const ThreadRow = memo(function ThreadRow({
       }}
       title={[
         ref.title ?? "Untitled session",
-        ref.archived ? "Archived: the native store lost this; Mako kept it. Reply to bring it back to life." : undefined,
-        [...(ref.lineage ?? []).map((origin) => harnessLabel(origin.harness)), harnessLabel(ref.harness)].join(" → "),
+        ref.archived
+          ? "Archived: the native store lost this; Mako kept it. Reply to bring it back to life."
+          : undefined,
+        [
+          ...(ref.lineage ?? []).map((origin) => harnessLabel(origin.harness)),
+          harnessLabel(ref.harness),
+        ].join(" → "),
         ref.model,
         ref.cwd,
       ]
@@ -148,7 +159,10 @@ export const ThreadRow = memo(function ThreadRow({
         ))}
         <HarnessIcon
           harness={liveProvider ?? ref.harness}
-          className={cn("size-3", (working || activeElsewhere) && "animate-live")}
+          className={cn(
+            "size-3",
+            (working || activeElsewhere) && "animate-live"
+          )}
         />
       </span>
       {editing !== null ? (

@@ -19,7 +19,7 @@ export function leaveViewerForLive(harness: string) {
   threadsStore.set({
     viewing: null,
     opening: null,
-    viewingBusy: false,
+
     run: null,
     composerHarness: harness,
   })
@@ -140,6 +140,9 @@ export const threadViewingActions = {
       leaveViewerForLive(liveHarness)
       return
     }
+    if (harnessBeforeViewing === null)
+      harnessBeforeViewing = threadsStore.get().composerHarness
+    threadsStore.set({ composerHarness: liveHarness })
     const generation = ++viewingGeneration
     markThreadReviewed(ref.path)
     const cached = threadCache.get(ref.path)
@@ -150,8 +153,8 @@ export const threadViewingActions = {
       }
       threadsStore.set({
         viewing: cached,
-        opening: ref,
-        viewingBusy: true,
+        opening: { kind: "loading", ref },
+
         run: null,
         composerHarness: liveHarness,
       })
@@ -182,7 +185,6 @@ export const threadViewingActions = {
             threadsStore.set({
               viewing: replaced,
               opening: null,
-              viewingBusy: false,
             })
             void getMako().followThread(
               ref.path,
@@ -196,7 +198,13 @@ export const threadViewingActions = {
             threadsStore.get().viewing?.ref.path !== ref.path
           )
             return
-          threadsStore.set({ opening: null, viewingBusy: false })
+          threadsStore.set({
+            opening: {
+              kind: "failed",
+              ref,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          })
           toast.error(
             `Could not refresh this conversation. Showing saved messages. ${error instanceof Error ? error.message : String(error)}`
           )
@@ -205,8 +213,8 @@ export const threadViewingActions = {
     }
     threadsStore.set({
       viewing: null,
-      opening: ref,
-      viewingBusy: true,
+      opening: { kind: "loading", ref },
+
       run: null,
     })
     try {
@@ -229,7 +237,7 @@ export const threadViewingActions = {
       threadsStore.set({
         viewing: thread,
         opening: null,
-        viewingBusy: false,
+
         run,
         composerHarness: liveHarness,
       })
@@ -241,7 +249,13 @@ export const threadViewingActions = {
       )
     } catch (error) {
       if (generation !== viewingGeneration) return
-      threadsStore.set({ opening: null, viewingBusy: false })
+      threadsStore.set({
+        opening: {
+          kind: "failed",
+          ref,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      })
       toast.error(error instanceof Error ? error.message : String(error))
     }
   },
@@ -295,7 +309,7 @@ export const threadViewingActions = {
     const patch: Partial<ThreadsState> = {
       viewing: null,
       opening: null,
-      viewingBusy: false,
+
       run: null,
     }
     if (restore !== null) patch.composerHarness = restore

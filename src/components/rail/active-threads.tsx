@@ -14,22 +14,41 @@ export function RunningThreads({
   refs: ThreadRef[]
   liveAgents: AcpPresence[]
 }) {
-  const running = liveAgents.filter(presence => ["starting", "running", "needs-permission"].includes(presence.status))
-  const open = liveAgents.filter(presence => presence.status === "ready" || presence.status === "failed")
+  const running = liveAgents.filter((presence) =>
+    ["starting", "running", "needs-permission"].includes(presence.status)
+  )
+  const open = liveAgents.filter(
+    (presence) => presence.status === "ready" || presence.status === "failed"
+  )
   const count = refs.length + running.length
-  return <>
-    {count > 0 && <section aria-label="Running now" className="pt-1 pb-2">
-      <h2 className="flex h-7 items-center px-1.5 text-label font-medium text-foreground/80">
-        Running now <span className="ml-auto tabular text-faint">{count}</span>
-      </h2>
-      {running.map(presence => <LiveAgentRow key={presence.key} presence={presence} />)}
-      {refs.map(ref => <ThreadRow key={ref.path} threadRef={ref} showFolder />)}
-    </section>}
-    {open.length > 0 && <section aria-label="Open in Mako" className="pt-1 pb-2">
-      <h2 className="flex h-7 items-center px-1.5 text-label font-medium text-foreground/80">Open in Mako</h2>
-      {open.map(presence => <LiveAgentRow key={presence.key} presence={presence} />)}
-    </section>}
-  </>
+  return (
+    <>
+      {count > 0 && (
+        <section aria-label="Running now" className="pt-1 pb-2">
+          <h2 className="flex h-7 items-center px-1.5 text-label font-medium text-foreground/80">
+            Running now{" "}
+            <span className="tabular ml-auto text-faint">{count}</span>
+          </h2>
+          {running.map((presence) => (
+            <LiveAgentRow key={presence.key} presence={presence} />
+          ))}
+          {refs.map((ref) => (
+            <ThreadRow key={ref.path} threadRef={ref} showFolder />
+          ))}
+        </section>
+      )}
+      {open.length > 0 && (
+        <section aria-label="Open in Mako" className="pt-1 pb-2">
+          <h2 className="flex h-7 items-center px-1.5 text-label font-medium text-foreground/80">
+            Open in Mako
+          </h2>
+          {open.map((presence) => (
+            <LiveAgentRow key={presence.key} presence={presence} />
+          ))}
+        </section>
+      )}
+    </>
+  )
 }
 
 function LiveAgentRow({ presence }: { presence: AcpPresence }) {
@@ -53,7 +72,14 @@ function LiveAgentRow({ presence }: { presence: AcpPresence }) {
       onClick={() => acp.activate(presence.key)}
       className="group flex h-7 w-full items-center gap-2 rounded-md px-1.5 text-left transition-colors duration-100 hover:bg-fill-hover"
     >
-      <HarnessIcon harness={presence.harness} className={cn("size-3 shrink-0", (presence.status === "running" || presence.status === "starting") && "animate-live")} />
+      <HarnessIcon
+        harness={presence.harness}
+        className={cn(
+          "size-3 shrink-0",
+          (presence.status === "running" || presence.status === "starting") &&
+            "animate-live"
+        )}
+      />
       <span className="min-w-0 flex-1 truncate text-ui text-foreground/85">
         {title}
       </span>

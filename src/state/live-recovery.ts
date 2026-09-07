@@ -157,6 +157,8 @@ export function hydrateLiveSummaries(summaries: LiveSummary[]): void {
       sending: false,
       canceling: false,
     })
+    const restored = acpStore.get().conversations[summary.session.id]
+    if (restored?.kind === "live") syncThreadStatus(restored, "starting")
   }
   const newest = summaries.toSorted((a, b) => b.createdAt - a.createdAt)[0]
   if (newest && !acpStore.get().activeKey) {

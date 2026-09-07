@@ -69,7 +69,7 @@ export const acp = {
     threadsStore.set({
       viewing: null,
       opening: null,
-      viewingBusy: false,
+
       run: null,
     })
     return true

@@ -6,10 +6,7 @@ import { AcpPanel } from "@/components/viewer/acp-panel"
 import { FileViewer } from "@/components/viewer/file-viewer"
 import { SearchView } from "@/components/search/search-view"
 import { Divider } from "@/components/shell/divider"
-import {
-  useSurfaces,
-  type SurfaceDefinition,
-} from "@/extend/surfaces"
+import { useSurfaces, type SurfaceDefinition } from "@/extend/surfaces"
 import { stage, useStage } from "@/state/stage"
 import { useTabs } from "@/state/tabs"
 import { useThreads } from "@/state/threads"
@@ -59,7 +56,8 @@ export function Stage() {
     seeded.current = true
     const last = prefsStore.get().lastCompanion
     const remembered = surfaces.find((surface) => surface.id === last)
-    if (remembered && remembered.placement !== "bottom") stage.open(remembered.id)
+    if (remembered && remembered.placement !== "bottom")
+      stage.open(remembered.id)
     else if (last) setPref("lastCompanion", null)
   }, [activeId, surfaces])
 
@@ -123,7 +121,7 @@ export function Stage() {
   // rewriting the stored preference; widening the window restores it.
   const wantsCover = Boolean(
     sideSurface &&
-      (tabStage.presentation === "over" || !fitsBeside(available?.width, min))
+    (tabStage.presentation === "over" || !fitsBeside(available?.width, min))
   )
   const covered = wantsCover
 
@@ -144,11 +142,7 @@ export function Stage() {
             side="right"
             size={width}
             min={min}
-            max={
-              available
-                ? Math.max(available.width - 450 - 1, min)
-                : 9999
-            }
+            max={available ? Math.max(available.width - 450 - 1, min) : 9999}
             onResize={(next) => {
               if (companionRef.current)
                 companionRef.current.style.width = `${next}px`
@@ -262,9 +256,7 @@ function RightSidebarTabs({
             onClick={() => stage.open(surface.id)}
             onKeyDown={(event) => {
               if (
-                !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
-                  event.key
-                )
+                !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
               ) {
                 return
               }
@@ -324,10 +316,11 @@ const CompanionBody = memo(function CompanionBody({
  */
 function ConversationSurface() {
   const viewingPath = useThreads((state) => state.viewing?.ref.path)
-  const viewing = useThreads((state) => Boolean(state.viewing) || state.viewingBusy)
+  const viewing = useThreads((state) => Boolean(state.viewing || state.opening))
   const live = useAcp((state) => activeAcp(state) !== null)
   const liveThreadPath = useAcp((state) => activeAcp(state)?.threadPath)
-  if (viewing && (!live || viewingPath !== liveThreadPath)) return <ThreadViewer />
+  if (viewing && (!live || viewingPath !== liveThreadPath))
+    return <ThreadViewer />
   if (live) return <AcpPanel />
   return <Transcript />
 }
