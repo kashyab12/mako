@@ -1,3 +1,4 @@
+import type { LiveBatch, LiveSummary } from "./live-conversations.js"
 import type {
   ThreadEntry as CatalogThreadEntry,
   ThreadRef as CatalogThreadRef,
@@ -17,11 +18,6 @@ import type {
 } from "./conversation-session.js"
 import type { GitStatus } from "./git-workspace-search.js"
 import type { Capabilities } from "./mcp-skills-integrations.js"
-import type {
-  AcpPermissionRequest,
-  AcpSessionState,
-  AcpUpdate,
-} from "./providers-acp.js"
 
 /**
  * The wire contract between the Electron host and the renderer.
@@ -38,6 +34,7 @@ export interface ExternalThreadActivity {
 }
 
 export type HostEventBody =
+  | { type: "live-batch"; batch: LiveBatch }
   | { type: "session"; session: SessionState }
   | { type: "meta"; meta: SessionMeta }
   | { type: "messages"; messages: ChatMessage[] }
@@ -76,13 +73,6 @@ export type HostEventBody =
     }
   /** A native resume (the thread's own CLI) started, finished, or failed. */
   | { type: "thread-run"; run: ThreadRunState }
-  /** An interactive (ACP) session changed state. */
-  | { type: "acp-session"; session: AcpSessionState }
-  /** One streamed piece, or one replay batch, from an interactive turn. */
-  | { type: "acp-update"; id: string; update: AcpUpdate }
-  | { type: "acp-updates"; id: string; updates: AcpUpdate[] }
-  /** The interactive agent is asking to use a tool; the user must answer. */
-  | { type: "acp-permission"; request: AcpPermissionRequest }
 
 /**
  * Every event says which tab it came from.
@@ -102,6 +92,7 @@ export interface TabSnapshot {
 }
 
 export interface BootPayload {
+  live: LiveSummary[]
   /** Open tabs, in strip order. Always at least one. */
   tabs: TabSnapshot[]
   activeTabId: string

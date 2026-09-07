@@ -1,3 +1,8 @@
+export interface LiveCapability {
+  provider: string
+  canResume: boolean
+}
+
 export interface HarnessSelectValue {
   value: string
   label: string
@@ -61,7 +66,8 @@ export interface HarnessProfile {
 /* Interactive foreign agents (ACP)                                    */
 /* ------------------------------------------------------------------ */
 
-export interface AcpSessionState {
+export interface LiveSessionState {
+  connection: "starting" | "connected" | "disconnected"
   id: string
   nativeId?: string
   harness: string
@@ -76,29 +82,9 @@ export interface AcpSessionState {
 }
 
 /** One streamed piece of an interactive turn, reduced for rendering. */
-export type AcpUpdate =
-  | { kind: "user"; text: string }
-  | { kind: "text"; text: string }
-  | { kind: "thinking"; text: string }
-  | {
-      kind: "tool"
-      id: string
-      title: string
-      toolKind?: string
-      status: string
-      input?: string
-    }
-  | {
-      kind: "tool-update"
-      id: string
-      title?: string
-      status?: string
-      input?: string
-      output?: string
-    }
-  | { kind: "plan"; entries: Array<{ content: string; status: string }> }
+export type { LiveUpdate } from "./live-content.js"
 
-export interface AcpPromptAttachment {
+export interface PromptAttachment {
   name: string
   mimeType: string
   size: number
@@ -106,7 +92,7 @@ export interface AcpPromptAttachment {
   path?: string
 }
 
-export interface AcpInputQuestion {
+export interface LiveInputQuestion {
   id: string
   header: string
   question: string
@@ -118,15 +104,15 @@ export interface AcpInputQuestion {
   defaultValues?: string[]
 }
 
-export interface AcpPermissionRequest {
+export interface LivePermissionRequest {
   id: string
   sessionId: string
   title: string
   kind?: string
   options: Array<{ optionId: string; name: string; kind?: string }>
-  questions?: AcpInputQuestion[]
+  questions?: LiveInputQuestion[]
 }
 
-export type AcpPermissionResponse =
+export type LivePermissionResponse =
   | { kind: "choice"; optionId: string | null }
   | { kind: "answers"; answers: Record<string, string[]> }

@@ -1,4 +1,7 @@
-import type { TranscriptBundleMetadata } from "@mako/sessions"
+import type {
+  AttachmentContent,
+  TranscriptBundleMetadata,
+} from "@mako/sessions"
 
 /**
  * Cross-harness threads, straight from @mako/sessions: every coding-agent
@@ -60,21 +63,23 @@ export const THINKING_LEVELS: ThinkingLevel[] = [
 
 export type ChatRole = "user" | "assistant" | "tool" | "system"
 
-export type BlockType =
-  "text" | "thinking" | "toolCall" | "toolResult" | "image"
+export type Block =
+  | { type: "text"; text: string }
+  | { type: "thinking"; thinking: string }
+  | { type: "toolCall"; id?: string; name?: string; arguments?: unknown }
+  | {
+      type: "toolResult"
+      id?: string
+      name?: string
+      text: string
+      isError?: boolean
+      isCanceled?: boolean
+      streaming?: boolean
+      attachments?: AttachmentContent[]
+    }
+  | AttachmentContent
 
-export interface Block {
-  type: BlockType
-  text?: string
-  thinking?: string
-  /** Tool call / result correlation id. */
-  id?: string
-  name?: string
-  arguments?: unknown
-  mimeType?: string
-  isError?: boolean
-  isCanceled?: boolean
-}
+export type BlockType = Block["type"]
 
 export interface ChatMessage {
   id: string
