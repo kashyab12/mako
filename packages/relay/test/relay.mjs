@@ -155,6 +155,13 @@ assert.deepEqual(
   ["lifecycle", "reasoning", "tool", "text", "lifecycle"]
 )
 
+const failedWorker = new HeadlessRelayWorker(worker.transport, {
+  async execute() { throw new Error("provider refused startup") },
+}, worker.options)
+assert.equal(await failedWorker.runOnce(), true)
+assert.equal(completions.at(-1).status, "failed")
+assert.equal(completions.at(-1).result, "provider refused startup")
+
 const memory = createMemoryRelayStore({ failEnqueue: 1 })
 const memoryDevice = crypto.randomUUID()
 const registeredSecret = await memory.registerDevice({
