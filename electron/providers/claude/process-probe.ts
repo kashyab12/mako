@@ -33,7 +33,13 @@ function activity(agent: z.infer<typeof ClaudeAgentSchema>) {
     agent.status === "needs-input"
   return {
     nativeId: agent.sessionId ?? agent.id,
-    status: waiting ? "needs-input" : "active",
+    status: waiting
+      ? "needs-input"
+      : ["working", "running", "busy"].includes(
+            agent.state ?? agent.status ?? ""
+          )
+        ? "active"
+        : "open",
     detail: waiting ? agent.waitingFor : undefined,
   } satisfies ProviderActivitySession
 }
@@ -81,9 +87,7 @@ async function registrySessions(
   return sessions
 }
 
-export function claudeProcessProbeFor(
-  home = homedir()
-): ProviderProcessProbe {
+export function claudeProcessProbeFor(home = homedir()): ProviderProcessProbe {
   return {
     provider: "claude",
     pollIntervalMs: 5_000,

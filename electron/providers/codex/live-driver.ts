@@ -1,10 +1,11 @@
-import { resolveExecutable } from "../../executable.js"
+import { codexExecutableCandidates } from "./executable.js"
 import type { ProviderLiveDriver } from "../live-driver.js"
 
 export const codexLiveDriver: ProviderLiveDriver = {
   provider: "codex",
   canResume: true,
-  available: () => Boolean(resolveExecutable("codex")),
+  canForkAtRun: true,
+  available: () => codexExecutableCandidates().length > 0,
   start: async (...args) =>
     (await import("../../codex-app.js")).codexAppStart(...args),
   prompt: async (...args) =>

@@ -1,3 +1,4 @@
+import { resolveCodexExecutable } from "./executable.js"
 import {
   normalizeCodexModels,
   type CodexModelListResponse,
@@ -27,10 +28,12 @@ export const codexProfileLoader: ProviderProfileLoader = {
     "models",
     "review",
   ],
-  cacheKey: (env) => env.CODEX_HOME ?? "",
+  cacheKey: (env) => `${env.CODEX_HOME ?? ""}\0${env.CODEX_EXECUTABLE ?? ""}`,
   async load(env) {
+    const executable = await resolveCodexExecutable(env)
+    if (!executable) throw new Error("The selected Codex executable is not available")
     const result = await rpcRequest<CodexModelListResponse>(
-      "codex",
+      executable,
       ["app-server"],
       "model/list",
       env,
