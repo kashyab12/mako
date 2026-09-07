@@ -1,3 +1,5 @@
+import { providerHost } from "../electron/providers/index.ts"
+import { syncThreadStatus } from "../src/state/acp-live.ts"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import {
@@ -1040,4 +1042,75 @@ assert.equal(
     }))
   ),
   true
+)
+
+// Every registered provider must obey the same renderer lifecycle rules.
+for (const { provider: harness } of providerHost.liveDrivers.list()) {
+  const path = `/activity/${harness}`
+  const ref: ThreadRef = { harness, nativeId: harness, path }
+  threadsStore.set({
+    working: {},
+    attention: {},
+    externalActivity: {},
+    observed: { [path]: true },
+  })
+  assert.deepEqual(
+    activeThreadRefs([{ ...ref, locked: true }]),
+    [],
+    `${harness}: open + recently changed does not mean running`
+  )
+  const conversation: LiveAcpConversation = {
+    ...acpEcho,
+    key: harness,
+    harness,
+    threadPath: path,
+    session: { ...acpEcho.session, id: harness, harness, status: "running" },
+  }
+  syncThreadStatus(conversation, "ready")
+  assert.equal(
+    activeThreadRefs([ref]).length,
+    1,
+    `${harness}: real turn start is running`
+  )
+  syncThreadStatus(
+    { ...conversation, session: { ...conversation.session, status: "ready" } },
+    "running"
+  )
+  assert.equal(
+    activeThreadRefs([ref]).length,
+    0,
+    `${harness}: turn completion clears running`
+  )
+  threadsStore.set({
+    attention: { [path]: { kind: "needs-permission", since: 1 } },
+  })
+  syncThreadStatus(
+    { ...conversation, session: { ...conversation.session, status: "closed" } },
+    "running"
+  )
+  assert.equal(
+    activeThreadRefs([ref]).length,
+    0,
+    `${harness}: closure clears stale permission state`
+  )
+  threadsStore.set({
+    attention: { [path]: { kind: "review", at: 1, unread: true } },
+    externalActivity: {
+      [path]: { provider: harness, status: "active", since: 2 },
+    },
+  })
+  assert.equal(
+    threadStatus(ref).kind,
+    "external-active",
+    `${harness}: a new external run supersedes an old completion badge`
+  )
+  threadsStore.set({
+    externalActivity: {},
+    working: {},
+    attention: {},
+    observed: {},
+  })
+}
+console.log(
+  "Every registered harness: open/recent, running, completed, closed while waiting, and restarted externally verified"
 )
