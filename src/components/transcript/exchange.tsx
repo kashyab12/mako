@@ -1,7 +1,12 @@
+import { TranscriptAttachment } from "./attachment"
 import { memo, useMemo, useState } from "react"
 import { Prose } from "@/components/transcript/markdown"
 import { ToolRow } from "@/components/transcript/tool-row"
-import { FileChip, SkillChip, ThreadChip } from "@/components/composer/reference-chip"
+import {
+  FileChip,
+  SkillChip,
+  ThreadChip,
+} from "@/components/composer/reference-chip"
 import { Slot } from "@/extend/slot"
 import { tokenize } from "@/lib/mentions"
 import {
@@ -22,7 +27,11 @@ import { actions, shallowEqual, useSession } from "@/state/session"
 import { threads, useThreads } from "@/state/threads"
 import { HARNESS_LABEL } from "@/components/rail/harness-meta"
 import { HarnessIcon } from "@/components/ui/provider-icon"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { usePrefs } from "@/state/prefs"
 import { cn } from "@/lib/utils"
 import type { ChatMessage } from "@/lib/types"
@@ -93,7 +102,9 @@ export const Exchange = memo(function Exchange({
         </div>
       ) : null}
 
-      {!streaming && exchange.response.length > 0 ? <Footer exchange={exchange} /> : null}
+      {!streaming && exchange.response.length > 0 ? (
+        <Footer exchange={exchange} />
+      ) : null}
     </article>
   )
 })
@@ -149,12 +160,24 @@ function Prompt({ message }: { message: ChatMessage }) {
             ) : segment.kind === "file" ? (
               <FileChip key={index} path={segment.path} interactive />
             ) : segment.kind === "thread" ? (
-              <ThreadChip key={index} harness={segment.harness} nativeId={segment.nativeId} />
+              <ThreadChip
+                key={index}
+                harness={segment.harness}
+                nativeId={segment.nativeId}
+              />
             ) : (
               <SkillChip key={index} name={segment.name} />
             )
           )}
         </div>
+        {message.blocks
+          .filter((block) => block.type === "attachment")
+          .map((attachment, index) => (
+            <TranscriptAttachment
+              key={attachment.id ?? index}
+              attachment={attachment}
+            />
+          ))}
         {files.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {files.map((file) => (
@@ -165,12 +188,16 @@ function Prompt({ message }: { message: ChatMessage }) {
       </div>
 
       <div className="mt-1 flex h-4 items-center justify-end gap-2 px-0.5 text-label text-faint opacity-0 transition-opacity duration-150 group-hover/prompt:opacity-100 focus-within:opacity-100">
-        {message.timestamp ? <span className="tabular">{formatTime(message.timestamp)}</span> : null}
+        {message.timestamp ? (
+          <span className="tabular">{formatTime(message.timestamp)}</span>
+        ) : null}
         <button
           type="button"
           title="Put this prompt back in the composer"
           onClick={() =>
-            window.dispatchEvent(new CustomEvent("mako:compose", { detail: text }))
+            window.dispatchEvent(
+              new CustomEvent("mako:compose", { detail: text })
+            )
           }
           className="pressable flex items-center gap-1 rounded px-1 hover:text-foreground"
         >
@@ -218,10 +245,7 @@ function summarizeWork(
 ): WorkSummaryData {
   const calls = messages.flatMap((message) => pairTools(message.blocks))
   const summary = summarizeToolWork(calls)
-  const agents = Math.max(
-    summary.agents,
-    ...calls.map(reportedSubagentCount)
-  )
+  const agents = Math.max(summary.agents, ...calls.map(reportedSubagentCount))
   const completed = messages.at(-1)?.timestamp
   return {
     ...summary,
@@ -291,7 +315,8 @@ function WorkSummary({
   open: boolean
   onToggle: () => void
 }) {
-  const elapsed = work.duration !== undefined ? formatDuration(work.duration) : undefined
+  const elapsed =
+    work.duration !== undefined ? formatDuration(work.duration) : undefined
   const activity = [
     work.changedFiles > 0
       ? `${work.changedFiles} file${work.changedFiles === 1 ? "" : "s"} changed`
@@ -303,11 +328,15 @@ function WorkSummary({
     work.searches > 0
       ? `${work.searches} search${work.searches === 1 ? "" : "es"}`
       : null,
-    work.skills > 0 ? `${work.skills} skill${work.skills === 1 ? "" : "s"}` : null,
+    work.skills > 0
+      ? `${work.skills} skill${work.skills === 1 ? "" : "s"}`
+      : null,
     work.agents > 0
       ? `${work.agents} background agent${work.agents === 1 ? "" : "s"}`
       : null,
-    work.plans > 0 ? `${work.plans} plan update${work.plans === 1 ? "" : "s"}` : null,
+    work.plans > 0
+      ? `${work.plans} plan update${work.plans === 1 ? "" : "s"}`
+      : null,
     work.other > 0 ? `${work.other} other` : null,
   ].filter((piece): piece is string => piece !== null)
   const hiddenActions = activity.slice(4).reduce((count, piece) => {
@@ -349,7 +378,7 @@ function WorkSummary({
       )}
     >
       {live ? (
-        <span className="size-1.5 animate-live rounded-full bg-ember" />
+        <span className="animate-live size-1.5 rounded-full bg-ember" />
       ) : interrupted || failed ? (
         <TriangleAlertIcon className="size-3" />
       ) : null}
@@ -369,7 +398,8 @@ function formatDuration(milliseconds: number): string {
   if (seconds < 60) return `${seconds}s`
   const minutes = Math.floor(seconds / 60)
   const remaining = seconds % 60
-  if (minutes < 60) return remaining ? `${minutes}m ${remaining}s` : `${minutes}m`
+  if (minutes < 60)
+    return remaining ? `${minutes}m ${remaining}s` : `${minutes}m`
   const hours = Math.floor(minutes / 60)
   return `${hours}h ${minutes % 60}m`
 }
@@ -387,7 +417,8 @@ function Response({
     const thinkingParts: string[] = []
     const textParts: string[] = []
     for (const block of message.blocks) {
-      if (block.type === "thinking" && block.thinking) thinkingParts.push(block.thinking)
+      if (block.type === "thinking" && block.thinking)
+        thinkingParts.push(block.thinking)
       if (block.type === "text" && block.text) textParts.push(block.text)
     }
     return {
@@ -397,8 +428,17 @@ function Response({
     }
   }, [message.blocks])
 
-  const blank = !thinking && !tools.length && !text && !message.error
+  const attachments = message.blocks.flatMap((block) =>
+    block.type === "attachment"
+      ? [block]
+      : block.type === "toolResult"
+        ? (block.attachments ?? [])
+        : []
+  )
+  const blank =
+    !attachments.length && !thinking && !tools.length && !text && !message.error
   const visible =
+    attachments.length ||
     text ||
     message.error ||
     (showWork && tools.length > 0) ||
@@ -420,6 +460,12 @@ function Response({
         </div>
       ) : null}
 
+      {attachments.map((attachment, index) => (
+        <TranscriptAttachment
+          key={attachment.id ?? index}
+          attachment={attachment}
+        />
+      ))}
       {text ? <Prose text={text} streaming={message.streaming} /> : null}
 
       {message.error ? (
@@ -429,7 +475,9 @@ function Response({
         </div>
       ) : null}
 
-      {blank && message.streaming ? <p className="shimmer text-ui">Thinking…</p> : null}
+      {blank && message.streaming ? (
+        <p className="shimmer text-ui">Thinking…</p>
+      ) : null}
     </div>
   )
 }
@@ -459,7 +507,9 @@ function Thinking({ text, live }: { text: string; live: boolean }) {
           {live ? "Reasoning…" : "Reasoning"}
         </span>
         {!open && summary ? (
-          <span className="min-w-0 flex-1 truncate text-faint/70">{summary}</span>
+          <span className="min-w-0 flex-1 truncate text-faint/70">
+            {summary}
+          </span>
         ) : null}
       </button>
       {open ? (
@@ -477,7 +527,9 @@ function SystemNote({ message }: { message: ChatMessage }) {
   return (
     <div className="my-3 flex items-center gap-2.5">
       <span className="h-px flex-1 bg-hairline" />
-      <span className="shrink-0 text-label text-faint">{text.slice(0, 140)}</span>
+      <span className="shrink-0 text-label text-faint">
+        {text.slice(0, 140)}
+      </span>
       <span className="h-px flex-1 bg-hairline" />
     </div>
   )
@@ -495,7 +547,9 @@ function Footer({ exchange }: { exchange: ExchangeData }) {
 
   return (
     <div className="mt-1.5 flex h-4 items-center gap-2.5 text-label text-faint opacity-0 transition-opacity duration-150 group-hover/transcript:opacity-100 focus-within:opacity-100">
-      {last?.timestamp ? <span className="tabular">{formatTime(last.timestamp)}</span> : null}
+      {last?.timestamp ? (
+        <span className="tabular">{formatTime(last.timestamp)}</span>
+      ) : null}
       {last?.model ? <span className="truncate">{last.model}</span> : null}
       {text ? (
         <button
@@ -508,7 +562,11 @@ function Footer({ exchange }: { exchange: ExchangeData }) {
           }}
           className="pressable flex items-center gap-1 rounded px-1 hover:text-foreground"
         >
-          {copied ? <CheckIcon className="size-3 text-positive" /> : <CopyIcon className="size-3" />}
+          {copied ? (
+            <CheckIcon className="size-3 text-positive" />
+          ) : (
+            <CopyIcon className="size-3" />
+          )}
           {copied ? "Copied answer" : "Copy answer"}
         </button>
       ) : null}
@@ -563,7 +621,12 @@ function ForkButton({ exchange }: { exchange: ExchangeData }) {
           Fork
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" sideOffset={6} className="w-56 p-1">
+      <PopoverContent
+        align="start"
+        side="top"
+        sideOffset={6}
+        className="w-56 p-1"
+      >
         <p className="px-2 pt-1.5 pb-1 text-label font-medium text-faint/80">
           Fork from here into
         </p>

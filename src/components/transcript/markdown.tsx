@@ -1,3 +1,4 @@
+import { remarkFileCitations } from "@/lib/citation-markdown"
 import {
   Children,
   isValidElement,
@@ -9,10 +10,13 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react"
-import Markdown from "react-markdown"
+import Markdown, { defaultUrlTransform } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { CheckIcon, CopyIcon } from "lucide-react"
+import { decodeFileCitation, markdownFileTarget } from "@/lib/file-citations"
 import { cn } from "@/lib/utils"
+import { useTranscriptSource } from "./source-context"
+import { viewer } from "@/state/viewer"
 
 /**
  * Markdown is the most expensive thing in the transcript, and while a message
@@ -49,9 +53,13 @@ export const Prose = memo(function Prose({
   return (
     <div className={cn("mako-prose", className)}>
       <Markdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkFileCitations]}
         components={components}
-        urlTransform={urlTransform}
+        urlTransform={(url) =>
+          decodeFileCitation(url) || markdownFileTarget(url)
+            ? url
+            : (urlTransform?.(url) ?? defaultUrlTransform(url))
+        }
       >
         {source}
       </Markdown>
@@ -92,12 +100,36 @@ function useThrottled(text: string, active: boolean): string {
 
 const components = {
   pre: CodeBlock,
-  a: ({ href, children }: ComponentProps<"a">) => (
-    <a href={href} target="_blank" rel="noreferrer noopener">
-      {children}
-    </a>
-  ),
+  a: CitationLink,
 } satisfies Parameters<typeof Markdown>[0]["components"]
+
+function CitationLink({ href, children }: ComponentProps<"a">) {
+  const source = useTranscriptSource()
+  const target = markdownFileTarget(href)
+  if (!target)
+    return (
+      <a href={href} target="_blank" rel="noreferrer noopener">
+        {children}
+      </a>
+    )
+  return (
+    <button
+      type="button"
+      title={target.purpose ? `${target.purpose}: ${target.path}` : target.path}
+      onClick={() =>
+        void viewer.open(
+          target.path,
+          target.line,
+          source.threadPath,
+          source.liveId
+        )
+      }
+      className="font-medium text-foreground underline decoration-border underline-offset-2 hover:decoration-foreground"
+    >
+      {children}
+    </button>
+  )
+}
 
 /**
  * A fenced code block.

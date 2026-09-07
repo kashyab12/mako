@@ -1,8 +1,15 @@
 import { memo, useState, type ComponentType } from "react"
 import { useToolView, type ToolCall } from "@/extend/slots"
-import { primaryArgument, toolLabel } from "@/lib/tools"
+import {
+  formatToolArguments,
+  hasToolArguments,
+  normalizeToolOutput,
+  primaryArgument,
+  toolLabel,
+} from "@/lib/tools"
 import { cn } from "@/lib/utils"
 import { usePrefs } from "@/state/prefs"
+import { useThreads } from "@/state/threads"
 import { viewer } from "@/state/viewer"
 import {
   ChevronRightIcon,
@@ -23,6 +30,7 @@ import { ToolGlyph } from "@/components/transcript/tool-views"
 export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
   const [open, setOpen] = useState(false)
   const dense = usePrefs((prefs) => prefs.denseTools)
+  const threadPath = useThreads((state) => state.viewing?.ref.path)
   const view = useToolView(call.name)
 
   const summary = view?.summary?.(call) ?? primaryArgument(call.arguments)
@@ -33,7 +41,9 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
     <div
       className={cn(
         "overflow-hidden rounded-md border transition-colors duration-150",
-        call.isError ? "border-negative/30 bg-negative/[0.04]" : "border-hairline bg-surface",
+        call.isError
+          ? "border-negative/30 bg-negative/[0.04]"
+          : "border-hairline bg-surface",
         open && "border-border"
       )}
     >
@@ -49,7 +59,9 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
           <span className="shrink-0 text-ui font-medium text-foreground/90">
             {toolLabel(call.name)}
           </span>
-          <span className="min-w-0 flex-1 truncate font-mono text-ui text-faint">{summary}</span>
+          <span className="min-w-0 flex-1 truncate font-mono text-ui text-faint">
+            {summary}
+          </span>
           <Status call={call} />
         </button>
         {openPath ? (
@@ -57,8 +69,8 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
             type="button"
             title={`Open ${openPath}`}
             aria-label={`Open ${openPath}`}
-            onClick={() => void viewer.open(openPath)}
-            className="pressable mr-1 rounded p-1 text-faint opacity-0 transition-opacity duration-100 group-hover/tool:opacity-100 focus:opacity-100 hover:text-foreground"
+            onClick={() => void viewer.open(openPath, undefined, threadPath)}
+            className="pressable mr-1 rounded p-1 text-faint opacity-0 transition-opacity duration-100 group-hover/tool:opacity-100 hover:text-foreground focus:opacity-100"
           >
             <FileTextIcon className="size-3" />
           </button>
@@ -138,7 +150,7 @@ function Status({ call }: { call: ToolCall }) {
   if (call.pending) {
     return (
       <span className="flex shrink-0 items-center gap-1 text-label text-ember">
-        <span className="size-1 animate-live rounded-full bg-ember" />
+        <span className="animate-live size-1 rounded-full bg-ember" />
         running
       </span>
     )
@@ -162,19 +174,16 @@ function Status({ call }: { call: ToolCall }) {
   return null
 }
 
-function parseArgumentEntries(value: ToolCall["arguments"]) {
-  return Object.entries(Object(value))
-}
-
 function DefaultBody({ call, dense }: { call: ToolCall; dense: boolean }) {
-  const args = parseArgumentEntries(call.arguments).length > 0
+  const args = hasToolArguments(call.arguments)
+  const input = args ? formatToolArguments(call.arguments) : ""
 
   return (
     <div className="space-y-2 px-2.5 py-2">
       {args ? (
-        <CopyableBlock label="input" text={JSON.stringify(call.arguments, null, 2)}>
+        <CopyableBlock label="input" text={input}>
           <pre className="rounded bg-raised px-2 py-1.5 font-mono text-label leading-relaxed break-words whitespace-pre-wrap text-muted-foreground">
-            {JSON.stringify(call.arguments, null, 2)}
+            {input}
           </pre>
         </CopyableBlock>
       ) : null}
@@ -201,10 +210,11 @@ export function Output({
   isError?: boolean
 }) {
   const [full, setFull] = useState(false)
-  const clipped = !full && text.length > CLAMP
+  const normalized = normalizeToolOutput(text)
+  const clipped = !full && normalized.length > CLAMP
 
   return (
-    <CopyableBlock label="output" text={text}>
+    <CopyableBlock label="output" text={normalized}>
       <pre
         className={cn(
           "font-mono text-ui leading-[1.55] break-words whitespace-pre-wrap",
@@ -212,7 +222,7 @@ export function Output({
           isError ? "text-negative/90" : "text-muted-foreground"
         )}
       >
-        {clipped ? `${text.slice(0, CLAMP)}\n…` : text}
+        {clipped ? `${normalized.slice(0, CLAMP)}\n…` : normalized}
       </pre>
       {clipped ? (
         <button
@@ -220,7 +230,7 @@ export function Output({
           onClick={() => setFull(true)}
           className="mt-1 text-label text-muted-foreground hover:underline"
         >
-          Show all {text.length.toLocaleString()} characters
+          Show all {normalized.length.toLocaleString()} characters
         </button>
       ) : null}
     </CopyableBlock>
@@ -260,7 +270,11 @@ function CopyableBlock({
           copied ? "opacity-100" : "opacity-0 group-hover/copyblock:opacity-100"
         )}
       >
-        {copied ? <CheckIcon className="size-3" /> : <CopyIcon className="size-3" />}
+        {copied ? (
+          <CheckIcon className="size-3" />
+        ) : (
+          <CopyIcon className="size-3" />
+        )}
       </button>
     </div>
   )

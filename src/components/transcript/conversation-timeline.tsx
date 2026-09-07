@@ -1,8 +1,13 @@
+import {
+  TranscriptSourceContext,
+  type TranscriptSource,
+} from "./source-context"
 import type { ReactNode, WheelEvent as ReactWheelEvent } from "react"
 import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react"
@@ -61,6 +66,7 @@ function preserveScrollAnchor(node: HTMLDivElement, snapshot: ScrollAnchor) {
  * turns are prepended.
  */
 export function ConversationTimeline({
+  source = {},
   identity,
   exchanges,
   streamingId,
@@ -72,6 +78,7 @@ export function ConversationTimeline({
   loadingEarlier = false,
   onLoadEarlier,
 }: {
+  source?: TranscriptSource
   identity: string
   exchanges: ExchangeData[]
   streamingId?: string
@@ -83,6 +90,10 @@ export function ConversationTimeline({
   loadingEarlier?: boolean
   onLoadEarlier?: () => Promise<void>
 }) {
+  const sourceValue = useMemo(
+    () => ({ threadPath: source.threadPath, liveId: source.liveId }),
+    [source.threadPath, source.liveId]
+  )
   const pane = useRef<HTMLDivElement>(null)
   const viewport = useRef<HTMLDivElement>(null)
   const topFade = useRef<HTMLSpanElement>(null)
@@ -248,91 +259,94 @@ export function ConversationTimeline({
   const showNavigator = !isEmpty && shown.length >= 3
 
   return (
-    <div
-      ref={pane}
-      className="scroll-fade-scope relative flex min-h-0 flex-1 flex-col"
-    >
-      <span ref={topFade} aria-hidden className="scroll-fade-top" />
+    <TranscriptSourceContext value={sourceValue}>
       <div
-        ref={viewport}
-        onPointerDown={onPointerDown}
-        onScroll={onScroll}
-        onWheel={onWheel}
-        style={{ paddingInlineEnd: showNavigator ? NAVIGATOR_WIDTH : 0 }}
-        className="scroll-fade-scroller group/transcript min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        ref={pane}
+        className="scroll-fade-scope relative flex min-h-0 flex-1 flex-col"
       >
-        {isEmpty ? (
-          empty
-        ) : (
-          <div
-            key={identity}
-            className="animate-thread mx-auto flex w-full max-w-content flex-col gap-7 px-6 py-6"
-          >
-            {hidden > 0 || hasEarlier ? (
-              <button
-                type="button"
-                disabled={loadingEarlier}
-                onClick={() => void showEarlier()}
-                className={cn(
-                  "pressable mx-auto flex h-7 items-center gap-1.5 rounded-full bg-raised px-3",
-                  "text-ui text-muted-foreground ring-1 ring-hairline",
-                  "transition-colors duration-120 hover:text-foreground"
-                )}
-              >
-                <ChevronUpIcon className="size-3" />
-                {loadingEarlier
-                  ? "Loading earlier turns…"
-                  : hidden === 1
-                    ? "Show 1 earlier turn"
-                    : hidden > 1
-                      ? `Show ${Math.min(hidden, MORE_TURNS)} earlier turns`
-                      : "Show earlier turns"}
-              </button>
-            ) : null}
-            {shown.map((exchange) => (
-              <Exchange
-                key={exchange.id}
-                exchange={exchange}
-                streaming={exchange.id === streamingId}
-                interrupted={
-                  exchange.id === interruptedId || exchangeInterrupted(exchange)
-                }
-                failed={exchange.id === failedId}
-              />
-            ))}
-            {footer}
-          </div>
-        )}
+        <span ref={topFade} aria-hidden className="scroll-fade-top" />
+        <div
+          ref={viewport}
+          onPointerDown={onPointerDown}
+          onScroll={onScroll}
+          onWheel={onWheel}
+          style={{ paddingInlineEnd: showNavigator ? NAVIGATOR_WIDTH : 0 }}
+          className="scroll-fade-scroller group/transcript min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        >
+          {isEmpty ? (
+            empty
+          ) : (
+            <div
+              key={identity}
+              className="animate-thread mx-auto flex w-full max-w-content flex-col gap-7 px-6 py-6"
+            >
+              {hidden > 0 || hasEarlier ? (
+                <button
+                  type="button"
+                  disabled={loadingEarlier}
+                  onClick={() => void showEarlier()}
+                  className={cn(
+                    "pressable mx-auto flex h-7 items-center gap-1.5 rounded-full bg-raised px-3",
+                    "text-ui text-muted-foreground ring-1 ring-hairline",
+                    "transition-colors duration-120 hover:text-foreground"
+                  )}
+                >
+                  <ChevronUpIcon className="size-3" />
+                  {loadingEarlier
+                    ? "Loading earlier turns…"
+                    : hidden === 1
+                      ? "Show 1 earlier turn"
+                      : hidden > 1
+                        ? `Show ${Math.min(hidden, MORE_TURNS)} earlier turns`
+                        : "Show earlier turns"}
+                </button>
+              ) : null}
+              {shown.map((exchange) => (
+                <Exchange
+                  key={exchange.id}
+                  exchange={exchange}
+                  streaming={exchange.id === streamingId}
+                  interrupted={
+                    exchange.id === interruptedId ||
+                    exchangeInterrupted(exchange)
+                  }
+                  failed={exchange.id === failedId}
+                />
+              ))}
+              {footer}
+            </div>
+          )}
+        </div>
+        {showNavigator ? (
+          <TurnNavigator
+            exchanges={shown}
+            activeId={activeTurn}
+            onJump={jump}
+            paneRef={pane}
+          />
+        ) : null}
+        <button
+          type="button"
+          onClick={() => scrollToEnd("smooth")}
+          aria-hidden={!showJump}
+          tabIndex={showJump ? 0 : -1}
+          style={{
+            left: `calc(50% - ${showNavigator ? NAVIGATOR_WIDTH / 2 : 0}px)`,
+          }}
+          className={cn(
+            "pressable absolute bottom-3 flex h-7 -translate-x-1/2 items-center gap-1.5 rounded-full",
+            "bg-raised px-3 text-ui text-muted-foreground ring-1 ring-hairline",
+            "[transition:opacity_180ms_var(--ease-out),transform_180ms_var(--ease-out)]",
+            showJump
+              ? "pointer-events-auto opacity-100"
+              : "pointer-events-none translate-y-1 opacity-0"
+          )}
+        >
+          <ArrowDownIcon className="size-3" />
+          Jump to latest
+        </button>
       </div>
-      {showNavigator ? (
-        <TurnNavigator
-          exchanges={shown}
-          activeId={activeTurn}
-          onJump={jump}
-          paneRef={pane}
-        />
-      ) : null}
-      <button
-        type="button"
-        onClick={() => scrollToEnd("smooth")}
-        aria-hidden={!showJump}
-        tabIndex={showJump ? 0 : -1}
-        style={{
-          left: `calc(50% - ${showNavigator ? NAVIGATOR_WIDTH / 2 : 0}px)`,
-        }}
-        className={cn(
-          "pressable absolute bottom-3 flex h-7 -translate-x-1/2 items-center gap-1.5 rounded-full",
-          "bg-raised px-3 text-ui text-muted-foreground ring-1 ring-hairline",
-          "[transition:opacity_180ms_var(--ease-out),transform_180ms_var(--ease-out)]",
-          showJump
-            ? "pointer-events-auto opacity-100"
-            : "pointer-events-none translate-y-1 opacity-0"
-        )}
-      >
-        <ArrowDownIcon className="size-3" />
-        Jump to latest
-      </button>
-    </div>
+    </TranscriptSourceContext>
   )
 }
 

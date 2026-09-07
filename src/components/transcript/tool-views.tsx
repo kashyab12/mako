@@ -6,6 +6,8 @@ import {
   argAt,
   booleanArgAt,
   editsOf,
+  normalizeToolOutput,
+  parseToolExecutionOutput,
   subagentResultId,
   subagentResultText,
 } from "@/lib/tools"
@@ -106,7 +108,12 @@ function diffLines(before: string, after: string): DiffLine[] {
   const right = after.split("\n")
 
   let head = 0
-  while (head < left.length && head < right.length && left[head] === right[head]) head += 1
+  while (
+    head < left.length &&
+    head < right.length &&
+    left[head] === right[head]
+  )
+    head += 1
 
   let tail = 0
   while (
@@ -128,7 +135,11 @@ function diffLines(before: string, after: string): DiffLine[] {
   for (let i = head; i < right.length - tail; i += 1) {
     lines.push({ kind: "add", text: right[i] })
   }
-  for (let i = left.length - tail; i < Math.min(left.length, left.length - tail + context); i += 1) {
+  for (
+    let i = left.length - tail;
+    i < Math.min(left.length, left.length - tail + context);
+    i += 1
+  ) {
     lines.push({ kind: "context", text: left[i] })
   }
   return lines
@@ -147,7 +158,7 @@ function DiffBlock({ lines }: { lines: DiffLine[] }) {
             line.kind === "context" && "text-faint"
           )}
         >
-          <span className="w-2 shrink-0 select-none opacity-60">
+          <span className="w-2 shrink-0 opacity-60 select-none">
             {line.kind === "add" ? "+" : line.kind === "remove" ? "−" : " "}
           </span>
           <span className="whitespace-pre">{line.text || " "}</span>
@@ -180,7 +191,9 @@ export function WriteBody({ call }: ToolViewProps) {
   return (
     <div className="py-1">
       <DiffBlock
-        lines={content.split("\n").map((text) => ({ kind: "add" as const, text }))}
+        lines={content
+          .split("\n")
+          .map((text) => ({ kind: "add" as const, text }))}
       />
     </div>
   )
@@ -236,7 +249,10 @@ export function SubagentBody({ call }: ToolViewProps) {
         <span className="text-muted-foreground">{status}</span>
         {role ? <span className="text-faint">{role}</span> : null}
         {agentId ? (
-          <span className="min-w-0 truncate font-mono text-faint" title={agentId}>
+          <span
+            className="min-w-0 truncate font-mono text-faint"
+            title={agentId}
+          >
             {agentId}
           </span>
         ) : null}
@@ -263,9 +279,7 @@ export function SubagentBody({ call }: ToolViewProps) {
 
 export function SkillBody({ call }: ToolViewProps) {
   const name =
-    argAt(call.arguments, "skill") ??
-    argAt(call.arguments, "name") ??
-    "Skill"
+    argAt(call.arguments, "skill") ?? argAt(call.arguments, "name") ?? "Skill"
   return (
     <div className="space-y-2 px-2.5 py-2">
       <div className="flex items-center gap-1.5 text-ui text-foreground/90">
@@ -279,6 +293,29 @@ export function SkillBody({ call }: ToolViewProps) {
       ) : (
         <p className="shimmer text-ui text-faint">loading instructions…</p>
       )}
+    </div>
+  )
+}
+
+export function WaitBody({ call }: ToolViewProps) {
+  const execution = parseToolExecutionOutput(call.result)
+  const output = execution?.output ?? normalizeToolOutput(call.result)
+  return (
+    <div className="space-y-2 px-2.5 py-2">
+      {execution ? (
+        <div className="flex items-center gap-2 text-label text-faint">
+          <span className="size-1.5 rounded-full bg-positive" />
+          <span>{execution.status}</span>
+          {execution.duration ? <span>{execution.duration}</span> : null}
+        </div>
+      ) : null}
+      {call.isCanceled ? (
+        <p className="text-ui text-faint">canceled</p>
+      ) : output ? (
+        <Output text={output} dense isError={call.isError} />
+      ) : call.pending ? (
+        <p className="text-ui text-faint">Waiting for command…</p>
+      ) : null}
     </div>
   )
 }
@@ -301,4 +338,3 @@ export function BashBody({ call }: ToolViewProps) {
     </div>
   )
 }
-
