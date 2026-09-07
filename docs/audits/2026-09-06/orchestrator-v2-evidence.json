@@ -1,0 +1,3619 @@
+{
+  "revision": "415ed0f73b97f1655b6282492f81d0b2bba3a9cc",
+  "tests_executed": false,
+  "files": [
+    {
+      "path": "apps/server/src/mcp/McpHttpServer.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/mcp/McpHttpServer.test.ts",
+      "test_declarations": [
+        {
+          "line": 54,
+          "kind": "effect",
+          "name": "returns bounded structural preview snapshot failures"
+        },
+        {
+          "line": 100,
+          "kind": "effect",
+          "name": "terminates HTTP MCP sessions with DELETE"
+        },
+        {
+          "line": 154,
+          "kind": "effect",
+          "name": "registers annotated tools and preserves authenticated request context"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/mcp/McpInvocationContext.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/mcp/McpInvocationContext.test.ts",
+      "test_declarations": [
+        {
+          "line": 12,
+          "kind": "effect",
+          "name": "reports the scoped credential context when preview capability is unavailable"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/mcp/McpSessionRegistry.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/mcp/McpSessionRegistry.test.ts",
+      "test_declarations": [
+        {
+          "line": 34,
+          "kind": "effect",
+          "name": "stores only a token hash, resolves the bearer token, and revokes by thread"
+        },
+        {
+          "line": 58,
+          "kind": "effect",
+          "name": "builds MCP endpoints from the bound server host"
+        },
+        {
+          "line": 78,
+          "kind": "effect",
+          "name": "expires credentials once their session stops showing signs of life"
+        },
+        {
+          "line": 92,
+          "kind": "effect",
+          "name": "keeps a credential alive across turns that never touch an MCP tool"
+        },
+        {
+          "line": 114,
+          "kind": "effect",
+          "name": "does not keep credentials of other threads alive"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/mcp/OrchestratorMcpService.activity.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/mcp/OrchestratorMcpService.activity.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/mcp/OrchestratorMcpService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/mcp/OrchestratorMcpService.test.ts",
+      "test_declarations": [
+        {
+          "line": 22,
+          "kind": "effect",
+          "name": "retries terminal acknowledgement with a fresh command id"
+        },
+        {
+          "line": 97,
+          "kind": "effect",
+          "name": "does not dispose delivery when a nonterminal task has no active child run"
+        },
+        {
+          "line": 158,
+          "kind": "effect",
+          "name": "does not dispose delivery when the child interrupt fails"
+        },
+        {
+          "line": 223,
+          "kind": "effect",
+          "name": "returns cancel requested when post-interrupt disposal fails"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/mcp/OrchestratorMcpToolkit.integration.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/mcp/OrchestratorMcpToolkit.integration.test.ts",
+      "test_declarations": [
+        {
+          "line": 469,
+          "kind": "live",
+          "name": "delegates cross-provider tasks, polls and cancels children, and creates ordinary threads"
+        },
+        {
+          "line": 2884,
+          "kind": "live",
+          "name": "reports running and queued child follow-ups from a Codex replay transcript"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/mcp/PreviewAutomationBroker.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/mcp/PreviewAutomationBroker.test.ts",
+      "test_declarations": [
+        {
+          "line": 60,
+          "kind": "effect",
+          "name": "atomically registers a connected host and correlates its response"
+        },
+        {
+          "line": 87,
+          "kind": "effect",
+          "name": "targets multiple tabs explicitly while retaining a default tab"
+        },
+        {
+          "line": 130,
+          "kind": "effect",
+          "name": "does not let an older response replace a newer explicit tab target"
+        },
+        {
+          "line": 176,
+          "kind": "effect",
+          "name": "tracks the tab returned by a targeted recording stop"
+        },
+        {
+          "line": 210,
+          "kind": "effect",
+          "name": "does not let a no-tab response suppress an earlier tab decision"
+        },
+        {
+          "line": 268,
+          "kind": "effect",
+          "name": "announces a live replacement stream before delivering requests"
+        },
+        {
+          "line": 301,
+          "kind": "effect",
+          "name": "preserves bounded request and remote selector diagnostics"
+        },
+        {
+          "line": 364,
+          "kind": "effect",
+          "name": "classifies a remote non-editable target without collapsing it to execution"
+        },
+        {
+          "line": 407,
+          "kind": "effect",
+          "name": "distinguishes malformed remote failures"
+        },
+        {
+          "line": 441,
+          "kind": "effect",
+          "name": "rejects calls when no connected host exists"
+        },
+        {
+          "line": 459,
+          "kind": "effect",
+          "name": "does not create host state from focus updates without a live stream"
+        },
+        {
+          "line": 476,
+          "kind": "effect",
+          "name": "removes host availability when the authoritative request stream disconnects"
+        },
+        {
+          "line": 498,
+          "kind": "effect",
+          "name": "routes requests for background threads through an environment-level host"
+        },
+        {
+          "line": 533,
+          "kind": "effect",
+          "name": "never routes a provider session to a host from another environment"
+        },
+        {
+          "line": 575,
+          "kind": "effect",
+          "name": "pins a provider session to its initial host despite later focus changes"
+        },
+        {
+          "line": 658,
+          "kind": "effect",
+          "name": "does not route new operations to legacy hosts that did not advertise support"
+        },
+        {
+          "line": 676,
+          "kind": "effect",
+          "name": "routes resize to a capable host instead of a newer legacy connection"
+        },
+        {
+          "line": 715,
+          "kind": "effect",
+          "name": "does not move a live legacy assignment to another runtime for resize"
+        },
+        {
+          "line": 764,
+          "kind": "effect",
+          "name": "ignores stale focus updates for a different environment"
+        },
+        {
+          "line": 812,
+          "kind": "effect",
+          "name": "fails over a pinned provider session only after its host disconnects"
+        },
+        {
+          "line": 871,
+          "kind": "effect",
+          "name": "lets the browser host resolve an active tab locally"
+        },
+        {
+          "line": 895,
+          "kind": "effect",
+          "name": "keeps a replacement stream authoritative when the old stream finalizes"
+        },
+        {
+          "line": 931,
+          "kind": "effect",
+          "name": "does not carry a tab id across a replacement automation stream"
+        },
+        {
+          "line": 978,
+          "kind": "effect",
+          "name": "fails requests assigned to the stream that is replaced"
+        },
+        {
+          "line": 1008,
+          "kind": "effect",
+          "name": "accepts responses only from the host that received the request"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/mcp/ThreadMetadataMcpService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/mcp/ThreadMetadataMcpService.test.ts",
+      "test_declarations": [
+        {
+          "line": 47,
+          "kind": "effect",
+          "name": "reports an absent calling thread as thread_not_found"
+        },
+        {
+          "line": 58,
+          "kind": "effect",
+          "name": "keeps calling-thread storage failures as orchestration errors"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/mcp/WorktreeMcpService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/mcp/WorktreeMcpService.test.ts",
+      "test_declarations": [
+        {
+          "line": 388,
+          "kind": "effect",
+          "name": "creates a worktree from the current branch and re-points the thread"
+        },
+        {
+          "line": 426,
+          "kind": "effect",
+          "name": "skips the continuation when no continuationPrompt is given"
+        },
+        {
+          "line": 435,
+          "kind": "effect",
+          "name": "queues the continuation prompt as the thread's next message"
+        },
+        {
+          "line": 461,
+          "kind": "effect",
+          "name": "reports a continuation failure without failing the handoff"
+        },
+        {
+          "line": 474,
+          "kind": "effect",
+          "name": "reports a continuation defect without failing the handoff"
+        },
+        {
+          "line": 486,
+          "kind": "effect",
+          "name": "does not queue a continuation when the thread update fails"
+        },
+        {
+          "line": 500,
+          "kind": "effect",
+          "name": "starts from origin and honors explicit baseRef and path"
+        },
+        {
+          "line": 537,
+          "kind": "effect",
+          "name": "uses the server setting for startFromOrigin when unspecified"
+        },
+        {
+          "line": 546,
+          "kind": "effect",
+          "name": "fails when the thread is already attached to a worktree"
+        },
+        {
+          "line": 560,
+          "kind": "effect",
+          "name": "fails when the thread does not exist"
+        },
+        {
+          "line": 569,
+          "kind": "effect",
+          "name": "treats a soft-deleted thread as not found"
+        },
+        {
+          "line": 578,
+          "kind": "effect",
+          "name": "maps a non-projection orchestrator error to operation_failed"
+        },
+        {
+          "line": 587,
+          "kind": "effect",
+          "name": "fails when the project does not exist"
+        },
+        {
+          "line": 596,
+          "kind": "effect",
+          "name": "maps a project read error to operation_failed"
+        },
+        {
+          "line": 605,
+          "kind": "effect",
+          "name": "fails when the project workspace is not a git repository"
+        },
+        {
+          "line": 614,
+          "kind": "effect",
+          "name": "rejects an existing branch with an actionable error naming its checkout"
+        },
+        {
+          "line": 633,
+          "kind": "effect",
+          "name": "rejects an existing branch that is not checked out anywhere"
+        },
+        {
+          "line": 642,
+          "kind": "effect",
+          "name": "does not trip the pre-flight on similarly named branches"
+        },
+        {
+          "line": 653,
+          "kind": "effect",
+          "name": "rejects a non-repository workspace even when baseRef is explicit"
+        },
+        {
+          "line": 664,
+          "kind": "effect",
+          "name": "propagates an interrupted dispatch without rolling back the worktree"
+        },
+        {
+          "line": 678,
+          "kind": "effect",
+          "name": "maps a worktree creation failure to operation_failed"
+        },
+        {
+          "line": 688,
+          "kind": "effect",
+          "name": "maps an origin fetch failure to operation_failed"
+        },
+        {
+          "line": 699,
+          "kind": "effect",
+          "name": "maps a remote-tracking resolve failure to operation_failed"
+        },
+        {
+          "line": 710,
+          "kind": "effect",
+          "name": "removes the created worktree when the thread update dies with a defect"
+        },
+        {
+          "line": 723,
+          "kind": "effect",
+          "name": "re-checks attachment after creating the worktree and backs out on a race"
+        },
+        {
+          "line": 744,
+          "kind": "effect",
+          "name": "removes the created worktree when the recheck read fails"
+        },
+        {
+          "line": 758,
+          "kind": "effect",
+          "name": "backs out when the thread is archived during worktree creation"
+        },
+        {
+          "line": 773,
+          "kind": "effect",
+          "name": "rejects a handoff for an archived thread"
+        },
+        {
+          "line": 782,
+          "kind": "effect",
+          "name": "queues the continuation even when interrupted during the binding dispatch"
+        },
+        {
+          "line": 811,
+          "kind": "effect",
+          "name": "still fails with a typed error when the rollback removal also fails"
+        },
+        {
+          "line": 821,
+          "kind": "effect",
+          "name": "preserves the typed failure when rollback branch deletion also fails"
+        },
+        {
+          "line": 837,
+          "kind": "effect",
+          "name": "accepts a Windows drive path under win32 path semantics"
+        },
+        {
+          "line": 851,
+          "kind": "effect",
+          "name": "rejects a Windows drive path under posix path semantics"
+        },
+        {
+          "line": 864,
+          "kind": "effect",
+          "name": "releases the per-thread guard after a failed handoff"
+        },
+        {
+          "line": 883,
+          "kind": "effect",
+          "name": "fails when the worktree capability is missing"
+        },
+        {
+          "line": 891,
+          "kind": "effect",
+          "name": "serializes concurrent handoffs for the same thread"
+        },
+        {
+          "line": 918,
+          "kind": "effect",
+          "name": "removes the created worktree when the thread update fails"
+        },
+        {
+          "line": 932,
+          "kind": "effect",
+          "name": "rejects a relative path"
+        },
+        {
+          "line": 943,
+          "kind": "effect",
+          "name": "fails when baseRef is omitted and HEAD is detached"
+        },
+        {
+          "line": 951,
+          "kind": "effect",
+          "name": "reports setup script failure without failing the handoff"
+        },
+        {
+          "line": 960,
+          "kind": "effect",
+          "name": "reports a setup script defect without failing the handoff"
+        },
+        {
+          "line": 971,
+          "kind": "effect",
+          "name": "reports an unattached thread"
+        },
+        {
+          "line": 985,
+          "kind": "effect",
+          "name": "reports an attached thread's worktree and branch"
+        },
+        {
+          "line": 1003,
+          "kind": "effect",
+          "name": "fails when the worktree capability is missing"
+        },
+        {
+          "line": 1011,
+          "kind": "effect",
+          "name": "fails when the thread does not exist"
+        },
+        {
+          "line": 1019,
+          "kind": "effect",
+          "name": "fails when the project does not exist"
+        },
+        {
+          "line": 1031,
+          "kind": "effect",
+          "name": "accepts POSIX, Windows drive, and UNC absolute paths"
+        },
+        {
+          "line": 1040,
+          "kind": "effect",
+          "name": "rejects relative paths"
+        },
+        {
+          "line": 1049,
+          "kind": "effect",
+          "name": "rejects a missing or blank branch"
+        },
+        {
+          "line": 1056,
+          "kind": "effect",
+          "name": "rejects a blank continuationPrompt"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/mcp/toolkits/orchestrator/tools.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/mcp/toolkits/orchestrator/tools.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/mcp/toolkits/preview/handlers.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/mcp/toolkits/preview/handlers.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/mcp/toolkits/preview/tools.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/mcp/toolkits/preview/tools.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/mcp/toolkits/worktree/registration.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/mcp/toolkits/worktree/registration.test.ts",
+      "test_declarations": [
+        {
+          "line": 55,
+          "kind": "effect",
+          "name": "production mcp layer lists worktree tools over http"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/AcpRegistryOrchestratorV2.live.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/AcpRegistryOrchestratorV2.live.test.ts",
+      "test_declarations": [
+        {
+          "line": 132,
+          "kind": "live",
+          "name": "runs and resumes a real registry agent through the production V2 harness"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts",
+      "test_declarations": [
+        {
+          "line": 170,
+          "kind": "effect",
+          "name": "denies mutations through workspace symlinks that escape the writable roots"
+        },
+        {
+          "line": 223,
+          "kind": "effect",
+          "name": "allows existing and new files beneath canonical writable roots"
+        },
+        {
+          "line": 700,
+          "kind": "live",
+          "name": "cleans detached fixtures when an assertion aborts the test scope"
+        },
+        {
+          "line": 825,
+          "kind": "live",
+          "name": "replaces an unexpectedly terminated ACP runtime before the next turn"
+        },
+        {
+          "line": 905,
+          "kind": "live",
+          "name": "reaps detached native work when the provider exits before explicit teardown"
+        },
+        {
+          "line": 988,
+          "kind": "live",
+          "name": "surfaces reduced guarantee when delegated cgroup containment is unavailable"
+        },
+        {
+          "line": 1043,
+          "kind": "live",
+          "name": "cleans a cgroup lease when the pre-exec join wrapper fails"
+        },
+        {
+          "line": 1119,
+          "kind": "effect",
+          "name": "negotiates and executes optional native session forks through the ACP runtime"
+        },
+        {
+          "line": 1220,
+          "kind": "effect",
+          "name": "fails missing native ACP session ids through the typed start-turn error channel"
+        },
+        {
+          "line": 1280,
+          "kind": "effect",
+          "name": "closes an idle ACP session exactly once through the transition permit"
+        },
+        {
+          "line": 1327,
+          "kind": "effect",
+          "name": "rejects requested options that the active ACP session does not expose"
+        },
+        {
+          "line": 1375,
+          "kind": "effect",
+          "name": "reconfigures a loaded ACP session from its own active setup metadata"
+        },
+        {
+          "line": 1479,
+          "kind": "live",
+          "name": "terminalizes an empty successful foreground Bash tool when the turn completes"
+        },
+        {
+          "line": 1623,
+          "kind": "effect",
+          "name": "drains native ACP cancellation before admitting the next prompt"
+        },
+        {
+          "line": 1735,
+          "kind": "effect",
+          "name": "cancels pending permission requests while interrupting an ACP turn"
+        },
+        {
+          "line": 1834,
+          "kind": "live",
+          "name": "keeps hard teardown excluded until a permission response is enqueued"
+        },
+        {
+          "line": 1931,
+          "kind": "live",
+          "name": "correlates reordered elicitation schemas through the completed stdout write"
+        },
+        {
+          "line": 2033,
+          "kind": "live",
+          "name": "fails a held native response acknowledgement before normal session close"
+        },
+        {
+          "line": 2139,
+          "kind": "live",
+          "name": "rejects delayed native response registration when normal close wins the permit"
+        },
+        {
+          "line": 2251,
+          "kind": "live",
+          "name": "bounds a missing pending permission response acknowledgement"
+        },
+        {
+          "line": 2390,
+          "kind": "live",
+          "name": "defers caller cancellation until a pending response acknowledgement is bounded"
+        },
+        {
+          "line": 2504,
+          "kind": "live",
+          "name": "waits for immediate allow and deny permission responses before hard teardown"
+        },
+        {
+          "line": 2607,
+          "kind": "live",
+          "name": "waits for immediate URL elicitation responses before hard teardown"
+        },
+        {
+          "line": 2698,
+          "kind": "live",
+          "name": "bounds a missing immediate response acknowledgement before hard teardown"
+        },
+        {
+          "line": 2789,
+          "kind": "live",
+          "name": "rejects an elicitation response when hard teardown wins admission"
+        },
+        {
+          "line": 2900,
+          "kind": "effect",
+          "name": "releases an ACP turn when cancellation times out"
+        },
+        {
+          "line": 3001,
+          "kind": "live",
+          "name": "treats a second hard Stop as success when the turn is already gone"
+        },
+        {
+          "line": 3097,
+          "kind": "effect",
+          "name": "finalizes a settled turn held open for background work when interrupted"
+        },
+        {
+          "line": 3201,
+          "kind": "effect",
+          "name": "carries a live subagent lineage across an interrupt so the next turn can complete it"
+        },
+        {
+          "line": 3359,
+          "kind": "effect",
+          "name": "pins hasPendingBackgroundWork while carryover holds a live subagent after root settle"
+        },
+        {
+          "line": 3518,
+          "kind": "effect",
+          "name": "handles a child terminal after carryover rehydrate"
+        },
+        {
+          "line": 3763,
+          "kind": "effect",
+          "name": "projects a child terminal in the completed-root finalization window exactly once"
+        },
+        {
+          "line": 3993,
+          "kind": "effect",
+          "name": "defers an interrupted pending-spawn carryover terminal until the next observable attach"
+        },
+        {
+          "line": 4222,
+          "kind": "effect",
+          "name": "projects completed-root carryover eagerly and drain cannot resurrect it"
+        },
+        {
+          "line": 4470,
+          "kind": "effect",
+          "name": "user attach flushes a deferred terminal but leaves wake traffic for its continuation"
+        },
+        {
+          "line": 4768,
+          "kind": "effect",
+          "name": "projects a carryover terminal when an in-turn-handled tool is re-reported post-settle"
+        },
+        {
+          "line": 5011,
+          "kind": "effect",
+          "name": "projects an interrupted root-session end notice at the next attach"
+        },
+        {
+          "line": 5246,
+          "kind": "effect",
+          "name": "preserves wakeBuffer when a child-session completes while a continuation is pending"
+        },
+        {
+          "line": 5527,
+          "kind": "effect",
+          "name": "projects once when root-session then child-session complete the same carryover subagent"
+        },
+        {
+          "line": 5779,
+          "kind": "effect",
+          "name": "preserveRuntimeOnSettledInterrupt keeps the process alive and carries subagents through a settled steering interrupt"
+        },
+        {
+          "line": 5967,
+          "kind": "live",
+          "name": "preserveRuntimeOnSettledInterrupt does not soften a mid-prompt steering interrupt"
+        },
+        {
+          "line": 6053,
+          "kind": "live",
+          "name": "soft mid-prompt interrupt cancels in place, reuses the runtime, and tracks cancel-backgrounded work"
+        },
+        {
+          "line": 6247,
+          "kind": "live",
+          "name": "direct Stop quarantine drops late background task mutations from the stopped run"
+        },
+        {
+          "line": 6392,
+          "kind": "live",
+          "name": "production Grok interrupt flags still hard-kill and respawn on user Stop"
+        },
+        {
+          "line": 6518,
+          "kind": "live",
+          "name": "Stop after settled soft steer contains the orphan runtime and respawns without subagent carryover"
+        },
+        {
+          "line": 6827,
+          "kind": "live",
+          "name": "Direct Stop projects an interrupt-deferred terminal exactly once"
+        },
+        {
+          "line": 7020,
+          "kind": "effect",
+          "name": "settled soft interrupt skips cancel when prompt wire is settled before completion callback"
+        },
+        {
+          "line": 7188,
+          "kind": "effect",
+          "name": "does not pin hasPendingBackgroundWork when a late TaskOutput re-reports an in-turn-handled task"
+        },
+        {
+          "line": 7317,
+          "kind": "effect",
+          "name": "keeps a dispatched continuation offer sticky until a turn starts or the worker drops it"
+        },
+        {
+          "line": 7437,
+          "kind": "effect",
+          "name": "keeps a buffered continuation current when a user turn starts before dispatch"
+        },
+        {
+          "line": 7642,
+          "kind": "effect",
+          "name": "holds a settled turn until the injected monitor report streams instead of finalizing into it"
+        },
+        {
+          "line": 7806,
+          "kind": "effect",
+          "name": "settle-without-report held turn with mid-hold ext completion does not open a wake after the injected report"
+        },
+        {
+          "line": 8006,
+          "kind": "effect",
+          "name": "pre-settle ext completion arm is cleared when the report precedes its end notice"
+        },
+        {
+          "line": 8244,
+          "kind": "effect",
+          "name": "staggered pre-settle completion keeps midTurn marks until last background task ends post-finalize"
+        },
+        {
+          "line": 8461,
+          "kind": "effect",
+          "name": "staggered pre-settle completion does not keep midTurn marks when the turn is interrupted"
+        },
+        {
+          "line": 8674,
+          "kind": "effect",
+          "name": "two-turn in-turn monitors never open a wake run or retain turn-1 injected-turn ack chatter"
+        },
+        {
+          "line": 9046,
+          "kind": "effect",
+          "name": "mid-turn completed mutation defers offer until finalize only when unhandled"
+        },
+        {
+          "line": 9373,
+          "kind": "effect",
+          "name": "mid-turn unhandled background completion still offers exactly one continuation after finalize"
+        },
+        {
+          "line": 9560,
+          "kind": "effect",
+          "name": "empty-drain continuation turn waits the quiet window so late frames can attach"
+        },
+        {
+          "line": 9802,
+          "kind": "effect",
+          "name": "empty-drain continuation turn finalizes after the quiet window with no frames"
+        },
+        {
+          "line": 9990,
+          "kind": "effect",
+          "name": "restarts the ACP child process before the next prompt after interrupt"
+        },
+        {
+          "line": 10081,
+          "kind": "effect",
+          "name": "Windows teardown is one-shot explicitly with independent finalizer cleanup"
+        },
+        {
+          "line": 10140,
+          "kind": "effect",
+          "name": "runs the default taskkill path and preserves every failure mode"
+        },
+        {
+          "line": 10196,
+          "kind": "effect",
+          "name": "Windows process-tree teardown surfaces taskkill failure"
+        },
+        {
+          "line": 10230,
+          "kind": "live",
+          "name": "poisons the session when hard teardown defects and blocks replacement work"
+        },
+        {
+          "line": 10447,
+          "kind": "live",
+          "name": "durably poisons start and resume when required hard teardown is unavailable"
+        },
+        {
+          "line": 10534,
+          "kind": "live",
+          "name": "holds concurrent startTurn behind successful hard teardown and reloads once"
+        },
+        {
+          "line": 10645,
+          "kind": "live",
+          "name": "quarantines old-runtime callbacks after successful hard teardown"
+        },
+        {
+          "line": 11045,
+          "kind": "live",
+          "name": "keeps stale deferred cleanup inert while replacement requests remain live"
+        },
+        {
+          "line": 11168,
+          "kind": "live",
+          "name": "resolves owner cancellation and concurrent resume waiters after hard teardown"
+        },
+        {
+          "line": 11299,
+          "kind": "live",
+          "name": "direct Stop skips uninterruptible ACP cancel and recovers after native teardown"
+        },
+        {
+          "line": 11572,
+          "kind": "effect",
+          "name": "direct Stop on a deferred subagent hold terminalizes the subagent and does not carry it forward"
+        },
+        {
+          "line": 11737,
+          "kind": "live",
+          "name": "restart_active terminates native work and reloads a clean runtime"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/Adapters/AcpRegistryAdapterV2.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/Adapters/AcpRegistryAdapterV2.test.ts",
+      "test_declarations": [
+        {
+          "line": 90,
+          "kind": "effect",
+          "name": "opens a real ACP child process resolved from registry configuration"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts",
+      "test_declarations": [
+        {
+          "line": 651,
+          "kind": "effect",
+          "name": "writes Claude Agent SDK protocol frames to the native provider log"
+        },
+        {
+          "line": 856,
+          "kind": "effect",
+          "name": "observes an approval signal that was already aborted"
+        },
+        {
+          "line": 868,
+          "kind": "effect",
+          "name": "removes the cancellation listener after approval resolves"
+        },
+        {
+          "line": 892,
+          "kind": "effect",
+          "name": "resolves and cancels the SDK resume dialog through structured runtime input"
+        },
+        {
+          "line": 1108,
+          "kind": "effect",
+          "name": "forwards images and references generic files on sends and steering"
+        },
+        {
+          "line": 1247,
+          "kind": "effect",
+          "name": "rejects unsupported image types before opening a provider query"
+        },
+        {
+          "line": 1333,
+          "kind": "effect",
+          "name": "forks at the source assistant cursor and resumes the forked session"
+        },
+        {
+          "line": 1572,
+          "kind": "effect",
+          "name": "creates the native session on the first provider turn"
+        },
+        {
+          "line": 1581,
+          "kind": "effect",
+          "name": "resumes the native session on a fresh session instance when prior provider turns exist"
+        },
+        {
+          "line": 1830,
+          "kind": "effect",
+          "name": "announces usage-limit pauses once per window and again on a new turn"
+        },
+        {
+          "line": 1895,
+          "kind": "effect",
+          "name": "keeps usage warnings and provisioned overage silent"
+        },
+        {
+          "line": 1942,
+          "kind": "effect",
+          "name": "surfaces a Claude safety model fallback without failing the turn"
+        },
+        {
+          "line": 2001,
+          "kind": "effect",
+          "name": "runs native compaction and keeps its context watermark separate from billed usage"
+        },
+        {
+          "line": 2073,
+          "kind": "effect",
+          "name": "preserves typed Claude plans and todos through generic tool completion"
+        },
+        {
+          "line": 2268,
+          "kind": "effect",
+          "name": "resolves API retries on resumed assistant activity"
+        },
+        {
+          "line": 2342,
+          "kind": "effect",
+          "name": "carries exhausted retry progress into the terminal provider error"
+        },
+        {
+          "line": 2402,
+          "kind": "effect",
+          "name": "projects an authoritative background_tasks_changed roster on the provider thread"
+        },
+        {
+          "line": 2453,
+          "kind": "effect",
+          "name": "uses task_started as an incremental roster fallback and clears on empty snapshot"
+        },
+        {
+          "line": 2506,
+          "kind": "effect",
+          "name": "clears the roster when a turn fails"
+        },
+        {
+          "line": 2563,
+          "kind": "effect",
+          "name": "clears the native-thread roster when a turn is interrupted"
+        },
+        {
+          "line": 2666,
+          "kind": "effect",
+          "name": "clears the replaced sibling native thread roster when openQuery switches processes"
+        },
+        {
+          "line": 2920,
+          "kind": "effect",
+          "name": "buffers wake output and requests a single continuation run"
+        },
+        {
+          "line": 2966,
+          "kind": "effect",
+          "name": "does not offer a continuation for notification-only opaque work"
+        },
+        {
+          "line": 3017,
+          "kind": "effect",
+          "name": "drains buffered wake messages into a continuation turn"
+        },
+        {
+          "line": 3079,
+          "kind": "effect",
+          "name": "leaves buffered wake messages for the continuation queued behind a user turn"
+        },
+        {
+          "line": 3170,
+          "kind": "effect",
+          "name": "terminalizes an agent server wake from a positive task-notification result"
+        },
+        {
+          "line": 3232,
+          "kind": "effect",
+          "name": "terminalizes a user mobile turn from a positive task-notification result"
+        },
+        {
+          "line": 3270,
+          "kind": "effect",
+          "name": "ignores a zero-turn task-notification origin result during a normal user turn"
+        },
+        {
+          "line": 3364,
+          "kind": "effect",
+          "name": "terminalizes a zero-turn task-notification result in a provider continuation"
+        },
+        {
+          "line": 3414,
+          "kind": "effect",
+          "name": "emits one interrupted terminal for a positive task-notification result racing interrupt"
+        },
+        {
+          "line": 3473,
+          "kind": "effect",
+          "name": "drops zero-turn task-notification debris racing interrupt"
+        },
+        {
+          "line": 3532,
+          "kind": "effect",
+          "name": "fails a positive task-notification error result"
+        },
+        {
+          "line": 3566,
+          "kind": "effect",
+          "name": "terminalizes a continuation turn from a task-notification origin wake result"
+        },
+        {
+          "line": 3616,
+          "kind": "effect",
+          "name": "clears the pending task when the wake notification carries no summary"
+        },
+        {
+          "line": 3673,
+          "kind": "effect",
+          "name": "settles a continuation turn immediately when no wake output is buffered"
+        },
+        {
+          "line": 3699,
+          "kind": "effect",
+          "name": "wakes and hydrates a subagent that completes after the root turn settled"
+        },
+        {
+          "line": 3839,
+          "kind": "effect",
+          "name": "keeps a subagent snapshot model that arrives before task_started"
+        },
+        {
+          "line": 3908,
+          "kind": "effect",
+          "name": "extracts text from direct content-block subagent results"
+        },
+        {
+          "line": 3989,
+          "kind": "effect",
+          "name": "releases the idle pin when a post-settle subagent stops without completing"
+        },
+        {
+          "line": 4078,
+          "kind": "effect",
+          "name": "re-opens a resumed subagent and hydrates its second result"
+        },
+        {
+          "line": 4364,
+          "kind": "effect",
+          "name": "re-opens a resumed subagent whose task_started races past settle"
+        },
+        {
+          "line": 4596,
+          "kind": "effect",
+          "name": "orders nonempty level, empty level, notification, and continuation drain without subagent projection"
+        },
+        {
+          "line": 4744,
+          "kind": "effect",
+          "name": "resets Waiting roster and wake eligibility when the CLI process is replaced"
+        },
+        {
+          "line": 4910,
+          "kind": "effect",
+          "name": "admits only local_bash from a mixed background_tasks_changed snapshot"
+        },
+        {
+          "line": 5009,
+          "kind": "effect",
+          "name": "preserves buffered local_bash notification classification across model/policy query replacement"
+        },
+        {
+          "line": 5193,
+          "kind": "effect",
+          "name": "does not opaque-misclassify a buffered subagent notification across model/policy query replacement"
+        },
+        {
+          "line": 5433,
+          "kind": "effect",
+          "name": "clears process-scoped roster when same-native-thread replacement open fails after close"
+        },
+        {
+          "line": 5566,
+          "kind": "effect",
+          "name": "clears buffered wake and continuation state when same-native-thread replacement open fails"
+        },
+        {
+          "line": 5766,
+          "kind": "effect",
+          "name": "does not invent process reset state on a first-ever failed open"
+        },
+        {
+          "line": 5841,
+          "kind": "effect",
+          "name": "closes the query when the message stream is interrupted mid-read"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.testkit.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.testkit.test.ts",
+      "test_declarations": [
+        {
+          "line": 130,
+          "kind": "effect",
+          "name": "holds a labeled inbound frame until its replay gate is released"
+        },
+        {
+          "line": 145,
+          "kind": "effect",
+          "name": "releases a replay gate when its stream consumer is interrupted"
+        },
+        {
+          "line": 158,
+          "kind": "effect",
+          "name": "interrupts a delayed inbound frame without emitting or advancing it"
+        },
+        {
+          "line": 231,
+          "kind": "effect",
+          "name": "wakes a gated replay stream when an outbound frame mismatches"
+        },
+        {
+          "line": 263,
+          "kind": "effect",
+          "name": "surfaces an outbound mismatch during a delay without inbound callbacks"
+        },
+        {
+          "line": 350,
+          "kind": "effect",
+          "name": "wakes a replay stream waiting on an outbound frame when that frame mismatches"
+        },
+        {
+          "line": 404,
+          "kind": "effect",
+          "name": "interrupts a replay stream waiting on its next outbound frame"
+        },
+        {
+          "line": 455,
+          "kind": "effect",
+          "name": "aborts a pending permission callback when replay fails"
+        },
+        {
+          "line": 544,
+          "kind": "effect",
+          "name": "keeps permission callbacks scoped to the query that opened the stream"
+        },
+        {
+          "line": 653,
+          "kind": "effect",
+          "name": "fails a replay stream when the recorded runtime was cancelled"
+        },
+        {
+          "line": 702,
+          "kind": "effect",
+          "name": "closes an interrupted recording and emits runtime_exit when no tool use arrives"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts",
+      "test_declarations": [
+        {
+          "line": 155,
+          "kind": "effect",
+          "name": "makes accumulated assistant text visible after the bounded flush interval"
+        },
+        {
+          "line": 187,
+          "kind": "effect",
+          "name": "coalesces multiple token deltas into one assistant update per interval"
+        },
+        {
+          "line": 213,
+          "kind": "effect",
+          "name": "flushes buffered text synchronously before item and turn completion"
+        },
+        {
+          "line": 241,
+          "kind": "effect",
+          "name": "retains buffered text until completion updates are emitted"
+        },
+        {
+          "line": 281,
+          "kind": "effect",
+          "name": "can discard an empty completion without emitting an assistant update"
+        },
+        {
+          "line": 323,
+          "kind": "effect",
+          "name": "treats explicit empty final text as authoritative over buffered deltas"
+        },
+        {
+          "line": 356,
+          "kind": "effect",
+          "name": "derives concrete Codex turn policies from every T3 runtime mode"
+        },
+        {
+          "line": 395,
+          "kind": "effect",
+          "name": "preserves explicit Codex turn policy overrides"
+        },
+        {
+          "line": 420,
+          "kind": "effect",
+          "name": "adds default-mode developer instructions when the T3 MCP server is attached"
+        },
+        {
+          "line": 449,
+          "kind": "effect",
+          "name": "omits default-mode collaboration settings without the T3 MCP server"
+        },
+        {
+          "line": 470,
+          "kind": "effect",
+          "name": "adds T3 plan-mode developer instructions when the T3 MCP server is attached"
+        },
+        {
+          "line": 499,
+          "kind": "effect",
+          "name": "keeps Codex in plan mode without referencing unavailable T3 MCP tools"
+        },
+        {
+          "line": 521,
+          "kind": "effect",
+          "name": "compiles per-turn Codex model options and cwd from their owning inputs"
+        },
+        {
+          "line": 596,
+          "kind": "effect",
+          "name": "resolves Windows command shims through the shared spawn policy"
+        },
+        {
+          "line": 630,
+          "kind": "effect",
+          "name": "uses direct execution for native executables"
+        },
+        {
+          "line": 757,
+          "kind": "effect",
+          "name": "logs decoded app-server frames once with credentials redacted"
+        },
+        {
+          "line": 826,
+          "kind": "effect",
+          "name": "filters streaming frames before redaction without losing decode failures"
+        },
+        {
+          "line": 873,
+          "kind": "effect",
+          "name": "retains redacted failures when large payloads are summarized"
+        },
+        {
+          "line": 930,
+          "kind": "effect",
+          "name": "derives native rollback count from durable provider turns"
+        },
+        {
+          "line": 1368,
+          "kind": "effect",
+          "name": "keeps an asynchronous Codex question actionable after the turn completes"
+        },
+        {
+          "line": 1491,
+          "kind": "effect",
+          "name": "compacts Codex with the native RPC and completes the compaction turn"
+        },
+        {
+          "line": 1567,
+          "kind": "effect",
+          "name": "resumes a provider thread without requesting or decoding its history"
+        },
+        {
+          "line": 1611,
+          "kind": "effect",
+          "name": "continues an interrupted native thread with empty Codex turn input"
+        },
+        {
+          "line": 1688,
+          "kind": "effect",
+          "name": "resolves retryable app-server errors on resumed provider activity"
+        },
+        {
+          "line": 1936,
+          "kind": "effect",
+          "name": "suppresses a trailing empty final answer after a non-empty final answer"
+        },
+        {
+          "line": 1965,
+          "kind": "effect",
+          "name": "suppresses a later streamed duplicate final answer"
+        },
+        {
+          "line": 2009,
+          "kind": "effect",
+          "name": "buffers an overlapping later final stream until duplicate detection"
+        },
+        {
+          "line": 2131,
+          "kind": "effect",
+          "name": "preserves a sole empty final answer"
+        },
+        {
+          "line": 2159,
+          "kind": "effect",
+          "name": "suppresses a second empty final answer"
+        },
+        {
+          "line": 2188,
+          "kind": "effect",
+          "name": "preserves an empty final answer when only commentary preceded it"
+        },
+        {
+          "line": 2217,
+          "kind": "effect",
+          "name": "suppresses an empty final answer after a non-empty unknown-phase answer"
+        },
+        {
+          "line": 2246,
+          "kind": "effect",
+          "name": "suppresses a trailing empty answer with an omitted phase"
+        },
+        {
+          "line": 2275,
+          "kind": "effect",
+          "name": "keeps a later non-empty final answer after an initial empty final answer"
+        },
+        {
+          "line": 2393,
+          "kind": "effect",
+          "name": "projects a post-settle background command completion and requests a continuation"
+        },
+        {
+          "line": 2522,
+          "kind": "effect",
+          "name": "does not request a continuation for a command that completes before settle"
+        },
+        {
+          "line": 2723,
+          "kind": "effect",
+          "name": "contains commands that start before and after the interrupt response"
+        },
+        {
+          "line": 3009,
+          "kind": "effect",
+          "name": "contains descendant commands and keeps Stop authoritative"
+        },
+        {
+          "line": 3099,
+          "kind": "effect",
+          "name": "terminalizes descendants before the root when an interrupt request fails"
+        },
+        {
+          "line": 3171,
+          "kind": "effect",
+          "name": "terminalizes timed-out descendants before the root"
+        },
+        {
+          "line": 3270,
+          "kind": "effect",
+          "name": "interrupts descendants that start after the initial Stop snapshot"
+        },
+        {
+          "line": 3399,
+          "kind": "effect",
+          "name": "interrupts descendants discovered only by the final interrupt rescan"
+        },
+        {
+          "line": 3646,
+          "kind": "effect",
+          "name": "bounds interrupt settlement and drops late completion events"
+        },
+        {
+          "line": 3804,
+          "kind": "effect",
+          "name": "attempts every terminal and cleans up tracking when termination fails"
+        },
+        {
+          "line": 3910,
+          "kind": "effect",
+          "name": "terminalizes running command items before turn.terminal on failed turns"
+        },
+        {
+          "line": 4088,
+          "kind": "effect",
+          "name": "terminalizes leftover nonpersistent dynamic tools when a completed turn never closes them"
+        },
+        {
+          "line": 4348,
+          "kind": "effect",
+          "name": "preserves a subagent result across a trailing empty final and resume"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.test.ts",
+      "test_declarations": [
+        {
+          "line": 41,
+          "kind": "effect",
+          "name": "sends discovered skills as native slash invocations with runtime instructions"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.testkit.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.testkit.test.ts",
+      "test_declarations": [
+        {
+          "line": 89,
+          "kind": "effect",
+          "name": "fails promptly when a run is followed by an unrelated outbound frame"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/Adapters/CursorAgentSdk.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/Adapters/CursorAgentSdk.test.ts",
+      "test_declarations": [
+        {
+          "line": 105,
+          "kind": "effect",
+          "name": "logs agent.close before invoking the Cursor SDK"
+        },
+        {
+          "line": 138,
+          "kind": "effect",
+          "name": "logs agent.close even when the Cursor SDK close fails"
+        },
+        {
+          "line": 176,
+          "kind": "effect",
+          "name": "surfaces interaction callback failures through run.wait"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.test.ts",
+      "test_declarations": [
+        {
+          "line": 229,
+          "kind": "effect",
+          "name": "preserves tool lifecycle, approval kinds, and late assistant text without cached tool payloads"
+        },
+        {
+          "line": 393,
+          "kind": "effect",
+          "name": "compacts with the native summarize API and emits a completed compaction"
+        },
+        {
+          "line": 448,
+          "kind": "effect",
+          "name": "keeps a newly admitted prompt alive across stale idle and delayed busy evidence"
+        },
+        {
+          "line": 762,
+          "kind": "effect",
+          "name": "interrupts an initial prompt while its SDK request is pending"
+        },
+        {
+          "line": 968,
+          "kind": "effect",
+          "name": "reconciles current idle and busy status replies after prompt admission"
+        },
+        {
+          "line": 987,
+          "kind": "effect",
+          "name": "keeps admission pending after a transient status failure"
+        },
+        {
+          "line": 1003,
+          "kind": "effect",
+          "name": "retries a transient status failure without another idle event"
+        },
+        {
+          "line": 1084,
+          "kind": "effect",
+          "name": "does not let a queued status retry adopt a newer steer generation"
+        },
+        {
+          "line": 1183,
+          "kind": "effect",
+          "name": "ignores a delayed status reply after steering starts a newer admission"
+        },
+        {
+          "line": 1203,
+          "kind": "effect",
+          "name": "does not revive admission when abort wins a pending status lookup"
+        },
+        {
+          "line": 1221,
+          "kind": "effect",
+          "name": "logs bounded structural protocol diagnostics without native payload values"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.testkit.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.testkit.test.ts",
+      "test_declarations": [
+        {
+          "line": 22,
+          "kind": "effect",
+          "name": "correlates a prompt ID without adopting unrelated messages or rewriting text"
+        },
+        {
+          "line": 98,
+          "kind": "effect",
+          "name": "still rejects changed prompt text when binding a generated message ID"
+        },
+        {
+          "line": 139,
+          "kind": "effect",
+          "name": "stops an event stream when abort races with listener registration"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/AttachmentClaims.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/AttachmentClaims.test.ts",
+      "test_declarations": [
+        {
+          "line": 49,
+          "kind": "effect",
+          "name": "claims a pending upload into the thread store and rewrites the id"
+        },
+        {
+          "line": 77,
+          "kind": "effect",
+          "name": "passes already-claimed attachments through untouched"
+        },
+        {
+          "line": 95,
+          "kind": "effect",
+          "name": "rejects a pending ref whose staged file is missing"
+        },
+        {
+          "line": 111,
+          "kind": "effect",
+          "name": "rejects a size mismatch and cleans up earlier claims from the batch"
+        },
+        {
+          "line": 146,
+          "kind": "effect",
+          "name": "releaseClaimedAttachments removes claimed copies best-effort"
+        },
+        {
+          "line": 165,
+          "kind": "effect",
+          "name": "treats malformed ids as non-pending and passes them through"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/AttachmentPrompt.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/AttachmentPrompt.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/CheckpointCaptureService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/CheckpointCaptureService.test.ts",
+      "test_declarations": [
+        {
+          "line": 51,
+          "kind": "effect",
+          "name": "preserves a newer delegatedCompletion cohort when checkpoint run.updated is applied after it"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/CheckpointRollbackService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/CheckpointRollbackService.test.ts",
+      "test_declarations": [
+        {
+          "line": 25,
+          "kind": "effect",
+          "name": "rejects a non-ready checkpoint before opening a session or restoring files"
+        },
+        {
+          "line": 82,
+          "kind": "effect",
+          "name": "rejects a rollback when another provider thread became active"
+        },
+        {
+          "line": 152,
+          "kind": "effect",
+          "name": "rejects a rollback when provider selection changed before execution"
+        },
+        {
+          "line": 224,
+          "kind": "effect",
+          "name": "reports a missing provider turn as a structured rollback failure"
+        },
+        {
+          "line": 289,
+          "kind": "effect",
+          "name": "wraps underlying failures with an unexpected-failure reason and cause"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/CheckpointService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/CheckpointService.test.ts",
+      "test_declarations": [
+        {
+          "line": 22,
+          "kind": "effect",
+          "name": "materializes the captured baseline at the requested scope ordinal"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/CommandPolicy.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/CommandPolicy.test.ts",
+      "test_declarations": [
+        {
+          "line": 33,
+          "kind": "effect",
+          "name": "prefers direct active steering when the provider supports it"
+        },
+        {
+          "line": 48,
+          "kind": "effect",
+          "name": "uses interrupt-and-restart steering when direct steering is unavailable"
+        },
+        {
+          "line": 71,
+          "kind": "effect",
+          "name": "uses interrupt-and-restart steering for Grok ACP"
+        },
+        {
+          "line": 86,
+          "kind": "effect",
+          "name": "honors an explicit interrupt-and-restart request"
+        },
+        {
+          "line": 102,
+          "kind": "effect",
+          "name": "returns typed capability errors for unsupported active steering"
+        },
+        {
+          "line": 128,
+          "kind": "effect",
+          "name": "guards native fork behind fork and identity capabilities"
+        },
+        {
+          "line": 153,
+          "kind": "effect",
+          "name": "uses a native fork when the provider supports the requested source point"
+        },
+        {
+          "line": 171,
+          "kind": "effect",
+          "name": "falls back to portable context when Cursor cannot fork natively"
+        },
+        {
+          "line": 189,
+          "kind": "effect",
+          "name": "falls back to portable context when Grok ACP cannot fork natively"
+        },
+        {
+          "line": 207,
+          "kind": "effect",
+          "name": "returns a typed error when neither native nor portable fork is available"
+        },
+        {
+          "line": 238,
+          "kind": "effect",
+          "name": "guards rollback behind provider rollback snapshot support"
+        },
+        {
+          "line": 262,
+          "kind": "effect",
+          "name": "guards fork-delta handoff behind context handoff capabilities"
+        },
+        {
+          "line": 287,
+          "kind": "effect",
+          "name": "guards queued turns behind queued-message support"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ContextHandoffService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ContextHandoffService.test.ts",
+      "test_declarations": [
+        {
+          "line": 75,
+          "kind": "effect",
+          "name": "prepares imported history for the first native v2 turn"
+        },
+        {
+          "line": 108,
+          "kind": "effect",
+          "name": "preserves role attribution when truncating imported history"
+        },
+        {
+          "line": 133,
+          "kind": "effect",
+          "name": "retains the newest oversized import even when it has no whitespace"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/CursorOrchestratorV2.live.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/CursorOrchestratorV2.live.test.ts",
+      "test_declarations": [
+        {
+          "line": 115,
+          "kind": "live",
+          "name": "forks through portable context using real Cursor agents"
+        },
+        {
+          "line": 212,
+          "kind": "live",
+          "name": "spawns native subagents with child thread lineage"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/DelegatedCompletionDelivery.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/DelegatedCompletionDelivery.test.ts",
+      "test_declarations": [
+        {
+          "line": 281,
+          "kind": "effect",
+          "name": "builds completion text and metadata from the same live cohort"
+        },
+        {
+          "line": 331,
+          "kind": "effect",
+          "name": "does not re-offer when wake-policy upgrades after delivered ownership settled"
+        },
+        {
+          "line": 395,
+          "kind": "effect",
+          "name": "treats repeated acknowledge and dispose with distinct command IDs as successful no-ops"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/EffectWorker.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/EffectWorker.test.ts",
+      "test_declarations": [
+        {
+          "line": 201,
+          "kind": "effect",
+          "name": "requeues a claim when a pre-execution worker check fails"
+        },
+        {
+          "line": 273,
+          "kind": "effect",
+          "name": "arms cancellation before the durable pre-execution check"
+        },
+        {
+          "line": 341,
+          "kind": "effect",
+          "name": "terminalizes a process-bound claim when success settlement fails"
+        },
+        {
+          "line": 410,
+          "kind": "effect",
+          "name": "requeues a replay-safe claim when success settlement fails"
+        },
+        {
+          "line": 468,
+          "kind": "effect",
+          "name": "keeps a process-bound executor failure retryable when retry settlement fails"
+        },
+        {
+          "line": 543,
+          "kind": "effect",
+          "name": "keeps a max-attempt replay-safe failure terminal when fail settlement fails"
+        },
+        {
+          "line": 615,
+          "kind": "effect",
+          "name": "uses durable deadlines, notifications, and a slow liveness poll"
+        },
+        {
+          "line": 667,
+          "kind": "effect",
+          "name": "does not hot-loop when a claim fails"
+        },
+        {
+          "line": 699,
+          "kind": "effect",
+          "name": "backs off briefly when a due deadline loses a claim race"
+        },
+        {
+          "line": 724,
+          "kind": "effect",
+          "name": "detaches a handed-off session only after the old turn terminalizes"
+        },
+        {
+          "line": 738,
+          "kind": "effect",
+          "name": "executes durable thread title generation effects"
+        },
+        {
+          "line": 771,
+          "kind": "effect",
+          "name": "safely retries after replacement cleanup succeeds and start fails"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/FoundationPersistence.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/FoundationPersistence.test.ts",
+      "test_declarations": [
+        {
+          "line": 138,
+          "kind": "effect",
+          "name": "rebuilds event history one bounded page at a time"
+        },
+        {
+          "line": 215,
+          "kind": "effect",
+          "name": "verifies thread membership using only the thread-created partial index"
+        },
+        {
+          "line": 262,
+          "kind": "effect",
+          "name": "projects oversized tool bodies before both replay and live RPC retention"
+        },
+        {
+          "line": 414,
+          "kind": "effect",
+          "name": "keeps internal streams subscribed while replay is blocked beyond the RPC buffer cap"
+        },
+        {
+          "line": 466,
+          "kind": "effect",
+          "name": "paginates catch-up beyond the event-store read limit"
+        },
+        {
+          "line": 503,
+          "kind": "effect",
+          "name": "does not lose or duplicate events while transitioning from catch-up to live"
+        },
+        {
+          "line": 539,
+          "kind": "effect",
+          "name": "replays shared provider-session payloads across every bound thread"
+        },
+        {
+          "line": 604,
+          "kind": "effect",
+          "name": "compacts superseded state events, imported v1 events, and legacy receipts"
+        },
+        {
+          "line": 743,
+          "kind": "effect",
+          "name": "verifies and rebuilds projections with cross-thread subagent relations"
+        },
+        {
+          "line": 923,
+          "kind": "effect",
+          "name": "rolls back events, projections, receipts, and effects after a projection failure"
+        },
+        {
+          "line": 1000,
+          "kind": "effect",
+          "name": "keeps one durable effect across command retries and executes it after recovery"
+        },
+        {
+          "line": 1071,
+          "kind": "effect",
+          "name": "does not wake claimers for effects from an idempotent command retry"
+        },
+        {
+          "line": 1110,
+          "kind": "effect",
+          "name": "does not publish a stale provider start after an interrupt wins"
+        },
+        {
+          "line": 1215,
+          "kind": "effect",
+          "name": "guards post-terminal provider-thread writes by attempt and run ordinal"
+        },
+        {
+          "line": 1438,
+          "kind": "effect",
+          "name": "interrupts a running process-bound effect when it is cancelled"
+        },
+        {
+          "line": 1495,
+          "kind": "effect",
+          "name": "treats cancellation between execution and settlement as a normal outcome"
+        },
+        {
+          "line": 1549,
+          "kind": "effect",
+          "name": "does not start an effect that was cancelled during claim registration"
+        },
+        {
+          "line": 1606,
+          "kind": "effect",
+          "name": "allows only one worker to claim an available effect"
+        },
+        {
+          "line": 1642,
+          "kind": "effect",
+          "name": "runs title generation beside critical work while serializing each lane"
+        },
+        {
+          "line": 1747,
+          "kind": "effect",
+          "name": "ignores deadlines blocked by a running effect on the same thread"
+        },
+        {
+          "line": 1820,
+          "kind": "effect",
+          "name": "does not emit a SQL span for an empty safety claim"
+        },
+        {
+          "line": 1845,
+          "kind": "effect",
+          "name": "wakes claimers when cancellation unblocks same-thread work"
+        },
+        {
+          "line": 1902,
+          "kind": "effect",
+          "name": "executes a retry at its durable deadline instead of the liveness interval"
+        },
+        {
+          "line": 1965,
+          "kind": "effect",
+          "name": "runs distinct threads concurrently while serializing effects within a thread"
+        },
+        {
+          "line": 2055,
+          "kind": "effect",
+          "name": "does not reclaim a running effect after its process-local lease expires"
+        },
+        {
+          "line": 2122,
+          "kind": "effect",
+          "name": "persists shutdown continuation intent through the real event sink without domain events"
+        },
+        {
+          "line": 2198,
+          "kind": "effect",
+          "name": "leaves restart continuation pending until normal worker claims are enabled"
+        },
+        {
+          "line": 2311,
+          "kind": "effect",
+          "name": "atomically cancels stale runs and their process-bound effects"
+        },
+        {
+          "line": 2398,
+          "kind": "effect",
+          "name": "allocates collision-free positions beyond 100 items and rebuilds equivalently"
+        },
+        {
+          "line": 2543,
+          "kind": "live",
+          "name": "keeps claiming new work after repeated idle periods"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/GrokOrchestratorV2.live.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/GrokOrchestratorV2.live.test.ts",
+      "test_declarations": [
+        {
+          "line": 110,
+          "kind": "live",
+          "name": "forks through portable context using real Grok ACP agents"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/KeyedSerialExecutor.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/KeyedSerialExecutor.test.ts",
+      "test_declarations": [
+        {
+          "line": 12,
+          "kind": "effect",
+          "name": "allows unrelated keys to run concurrently"
+        },
+        {
+          "line": 34,
+          "kind": "effect",
+          "name": "serializes work for the same key"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/LegacyV1ThreadImporter.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/LegacyV1ThreadImporter.test.ts",
+      "test_declarations": [
+        {
+          "line": 40,
+          "kind": "effect",
+          "name": "imports lightweight shells, hydrates transcripts, and remains idempotent"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/Orchestrator.migration.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/Orchestrator.migration.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProjectionControlReads.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ProjectionControlReads.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProjectionRecovery.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ProjectionRecovery.test.ts",
+      "test_declarations": [
+        {
+          "line": 115,
+          "kind": "effect",
+          "name": "selects unfinished recovery work without reading settled thread histories"
+        },
+        {
+          "line": 215,
+          "kind": "effect",
+          "name": "recovers terminal subagent results until their cross-thread transfer exists"
+        },
+        {
+          "line": 277,
+          "kind": "effect",
+          "name": "includes shared sessions and provider-owned background rosters in recovery"
+        },
+        {
+          "line": 350,
+          "kind": "effect",
+          "name": "marks fork descendants unreadable when their source is missing or corrupt"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProjectionSettlement.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ProjectionSettlement.test.ts",
+      "test_declarations": [
+        {
+          "line": 300,
+          "kind": "effect",
+          "name": "reads settlement candidates and thread metadata without loading historical or archived payloads"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProjectionStore.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ProjectionStore.test.ts",
+      "test_declarations": [
+        {
+          "line": 97,
+          "kind": "effect",
+          "name": "preserves stored provider usage when a terminal update omits it"
+        },
+        {
+          "line": 204,
+          "kind": "effect",
+          "name": "reads a fixed SQL turn-item window for long histories and repeated clients"
+        },
+        {
+          "line": 761,
+          "kind": "effect",
+          "name": "scopes actionable provider state to the requested bounded thread"
+        },
+        {
+          "line": 861,
+          "kind": "effect",
+          "name": "does not treat visited or marked-unread state as thread activity"
+        },
+        {
+          "line": 930,
+          "kind": "effect",
+          "name": "preserves delegated completion ownership across stale run and task updates"
+        },
+        {
+          "line": 1080,
+          "kind": "effect",
+          "name": "only exposes interruptible runs through the shell activeRunId"
+        },
+        {
+          "line": 1184,
+          "kind": "effect",
+          "name": "projects one shared provider session into multiple thread bindings"
+        },
+        {
+          "line": 1309,
+          "kind": "effect",
+          "name": "reads checkpoint context without decoding transcript or checkpoint file payloads"
+        },
+        {
+          "line": 1445,
+          "kind": "effect",
+          "name": "builds shell snapshots without decoding full turn item payloads"
+        },
+        {
+          "line": 1563,
+          "kind": "effect",
+          "name": "counts imported runless history inherited by fork shells"
+        },
+        {
+          "line": 1715,
+          "kind": "effect",
+          "name": "removes rolled back runs from the active visible projection"
+        },
+        {
+          "line": 2128,
+          "kind": "effect",
+          "name": "keeps fork visible items stable after a source run is rolled back"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProviderAdapterRegistry.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ProviderAdapterRegistry.test.ts",
+      "test_declarations": [
+        {
+          "line": 76,
+          "kind": "effect",
+          "name": "routes two configured instances of the same driver independently"
+        },
+        {
+          "line": 114,
+          "kind": "effect",
+          "name": "closes a partially-created adapter scope immediately on typed failure"
+        },
+        {
+          "line": 139,
+          "kind": "effect",
+          "name": "closes a partially-created adapter scope immediately on defect"
+        },
+        {
+          "line": 161,
+          "kind": "effect",
+          "name": "closes a partially-created adapter scope immediately on interruption"
+        },
+        {
+          "line": 193,
+          "kind": "effect",
+          "name": "keeps a successfully-created adapter scope open until normal release"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProviderContinuationService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ProviderContinuationService.test.ts",
+      "test_declarations": [
+        {
+          "line": 109,
+          "kind": "effect",
+          "name": "marks an adapter-buffered wake with the provider creation source"
+        },
+        {
+          "line": 127,
+          "kind": "effect",
+          "name": "delivers a message_text wake as a real prompt, not a buffered wake"
+        },
+        {
+          "line": 158,
+          "kind": "effect",
+          "name": "dispatches a current delegated completion as one server-owned queued message"
+        },
+        {
+          "line": 210,
+          "kind": "effect",
+          "name": "retries a delegated completion after a transient dispatch failure"
+        },
+        {
+          "line": 257,
+          "kind": "effect",
+          "name": "backs off repeated delegated completion dispatch failures"
+        },
+        {
+          "line": 306,
+          "kind": "effect",
+          "name": "resets delegated completion retry backoff after archive or deletion"
+        },
+        {
+          "line": 385,
+          "kind": "effect",
+          "name": "drops a delegated completion retry after its delivery closes"
+        },
+        {
+          "line": 426,
+          "kind": "effect",
+          "name": "keeps a Grok delegated completion queued instead of restarting active work"
+        },
+        {
+          "line": 459,
+          "kind": "effect",
+          "name": "drops stopped and disposed delegated completions instead of reviving them after recovery"
+        },
+        {
+          "line": 496,
+          "kind": "effect",
+          "name": "does not redispatch a persisted delegated completion message during recovery"
+        },
+        {
+          "line": 532,
+          "kind": "effect",
+          "name": "drops archived and deleted delegated completions during recovery"
+        },
+        {
+          "line": 573,
+          "kind": "effect",
+          "name": "dispatches a current request exactly once"
+        },
+        {
+          "line": 591,
+          "kind": "effect",
+          "name": "queues a continuation behind an active user run"
+        },
+        {
+          "line": 610,
+          "kind": "effect",
+          "name": "drops a request invalidated before dispatch"
+        },
+        {
+          "line": 631,
+          "kind": "effect",
+          "name": "drops a request invalidated while projection is blocked"
+        },
+        {
+          "line": 663,
+          "kind": "effect",
+          "name": "does not revive an old request when a later generation is current"
+        },
+        {
+          "line": 702,
+          "kind": "effect",
+          "name": "clears a sticky continuation offer when its thread is archived"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProviderEventIngestor.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ProviderEventIngestor.test.ts",
+      "test_declarations": [
+        {
+          "line": 128,
+          "kind": "effect",
+          "name": "records accepted billed turn usage once without billing the context window"
+        },
+        {
+          "line": 229,
+          "kind": "effect",
+          "name": "normalizes provider events through the real event log and projection store"
+        },
+        {
+          "line": 310,
+          "kind": "effect",
+          "name": "treats successful provider terminal markers as non-persisted orchestration control signals"
+        },
+        {
+          "line": 353,
+          "kind": "effect",
+          "name": "persists an interrupted run's inherited terminal through the live run router"
+        },
+        {
+          "line": 467,
+          "kind": "effect",
+          "name": "persists a completed run's late background terminal exactly once"
+        },
+        {
+          "line": 798,
+          "kind": "effect",
+          "name": "preserves an answer committed after terminal normalization reads a pending question"
+        },
+        {
+          "line": 970,
+          "kind": "effect",
+          "name": "persists a failed provider terminal as one expected error item"
+        },
+        {
+          "line": 1046,
+          "kind": "effect",
+          "name": "routes provider-owned child artifacts to their child app thread"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProviderFailure.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ProviderFailure.test.ts",
+      "test_declarations": [
+        {
+          "line": 86,
+          "kind": "effect",
+          "name": "keys terminal failure items by provider turn across retries and fallback paths"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.regression.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.regression.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.test.ts",
+      "test_declarations": [
+        {
+          "line": 29,
+          "kind": "effect",
+          "name": "drains durable effects before reporting recovery complete"
+        },
+        {
+          "line": 67,
+          "kind": "effect",
+          "name": "expires orphaned runtime requests before command readiness"
+        },
+        {
+          "line": 124,
+          "kind": "effect",
+          "name": "preserves async questions across startup and shutdown"
+        },
+        {
+          "line": 173,
+          "kind": "effect",
+          "name": "uses the same reconciliation path to cancel runtime requests during shutdown"
+        },
+        {
+          "line": 234,
+          "kind": "effect",
+          "name": "preserves a replayable waiting run while cancelling its process-bound background work"
+        },
+        {
+          "line": 340,
+          "kind": "effect",
+          "name": "cancels a stale waiting run when no checkpoint capture can finish it"
+        },
+        {
+          "line": 399,
+          "kind": "effect",
+          "name": "cancels accepted queued work instead of replaying it after restart"
+        },
+        {
+          "line": 484,
+          "kind": "effect",
+          "name": "cancels the complete in-flight subtree and stops its persisted session without reopening it"
+        },
+        {
+          "line": 612,
+          "kind": "effect",
+          "name": "clears persisted pendingBackgroundTasks and terminalizes stale background items on settled runs"
+        },
+        {
+          "line": 822,
+          "kind": "effect",
+          "name": "terminalizes a leftover nonpersistent dynamic_tool on a settled run after process loss"
+        },
+        {
+          "line": 947,
+          "kind": "effect",
+          "name": "terminalizes the linked subagent and node for a stale subagent item on a settled run"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProviderSelectionTransition.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ProviderSelectionTransition.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProviderSessionManager.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ProviderSessionManager.test.ts",
+      "test_declarations": [
+        {
+          "line": 513,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 opens independent sessions concurrently"
+        },
+        {
+          "line": 590,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 opens a duplicate session only once"
+        },
+        {
+          "line": 650,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 releases live sessions when its layer shuts down"
+        },
+        {
+          "line": 692,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 closes event subscriptions normally on server shutdown"
+        },
+        {
+          "line": 734,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 issues MCP credentials before opening and revokes them on close"
+        },
+        {
+          "line": 792,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 withholds the preview capability when agent browser access is off"
+        },
+        {
+          "line": 845,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 revokes MCP credentials when release persistence fails"
+        },
+        {
+          "line": 897,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 duplicate detach preserves replacement MCP credentials"
+        },
+        {
+          "line": 967,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 detach of a superseded live session preserves replacement MCP credentials"
+        },
+        {
+          "line": 1043,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 keeps a thread's MCP credential stable across detach and re-attach on a shared session"
+        },
+        {
+          "line": 1121,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 revokes a rotated credential despite a stale record on another live session"
+        },
+        {
+          "line": 1177,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 protects a reused credential from a predecessor release during open"
+        },
+        {
+          "line": 1252,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 terminal detach revokes the thread's MCP credential"
+        },
+        {
+          "line": 1294,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 releases idle sessions without sweeping all sessions"
+        },
+        {
+          "line": 1342,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 persists release when session scope close hangs"
+        },
+        {
+          "line": 1389,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 defers idle release while background work is pending"
+        },
+        {
+          "line": 1443,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 releases pinned idle sessions once the pin cap expires"
+        },
+        {
+          "line": 1495,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 does not idle-release a session that turns busy during the pending-work check"
+        },
+        {
+          "line": 1624,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 does not apply a stale idle pin to a replacement session"
+        },
+        {
+          "line": 1717,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 keeps active sessions alive until the provider turn terminates"
+        },
+        {
+          "line": 1814,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 uses the same release path for runtime failures"
+        },
+        {
+          "line": 1864,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 releases sessions when provider event streams fail"
+        },
+        {
+          "line": 1918,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 marks pending runtime requests non-live on release"
+        },
+        {
+          "line": 1986,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 keeps a multi-thread session alive until all turns finish"
+        },
+        {
+          "line": 2133,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 opens one shared runtime, broadcasts events, and detaches threads independently"
+        },
+        {
+          "line": 2292,
+          "kind": "effect",
+          "name": "ProviderSessionManagerV2 rejects a second thread when the provider runtime is exclusive"
+        },
+        {
+          "line": 2400,
+          "kind": "effect",
+          "name": "rejects a deleted workspace before reusing a live session without changing its state"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProviderSessionTransitionPolicy.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ProviderSessionTransitionPolicy.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProviderSwitchService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ProviderSwitchService.test.ts",
+      "test_declarations": [
+        {
+          "line": 86,
+          "kind": "effect",
+          "name": "restarts and releases the current session for unsupported in-session model changes"
+        },
+        {
+          "line": 104,
+          "kind": "effect",
+          "name": "distinguishes compatible and incompatible instances of the same driver"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProviderTurnControlService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ProviderTurnControlService.test.ts",
+      "test_declarations": [
+        {
+          "line": 128,
+          "kind": "effect",
+          "name": "interrupts the historical session only for the exact committed restart replacement"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProviderTurnTokenUsage.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ProviderTurnTokenUsage.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/QueuedRunOrder.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/QueuedRunOrder.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/RestartContinuation.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/RestartContinuation.test.ts",
+      "test_declarations": [
+        {
+          "line": 180,
+          "kind": "effect",
+          "name": "does not duplicate delivery and yields to newer user work or opt-out"
+        },
+        {
+          "line": 229,
+          "kind": "effect",
+          "name": "does not cancel or resume a run that completes while shutdown intent commits"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/RunExecutionService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/RunExecutionService.test.ts",
+      "test_declarations": [
+        {
+          "line": 82,
+          "kind": "effect",
+          "name": "routes shared-runtime events only to their owning root run"
+        },
+        {
+          "line": 438,
+          "kind": "effect",
+          "name": "rechecks run ownership immediately before calling the provider"
+        },
+        {
+          "line": 512,
+          "kind": "effect",
+          "name": "dispatches only attachment-free compact commands through the native compaction path"
+        },
+        {
+          "line": 595,
+          "kind": "effect",
+          "name": "refreshes MCP credential liveness before calling the provider"
+        },
+        {
+          "line": 666,
+          "kind": "effect",
+          "name": "keeps ingesting owned child events after the root turn terminalizes"
+        },
+        {
+          "line": 872,
+          "kind": "effect",
+          "name": "keeps ingesting a late background command item completion after root terminal"
+        },
+        {
+          "line": 883,
+          "kind": "effect",
+          "name": "ingests the trailing subagent item completion after the subagent row completes"
+        },
+        {
+          "line": 902,
+          "kind": "effect",
+          "name": "keeps ingesting a child thread's late background item completion"
+        },
+        {
+          "line": 922,
+          "kind": "effect",
+          "name": "keeps ingesting until the last of several background items terminalizes"
+        },
+        {
+          "line": 942,
+          "kind": "effect",
+          "name": "does not pin ingestion on background items when the root turn is interrupted"
+        },
+        {
+          "line": 953,
+          "kind": "effect",
+          "name": "seeds inherited background items before their next update"
+        },
+        {
+          "line": 973,
+          "kind": "effect",
+          "name": "releases the live run after an inherited background item terminalizes"
+        },
+        {
+          "line": 994,
+          "kind": "effect",
+          "name": "does not hold the live stream open for a foreign provider's background item"
+        },
+        {
+          "line": 1037,
+          "kind": "effect",
+          "name": "refreshes inherited background items after event subscription"
+        },
+        {
+          "line": 1087,
+          "kind": "effect",
+          "name": "keeps ingesting a late empty provider-thread roster while thread-scoped pending work is true"
+        },
+        {
+          "line": 1305,
+          "kind": "effect",
+          "name": "drops late root provider-thread writes from a superseded attempt"
+        },
+        {
+          "line": 1517,
+          "kind": "effect",
+          "name": "keeps ingesting a late background turn-item completion after ownership-loss rejects roster writes"
+        },
+        {
+          "line": 1687,
+          "kind": "effect",
+          "name": "does not pin ingestion on a sibling session-wide pending state when this thread has no roster"
+        },
+        {
+          "line": 1850,
+          "kind": "effect",
+          "name": "cascade-terminalizes run-owned subagent rows on interrupt before root finalization"
+        },
+        {
+          "line": 2222,
+          "kind": "effect",
+          "name": "cascades linked child-thread nodes after run-owned subagent and turn-item terminalize"
+        },
+        {
+          "line": 2458,
+          "kind": "effect",
+          "name": "cascade helper is provider-neutral for Claude and Codex-shaped child projections"
+        },
+        {
+          "line": 2701,
+          "kind": "effect",
+          "name": "omits interrupt results and subagent cascade for a superseded attempt"
+        },
+        {
+          "line": 2716,
+          "kind": "effect",
+          "name": "emits run_interrupt_result when superseded attempt still has a hard-stop request"
+        },
+        {
+          "line": 2740,
+          "kind": "effect",
+          "name": "omits run_interrupt_result when superseded attempt request is already paired"
+        },
+        {
+          "line": 2755,
+          "kind": "effect",
+          "name": "emits run_interrupt_result when hard-stop finalizes the active attempt"
+        },
+        {
+          "line": 2785,
+          "kind": "effect",
+          "name": "does not refresh pull requests for auxiliary or stale provider terminals"
+        },
+        {
+          "line": 2806,
+          "kind": "effect",
+          "name": "refreshes pull requests after a provider stream exits with an error"
+        },
+        {
+          "line": 2828,
+          "kind": "effect",
+          "name": "refreshes pull requests only once when startup failure closes its event stream"
+        },
+        {
+          "line": 2856,
+          "kind": "effect",
+          "name": "keeps completed runs completed when pull request refresh fails"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/RunFinalizationService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/RunFinalizationService.test.ts",
+      "test_declarations": [
+        {
+          "line": 19,
+          "kind": "effect",
+          "name": "captures the root checkpoint and refreshes workspace state"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/RuntimePolicy.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/RuntimePolicy.test.ts",
+      "test_declarations": [
+        {
+          "line": 81,
+          "kind": "effect",
+          "name": "uses the project root for local-checkout threads"
+        },
+        {
+          "line": 93,
+          "kind": "effect",
+          "name": "prefers a provisioned worktree over the project root"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/RuntimeRequestService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/RuntimeRequestService.test.ts",
+      "test_declarations": [
+        {
+          "line": 75,
+          "kind": "effect",
+          "name": "forwards orchestrator-resolved runtime requests to the live adapter"
+        },
+        {
+          "line": 139,
+          "kind": "effect",
+          "name": "rejects expired runtime requests before invoking the live adapter"
+        },
+        {
+          "line": 207,
+          "kind": "effect",
+          "name": "classifies runtime request response validation failures"
+        },
+        {
+          "line": 267,
+          "kind": "effect",
+          "name": "preserves genuine provider session lookup failures as the cause"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/SelectionRestart.integration.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/SelectionRestart.integration.test.ts",
+      "test_declarations": [
+        {
+          "line": 386,
+          "kind": "live",
+          "name": "restarts selection as a new attempt and retries after old-session cleanup"
+        },
+        {
+          "line": 532,
+          "kind": "live",
+          "name": "detaches the old provider session after an active provider handoff"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ShellStream.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ShellStream.test.ts",
+      "test_declarations": [
+        {
+          "line": 308,
+          "kind": "effect",
+          "name": "emits every initial item before enrichment even when enrichment is already ready"
+        },
+        {
+          "line": 365,
+          "kind": "effect",
+          "name": "still interleaves enrichment with the post-prefix tail after initials drain"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/SubagentProjection.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/SubagentProjection.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/TODO.md",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/TODO.md",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ThreadDeletion.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ThreadDeletion.test.ts",
+      "test_declarations": [
+        {
+          "line": 137,
+          "kind": "effect",
+          "name": "cancels active work without reviving a run while disposing delegated completion"
+        },
+        {
+          "line": 227,
+          "kind": "effect",
+          "name": "queues provider and resource cleanup and preserves an earlier deletion timestamp"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ThreadForkService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ThreadForkService.test.ts",
+      "test_declarations": [
+        {
+          "line": 86,
+          "kind": "effect",
+          "name": "keeps a fork awake when its source thread is snoozed"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ThreadLaunchService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ThreadLaunchService.test.ts",
+      "test_declarations": [
+        {
+          "line": 221,
+          "kind": "effect",
+          "name": "returns a visible preparing message while provisioning is still blocked"
+        },
+        {
+          "line": 288,
+          "kind": "effect",
+          "name": "provisions independent launches concurrently instead of behind a global semaphore"
+        },
+        {
+          "line": 335,
+          "kind": "effect",
+          "name": "enqueues provider work only after setup has been initiated"
+        },
+        {
+          "line": 384,
+          "kind": "effect",
+          "name": "queues follow-up messages behind preparation and checkpoints them in the final workspace"
+        },
+        {
+          "line": 509,
+          "kind": "effect",
+          "name": "keeps native maintenance commands out of steering and restart messages"
+        },
+        {
+          "line": 591,
+          "kind": "effect",
+          "name": "arms durable title generation after accepting the first message"
+        },
+        {
+          "line": 685,
+          "kind": "effect",
+          "name": "does not update a reused thread title when the initial message is rejected"
+        },
+        {
+          "line": 736,
+          "kind": "effect",
+          "name": "generates an initial title for an attachment-only message"
+        },
+        {
+          "line": 781,
+          "kind": "effect",
+          "name": "uses the available source control writer for generated worktree branches"
+        },
+        {
+          "line": 835,
+          "kind": "effect",
+          "name": "falls back when the source control writer is unavailable"
+        },
+        {
+          "line": 873,
+          "kind": "effect",
+          "name": "names the worktree itself when the client provides no branch"
+        },
+        {
+          "line": 901,
+          "kind": "effect",
+          "name": "renames a temporary t3code/<hash> branch off the provisioning critical path"
+        },
+        {
+          "line": 953,
+          "kind": "effect",
+          "name": "keeps an explicit branch name instead of generating one"
+        },
+        {
+          "line": 973,
+          "kind": "effect",
+          "name": "keeps the temporary branch when branch generation fails"
+        },
+        {
+          "line": 1009,
+          "kind": "effect",
+          "name": "renames a temporary branch on an existing worktree to a generated name"
+        },
+        {
+          "line": 1041,
+          "kind": "effect",
+          "name": "shows the fetch diagnosis when preparing a worktree from origin fails"
+        },
+        {
+          "line": 1132,
+          "kind": "effect",
+          "name": "deduplicates retried launch side effects in-process"
+        },
+        {
+          "line": 1163,
+          "kind": "effect",
+          "name": "does not let a failing same-command caller strand a concurrent durable launch"
+        },
+        {
+          "line": 1211,
+          "kind": "effect",
+          "name": "schedules an accepted preparing message exactly once across concurrent retries"
+        },
+        {
+          "line": 1273,
+          "kind": "effect",
+          "name": "does not depend on the legacy launch workflow table"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ThreadLifecycleService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ThreadLifecycleService.test.ts",
+      "test_declarations": [
+        {
+          "line": 14,
+          "kind": "effect",
+          "name": "maps application lifecycle operations to V2-native commands"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ThreadLiveEventCoalescer.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ThreadLiveEventCoalescer.test.ts",
+      "test_declarations": [
+        {
+          "line": 129,
+          "kind": "effect",
+          "name": "flushes pending tool updates as soon as an unrelated event arrives"
+        },
+        {
+          "line": 151,
+          "kind": "effect",
+          "name": "flushes pending tool updates as soon as a synchronization marker arrives"
+        },
+        {
+          "line": 170,
+          "kind": "effect",
+          "name": "fails and clears pending updates when their serialized payload fills the budget"
+        },
+        {
+          "line": 196,
+          "kind": "effect",
+          "name": "keeps the flush timer alive when an offer's shorter scope closes"
+        },
+        {
+          "line": 210,
+          "kind": "effect",
+          "name": "keeps an unacknowledged batch charged and clears later events on overflow"
+        },
+        {
+          "line": 246,
+          "kind": "effect",
+          "name": "flushes the last update before a finite source ends"
+        },
+        {
+          "line": 256,
+          "kind": "effect",
+          "name": "propagates an upstream failure instead of leaving the subscriber waiting"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ThreadManagementService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ThreadManagementService.test.ts",
+      "test_declarations": [
+        {
+          "line": 265,
+          "kind": "effect",
+          "name": "classifies projection infrastructure failures separately from a missing thread"
+        },
+        {
+          "line": 295,
+          "kind": "effect",
+          "name": "uses thread-not-found only after a projection loads outside the project"
+        },
+        {
+          "line": 324,
+          "kind": "effect",
+          "name": "preserves failed legacy materialization when reading checkpoint context"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ThreadSettlementService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ThreadSettlementService.test.ts",
+      "test_declarations": [
+        {
+          "line": 506,
+          "kind": "effect",
+          "name": "dispatches the last activity time with the v2 snapshot guard"
+        },
+        {
+          "line": 531,
+          "kind": "effect",
+          "name": "reevaluates immediately after a pull request merge"
+        },
+        {
+          "line": 589,
+          "kind": "effect",
+          "name": "settles branch threads on a pull request merge without waiting for the next sweep"
+        },
+        {
+          "line": 632,
+          "kind": "effect",
+          "name": "a merge does not settle threads linked to an unrelated pull request"
+        },
+        {
+          "line": 703,
+          "kind": "effect",
+          "name": "looks up the branch pull request from a thread's live worktree"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ThreadStream.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ThreadStream.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ThreadTitleRegenerationService.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/ThreadTitleRegenerationService.test.ts",
+      "test_declarations": [
+        {
+          "line": 217,
+          "kind": "effect",
+          "name": "arms and clears the regeneration marker through metadata commands"
+        },
+        {
+          "line": 259,
+          "kind": "effect",
+          "name": "skips execution when the marker was superseded by a newer request"
+        },
+        {
+          "line": 289,
+          "kind": "effect",
+          "name": "lands the regenerated title from the conversation digest"
+        },
+        {
+          "line": 321,
+          "kind": "effect",
+          "name": "keeps the current title when generation returns the fallback"
+        },
+        {
+          "line": 349,
+          "kind": "effect",
+          "name": "keeps the current title when regeneration reproduces it"
+        },
+        {
+          "line": 380,
+          "kind": "effect",
+          "name": "clears the marker and keeps the title when generation fails"
+        },
+        {
+          "line": 409,
+          "kind": "effect",
+          "name": "completes without generating when the initial message is unavailable"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/UserFacingErrors.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/UserFacingErrors.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/V1ImportBoundary.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/V1ImportBoundary.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/WireProjection.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/WireProjection.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/runtimeLayer.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/runtimeLayer.test.ts",
+      "test_declarations": [
+        {
+          "line": 192,
+          "kind": "effect",
+          "name": "waits for an in-flight thread update before planning deletion"
+        },
+        {
+          "line": 327,
+          "kind": "effect",
+          "name": "creates and reads a thread through the production V2 composition"
+        },
+        {
+          "line": 358,
+          "kind": "effect",
+          "name": "answers an async question after its provider exits and commits the answer once"
+        },
+        {
+          "line": 500,
+          "kind": "effect",
+          "name": "merges an explicit provider-finished run while checkpoint capture is pending"
+        },
+        {
+          "line": 671,
+          "kind": "effect",
+          "name": "hydrates imported transcripts before commands and propagates hydration failures"
+        },
+        {
+          "line": 872,
+          "kind": "effect",
+          "name": "applies lifecycle commands idempotently and emits archive/removal shell deltas"
+        },
+        {
+          "line": 1079,
+          "kind": "effect",
+          "name": "persists linked pull requests through projection rebuilds and unlinking"
+        },
+        {
+          "line": 1140,
+          "kind": "effect",
+          "name": "persists rejected command receipts across retries"
+        },
+        {
+          "line": 1157,
+          "kind": "effect",
+          "name": "admits restart continuations once and rejects a stale continuation behind newer work"
+        },
+        {
+          "line": 1239,
+          "kind": "effect",
+          "name": "rejects settling a thread while a run is active"
+        },
+        {
+          "line": 1293,
+          "kind": "effect",
+          "name": "cancels queued work when a thread is archived"
+        },
+        {
+          "line": 1375,
+          "kind": "effect",
+          "name": "promotes only one queued run after each terminal run"
+        },
+        {
+          "line": 1543,
+          "kind": "effect",
+          "name": "edits and removes queued runs"
+        },
+        {
+          "line": 1699,
+          "kind": "effect",
+          "name": "interrupts a pending provider start without launching provider work"
+        },
+        {
+          "line": 1777,
+          "kind": "effect",
+          "name": "carries snooze state through the V2 shell projection"
+        },
+        {
+          "line": 1856,
+          "kind": "effect",
+          "name": "carries the visited watermark through the V2 shell projection"
+        },
+        {
+          "line": 1968,
+          "kind": "effect",
+          "name": "orders retained project transactions and V2 thread transactions in one source"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/testkit/ClaudeReplayFixtures.integration.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/testkit/ClaudeReplayFixtures.integration.test.ts",
+      "test_declarations": [
+        {
+          "line": 140,
+          "kind": "effect",
+          "name": "classifies every Claude fixture tool use through the native tool table"
+        },
+        {
+          "line": 167,
+          "kind": "effect",
+          "name": "keeps unregistered native conversation-state transcripts reviewable"
+        },
+        {
+          "line": 347,
+          "kind": "effect",
+          "name": "replays simple as typed Claude Agent SDK query messages"
+        },
+        {
+          "line": 374,
+          "kind": "effect",
+          "name": "replays multi_turn as typed Claude Agent SDK query messages"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/testkit/CodexReplayFixtures.integration.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/testkit/CodexReplayFixtures.integration.test.ts",
+      "test_declarations": [
+        {
+          "line": 675,
+          "kind": "effect",
+          "name": "loads each canonical Codex fixture as an app-server replay transcript"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/testkit/OrchestratorReplayFixtures.contract.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/testkit/OrchestratorReplayFixtures.contract.test.ts",
+      "test_declarations": [
+        {
+          "line": 30,
+          "kind": "effect",
+          "name": "materializes queued fixture messages as queue-after-active dispatches"
+        },
+        {
+          "line": 54,
+          "kind": "effect",
+          "name": "keeps consecutive queue_message inputs queued without an intermediate idle barrier"
+        },
+        {
+          "line": 130,
+          "kind": "effect",
+          "name": "does not await thread idle between steer/restart and answer_next_user_input_request"
+        },
+        {
+          "line": 184,
+          "kind": "effect",
+          "name": "keeps the active dispatch barrier through queued-run replacement"
+        },
+        {
+          "line": 216,
+          "kind": "effect",
+          "name": "materializes fixture run-status waits against derived run IDs"
+        },
+        {
+          "line": 240,
+          "kind": "effect",
+          "name": "keeps message ordinals separate from app run ordinals after steering"
+        },
+        {
+          "line": 283,
+          "kind": "effect",
+          "name": "defines one stable input and provider-specific replay/output contracts per scenario"
+        },
+        {
+          "line": 396,
+          "kind": "effect",
+          "name": "keeps Codex fixture transcripts at the codex app-server boundary"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/testkit/OrchestratorReplayFixtures.integration.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/testkit/OrchestratorReplayFixtures.integration.test.ts",
+      "test_declarations": [
+        {
+          "line": 209,
+          "kind": "effect",
+          "name": "executes explicit Cursor restart_active through the recorded SDK boundary"
+        },
+        {
+          "line": 223,
+          "kind": "effect",
+          "name": "streams Cursor assistant artifacts only when streaming is enabled"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/testkit/OrchestratorReplayRecovery.integration.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/testkit/OrchestratorReplayRecovery.integration.test.ts",
+      "test_declarations": [
+        {
+          "line": 185,
+          "kind": "effect",
+          "name": "resumes a provider-native Codex thread after recreating the orchestrator runtime"
+        },
+        {
+          "line": 283,
+          "kind": "effect",
+          "name": "resumes a provider-native Cursor thread after recreating the orchestrator runtime"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/testkit/ProviderReplayGate.testkit.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/testkit/ProviderReplayGate.testkit.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/testkit/ProviderSwitch.integration.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/testkit/ProviderSwitch.integration.test.ts",
+      "test_declarations": [
+        {
+          "line": 299,
+          "kind": "live",
+          "name": "reissues imported v1 context when switching after the first provider fails"
+        },
+        {
+          "line": 524,
+          "kind": "live",
+          "name": "uses portable fallback when native resume fails after a provider switch"
+        },
+        {
+          "line": 690,
+          "kind": "live",
+          "name": "resolves a Claude fork into portable Codex context on first dispatch"
+        },
+        {
+          "line": 829,
+          "kind": "live",
+          "name": "resolves a same-provider Cursor fork with portable context"
+        },
+        {
+          "line": 961,
+          "kind": "live",
+          "name": "switches providers while consuming a pending cross-provider merge-back"
+        },
+        {
+          "line": 1141,
+          "kind": "live",
+          "name": "routes two custom instances of the same driver independently"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/testkit/ReplayTranscriptNdjson.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/testkit/ReplayTranscriptNdjson.test.ts",
+      "test_declarations": [
+        {
+          "line": 14,
+          "kind": "effect",
+          "name": "decodes a self-describing provider replay fixture"
+        },
+        {
+          "line": 33,
+          "kind": "effect",
+          "name": "decodes entry-only fixtures when metadata is supplied by the test"
+        },
+        {
+          "line": 53,
+          "kind": "effect",
+          "name": "returns a schema-serializable typed parse error"
+        },
+        {
+          "line": 75,
+          "kind": "effect",
+          "name": "materializes outbound workspace placeholders without weakening replay frames"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/testkit/ThreadFork.integration.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/testkit/ThreadFork.integration.test.ts",
+      "test_declarations": [
+        {
+          "line": 401,
+          "kind": "effect",
+          "name": "creates an idle app fork and resolves it with Codex native thread/fork on first dispatch"
+        },
+        {
+          "line": 578,
+          "kind": "effect",
+          "name": "creates an idle app fork and resolves it with Claude native session fork on first dispatch"
+        },
+        {
+          "line": 717,
+          "kind": "effect",
+          "name": "rolls back a Codex native fork when forking from an earlier completed source turn"
+        },
+        {
+          "line": 901,
+          "kind": "effect",
+          "name": "forks a Claude native session from an earlier completed source turn"
+        },
+        {
+          "line": 1049,
+          "kind": "effect",
+          "name": "keeps a Claude native fork stable when the source thread rolls back"
+        },
+        {
+          "line": 1249,
+          "kind": "effect",
+          "name": "rolls back a Claude native fork to an earlier fork-local turn"
+        },
+        {
+          "line": 1463,
+          "kind": "skip",
+          "name": "merges a fork delta back into the source thread through context handoff"
+        }
+      ]
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/testkit/ThreadMergeBack.integration.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/testkit/ThreadMergeBack.integration.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/testkit/fixtures/subagent_continue/README.md",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/testkit/fixtures/subagent_continue/README.md",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/testkit/fixtures/thread_fork_native_continue/README.md",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/testkit/fixtures/thread_fork_native_continue/README.md",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/testkit/fixtures/thread_fork_native_siblings/README.md",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/testkit/fixtures/thread_fork_native_siblings/README.md",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/testkit/fixtures/thread_merge_back_continue/README.md",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/testkit/fixtures/thread_merge_back_continue/README.md",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/testkit/fixtures/thread_merge_back_siblings/README.md",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/testkit/fixtures/thread_merge_back_siblings/README.md",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/threadHistoryPaging.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/orchestration-v2/threadHistoryPaging.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "apps/server/src/scheduledTasks/Schedule.test.ts",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/apps/server/src/scheduledTasks/Schedule.test.ts",
+      "test_declarations": []
+    },
+    {
+      "path": "docs/orchestration-v2/README.md",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/docs/orchestration-v2/README.md",
+      "test_declarations": []
+    },
+    {
+      "path": "docs/orchestration-v2/core-graph-and-data-model.md",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/docs/orchestration-v2/core-graph-and-data-model.md",
+      "test_declarations": []
+    },
+    {
+      "path": "docs/orchestration-v2/entity-ids-and-correlation.md",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/docs/orchestration-v2/entity-ids-and-correlation.md",
+      "test_declarations": []
+    },
+    {
+      "path": "docs/orchestration-v2/feature-lifecycles.md",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/docs/orchestration-v2/feature-lifecycles.md",
+      "test_declarations": []
+    },
+    {
+      "path": "docs/orchestration-v2/orchestrator-mcp-server.md",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/docs/orchestration-v2/orchestrator-mcp-server.md",
+      "test_declarations": []
+    },
+    {
+      "path": "docs/orchestration-v2/provider-capability-system.md",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/docs/orchestration-v2/provider-capability-system.md",
+      "test_declarations": []
+    },
+    {
+      "path": "docs/orchestration-v2/provider-switching-and-context.md",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/docs/orchestration-v2/provider-switching-and-context.md",
+      "test_declarations": []
+    },
+    {
+      "path": "docs/orchestration-v2/testing-strategy.md",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/docs/orchestration-v2/testing-strategy.md",
+      "test_declarations": []
+    },
+    {
+      "path": "docs/orchestration-v2/thread-lineage-and-context-transfer.md",
+      "url": "https://github.com/pingdotgg/t3code/blob/415ed0f73b97f1655b6282492f81d0b2bba3a9cc/docs/orchestration-v2/thread-lineage-and-context-transfer.md",
+      "test_declarations": []
+    }
+  ]
+}

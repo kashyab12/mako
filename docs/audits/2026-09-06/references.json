@@ -1,0 +1,32 @@
+{
+  "reviewedAt": "2026-09-06 America/Los_Angeles",
+  "makoBaseCommit": "8eefeebdb35db91415bee343fce579e808cfd11e",
+  "makoTarget": "Current working tree, including pre-existing uncommitted changes",
+  "references": [
+    {
+      "name": "Codex",
+      "url": "https://github.com/openai/codex.git",
+      "commit": "112be0bd74ce327788613f4f8f92e8b7c92447c7",
+      "localPath": "/tmp/mako-audit-2026-09-06/codex"
+    },
+    {
+      "name": "MonoCode",
+      "url": "https://github.com/hardbeat920/monocode.git",
+      "commit": "93cf01ac334c3b1271ef19516f2bdd9ac3af6503",
+      "localPath": "/tmp/mako-audit-2026-09-06/monocode"
+    },
+    {
+      "name": "T3 Code main",
+      "url": "https://github.com/pingdotgg/t3code.git",
+      "commit": "52b2bf77a941740b4d979f3f4cae1c2851c14a69",
+      "localPath": "/tmp/mako-audit-2026-09-06/t3code"
+    },
+    {
+      "name": "T3 Code Orchestrator v2, open PR 2829",
+      "url": "https://github.com/pingdotgg/t3code.git",
+      "ref": "refs/pull/2829/head",
+      "commit": "415ed0f73b97f1655b6282492f81d0b2bba3a9cc",
+      "localPath": "/tmp/mako-audit-2026-09-06/t3code"
+    }
+  ]
+}

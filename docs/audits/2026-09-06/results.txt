@@ -1,0 +1,25 @@
+Mako known-defect diagnostics. Assertions confirm defects; they are not acceptance tests.
+CONFIRMED archive records new revision while tool output remains missing at unchanged entry count
+CONFIRMED partial-line open/follow loses completed user turn: full read has 2 entries, opened+follow has 1
+CONFIRMED initial scan and open do not archive an existing session
+CONFIRMED Claude image-only user turn completely absent from canonical session
+CONFIRMED Cursor WAL-only rename: native peek title after, watcher rescan catalog title before; main store stat unchanged
+CONFIRMED Codex read removes genuine trailing request after recommended_plugins envelope while retaining its answer
+CONFIRMED colon line suffix becomes part of the filename; file/editor schemes are stripped
+CONFIRMED citation preprocessing rewrites literal fenced-code contents
+CONFIRMED mixed attachment appendix hides the text attachment without a chip
+CONFIRMED failed image staging still constructs a sendable prompt without the image
+CONFIRMED ACP image/resource chunks vanish; standard tool content is ignored without rawOutput
+CONFIRMED Codex replay drops localImage paths and maps imageView to unsupported
+CONFIRMED a user request following a leading injected envelope is discarded with the envelope
+{"test":"identity","completedExchanges":499,"reusedExchanges":0,"reusedMessages":0}
+{"test":"projection-only","turns":30,"updates":1000,"ms":5.8}
+{"test":"projection-only","turns":500,"updates":1000,"ms":40.3}
+{"test":"projection-only","turns":5000,"updates":1000,"ms":330.6}
+{"test":"partial-tool-output","nativeStatus":"in_progress","projectedTypes":["toolCall","toolResult"]}
+{"test":"native-live-convergence","expectedExchanges":1,"actualExchanges":2,"prompts":["new prompt","new prompt"]}
+{"test":"actual-store-native-live-convergence","savedEntries":2,"liveBlocks":2,"bothRemain":true}
+{"test":"provider-turn-failure","actualAttention":"review","actualStatus":"ready"}
+{"test":"renderer-reload-live-events","restoredSessions":0,"bufferedUpdates":1}
+{"calls":["pageThread","followThread:/tmp/synthetic-native-session","acpStart:native-id","acpPrompt"],"viewingPath":"/tmp/synthetic-native-session","liveThreadPath":"/tmp/synthetic-native-session","acpPanelSelected":true,"renderedExchangeCount":2,"prompts":["synthetic prompt","synthetic prompt"]}
+All known-defect diagnostics reproduced. No live provider calls or private sessions used.
