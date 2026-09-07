@@ -1,6 +1,11 @@
 import type { ComponentType, ElementType, ReactNode } from "react"
 import { Registry, useRegistry } from "@/extend/registry"
-import type { GitFile, ChatMessage, SessionMeta, SessionSummary } from "@/lib/types"
+import type {
+  GitFile,
+  ChatMessage,
+  SessionMeta,
+  SessionSummary,
+} from "@/lib/types"
 import type { Checkpoint } from "@/lib/thread"
 
 /** A slot whose contributions receive nothing from the render site. */
@@ -112,6 +117,12 @@ export function registerToolView(name: string, view: ToolView) {
 }
 
 export function useToolView(name: string): ToolView | undefined {
-  return useRegistry(toolViews).get(name)
+  const views = useRegistry(toolViews)
+  const direct = views.get(name)
+  if (direct) return direct
+  const normalized = name.toLowerCase()
+  for (const [candidate, view] of views.entries()) {
+    if (candidate.toLowerCase() === normalized) return view
+  }
+  return undefined
 }
-

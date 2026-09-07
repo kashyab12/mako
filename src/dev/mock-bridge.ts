@@ -1,3 +1,5 @@
+import type { LiveSnapshot, LiveStartOptions, LiveRequest } from "@/lib/types"
+import { reduceLiveUpdates } from "../../electron/contracts/live-content"
 import type {
   ThreadContextOptions,
   ThreadFileContext,
@@ -5,7 +7,7 @@ import type {
 } from "../../electron/shared.ts"
 import type {
   Automation,
-  AcpSessionState,
+  LiveSessionState,
   BootPayload,
   HostEvent,
   SessionMeta,
@@ -92,7 +94,9 @@ export function installMockBridge() {
   let terminalSessions = initialTerminalSessions()
   const capabilities = createCapabilities()
 
+  const liveSnapshots = new Map<string, LiveSnapshot>()
   const boot: BootPayload = {
+    live: [],
     tabs: [
       {
         id: "tab-1",
@@ -116,7 +120,7 @@ export function installMockBridge() {
   // strip against, not enough to pretend it is the real thing.
   let tabCount = 1
   let acpCount = 0
-  const acpSessions = new Map<string, AcpSessionState>()
+  const acpSessions = new Map<string, LiveSessionState>()
   const mockTab = (id: string) => ({
     id,
     session: { meta, messages: MESSAGES, tree: TREE },
@@ -209,6 +213,13 @@ export function installMockBridge() {
     pathForFile: () => null,
     unwatchFile: async () => {},
     readFile: async (path: string) => ({
+      path,
+      contents: `// ${path}\n// The browser mock has no filesystem; this stands in for one.\n`,
+      size: 96,
+      binary: false,
+      truncated: false,
+    }),
+    readThreadFile: async (_threadPath: string, path: string) => ({
       path,
       contents: `// ${path}\n// The browser mock has no filesystem; this stands in for one.\n`,
       size: 96,
@@ -437,42 +448,44 @@ export function installMockBridge() {
       activity: {},
     }),
     openThread: async (path: string) => ({
-      ref: path.includes("devin")
-        ? {
-            harness: "devin" as const,
-            nativeId: "dv-1",
-            path,
-            cwd: "/Users/you/api",
-            title: "Wire the payments retry queue",
-            model: "adaptive",
-            updatedAt: new Date().toISOString(),
-            locked: true,
-          }
-        : path.includes("claude-2")
+      ref:
+        mockThreads().threads.find((ref) => ref.path === path) ??
+        (path.includes("devin")
           ? {
-              harness: "claude" as const,
-              nativeId: "cl-2",
+              harness: "devin" as const,
+              nativeId: "dv-1",
               path,
               cwd: "/Users/you/api",
-              title: "Ship the billing webhooks",
-              model: "claude-opus-5",
+              title: "Wire the payments retry queue",
+              model: "adaptive",
               updatedAt: new Date().toISOString(),
-              lineage: [
-                {
-                  harness: "devin" as const,
-                  title: "Ship the billing webhooks",
-                },
-              ],
+              locked: true,
             }
-          : {
-              harness: "codex" as const,
-              nativeId: "cx-1",
-              path,
-              cwd: "/Users/you/api",
-              title: "Trace the flaky webhook retry",
-              model: "gpt-5.2-codex",
-              updatedAt: new Date().toISOString(),
-            },
+          : path.includes("claude-2")
+            ? {
+                harness: "claude" as const,
+                nativeId: "cl-2",
+                path,
+                cwd: "/Users/you/api",
+                title: "Ship the billing webhooks",
+                model: "claude-opus-5",
+                updatedAt: new Date().toISOString(),
+                lineage: [
+                  {
+                    harness: "devin" as const,
+                    title: "Ship the billing webhooks",
+                  },
+                ],
+              }
+            : {
+                harness: "codex" as const,
+                nativeId: "cx-1",
+                path,
+                cwd: "/Users/you/api",
+                title: "Trace the flaky webhook retry",
+                model: "gpt-5.2-codex",
+                updatedAt: new Date().toISOString(),
+              }),
       entries: [
         {
           kind: "user",
@@ -802,74 +815,181 @@ export function installMockBridge() {
       "grok",
       "devin",
     ],
-    acpHarnesses: async () => ["claude", "cursor", "grok", "devin"],
-    acpStart: async (harness: string, cwd: string) => {
-      const session: AcpSessionState = {
-        id: `acp-${++acpCount}`,
-        nativeId: `mock-${harness}-${acpCount}`,
+    liveCapabilities: async () =>
+      ["claude", "codex", "cursor", "grok", "devin", "opencode"].map(
+        (provider) => ({ provider, canResume: true })
+      ),
+    liveStart: async (
+      harness: string,
+      cwd: string,
+      options: LiveStartOptions
+    ) => {
+      const session: LiveSessionState = {
+        id: options.conversationId,
+        nativeId: `mock-${harness}-${++acpCount}`,
         harness,
+        title: options.title,
         cwd,
         status: "ready",
-        modes: [
-          { id: "default", name: "Always Ask" },
-          { id: "acceptEdits", name: "Accept Edits" },
-        ],
-        currentMode: "default",
+        connection: "connected",
+        modes: [],
+        currentMode: null,
         configOptions: [],
       }
       acpSessions.set(session.id, session)
-      return session
+      const request: LiveRequest | undefined = options.initialRequest
+        ? { ...options.initialRequest, status: "completed" }
+        : undefined
+      const base = options.threadPath
+        ? ((await window.mako?.pageThread(options.threadPath)) ?? null)
+        : null
+      const snapshot: LiveSnapshot = {
+        session,
+        revision: 0,
+        createdAt: Date.now(),
+        threadPath: options.threadPath,
+        base,
+        permissions: [],
+        requests: request ? [request] : [],
+        blocks: request
+          ? [
+              { type: "user", text: request.text },
+              { type: "text", text: `Finished: ${request.text}` },
+            ]
+          : [],
+      }
+      liveSnapshots.set(session.id, snapshot)
+      return snapshot
     },
-    acpPrompt: async (id: string, text: string) => {
-      const session = acpSessions.get(id)
-      if (!session) throw new Error("Mock ACP session is closed")
-      const running: AcpSessionState = { ...session, status: "running" }
-      acpSessions.set(id, running)
-      emit({ type: "acp-session", session: running })
-      emit({ type: "acp-update", id, update: { kind: "user", text } })
-      window.setTimeout(() => {
-        const current = acpSessions.get(id)
-        if (current?.status !== "running") return
-        emit({
-          type: "acp-update",
+    liveClearQueue: async (id: string) => {
+      const snapshot = liveSnapshots.get(id)
+      if (!snapshot) throw new Error("Missing mock session")
+      return snapshot
+    },
+    liveEarlier: async (id: string) => {
+      const snapshot = liveSnapshots.get(id)
+      if (!snapshot) throw new Error("Missing mock session")
+      return snapshot
+    },
+    liveBind: async (id: string, path: string) => {
+      const snapshot = liveSnapshots.get(id)
+      if (!snapshot) throw new Error("Missing mock session")
+      return { ...snapshot, threadPath: path }
+    },
+    readLiveFile: async (_id: string, path: string) => ({
+      path,
+      contents: "Mock file",
+      size: 9,
+      binary: false,
+      truncated: false,
+    }),
+    liveSnapshot: async (id: string) => liveSnapshots.get(id) ?? null,
+    livePrompt: async (
+      id: string,
+      requestId: string,
+      text: string,
+      attachments = []
+    ) => {
+      const snapshot = liveSnapshots.get(id)
+      if (!snapshot) throw new Error("Mock session is closed")
+      const request: LiveRequest = {
+        id: requestId,
+        text,
+        attachments,
+        status: "completed",
+      }
+      const updates = [
+        { kind: "user" as const, text },
+        { kind: "text" as const, text: `Finished: ${text}` },
+      ]
+      const next = {
+        ...snapshot,
+        revision: snapshot.revision + 1,
+        requests: [...snapshot.requests, request],
+        blocks: reduceLiveUpdates(snapshot.blocks, updates),
+      }
+      liveSnapshots.set(id, next)
+      emit({
+        type: "live-batch",
+        batch: {
           id,
-          update: { kind: "text", text: `Finished: ${text}` },
-        })
-        const ready: AcpSessionState = {
-          ...current,
-          status: "ready",
-          lastStop: "end_turn",
-        }
-        acpSessions.set(id, ready)
-        emit({ type: "acp-session", session: ready })
-      }, 1_200)
+          revision: next.revision,
+          updates,
+          session: next.session,
+          requests: next.requests,
+        },
+      })
+      return request
     },
-    acpPermission: async () => {},
-    acpSetMode: async (id: string, modeId: string) => {
+    livePermission: async () => {},
+    liveSetMode: async (id: string, modeId: string) => {
       const session = acpSessions.get(id)
       if (!session) return
       const next = { ...session, currentMode: modeId }
       acpSessions.set(id, next)
-      emit({ type: "acp-session", session: next })
+      const snapshot = liveSnapshots.get(id)
+      if (snapshot) {
+        const updated = {
+          ...snapshot,
+          session: next,
+          revision: snapshot.revision + 1,
+        }
+        liveSnapshots.set(id, updated)
+        emit({
+          type: "live-batch",
+          batch: { id, revision: updated.revision, session: next, updates: [] },
+        })
+      }
     },
-    acpCancel: async (id: string) => {
+    liveCancel: async (id: string) => {
       const session = acpSessions.get(id)
       if (!session) return
-      const next: AcpSessionState = {
+      const next: LiveSessionState = {
         ...session,
         status: "ready",
         lastStop: "canceled",
       }
       acpSessions.set(id, next)
-      emit({ type: "acp-session", session: next })
+      const snapshot = liveSnapshots.get(id)
+      if (snapshot) {
+        const updated = {
+          ...snapshot,
+          session: next,
+          revision: snapshot.revision + 1,
+        }
+        liveSnapshots.set(id, updated)
+        emit({
+          type: "live-batch",
+          batch: { id, revision: updated.revision, session: next, updates: [] },
+        })
+      }
     },
-    acpClose: async (id: string) => {
+    liveClose: async (id: string) => {
       const session = acpSessions.get(id)
       if (!session) return
-      emit({
-        type: "acp-session",
-        session: { ...session, status: "closed" },
-      })
+      const snapshot = liveSnapshots.get(id)
+      if (snapshot) {
+        const closed: LiveSessionState = {
+          ...session,
+          status: "closed",
+          connection: "disconnected",
+        }
+        const updated = {
+          ...snapshot,
+          session: closed,
+          revision: snapshot.revision + 1,
+        }
+        liveSnapshots.set(id, updated)
+        emit({
+          type: "live-batch",
+          batch: {
+            id,
+            revision: updated.revision,
+            session: closed,
+            updates: [],
+          },
+        })
+      }
       acpSessions.delete(id)
     },
     continueTargets: async () => ["codex", "claude", "cursor", "grok", "devin"],
