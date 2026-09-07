@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useSyncExternalStore } from "react"
+import { useEffect, useSyncExternalStore } from "react"
 import { getMako, hasBridge } from "@/lib/bridge"
 import type { WorkspaceFile } from "@/lib/types"
 import { useSession } from "@/state/session"
@@ -11,7 +11,12 @@ import { useSession } from "@/state/session"
  * path. It is fetched on first use and refreshed when the workspace moves.
  */
 
-let files: WorkspaceFile[] = []
+type FileIndex =
+  | { kind: "loading"; files: WorkspaceFile[] }
+  | { kind: "ready"; files: WorkspaceFile[] }
+  | { kind: "failed"; files: WorkspaceFile[]; error: string }
+const EMPTY_INDEX: FileIndex = { kind: "loading", files: [] }
+let index: FileIndex = EMPTY_INDEX
 let loadedFor: string | null = null
 let loadGeneration = 0
 let inFlightFor: string | null = null
@@ -29,13 +34,21 @@ function load(cwd: string) {
     .listFiles()
     .then((next) => {
       if (mine !== loadGeneration) return
-      files = next
+      index = { kind: "ready", files: next }
       loadedFor = cwd
       publish()
     })
-    .catch(() => {
+    .catch((error) => {
       if (mine !== loadGeneration) return
-      files = []
+      loadedFor = cwd
+      index = {
+        kind: "failed",
+        files: [],
+        error:
+          error instanceof Error
+            ? error.message
+            : "Could not read project files",
+      }
       publish()
     })
     .finally(() => {
@@ -47,7 +60,7 @@ export function invalidateWorkspaceFiles() {
   loadGeneration += 1
   inFlightFor = null
   loadedFor = null
-  files = []
+  index = EMPTY_INDEX
   publish()
 }
 
@@ -55,23 +68,24 @@ const subscribe = (listener: () => void) => {
   listeners.add(listener)
   return () => listeners.delete(listener)
 }
-const EMPTY_FILES: WorkspaceFile[] = []
+export function retryWorkspaceFiles(cwd: string) {
+  invalidateWorkspaceFiles()
+  load(cwd)
+}
 
 /** `active` gates the fetch, so merely rendering the composer costs nothing. */
 export function useWorkspaceFiles(
   active: boolean,
   focusedCwd?: string
-): WorkspaceFile[] {
+): FileIndex {
   const sessionCwd = useSession((state) => state.meta?.cwd)
   const cwd = focusedCwd ?? sessionCwd
+  const loadFiles = load
 
   useEffect(() => {
-    if (active && cwd) load(cwd)
-  }, [active, cwd])
+    if (active && cwd) loadFiles(cwd)
+  }, [active, cwd, loadFiles])
 
-  const snapshot = useCallback(
-    () => (cwd && loadedFor === cwd ? files : EMPTY_FILES),
-    [cwd]
-  )
+  const snapshot = () => (cwd && loadedFor === cwd ? index : EMPTY_INDEX)
   return useSyncExternalStore(subscribe, snapshot, snapshot)
 }

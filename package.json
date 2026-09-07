@@ -37,7 +37,7 @@
     "test:plugins": "tsx scripts/test-plugins.ts",
     "test:providers": "tsx scripts/test-providers.ts && tsx scripts/test-codex-activity.ts",
     "test:skills": "tsx scripts/test-skills.ts",
-    "test:stage": "tsx scripts/test-stage-layout.ts",
+    "test:stage": "tsx scripts/test-stage-layout.ts && tsx scripts/test-thread-opening.ts",
     "test:tuning": "tsx scripts/test-tuning-import.ts",
     "test:usage": "tsx scripts/test-usage.ts",
     "test:terminal": "npm run build:electron && tsx scripts/test-terminal-protocol.ts && tsx scripts/test-terminal-writer.ts && tsx scripts/test-terminal-macos.ts && tsx scripts/test-terminal-daemon.ts",

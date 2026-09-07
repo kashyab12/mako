@@ -174,7 +174,8 @@ export const threadViewingActions = {
       void getMako()
         .pageThread(ref.path)
         .then((fresh) => {
-          if (!fresh || generation !== viewingGeneration) return
+          if (generation !== viewingGeneration) return
+          if (!fresh) throw new Error("This session could not be read")
           const replaced: ViewedThread = {
             ...viewedPage(fresh),
             streamRevision: (cached.streamRevision ?? 0) + 1,
