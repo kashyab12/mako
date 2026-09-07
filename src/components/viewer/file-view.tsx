@@ -6,7 +6,7 @@ import { Prose } from "@/components/transcript/markdown"
 import { TabularPreview } from "@/components/viewer/tabular-preview"
 import { usePrefs } from "@/state/prefs"
 import type { FileContents } from "@/lib/types"
-import type { ViewerRenderMode } from "@/state/viewer"
+import { viewerFileUrl, type ViewerRenderMode } from "@/state/viewer"
 
 /**
  * A file, rendered according to its current contents and selected mode.
@@ -44,7 +44,9 @@ export function FileView({
     let frames = 0
     let raf = 0
     const look = () => {
-      const row = host.current?.querySelector<HTMLElement>(`[data-line="${line}"]`)
+      const row = host.current?.querySelector<HTMLElement>(
+        `[data-line="${line}"]`
+      )
       if (row) {
         row.scrollIntoView({ block: "center" })
         return
@@ -97,12 +99,15 @@ function isTabularPath(path: string) {
 }
 
 function workspaceUrlTransform(url: string): string {
-  if (/^(?:https?:|mailto:|mako-file:|#)/i.test(url)) return url
+  if (url.startsWith("mako-file:")) return viewerFileUrl(url)
+  if (/^(?:https?:|mailto:|#)/i.test(url)) return url
   return /^[a-z]+:/i.test(url) ? "" : url
 }
 
 function resolveMarkdownMedia(contents: string, path: string): string {
-  const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/") + 1) : ""
+  const folder = path.includes("/")
+    ? path.slice(0, path.lastIndexOf("/") + 1)
+    : ""
   return contents.replace(
     /(!\[[^\]]*\]\()([^\s)]+)(\))/g,
     (match, before: string, source: string, after: string) => {
@@ -125,7 +130,7 @@ function MediaPreview({ file }: { file: FileContents }) {
     return (
       <div className="flex min-h-full items-center justify-center overflow-auto bg-shell/40 p-5">
         <img
-          src={file.previewUrl}
+          src={viewerFileUrl(file.previewUrl)}
           alt={file.path}
           draggable={false}
           className="max-h-full max-w-full rounded-md object-contain shadow-[var(--elevation-card)]"
@@ -136,7 +141,7 @@ function MediaPreview({ file }: { file: FileContents }) {
   if (file.previewUrl && file.media === "pdf") {
     return (
       <iframe
-        src={file.previewUrl}
+        src={viewerFileUrl(file.previewUrl)}
         title={file.path}
         className="h-full min-h-[32rem] w-full border-0 bg-surface"
       />
@@ -145,7 +150,11 @@ function MediaPreview({ file }: { file: FileContents }) {
   if (file.previewUrl && file.media === "audio") {
     return (
       <div className="flex min-h-56 items-center justify-center p-6">
-        <audio controls src={file.previewUrl} className="w-full max-w-xl" />
+        <audio
+          controls
+          src={viewerFileUrl(file.previewUrl)}
+          className="w-full max-w-xl"
+        />
       </div>
     )
   }
@@ -154,7 +163,7 @@ function MediaPreview({ file }: { file: FileContents }) {
       <div className="flex min-h-full items-center justify-center bg-shell/40 p-4">
         <video
           controls
-          src={file.previewUrl}
+          src={viewerFileUrl(file.previewUrl)}
           className="max-h-full max-w-full rounded-md"
         />
       </div>
@@ -184,8 +193,8 @@ function MediaPreview({ file }: { file: FileContents }) {
       </p>
       <p className="max-w-sm text-label leading-relaxed text-faint">
         {formatBytes(file.size)} on disk. Mako previews CSV and TSV tables here;
-        packaged workbooks stay in the editor that understands their formulas and
-        formatting.
+        packaged workbooks stay in the editor that understands their formulas
+        and formatting.
       </p>
     </div>
   )

@@ -1,3 +1,5 @@
+import { ConversationRelations } from "./conversation-relations"
+import { TransferStatus } from "./transfer-status"
 import { threads, threadsStore } from "@/state/threads"
 import { loadEarlierLive } from "@/state/live-recovery"
 import { useEffect, useState } from "react"
@@ -92,6 +94,8 @@ export function AcpPanel() {
       </div>
 
       {session.connection === "disconnected" ? <CaptureNotice /> : null}
+      <ConversationRelations key={session.id} />
+      <TransferStatus />
       <Blocks />
       <RetainedRequests />
       <Permission />
@@ -479,8 +483,7 @@ function CaptureNotice() {
   const path = useAcp((state) => activeAcp(state)?.threadPath)
   return (
     <div className="border-b border-hairline px-3.5 py-2 text-ui text-muted-foreground">
-      This is a saved Mako capture. The provider’s history may have changed
-      since this connection ended.
+      This conversation is saved. Sending a message starts a provider connection from this captured history.
       {path ? (
         <button
           className="pressable ml-2 underline"
@@ -488,7 +491,7 @@ function CaptureNotice() {
             const ref = threadsStore
               .get()
               .threads.find((item) => item.path === path)
-            if (ref) void threads.view(ref)
+            if (ref) void threads.view(ref, "native")
           }}
         >
           View current provider history

@@ -1,3 +1,4 @@
+import { NativeRequestNotice } from "./native-request-notice"
 import { useEffect, useMemo, useState } from "react"
 import { ConversationTimeline } from "@/components/transcript/conversation-timeline"
 import { harnessLabel } from "@/components/rail/harness-meta"
@@ -192,6 +193,7 @@ export function ThreadViewer() {
       className="animate-enter flex min-h-0 flex-1 flex-col bg-surface"
     >
       <SessionBar />
+      <NativeRequestNotice path={thread.ref.path} />
       <Conversation key={thread.ref.path} />
     </div>
   )

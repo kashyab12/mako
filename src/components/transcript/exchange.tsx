@@ -1,3 +1,4 @@
+import { acp, useAcp, activeLiveAcp } from "@/state/acp"
 import { TranscriptAttachment } from "./attachment"
 import { memo, useMemo, useState } from "react"
 import { Prose } from "@/components/transcript/markdown"
@@ -590,6 +591,19 @@ function ForkButton({ exchange }: { exchange: ExchangeData }) {
   const last = exchange.response.at(-1)
   const nativeEntry = useSession((state) =>
     last && state.tree.some((entry) => entry.id === last.id) ? last.id : null
+  )
+  const liveRequestId = useAcp((state) => {
+    const live = activeLiveAcp(state)
+    const match = /^acp-user-(\d+)$/.exec(exchange.prompt?.id ?? "")
+    const block = match ? live?.blocks[Number(match[1])] : undefined
+    if (block?.type !== "user" || !block.requestId) return null
+    return live?.requests?.find((request) => request.id === block.requestId)?.status === "completed" ? block.requestId : null
+  })
+  if (liveRequestId) return (
+    <button type="button" title="Create an idle fork after this answer" onClick={() => void acp.fork(liveRequestId)}
+      className="pressable flex items-center gap-1 rounded px-1 hover:text-foreground">
+      <GitForkIcon className="size-3" /> Fork
+    </button>
   )
   const at = last ? /^foreign-entry-(\d+)$/.exec(last.id) : null
   const entryIndex = at ? Number(at[1]) : null
