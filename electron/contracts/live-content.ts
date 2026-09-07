@@ -5,6 +5,9 @@ const plan = z.array(z.object({ content: z.string(), status: z.string() }))
 export const LiveUpdateSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("user"),
+    provider: z.string().optional(),
+    requestId: z.string().optional(),
+    contextFiles: z.array(z.string()).optional(),
     text: z.string(),
     attachments: z.array(AttachmentContentSchema).optional(),
   }),
@@ -49,6 +52,9 @@ export type LiveUpdate = z.infer<typeof LiveUpdateSchema>
 export const LiveBlockSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("user"),
+    provider: z.string().optional(),
+    requestId: z.string().optional(),
+    contextFiles: z.array(z.string()).optional(),
     text: z.string(),
     attachments: z.array(AttachmentContentSchema).optional(),
   }),
@@ -88,9 +94,13 @@ export function reduceLiveUpdates(
   if (!updates.length) return blocks
   const next = [...blocks]
   const tools = new Map<string, number>()
+  let turnStart = -1
   for (let index = 0; index < next.length; index++) {
     const block = next[index]!
-    if (block.type === "user") tools.clear()
+    if (block.type === "user") {
+      tools.clear()
+      turnStart = index
+    }
     if (block.type === "tool") tools.set(block.id, index)
   }
   for (const update of updates) {
@@ -98,8 +108,12 @@ export function reduceLiveUpdates(
     switch (update.kind) {
       case "user":
         tools.clear()
+        turnStart = next.length
         next.push({
           type: "user",
+          provider: update.provider,
+          requestId: update.requestId,
+          contextFiles: update.contextFiles,
           text: update.text,
           attachments: update.attachments,
         })
@@ -108,7 +122,10 @@ export function reduceLiveUpdates(
       case "thinking": {
         const index = update.id
           ? next.findIndex(
-              (block) => block.type === update.kind && block.id === update.id
+              (block, index) =>
+                index > turnStart &&
+                block.type === update.kind &&
+                block.id === update.id
             )
           : last?.type === update.kind
             ? next.length - 1

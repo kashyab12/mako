@@ -1,3 +1,5 @@
+import type { NativeRequest } from "./native-requests.js"
+import type { BrowserControlStatus } from "./browser-control.js"
 import type { LiveBatch, LiveSummary } from "./live-conversations.js"
 import type {
   ThreadEntry as CatalogThreadEntry,
@@ -29,7 +31,7 @@ import type { Capabilities } from "./mcp-skills-integrations.js"
 export interface ExternalThreadActivity {
   provider: string
   since: number
-  status: "active" | "needs-input"
+  status: "active" | "needs-input" | "open"
   detail?: string
 }
 
@@ -73,6 +75,8 @@ export type HostEventBody =
     }
   /** A native resume (the thread's own CLI) started, finished, or failed. */
   | { type: "thread-run"; run: ThreadRunState }
+  | { type: "native-requests"; requests: NativeRequest[] }
+  | { type: "browser-control"; browsers: BrowserControlStatus[] }
 
 /**
  * Every event says which tab it came from.

@@ -67,6 +67,7 @@ export interface HarnessProfile {
 /* ------------------------------------------------------------------ */
 
 export interface LiveSessionState {
+  nativeRunId?: string
   connection: "starting" | "connected" | "disconnected"
   id: string
   nativeId?: string

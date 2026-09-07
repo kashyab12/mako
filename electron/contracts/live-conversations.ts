@@ -1,3 +1,7 @@
+import type {
+  ContextManifest,
+  ConversationControl,
+} from "./conversation-control.js"
 import type { ThreadPage } from "@mako/sessions"
 import type {
   LivePermissionRequest,
@@ -23,6 +27,8 @@ export interface LiveStartOptions {
 }
 
 export interface LiveRequest {
+  inputDigest?: string
+  nativeRun?: { bindingId: string; runId: string }
   id: string
   text: string
   attachments: PromptAttachment[]
@@ -34,9 +40,12 @@ export interface LiveRequest {
     | "uncertain"
     | "interrupted"
   error?: string
+  displayText?: string
+  context?: ContextManifest[]
 }
 
 export interface LiveSummary {
+  nativePaths?: string[]
   session: LiveSessionState
   revision: number
   threadPath?: string
@@ -44,6 +53,7 @@ export interface LiveSummary {
 }
 
 export interface LiveSnapshot extends LiveSummary {
+  control?: ConversationControl
   blocks: LiveBlock[]
   base: ThreadPage | null
   permissions: LivePermissionRequest[]
@@ -51,8 +61,9 @@ export interface LiveSnapshot extends LiveSummary {
 }
 
 export interface LiveBatch {
+  control?: ConversationControl
   base?: ThreadPage | null
-  threadPath?: string
+  threadPath?: string | null
   id: string
   revision: number
   updates: LiveUpdate[]
