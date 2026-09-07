@@ -3,12 +3,10 @@ import { Blank } from "@/components/ui/kit"
 import { Slot } from "@/extend/slot"
 import { checkpointsOf, type Checkpoint } from "@/lib/thread"
 import { formatRelative, textOf } from "@/lib/format"
-import { acpBlocksToMessages } from "@/lib/acp-blocks"
-import { toExchanges } from "@/lib/exchanges"
 import { actions, useSession } from "@/state/session"
 import { threads, useThreads } from "@/state/threads"
 import type { ViewedThread } from "@/state/thread-state"
-import { activeAcp, activeLiveAcp, useAcp } from "@/state/acp"
+import { acp, activeAcp, activeLiveAcp, useAcp } from "@/state/acp"
 import { cn } from "@/lib/utils"
 import {
   ChevronLeftIcon,
@@ -35,16 +33,13 @@ export function HistoryPanel() {
   const tree = useSession((state) => state.tree)
   const viewing = useThreads((state) => state.viewing)
   const acpSession = useAcp((state) => activeLiveAcp(state)?.session ?? null)
-  const acpBlocks = useAcp((state) => activeAcp(state)?.blocks ?? EMPTY_BLOCKS)
+  const exchanges = useAcp(
+    (state) => activeAcp(state)?.projection?.exchanges ?? EMPTY_BLOCKS
+  )
   const checkpoints = useMemo(() => checkpointsOf(tree), [tree])
   const liveTurns = useMemo(() => {
     if (!acpSession) return []
-    const conversation = acpBlocksToMessages(
-      acpBlocks,
-      acpSession.status === "running",
-      acpSession.harness
-    )
-    return toExchanges(conversation.messages)
+    return exchanges
       .filter((exchange) => exchange.prompt)
       .map((exchange) => ({
         id: exchange.id,
@@ -54,16 +49,20 @@ export function HistoryPanel() {
           .filter(Boolean)
           .join("\n"),
       }))
-  }, [acpBlocks, acpSession])
+  }, [exchanges, acpSession])
   const rewind = useCallback((id: string) => void actions.navigate(id), [])
   const branch = useCallback((id: string) => void actions.fork(id), [])
 
+  if (acpSession)
+    return (
+      <>
+        <SavedCaptures />
+        <LiveHistory turns={liveTurns} />
+      </>
+    )
   if (viewing)
     return (
-      <ThreadHistory
-        thread={viewing}
-        liveTurns={acpSession ? liveTurns : []}
-      />
+      <ThreadHistory thread={viewing} liveTurns={acpSession ? liveTurns : []} />
     )
   if (acpSession) return <LiveHistory turns={liveTurns} />
 
@@ -158,7 +157,7 @@ function TurnCards({
       {turns.map((turn, index) => (
         <div
           key={turn.id}
-          className="contain-turn relative ml-6 mb-1.5 rounded-xl px-2.5 py-2 ring-1 ring-transparent hover:bg-fill-hover hover:ring-hairline [contain-intrinsic-size:auto_68px]"
+          className="contain-turn relative mb-1.5 ml-6 rounded-xl px-2.5 py-2 ring-1 ring-transparent [contain-intrinsic-size:auto_68px] hover:bg-fill-hover hover:ring-hairline"
         >
           <span className="tabular absolute top-2.5 -left-[19px] flex size-[15px] items-center justify-center rounded-full bg-surface text-label font-semibold text-faint ring-1 ring-hairline">
             {start + index + 1}
@@ -218,7 +217,9 @@ function ThreadHistory({
           onClick={() => void threads.loadEarlier()}
           className="pressable mx-3 mt-3 rounded-md border border-hairline px-2 py-1 text-label text-muted-foreground hover:bg-fill-hover hover:text-foreground disabled:opacity-50"
         >
-          {thread.loadingEarlier ? "Loading earlier turns…" : "Show earlier turns"}
+          {thread.loadingEarlier
+            ? "Loading earlier turns…"
+            : "Show earlier turns"}
         </button>
       ) : null}
       {turns.length === 0 && pending.length === 0 ? (
@@ -271,14 +272,16 @@ const Row = memo(function Row({
 
       <div
         className={cn(
-          "relative ml-[26px] mb-1.5 rounded-xl px-2.5 py-2",
+          "relative mb-1.5 ml-[26px] rounded-xl px-2.5 py-2",
           "[transition:background-color_160ms_ease,box-shadow_160ms_ease,transform_160ms_var(--ease-out)]",
           // The ring is always there, and only its colour changes. Adding a
           // ring on hover means going from no box-shadow to one, which the
           // browser cannot interpolate — the edge snapped into existence
           // instead of fading up.
           "ring-1",
-          current ? "bg-fill-selected ring-border" : "ring-transparent hover:bg-fill-hover hover:ring-hairline"
+          current
+            ? "bg-fill-selected ring-border"
+            : "ring-transparent hover:bg-fill-hover hover:ring-hairline"
         )}
       >
         {/* The marker sits on the spine, not inside the card. */}
@@ -301,7 +304,11 @@ const Row = memo(function Row({
             <p
               className={cn(
                 "line-clamp-2 min-w-0 flex-1 text-ui leading-snug",
-                current ? "font-medium text-foreground" : live ? "text-foreground/85" : "text-faint"
+                current
+                  ? "font-medium text-foreground"
+                  : live
+                    ? "text-foreground/85"
+                    : "text-faint"
               )}
             >
               {checkpoint.text || "Empty message"}
@@ -384,7 +391,13 @@ const Row = memo(function Row({
  * A branch point, as a stepper rather than as indentation: from the reader's
  * side that is exactly what it is — one moment with more than one answer.
  */
-function Takes({ takes, onPick }: { takes: Checkpoint["takes"]; onPick: (id: string) => void }) {
+function Takes({
+  takes,
+  onPick,
+}: {
+  takes: Checkpoint["takes"]
+  onPick: (id: string) => void
+}) {
   const at = Math.max(
     0,
     takes.findIndex((take) => take.live)
@@ -416,7 +429,9 @@ function Takes({ takes, onPick }: { takes: Checkpoint["takes"]; onPick: (id: str
       >
         <ChevronRightIcon className="size-3" />
       </button>
-      <span className="min-w-0 flex-1 truncate text-label text-faint">{takes[at]?.preview}</span>
+      <span className="min-w-0 flex-1 truncate text-label text-faint">
+        {takes[at]?.preview}
+      </span>
     </div>
   )
 }
@@ -448,4 +463,30 @@ function CheckpointAction({
       {label}
     </button>
   )
+}
+
+function SavedCaptures() {
+  const state = useAcp((current) => current)
+  const active = activeAcp(state)
+  const captures = Object.values(state.conversations).filter(
+    (conversation) =>
+      conversation.kind === "live" &&
+      conversation.session.connection === "disconnected" &&
+      conversation.key !== active?.key &&
+      conversation.threadPath === active?.threadPath
+  )
+  return captures.length ? (
+    <div className="border-b border-hairline p-3 text-ui">
+      <p className="text-muted-foreground">Saved captures</p>
+      {captures.map((capture) => (
+        <button
+          key={capture.key}
+          className="pressable block underline"
+          onClick={() => acp.activate(capture.key)}
+        >
+          {new Date(capture.createdAt).toLocaleString()}
+        </button>
+      ))}
+    </div>
+  ) : null
 }

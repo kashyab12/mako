@@ -1,10 +1,20 @@
 import { memo, useMemo, useState } from "react"
 import { Chip, Eyebrow, ListCard } from "@/components/ui/kit"
 import { contextAccounting } from "@/lib/context-accounting"
-import { touchedFiles, type FileAction, type TouchedFile } from "@/lib/context-files"
-import { fileDir, fileName, formatContextWindow, formatCost, formatRate, formatTokens } from "@/lib/format"
+import {
+  touchedFiles,
+  type FileAction,
+  type TouchedFile,
+} from "@/lib/context-files"
+import {
+  fileDir,
+  fileName,
+  formatContextWindow,
+  formatCost,
+  formatRate,
+  formatTokens,
+} from "@/lib/format"
 import { threadToMessages } from "@/lib/foreign-thread"
-import { acpBlocksToMessages } from "@/lib/acp-blocks"
 import { activeAcp, activeLiveAcp, useAcp } from "@/state/acp"
 import { useProviders } from "@/state/providers"
 import { actions, useSession } from "@/state/session"
@@ -32,15 +42,14 @@ import {
  * into cards — because this renders on a full card now, not in a 400px
  * column.
  */
-const EMPTY_BLOCKS: never[] = []
 
 export function ContextPanel() {
-  const viewing = useThreads((state) => state.viewing)
   const acpSession = useAcp((state) => activeLiveAcp(state)?.session ?? null)
+  const viewing = useThreads((state) => state.viewing)
   const acpStarting = useAcp((state) => activeAcp(state)?.kind === "starting")
   const builtin = !viewing && !acpSession && !acpStarting
   return (
-    <div className="h-full overflow-y-auto overscroll-contain [container-type:inline-size]">
+    <div className="[container-type:inline-size] h-full overflow-y-auto overscroll-contain">
       <div className="mx-auto flex w-full max-w-content flex-col gap-7 px-6 py-6">
         <Budget />
         <Files />
@@ -60,10 +69,10 @@ export function ContextPanel() {
 /* ------------------------------------------------------------------ */
 
 function Budget() {
+  const acpSession = useAcp((state) => activeLiveAcp(state)?.session ?? null)
   const meta = useSession((state) => state.meta)
   const viewing = useThreads((state) => state.viewing)
   const composerHarness = useThreads((state) => state.composerHarness)
-  const acpSession = useAcp((state) => activeLiveAcp(state)?.session ?? null)
   const acpStarting = useAcp((state) => activeAcp(state)?.kind === "starting")
   const profiles = useProviders((state) => state.profiles)
   const usage = contextAccounting({
@@ -94,23 +103,28 @@ function Budget() {
       },
       {
         label: "window used",
-        value:
-          usage.percent == null ? "—" : `${Math.round(usage.percent)}%`,
+        value: usage.percent == null ? "—" : `${Math.round(usage.percent)}%`,
       },
       { label: "spent", value: formatCost(usage.cost) }
     )
   } else if (usage.kind === "reported-input") {
     stats.push(
-      { label: "agent", value: profiles[usage.harness]?.label ?? usage.harness },
+      {
+        label: "agent",
+        value: profiles[usage.harness]?.label ?? usage.harness,
+      },
       { label: "model", value: usage.model ?? "not reported" },
       {
         label: "model window",
-        value: usage.window > 0 ? formatContextWindow(usage.window) : "not reported",
+        value:
+          usage.window > 0 ? formatContextWindow(usage.window) : "not reported",
       },
       {
         label: "last reported input",
         value:
-          usage.lastInput == null ? "not reported" : formatTokens(usage.lastInput),
+          usage.lastInput == null
+            ? "not reported"
+            : formatTokens(usage.lastInput),
       },
       {
         label: "loaded history spend",
@@ -119,7 +133,10 @@ function Budget() {
     )
   } else {
     stats.push(
-      { label: "agent", value: profiles[usage.harness]?.label ?? usage.harness },
+      {
+        label: "agent",
+        value: profiles[usage.harness]?.label ?? usage.harness,
+      },
       { label: "model", value: usage.model ?? "not reported" },
       {
         label: "context",
@@ -144,7 +161,9 @@ function Budget() {
         {stats.map((stat) => (
           <div key={stat.label} className="min-w-0">
             <div className="text-label text-faint">{stat.label}</div>
-            <div className="tabular truncate text-ui font-medium text-foreground/90">{stat.value}</div>
+            <div className="tabular truncate text-ui font-medium text-foreground/90">
+              {stat.value}
+            </div>
           </div>
         ))}
       </div>
@@ -178,7 +197,13 @@ function TokenMix({
   stats,
   label,
 }: {
-  stats: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number }
+  stats: {
+    input: number
+    output: number
+    cacheRead: number
+    cacheWrite: number
+    total: number
+  }
   label: string
 }) {
   const total = stats.input + stats.output + stats.cacheRead + stats.cacheWrite
@@ -197,10 +222,15 @@ function TokenMix({
       </div>
       <div className="flex flex-wrap gap-x-3 gap-y-1">
         {MIX.map((segment) => (
-          <span key={segment.key} className="flex items-center gap-1 text-label text-faint">
+          <span
+            key={segment.key}
+            className="flex items-center gap-1 text-label text-faint"
+          >
             <span className={cn("size-2 rounded-[3px]", segment.tone)} />
             {segment.label}
-            <span className="tabular text-faint/70">{Math.round((stats[segment.key] / total) * 100)}%</span>
+            <span className="tabular text-faint/70">
+              {Math.round((stats[segment.key] / total) * 100)}%
+            </span>
           </span>
         ))}
       </div>
@@ -228,8 +258,7 @@ function Files() {
   const nativeMessages = useSession((state) => state.messages)
   const changed = useSession((state) => state.git?.files)
   const viewing = useThreads((state) => state.viewing)
-  const acpSession = useAcp((state) => activeLiveAcp(state)?.session ?? null)
-  const acpBlocks = useAcp((state) => activeAcp(state)?.blocks ?? EMPTY_BLOCKS)
+  const projection = useAcp((state) => activeAcp(state)?.projection)
   const focus = useWorkspaceFocus()
   const messages = useMemo(() => {
     const history = viewing
@@ -239,23 +268,17 @@ function Files() {
           viewing.ref.harness
         )
       : []
-    const live = acpSession
-      ? acpBlocksToMessages(
-          acpBlocks,
-          acpSession.status === "running",
-          acpSession.harness
-        ).messages
-      : []
-    return history.length > 0 || live.length > 0
-      ? [...history, ...live]
-      : nativeMessages
-  }, [acpBlocks, acpSession, nativeMessages, viewing])
+    return projection?.messages ?? (history.length ? history : nativeMessages)
+  }, [projection, nativeMessages, viewing])
   const visibleChanges = focus.ready ? changed : undefined
   const files = useMemo(() => touchedFiles(messages), [messages])
   const stats = useMemo(() => {
     const map = new Map<string, { insertions: number; deletions: number }>()
     for (const file of visibleChanges ?? []) {
-      map.set(file.path, { insertions: file.insertions, deletions: file.deletions })
+      map.set(file.path, {
+        insertions: file.insertions,
+        deletions: file.deletions,
+      })
     }
     return map
   }, [visibleChanges])
@@ -286,15 +309,19 @@ const FileRow = memo(function FileRow({
       type="button"
       title={`${file.path} · ${file.action}${file.count > 1 ? ` ${file.count}×` : ""}`}
       onClick={() => void viewer.open(file.path)}
-      className="contain-turn flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors duration-100 hover:bg-fill-hover [contain-intrinsic-size:auto_30px]"
+      className="contain-turn flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors duration-100 [contain-intrinsic-size:auto_30px] hover:bg-fill-hover"
     >
       <Icon className={cn("size-3 shrink-0", FILE_TONE[file.action])} />
       <span className="min-w-0 flex-1 truncate text-ui text-foreground/85">
         {fileName(file.path)}
-        <span className="ml-1.5 text-label text-faint">{fileDir(file.path)}</span>
+        <span className="ml-1.5 text-label text-faint">
+          {fileDir(file.path)}
+        </span>
       </span>
       {file.count > 1 ? (
-        <span className="tabular shrink-0 text-label text-faint">{file.count}×</span>
+        <span className="tabular shrink-0 text-label text-faint">
+          {file.count}×
+        </span>
       ) : null}
       {stat ? (
         <span className="tabular shrink-0 text-label">
@@ -332,7 +359,9 @@ function Skills() {
             key={skill.name}
             skill={skill}
             open={open === skill.name}
-            onToggle={() => setOpen(open === skill.name ? undefined : skill.name)}
+            onToggle={() =>
+              setOpen(open === skill.name ? undefined : skill.name)
+            }
           />
         ))}
       </ListCard>
@@ -377,7 +406,9 @@ const SkillRow = memo(function SkillRow({
           title={`Insert $${skill.name} into the composer`}
           onClick={(event) => {
             event.stopPropagation()
-            window.dispatchEvent(new CustomEvent("mako:insert", { detail: `$${skill.name} ` }))
+            window.dispatchEvent(
+              new CustomEvent("mako:insert", { detail: `$${skill.name} ` })
+            )
           }}
           className="pressable shrink-0 rounded px-1 text-label text-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-foreground"
         >
@@ -401,7 +432,10 @@ function Tools() {
   const tools = useSession((state) => state.capabilities.tools)
   const [open, setOpen] = useState(false)
 
-  const active = useMemo(() => tools.filter((tool) => tool.active).map((tool) => tool.name), [tools])
+  const active = useMemo(
+    () => tools.filter((tool) => tool.active).map((tool) => tool.name),
+    [tools]
+  )
   if (tools.length === 0) return null
 
   const toggle = (name: string, on: boolean) =>
@@ -417,7 +451,10 @@ function Tools() {
         className="flex w-full items-center gap-1 pb-1 text-left"
       >
         <ChevronRightIcon
-          className={cn("size-3 text-faint transition-transform duration-150", open && "rotate-90")}
+          className={cn(
+            "size-3 text-faint transition-transform duration-150",
+            open && "rotate-90"
+          )}
         />
         <Eyebrow className="px-0">Tools</Eyebrow>
         <Chip className="ml-auto">
