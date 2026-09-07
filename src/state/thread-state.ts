@@ -1,4 +1,5 @@
 import type {
+  NativeRequest,
   ExternalThreadActivity,
   Thread,
   ThreadEntry,
@@ -31,15 +32,6 @@ export interface AttentionByPath {
     ThreadStatus,
     { kind: "needs-permission" | "failed" | "review" }
   >
-}
-
-interface QueuedReply {
-  ref: ThreadRef
-  prompts: string[]
-}
-
-interface QueuedRepliesByPath {
-  [path: string]: QueuedReply
 }
 
 export type ViewedUserEntry = Extract<ThreadEntry, { kind: "user" }> & {
@@ -96,5 +88,5 @@ export interface ThreadsState {
   /** Per-harness tuning chosen in the composer. */
   composerTuning: ComposerTuningByHarness
   /** Prompts waiting for a thread's current run to end, per path. */
-  queuedReplies: QueuedRepliesByPath
+  nativeRequests: NativeRequest[]
 }

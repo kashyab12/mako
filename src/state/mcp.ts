@@ -1,6 +1,7 @@
 import { getMako, hasBridge } from "@/lib/bridge"
 import type {
   MakoComputerPermissions,
+  BrowserControlStatus,
   McpRegistrySnapshot,
   McpSyncPreview,
   McpSyncTarget,
@@ -13,12 +14,14 @@ interface McpState {
   previews: Record<string, McpSyncPreview[]>
   permissions?: MakoComputerPermissions
   error?: string
+  browsers: BrowserControlStatus[]
 }
 
 export const mcpStore = createStore<McpState>({
   status: "idle",
   snapshot: null,
   previews: {},
+  browsers: [],
 })
 export const useMcp = createHook(mcpStore)
 
@@ -27,14 +30,16 @@ export const mcp = {
     if (!hasBridge()) return
     mcpStore.set({ status: "loading", error: undefined })
     try {
-      const [snapshot, permissions] = await Promise.all([
+      const [snapshot, permissions, browsers] = await Promise.all([
         getMako().discoverMcp(),
         getMako().computerPermissions(),
+        getMako().browserControlStatus(),
       ])
       mcpStore.set({
         status: "ready",
         snapshot,
         permissions,
+        browsers,
         previews: {},
       })
     } catch {
@@ -43,6 +48,15 @@ export const mcp = {
         error: "MCP configuration could not be loaded",
       })
     }
+  },
+
+  async connectBrowser(browser: string) {
+    try { mcpStore.set({ error: undefined, browsers: await getMako().connectBrowser(browser) }) }
+    catch (error) { mcpStore.set({ error: error instanceof Error ? error.message : "Browser connection failed" }) }
+  },
+  async disconnectBrowser(browser: string) {
+    try { mcpStore.set({ browsers: await getMako().disconnectBrowser(browser) }) }
+    catch (error) { mcpStore.set({ error: error instanceof Error ? error.message : "Browser disconnect failed" }) }
   },
 
   async requestComputerPermissions() {

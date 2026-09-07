@@ -19,11 +19,15 @@ export function applyLiveSnapshot(snapshot: LiveSnapshot): void {
     harness: snapshot.session.harness,
     cwd: snapshot.session.cwd,
     title: snapshot.session.title,
-    threadPath: snapshot.threadPath ?? existing?.threadPath,
+    threadPath: snapshot.threadPath,
     createdAt: snapshot.createdAt,
     updatedAt: Date.now(),
     kind: "live",
     session: snapshot.session,
+    nativePaths: snapshot.control?.bindings.flatMap((binding) =>
+      binding.path ? [binding.path] : []
+    ),
+    control: snapshot.control,
     requests: snapshot.requests,
     base: snapshot.base,
     blocks: snapshot.blocks,
@@ -94,12 +98,22 @@ export function applyLiveBatch(batch: LiveBatch): void {
   const base = batch.base === undefined ? (current.base ?? null) : batch.base
   replaceAcpConversation(batch.id, {
     ...current,
+    control: batch.control ?? current.control,
+    nativePaths: batch.control
+      ? batch.control.bindings.flatMap((binding) =>
+          binding.path ? [binding.path] : []
+        )
+      : current.nativePaths,
+    harness: session.harness,
     requests: batch.requests ?? current.requests,
     blocks,
     session,
     revision: batch.revision,
     base,
-    threadPath: batch.threadPath ?? current.threadPath,
+    threadPath:
+      batch.threadPath === undefined
+        ? current.threadPath
+        : (batch.threadPath ?? undefined),
     sending: batch.session ? false : current.sending,
     canceling: session.status === "running" ? current.canceling : false,
     permission: batch.permissions
@@ -130,6 +144,7 @@ export function hydrateLiveSummaries(summaries: LiveSummary[]): void {
       harness: summary.session.harness,
       cwd: summary.session.cwd,
       title: summary.session.title,
+      nativePaths: summary.nativePaths,
       threadPath: summary.threadPath,
       revision: summary.revision,
       hydrated: false,

@@ -7,39 +7,44 @@ export interface AcpPresence {
   cwd: string
   createdAt: number
   title?: string
+  nativePaths?: string[]
   threadPath?: string
   status: "starting" | "ready" | "running" | "needs-permission" | "failed"
 }
 
 export function selectAcpPresence(state: AcpState): AcpPresence[] {
-  return Object.values(state.conversations).flatMap((conversation) => {
-    if (conversation.kind === "starting") {
+  return Object.values(state.conversations)
+    .flatMap((conversation) => {
+      if (conversation.kind === "starting") {
+        const presence: AcpPresence = {
+          key: conversation.key,
+          harness: conversation.harness,
+          cwd: conversation.cwd,
+          createdAt: conversation.createdAt,
+          title: conversation.title,
+          threadPath: conversation.threadPath,
+          nativePaths: conversation.nativePaths,
+          status: "starting",
+        }
+        return [presence]
+      }
+      if (conversation.session.status === "closed") return []
       const presence: AcpPresence = {
         key: conversation.key,
         harness: conversation.harness,
+        nativeId: conversation.session.nativeId,
         cwd: conversation.cwd,
         createdAt: conversation.createdAt,
         title: conversation.title,
         threadPath: conversation.threadPath,
-        status: "starting",
+        nativePaths: conversation.nativePaths,
+        status: conversation.permission
+          ? "needs-permission"
+          : conversation.session.status,
       }
       return [presence]
-    }
-    if (conversation.session.status === "closed") return []
-    const presence: AcpPresence = {
-      key: conversation.key,
-      harness: conversation.harness,
-      nativeId: conversation.session.nativeId,
-      cwd: conversation.cwd,
-      createdAt: conversation.createdAt,
-      title: conversation.title,
-      threadPath: conversation.threadPath,
-      status: conversation.permission
-        ? "needs-permission"
-        : conversation.session.status,
-    }
-    return [presence]
-  }).sort((left, right) => right.createdAt - left.createdAt)
+    })
+    .sort((left, right) => right.createdAt - left.createdAt)
 }
 
 export function sameAcpPresence(
@@ -58,8 +63,32 @@ export function sameAcpPresence(
         candidate.createdAt === presence.createdAt &&
         candidate.title === presence.title &&
         candidate.threadPath === presence.threadPath &&
+        (candidate.nativePaths ?? []).join("\0") ===
+          (presence.nativePaths ?? []).join("\0") &&
         candidate.status === presence.status
       )
     })
   )
+}
+
+/** Preserve native references while choosing one row for an app-owned conversation. */
+export function canonicalThreadRefs<T extends { path: string }>(
+  refs: T[],
+  conversations: AcpPresence[],
+  pinned: string[]
+): T[] {
+  const paths = new Set(refs.map((ref) => ref.path))
+  const hidden = new Set<string>()
+  for (const conversation of conversations) {
+    const aliases = (conversation.nativePaths ?? []).filter((path) =>
+      paths.has(path)
+    )
+    const representative =
+      aliases.find((path) => pinned.includes(path)) ??
+      (conversation.threadPath && paths.has(conversation.threadPath)
+        ? conversation.threadPath
+        : aliases[0])
+    for (const path of aliases) if (path !== representative) hidden.add(path)
+  }
+  return refs.filter((ref) => !hidden.has(ref.path))
 }

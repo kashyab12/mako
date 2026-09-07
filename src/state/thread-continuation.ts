@@ -1,12 +1,13 @@
+import { applyLiveSnapshot } from "@/state/live-recovery"
+import { acpForThread, acpStore } from "@/state/acp-state"
 import { getMako, hasBridge } from "@/lib/bridge"
-import type { PromptAttachment, ThreadRef } from "@/lib/types"
+import type { NativeRequest, PromptAttachment, ThreadRef } from "@/lib/types"
 import { prefsStore } from "@/state/prefs"
 import {
   appendOptimisticReply,
-  queueReply,
   removeOptimisticReply,
 } from "@/state/thread-queue"
-import { applyThreadRun, threadStatus } from "@/state/thread-status"
+import { threadStatus } from "@/state/thread-status"
 import { canResumeInteractively } from "@/state/thread-tuning"
 import { leaveViewerForLive, viewedThread } from "@/state/thread-viewing"
 import { threadsStore } from "@/state/thread-store"
@@ -23,35 +24,6 @@ const HARNESS_NAMES = new Map([
 
 function harnessLabelOf(harness: string): string {
   return HARNESS_NAMES.get(harness) ?? harness
-}
-
-/** A just-started conversation waiting for its session file to appear. */
-let pendingOpen: { harness: string; cwd: string; since: number } | null = null
-
-/**
- * A conversation started from the composer opens itself the moment the
- * harness writes its session file — the watcher sees it, the list updates,
- * and this picks it out by harness, folder, and birth time.
- */
-export function takePendingThread(
-  list: ThreadRef[],
-  knownPaths: ReadonlySet<string>
-): ThreadRef | null {
-  if (!pendingOpen) return null
-  const target = pendingOpen
-  const candidate = list.find(
-    (ref) =>
-      !knownPaths.has(ref.path) &&
-      ref.harness === target.harness &&
-      ref.cwd === target.cwd &&
-      (!ref.startedAt || Date.parse(ref.startedAt) >= target.since - 60_000)
-  )
-  if (candidate) {
-    pendingOpen = null
-    return candidate
-  }
-  if (Date.now() - target.since > 5 * 60_000) pendingOpen = null
-  return null
 }
 
 /**
@@ -110,15 +82,13 @@ export const threadContinuationActions = {
       })
       return false
     }
-    if (threadsStore.get().working[ref.path]) {
-      queueReply(ref, prompt)
-      return true
-    }
     // Paint the message NOW. Provider startup, session translation, and the
     // native tail all happen after the send is already visible.
     const echoed = appendOptimisticReply(ref, prompt)
     if (
       canResumeInteractively(ref.harness) &&
+      (!threadsStore.get().working[ref.path] ||
+        acpForThread(acpStore.get(), ref.path)) &&
       threadsStore.get().acpable.includes(ref.harness)
     ) {
       const resumed = await (
@@ -127,17 +97,24 @@ export const threadContinuationActions = {
       if (!resumed && echoed) removeOptimisticReply(ref, prompt)
       return resumed
     }
+    const requestId = crypto.randomUUID()
     try {
       // The composer's tuning rides on the reply: pick a different model or
       // effort while a conversation is open and the next turn uses it.
       const tuning = threadsStore.get().composerTuning[ref.harness]
-      const run = await getMako().resumeThread(ref.path, prompt, tuning)
-      // Through the same reducer the host's events use, so the rail's
-      // working dot lights immediately rather than on the first event.
-      applyThreadRun(run)
-      threadsStore.set({ run })
+      await getMako().nativeSubmit({
+        id: requestId,
+        path: ref.path,
+        text: prompt,
+        attachments,
+        tuning,
+      })
       return true
     } catch (error) {
+      const saved = await getMako()
+        .nativeReceipt(requestId)
+        .catch(() => null)
+      if (saved) return true
       // The send failed: take the echo back out so the transcript stays true.
       if (echoed) removeOptimisticReply(ref, prompt)
       toast.error(error instanceof Error ? error.message : String(error))
@@ -153,6 +130,21 @@ export const threadContinuationActions = {
     attachments: PromptAttachment[] = []
   ): Promise<boolean> {
     if (!hasBridge()) return false
+    if (threadsStore.get().acpable.includes(harness)) {
+      try {
+        const snapshot = await getMako().liveCapture(
+          crypto.randomUUID(),
+          ref.path
+        )
+        const { acp } = await import("@/state/acp")
+        applyLiveSnapshot(snapshot)
+        acp.activate(snapshot.session.id)
+        return acp.handoff(harness, prompt, attachments)
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : String(error))
+        return false
+      }
+    }
     threadsStore.set({ composerHarness: harness })
     const echoed = appendOptimisticReply(ref, prompt)
     try {
@@ -208,6 +200,31 @@ export const threadContinuationActions = {
     harness: string
   ): Promise<boolean> {
     if (!hasBridge()) return false
+    if (threadsStore.get().acpable.includes(harness)) {
+      try {
+        const source = await getMako().liveCapture(
+          crypto.randomUUID(),
+          ref.path
+        )
+        const fork = await getMako().liveFork(source.session.id, {
+          id: crypto.randomUUID(),
+          provider: harness,
+          point: {
+            kind: "native",
+            index: upto,
+            revision: JSON.stringify([ref.revision, ref.bytes, ref.updatedAt]),
+          },
+        })
+        const { acp } = await import("@/state/acp")
+        applyLiveSnapshot(fork)
+        acp.activate(fork.session.id)
+        threadsStore.set({ composerHarness: harness })
+        return true
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : String(error))
+        return false
+      }
+    }
     try {
       const prepared = await withConversion(
         ref.harness,
@@ -232,6 +249,27 @@ export const threadContinuationActions = {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
       return false
+    }
+  },
+
+  async retryNative(request: NativeRequest): Promise<void> {
+    if (!hasBridge()) return
+    try {
+      await getMako().nativeSubmit({
+        ...request.input,
+        id: crypto.randomUUID(),
+      })
+      await getMako().nativeDismiss(request.input.id)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    }
+  },
+  async dismissNative(id: string): Promise<void> {
+    if (!hasBridge()) return
+    try {
+      await getMako().nativeDismiss(id)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
     }
   },
 
@@ -279,11 +317,10 @@ export const threadContinuationActions = {
     if (!hasBridge()) return false
     try {
       const options = threadsStore.get().composerTuning[harness] ?? {}
-      const { cwd } = await getMako().startHarness(harness, prompt, options)
-      pendingOpen = { harness, cwd, since: Date.now() }
+      await getMako().startHarness(harness, prompt, options)
       toast(`${harnessLabelOf(harness)} is on it`, {
         description:
-          "The conversation opens here as soon as its first write lands.",
+          "Its native session will appear in the conversation list when the provider saves it.",
       })
       return true
     } catch (error) {

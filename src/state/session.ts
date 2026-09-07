@@ -47,6 +47,7 @@ import {
 import { acp, acpStore, activeAcp, activeLiveAcp } from "@/state/acp"
 import { watchOnboarding } from "@/state/onboarding"
 import { toast } from "sonner"
+import { mcpStore } from "@/state/mcp"
 
 export type Phase = "booting" | "ready" | "detached"
 
@@ -111,6 +112,10 @@ export function currentTurnRunning(): boolean {
  * not a render.
  */
 function apply(event: HostEvent) {
+  if (event.type === "browser-control") {
+    mcpStore.set({ browsers: event.browsers })
+    return
+  }
   if (event.type === "live-batch") {
     applyLiveBatch(event.batch)
     return
@@ -253,6 +258,9 @@ function applyToActive(event: HostEvent) {
         event.replace,
         event.replaceFrom
       )
+      break
+    case "native-requests":
+      threadsStore.set({ nativeRequests: event.requests })
       break
     case "thread-run":
       applyThreadRun(event.run)

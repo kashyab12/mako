@@ -1,9 +1,7 @@
 import type { LiveCapability } from "@/lib/types"
 import { getMako, hasBridge } from "@/lib/bridge"
 import type { ExternalThreadActivity, ThreadRef } from "@/lib/types"
-import { bindQueuedReplySender } from "@/state/thread-queue"
 import {
-  takePendingThread,
   threadContinuationActions,
   withConversion,
 } from "@/state/thread-continuation"
@@ -74,8 +72,6 @@ export {
   withConversion,
 }
 export type { ThreadStatus }
-
-let knownPaths = new Set<string>()
 
 export function applyThreadRef(ref: ThreadRef) {
   const current = threadsStore.get().threads
@@ -161,9 +157,6 @@ export function applyThreads(list: ThreadRef[], loaded = true) {
   const unique = uniqueThreadRefs(list)
   threadsStore.set({ threads: unique, loaded })
   if (initialHydration) seedRecentThreadActivity(unique)
-  const candidate = takePendingThread(unique, knownPaths)
-  if (candidate) void threadViewingActions.view(candidate)
-  knownPaths = new Set(unique.map((ref) => ref.path))
 }
 
 let focusRefetch = false
@@ -195,6 +188,10 @@ const threadCatalogActions = {
         .liveCapabilities()
         .catch((): LiveCapability[] => []),
     ])
+    const nativeRequests = await getMako()
+      .nativeRequests()
+      .catch(() => [])
+    threadsStore.set({ nativeRequests })
     // An engine one vintage older answers with a bare array; treat it as
     // ready rather than spinning forever against the shape difference.
     const result = normalizeThreadCatalog(raw)
@@ -223,5 +220,3 @@ export const threads = {
   ...threadViewingActions,
   ...threadContinuationActions,
 }
-
-bindQueuedReplySender(threadContinuationActions.reply)

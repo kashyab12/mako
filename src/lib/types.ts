@@ -4,6 +4,7 @@ import type {
 } from "../../electron/shared.ts"
 
 export type {
+  TransferInput,
   LiveCapability,
   LivePermissionRequest,
   PromptAttachment,
@@ -52,6 +53,7 @@ export type {
   ModelCost,
   ModelInfo,
   MakoComputerPermissions,
+  BrowserControlStatus,
   McpProvider,
   McpRegistryProviderStatus,
   McpRegistrySnapshot,
@@ -122,3 +124,5 @@ export type {
   LiveStartOptions,
   LiveRequest,
 } from "../../electron/shared"
+
+export type { NativeRequest, NativeRequestInput } from "../../electron/shared"

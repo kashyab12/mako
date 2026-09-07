@@ -128,14 +128,18 @@ export function applyThreadEntries(
 
 export const threadViewingActions = {
   /** Open a foreign session read-only, translated to the canonical shape. */
-  async view(ref: ThreadRef) {
+  async view(ref: ThreadRef, mode: "conversation" | "native" = "conversation") {
     if (!hasBridge()) return
     const { acp, acpStore, activeAcp } = await import("@/state/acp")
-    const activated = acp.activateThread(ref.path)
+    const activated = mode === "conversation" && acp.activateThread(ref.path)
     if (!activated) acp.deactivate()
     const liveHarness = activated
       ? (activeAcp(acpStore.get())?.harness ?? ref.harness)
       : ref.harness
+    if (activated) {
+      leaveViewerForLive(liveHarness)
+      return
+    }
     const generation = ++viewingGeneration
     markThreadReviewed(ref.path)
     const cached = threadCache.get(ref.path)

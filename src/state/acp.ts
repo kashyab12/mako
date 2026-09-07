@@ -1,6 +1,7 @@
+import { leaveViewerForLive } from "@/state/thread-viewing"
 import { applyLiveSnapshot, hydrateLive } from "@/state/live-recovery"
 import { getMako, hasBridge } from "@/lib/bridge"
-import type { PromptAttachment, ThreadRef } from "@/lib/types"
+import type { PromptAttachment, ThreadRef, TransferInput } from "@/lib/types"
 import { activeIs, updateLive } from "@/state/acp-live"
 import { sendTo } from "@/state/acp-queue"
 import {
@@ -26,13 +27,13 @@ import {
   type LiveAcpConversation,
   type StartingAcpConversation,
 } from "@/state/acp-state"
-import { viewedThread } from "@/state/thread-viewing"
 import {
   canResumeInteractively,
   markThreadReviewed,
   setThreadAttention,
   setThreadRunning,
   threadsStore,
+  threads,
   withConversion,
 } from "@/state/threads"
 import { toast } from "sonner"
@@ -249,50 +250,113 @@ export const acp = {
     )
   },
 
-  async handoff(harness: string, prompt: string): Promise<boolean> {
+  async delegate(provider: string, task: string): Promise<boolean> {
+    const parent = activeLiveAcp(acpStore.get())
+    if (!parent || !hasBridge()) return false
+    const id = crypto.randomUUID()
+    try {
+      applyLiveSnapshot(
+        await getMako().liveDelegate(parent.key, { id, provider, task })
+      )
+      return true
+    } catch (error) {
+      const snapshot = await getMako()
+        .liveSnapshot(parent.key)
+        .catch(() => null)
+      if (snapshot?.control?.children.some((child) => child.id === id)) {
+        applyLiveSnapshot(snapshot)
+        return true
+      }
+      toast.error(error instanceof Error ? error.message : String(error))
+      return false
+    }
+  },
+
+  async cancelChild(childId: string): Promise<void> {
+    const parent = activeLiveAcp(acpStore.get())
+    if (!parent || !hasBridge()) return
+    try {
+      applyLiveSnapshot(await getMako().liveCancelChild(parent.key, childId))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    }
+  },
+
+  async openRelated(id: string): Promise<void> {
+    await hydrateLive(id)
+    acp.activate(id)
+  },
+
+  async mergeFork(): Promise<void> {
+    const current = activeLiveAcp(acpStore.get())
+    if (!current || !hasBridge()) return
+    const id = crypto.randomUUID()
+    try {
+      applyLiveSnapshot(await getMako().liveMergeFork(current.key, id))
+      toast("Fork findings will be included in the parent's next turn")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    }
+  },
+
+  async fork(requestId: string): Promise<boolean> {
     const current = activeLiveAcp(acpStore.get())
     if (!current || !hasBridge()) return false
-    updateLive(current.key, (conversation) => ({
-      ...conversation,
-      blocks: [...conversation.blocks, { type: "user", text: prompt }],
-      updatedAt: Date.now(),
-    }))
-    const locate = (refs: ThreadRef[]) =>
-      refs.find((ref) =>
-        current.threadPath
-          ? ref.path === current.threadPath
-          : ref.harness === current.session.harness &&
-            ref.nativeId === current.session.nativeId
-      )
     try {
-      let ref = locate(threadsStore.get().threads)
-      for (let attempt = 0; !ref && attempt < 20; attempt += 1) {
-        const catalog = await getMako().threads()
-        ref = locate(catalog.threads)
-        if (!ref) await new Promise((resolve) => setTimeout(resolve, 100))
-      }
-      if (!ref) throw new Error("This live session is still being saved")
-      const thread = await getMako().openThread(ref.path)
-      if (!thread) throw new Error("This live session could not be read")
-      await getMako().liveClose(current.session.id)
-      if (current.threadPath) setThreadRunning(current.threadPath, false)
-      removeAcpConversation(current.key)
-      threadsStore.set({
-        viewing: viewedThread(thread),
-        run: null,
-        composerHarness: harness,
+      const snapshot = await getMako().liveFork(current.key, {
+        id: crypto.randomUUID(),
+        provider: current.harness,
+        point: { kind: "run", requestId },
       })
-      const { threads } = await import("@/state/threads")
-      return threads.moveAndSend(thread.ref, harness, prompt)
+      applyLiveSnapshot(snapshot)
+      acp.activate(snapshot.session.id)
+      return true
     } catch (error) {
-      updateLive(current.key, (conversation) => {
-        const blocks = [...conversation.blocks]
-        const optimistic = blocks.findLastIndex(
-          (block) => block.type === "user" && block.text === prompt
-        )
-        if (optimistic >= 0) blocks.splice(optimistic, 1)
-        return { ...conversation, blocks, updatedAt: Date.now() }
+      toast.error(error instanceof Error ? error.message : String(error))
+      return false
+    }
+  },
+
+  viewProviderHistory(path: string): void {
+    const ref = threadsStore
+      .get()
+      .threads.find((candidate) => candidate.path === path)
+    if (ref) void threads.view(ref, "native")
+    else toast.error("This provider history is not available in the catalog")
+  },
+
+  async handoff(
+    harness: string,
+    prompt: string,
+    attachments: PromptAttachment[] = [],
+    tuning: TransferInput["tuning"] = threadsStore.get().composerTuning[harness]
+  ): Promise<boolean> {
+    const current = activeLiveAcp(acpStore.get())
+    if (!current || !hasBridge()) return false
+    const id = crypto.randomUUID()
+    try {
+      const snapshot = await getMako().liveTransfer(current.key, {
+        id,
+        provider: harness,
+        text: prompt,
+        attachments,
+        tuning,
       })
+      applyLiveSnapshot(snapshot)
+      leaveViewerForLive(harness)
+      return true
+    } catch (error) {
+      const snapshot = await getMako()
+        .liveSnapshot(current.key)
+        .catch(() => null)
+      if (
+        snapshot?.control?.transfers.some(
+          (transfer) => transfer.input.id === id
+        )
+      ) {
+        applyLiveSnapshot(snapshot)
+        return true
+      }
       toast.error(error instanceof Error ? error.message : String(error))
       return false
     }

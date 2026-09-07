@@ -1,6 +1,5 @@
 import { toast } from "sonner"
 import type { ThreadRef, ThreadRunState } from "@/lib/types"
-import { releaseQueuedReply } from "@/state/thread-queue"
 import type { AttentionByPath, ThreadsState } from "@/state/thread-state"
 import { threadsStore } from "@/state/thread-store"
 
@@ -54,11 +53,9 @@ export function threadStatus(
       detail: external.detail,
     }
   if (external?.status === "active") return EXTERNAL_ACTIVE_STATUS
+  if (external?.status === "open") return EXTERNAL_OPEN_STATUS
   if (ref.active === true) return EXTERNAL_ACTIVE_STATUS
-  if (ref.locked)
-    return state.observed[ref.path]
-      ? EXTERNAL_ACTIVE_STATUS
-      : EXTERNAL_OPEN_STATUS
+  if (ref.locked) return EXTERNAL_OPEN_STATUS
   if (ref.active === false) return IDLE_STATUS
   return state.observed[ref.path] ? OBSERVED_STATUS : IDLE_STATUS
 }
@@ -123,7 +120,6 @@ export function activeThreadRefs(
       return (
         status.kind === "working" ||
         status.kind === "needs-permission" ||
-        status.kind === "observed" ||
         status.kind === "external-active"
       )
     })
@@ -131,7 +127,9 @@ export function activeThreadRefs(
       const priority =
         threadStatusPriority(threadStatus(right, state)) -
         threadStatusPriority(threadStatus(left, state))
-      return priority || (right.updatedAt ?? "").localeCompare(left.updatedAt ?? "")
+      return (
+        priority || (right.updatedAt ?? "").localeCompare(left.updatedAt ?? "")
+      )
     })
 }
 
@@ -175,8 +173,10 @@ export function markThreadReviewed(path: string) {
 }
 
 export function applyThreadRun(run: ThreadRunState) {
-  const { viewing, queuedReplies } = threadsStore.get()
-  const queue = queuedReplies[run.path]
+  const { viewing, nativeRequests } = threadsStore.get()
+  const queue = nativeRequests.some(
+    (request) => request.input.path === run.path && request.status === "queued"
+  )
   setThreadRunning(run.path, run.status === "running")
   if (run.status === "running") setThreadAttention(run.path, null)
   else if (run.status === "done" && !queue)
@@ -195,5 +195,4 @@ export function applyThreadRun(run: ThreadRunState) {
   else setThreadAttention(run.path, null)
   if (viewing && viewing.ref.path === run.path) threadsStore.set({ run })
   if (run.status === "failed" && run.error) toast.error(run.error)
-  if (run.status !== "running") releaseQueuedReply(run.path)
 }

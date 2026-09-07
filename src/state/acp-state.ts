@@ -19,7 +19,9 @@ interface AcpConversationBase {
   harness: string
   cwd: string
   title?: string
+  nativePaths?: string[]
   threadPath?: string
+  control?: LiveSnapshot["control"]
   requests?: LiveSnapshot["requests"]
   base?: LiveSnapshot["base"]
   revision?: number
@@ -75,11 +77,14 @@ export function acpForThread(
   for (const conversation of Object.values(state.conversations)) {
     const available =
       conversation.kind === "starting" ||
-      (conversation.session.status !== "closed" &&
-        conversation.session.connection !== "disconnected")
+      conversation.session.status !== "closed"
     if (
       available &&
-      conversation.threadPath === path &&
+      (conversation.threadPath === path ||
+        conversation.nativePaths?.includes(path) ||
+        conversation.control?.bindings.some(
+          (binding) => binding.path === path
+        )) &&
       (!found || conversation.updatedAt > found.updatedAt)
     )
       found = conversation

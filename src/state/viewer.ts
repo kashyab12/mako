@@ -480,3 +480,7 @@ export const viewer = {
 function hasRichPreview(path: string) {
   return /\.(?:csv|md|markdown|mdx|tsv)$/i.test(path)
 }
+
+export function viewerFileUrl(url: string): string {
+  return getMako().resolveFileUrl(url)
+}

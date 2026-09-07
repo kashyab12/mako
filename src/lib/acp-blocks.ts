@@ -22,6 +22,7 @@ export function acpBlocksToMessages(
   let plan: AcpPlanEntry[] = []
   let assistant: ChatMessage | null = null
   let turn = 0
+  let turnProvider = provider
 
   const append = (block: Block, index: number) => {
     if (!assistant) {
@@ -30,7 +31,7 @@ export function acpBlocksToMessages(
         role: "assistant",
         blocks: [],
       }
-      if (provider) assistant.provider = provider
+      if (turnProvider) assistant.provider = turnProvider
       messages.push(assistant)
     }
     assistant.blocks.push(block)
@@ -40,6 +41,7 @@ export function acpBlocksToMessages(
     const block = blocks[index]!
     switch (block.type) {
       case "user":
+        turnProvider = block.provider ?? provider
         turn += 1
         assistant = null
         messages.push({

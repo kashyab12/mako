@@ -20,7 +20,7 @@ export const threadsStore = createStore<ThreadsState>({
   converting: null,
   composerHarness: prefsStore.get().composerHarness ?? "claude",
   composerTuning: prefsStore.get().composerTuning,
-  queuedReplies: {},
+  nativeRequests: [],
 })
 
 export const useThreads = createHook(threadsStore)
