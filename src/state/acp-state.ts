@@ -1,15 +1,16 @@
+import type { LiveSnapshot } from "@/lib/types"
+import type { LiveProjection } from "@/state/live-projection"
 import type { AcpBlock } from "@/lib/acp-blocks"
 import type {
-  AcpPermissionRequest,
-  AcpPromptAttachment,
-  AcpSessionState,
-  AcpUpdate,
+  LivePermissionRequest,
+  PromptAttachment,
+  LiveSessionState,
 } from "@/lib/types"
 import { createHook, createStore } from "@/state/store"
 
 export interface AcpQueuedPrompt {
   text: string
-  attachments: AcpPromptAttachment[]
+  attachments: PromptAttachment[]
 }
 
 interface AcpConversationBase {
@@ -19,6 +20,11 @@ interface AcpConversationBase {
   cwd: string
   title?: string
   threadPath?: string
+  requests?: LiveSnapshot["requests"]
+  base?: LiveSnapshot["base"]
+  revision?: number
+  hydrated?: boolean
+  projection?: LiveProjection
   blocks: AcpBlock[]
   queued: AcpQueuedPrompt[]
   hiddenUserPrompt: string | null
@@ -32,8 +38,8 @@ export interface StartingAcpConversation extends AcpConversationBase {
 
 export interface LiveAcpConversation extends AcpConversationBase {
   kind: "live"
-  session: AcpSessionState
-  permission: AcpPermissionRequest | null
+  session: LiveSessionState
+  permission: LivePermissionRequest | null
   sending: boolean
   canceling: boolean
 }
@@ -43,21 +49,17 @@ export type AcpConversation = StartingAcpConversation | LiveAcpConversation
 export interface AcpState {
   activeKey: string | null
   conversations: Record<string, AcpConversation>
-  bufferedUpdates: Record<string, AcpUpdate[]>
-  bufferedPermissions: Record<string, AcpPermissionRequest>
 }
 
 export const acpStore = createStore<AcpState>({
   activeKey: null,
   conversations: {},
-  bufferedUpdates: {},
-  bufferedPermissions: {},
 })
 
 export const useAcp = createHook(acpStore)
 
 export function activeAcp(state: AcpState): AcpConversation | null {
-  return state.activeKey ? state.conversations[state.activeKey] ?? null : null
+  return state.activeKey ? (state.conversations[state.activeKey] ?? null) : null
 }
 
 export function activeLiveAcp(state: AcpState): LiveAcpConversation | null {
@@ -73,7 +75,8 @@ export function acpForThread(
   for (const conversation of Object.values(state.conversations)) {
     const available =
       conversation.kind === "starting" ||
-      conversation.session.status !== "closed"
+      (conversation.session.status !== "closed" &&
+        conversation.session.connection !== "disconnected")
     if (
       available &&
       conversation.threadPath === path &&

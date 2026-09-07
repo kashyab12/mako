@@ -17,6 +17,8 @@ export interface ViewerDocument {
   id: string
   kind: "file" | "diff"
   path: string
+  liveId?: string
+  threadPath?: string
   title: string
   file?: FileContents
   diff?: { title: string; diffs: GitDiff[]; note?: string }
@@ -59,9 +61,7 @@ const PRIMARY_PANE = "primary"
 const initialState: ViewerState = {
   loading: false,
   documents: {},
-  panes: [
-    { id: PRIMARY_PANE, tabIds: [AGENT_TAB_ID], activeId: AGENT_TAB_ID },
-  ],
+  panes: [{ id: PRIMARY_PANE, tabIds: [AGENT_TAB_ID], activeId: AGENT_TAB_ID }],
   focusedPaneId: PRIMARY_PANE,
   split: "right",
 }
@@ -80,7 +80,8 @@ function activeDocument(
   panes: ViewerPane[],
   focusedPaneId: string
 ): ViewerDocument | undefined {
-  const pane = panes.find((candidate) => candidate.id === focusedPaneId) ?? panes[0]
+  const pane =
+    panes.find((candidate) => candidate.id === focusedPaneId) ?? panes[0]
   return pane?.activeId ? documents[pane.activeId] : undefined
 }
 
@@ -150,11 +151,15 @@ function placeDocument(
     const pane =
       state.panes.find(
         (candidate) =>
-          candidate.id === state.focusedPaneId && candidate.tabIds.includes(existing.id)
-      ) ?? state.panes.find((candidate) => candidate.tabIds.includes(existing.id))
+          candidate.id === state.focusedPaneId &&
+          candidate.tabIds.includes(existing.id)
+      ) ??
+      state.panes.find((candidate) => candidate.tabIds.includes(existing.id))
     const next = create(existing.id, existing)
     const panes = state.panes.map((candidate) =>
-      candidate.id === pane?.id ? { ...candidate, activeId: existing.id } : candidate
+      candidate.id === pane?.id
+        ? { ...candidate, activeId: existing.id }
+        : candidate
     )
     commit(
       { ...state.documents, [existing.id]: next },
@@ -167,7 +172,8 @@ function placeDocument(
   const id = `viewer-${++documentSequence}`
   const next = create(id)
   const focused =
-    state.panes.find((candidate) => candidate.id === state.focusedPaneId) ?? state.panes[0]
+    state.panes.find((candidate) => candidate.id === state.focusedPaneId) ??
+    state.panes[0]
   const previewId = focused.tabIds.find(
     (tabId) => state.documents[tabId] && !state.documents[tabId].pinned
   )
@@ -177,7 +183,10 @@ function placeDocument(
   const panes = state.panes.map((pane) =>
     pane.id === focused.id ? { ...pane, tabIds, activeId: id } : pane
   )
-  const documents = removeUnreferenced({ ...state.documents, [id]: next }, panes)
+  const documents = removeUnreferenced(
+    { ...state.documents, [id]: next },
+    panes
+  )
   commit(documents, panes, focused.id)
   return next
 }
@@ -186,9 +195,13 @@ async function watchActiveFile() {
   if (!hasBridge()) return
   const mine = ++watchGeneration
   const state = viewerStore.get()
-  const active = activeDocument(state.documents, state.panes, state.focusedPaneId)
+  const active = activeDocument(
+    state.documents,
+    state.panes,
+    state.focusedPaneId
+  )
   if (mine !== watchGeneration) return
-  if (active?.kind !== "file") {
+  if (active?.kind !== "file" || active.threadPath) {
     await getMako().unwatchFile()
     return
   }
@@ -196,28 +209,47 @@ async function watchActiveFile() {
 }
 
 export const viewer = {
-  async open(path: string, line?: number) {
+  async open(
+    path: string,
+    line?: number,
+    threadPath?: string,
+    liveId?: string
+  ) {
     if (!hasBridge()) return
     const document = placeDocument(
       (id, previous) => ({
         id,
         kind: "file",
         path,
+        threadPath,
+        liveId,
         title: path.split("/").at(-1) ?? path,
         file: previous?.kind === "file" ? previous.file : undefined,
-        loading: previous?.kind === "file" && previous.file !== undefined ? false : true,
+        loading:
+          previous?.kind === "file" && previous.file !== undefined
+            ? false
+            : true,
         error: undefined,
         line,
         pinned: previous?.pinned ?? false,
-        renderMode: previous?.renderMode ?? (hasRichPreview(path) ? "preview" : "source"),
+        renderMode:
+          previous?.renderMode ?? (hasRichPreview(path) ? "preview" : "source"),
       }),
-      (candidate) => candidate.kind === "file" && candidate.path === path
+      (candidate) =>
+        candidate.kind === "file" &&
+        candidate.path === path &&
+        candidate.threadPath === threadPath &&
+        candidate.liveId === liveId
     )
     const mine = beginRequest(document.id)
     // Live from here: the active writer lands without a manual reopen.
     void watchActiveFile()
     try {
-      const file = await getMako().readFile(path)
+      const file = liveId
+        ? await getMako().readLiveFile(liveId, path)
+        : threadPath
+          ? await getMako().readThreadFile(threadPath, path)
+          : await getMako().readFile(path)
       if (!requestIsCurrent(document.id, mine)) return
       updateDocument(document.id, { file, loading: false })
     } catch (error) {
@@ -233,37 +265,44 @@ export const viewer = {
   async refresh(path?: string) {
     if (!hasBridge()) return
     const state = viewerStore.get()
-    const active = activeDocument(state.documents, state.panes, state.focusedPaneId)
-    const targetPath = path ?? (active?.kind === "file" ? active.path : undefined)
+    const active = activeDocument(
+      state.documents,
+      state.panes,
+      state.focusedPaneId
+    )
+    const targetPath =
+      path ?? (active?.kind === "file" ? active.path : undefined)
     if (!targetPath) return
     const targets = Object.values(state.documents).filter(
       (document) => document.kind === "file" && document.path === targetPath
     )
     if (targets.length === 0) return
-    const tokens = new Map(targets.map((document) => [document.id, beginRequest(document.id)]))
-    try {
-      const file = await getMako().readFile(targetPath)
-      const latest = viewerStore.get()
-      let documents = latest.documents
-      let changed = false
-      for (const target of targets) {
-        const token = tokens.get(target.id)
-        const current = documents[target.id]
-        if (!token || !current || !requestIsCurrent(target.id, token)) continue
-        documents = { ...documents, [target.id]: { ...current, file, error: undefined } }
-        changed = true
-      }
-      if (changed) commit(documents, latest.panes, latest.focusedPaneId)
-    } catch {
-      // A transient read failure mid-write resolves on the next event.
-    }
+    await Promise.all(
+      targets.map(async (target) => {
+        const token = beginRequest(target.id)
+        try {
+          const file = target.liveId
+            ? await getMako().readLiveFile(target.liveId, targetPath)
+            : target.threadPath
+              ? await getMako().readThreadFile(target.threadPath, targetPath)
+              : await getMako().readFile(targetPath)
+          if (requestIsCurrent(target.id, token))
+            updateDocument(target.id, { file, error: undefined })
+        } catch {
+          // A transient read failure mid-write resolves on the next event.
+        }
+      })
+    )
   },
 
   /**
    * A diff opens in the same tab model as a file, so history can remain beside
    * the conversation and can be pinned or split without a second viewer path.
    */
-  async openDiff(title: string, load: () => Promise<{ diffs: GitDiff[]; note?: string }>) {
+  async openDiff(
+    title: string,
+    load: () => Promise<{ diffs: GitDiff[]; note?: string }>
+  ) {
     if (!hasBridge()) return
     const document = placeDocument(
       (id, previous) => ({
@@ -284,7 +323,10 @@ export const viewer = {
     try {
       const { diffs, note } = await load()
       if (!requestIsCurrent(document.id, mine)) return
-      updateDocument(document.id, { diff: { title, diffs, note }, loading: false })
+      updateDocument(document.id, {
+        diff: { title, diffs, note },
+        loading: false,
+      })
     } catch (error) {
       if (!requestIsCurrent(document.id, mine)) return
       updateDocument(document.id, {
@@ -334,7 +376,11 @@ export const viewer = {
 
   focusPane(paneId: string) {
     const state = viewerStore.get()
-    if (state.focusedPaneId === paneId || !state.panes.some((pane) => pane.id === paneId)) return
+    if (
+      state.focusedPaneId === paneId ||
+      !state.panes.some((pane) => pane.id === paneId)
+    )
+      return
     commit(state.documents, state.panes, paneId)
     void watchActiveFile()
     const pane = state.panes.find((candidate) => candidate.id === paneId)
@@ -364,7 +410,8 @@ export const viewer = {
       return
     }
     const source =
-      state.panes.find((pane) => pane.id === state.focusedPaneId) ?? state.panes[0]
+      state.panes.find((pane) => pane.id === state.focusedPaneId) ??
+      state.panes[0]
     if (!source.activeId || source.activeId === AGENT_TAB_ID) return
     const secondary: ViewerPane = {
       id: "secondary",

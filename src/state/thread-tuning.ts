@@ -1,19 +1,10 @@
 import type { HarnessProfile } from "@/lib/types"
 import { prefsStore, setPref } from "@/state/prefs"
-import type {
-  ComposerTuning,
-  HarnessOptionValues,
-} from "@/state/thread-state"
+import type { ComposerTuning, HarnessOptionValues } from "@/state/thread-state"
 import { threadsStore } from "@/state/thread-store"
 
-const INTERACTIVE_RESUME_HARNESSES = new Set([
-  "claude",
-  "grok",
-  "opencode",
-])
-
 export function canResumeInteractively(harness: string): boolean {
-  return INTERACTIVE_RESUME_HARNESSES.has(harness)
+  return threadsStore.get().interactiveResume.includes(harness)
 }
 
 /** The composer's agent, remembered across launches. */
@@ -67,9 +58,9 @@ export function initializeComposerTuning(profile: HarnessProfile): void {
 function hasExplicitTuning(tuning: ComposerTuning | undefined): boolean {
   return Boolean(
     tuning?.model ||
-      tuning?.effort !== undefined ||
-      tuning?.fast !== undefined ||
-      (tuning?.options && Object.keys(tuning.options).length > 0)
+    tuning?.effort !== undefined ||
+    tuning?.fast !== undefined ||
+    (tuning?.options && Object.keys(tuning.options).length > 0)
   )
 }
 

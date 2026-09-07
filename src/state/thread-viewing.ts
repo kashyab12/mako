@@ -51,6 +51,7 @@ export function viewedThread(thread: Thread): ViewedThread {
 function viewedPage(page: ThreadPage): ViewedThread {
   return {
     ref: page.ref,
+    checkpoint: page.checkpoint,
     entries: page.entries,
     pageStart: page.start,
     totalEntries: page.total,
@@ -145,8 +146,8 @@ export const threadViewingActions = {
       }
       threadsStore.set({
         viewing: cached,
-        opening: null,
-        viewingBusy: false,
+        opening: ref,
+        viewingBusy: true,
         run: null,
         composerHarness: liveHarness,
       })
@@ -174,14 +175,36 @@ export const threadViewingActions = {
           }
           rememberThread(replaced)
           if (threadsStore.get().viewing?.ref.path === ref.path) {
-            threadsStore.set({ viewing: replaced })
-            void getMako().followThread(ref.path, replaced.ref.bytes ?? 0)
+            threadsStore.set({
+              viewing: replaced,
+              opening: null,
+              viewingBusy: false,
+            })
+            void getMako().followThread(
+              ref.path,
+              replaced.checkpoint ?? replaced.ref.bytes ?? 0
+            )
           }
         })
-        .catch(() => {})
+        .catch((error) => {
+          if (
+            generation !== viewingGeneration ||
+            threadsStore.get().viewing?.ref.path !== ref.path
+          )
+            return
+          threadsStore.set({ opening: null, viewingBusy: false })
+          toast.error(
+            `Could not refresh this conversation. Showing saved messages. ${error instanceof Error ? error.message : String(error)}`
+          )
+        })
       return
     }
-    threadsStore.set({ opening: ref, viewingBusy: true, run: null })
+    threadsStore.set({
+      viewing: null,
+      opening: ref,
+      viewingBusy: true,
+      run: null,
+    })
     try {
       const [page, run] = await Promise.all([
         getMako().pageThread(ref.path),
@@ -208,7 +231,10 @@ export const threadViewingActions = {
       })
       // Live from here: the agent writing this session — in whatever app —
       // keeps appending, and those entries belong on screen.
-      void getMako().followThread(ref.path, thread.ref.bytes ?? 0)
+      void getMako().followThread(
+        ref.path,
+        thread.checkpoint ?? thread.ref.bytes ?? 0
+      )
     } catch (error) {
       if (generation !== viewingGeneration) return
       threadsStore.set({ opening: null, viewingBusy: false })
@@ -218,7 +244,12 @@ export const threadViewingActions = {
 
   async loadEarlier() {
     const viewing = threadsStore.get().viewing
-    if (!viewing || !viewing.hasEarlier || viewing.loadingEarlier || !hasBridge())
+    if (
+      !viewing ||
+      !viewing.hasEarlier ||
+      viewing.loadingEarlier ||
+      !hasBridge()
+    )
       return
     threadsStore.set({ viewing: { ...viewing, loadingEarlier: true } })
     try {

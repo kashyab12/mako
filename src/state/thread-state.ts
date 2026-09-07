@@ -46,8 +46,7 @@ export type ViewedUserEntry = Extract<ThreadEntry, { kind: "user" }> & {
   echo?: boolean
 }
 export type ViewedThreadEntry =
-  | ViewedUserEntry
-  | Exclude<ThreadEntry, { kind: "user" }>
+  ViewedUserEntry | Exclude<ThreadEntry, { kind: "user" }>
 
 export interface ViewedThread extends Omit<Thread, "entries"> {
   entries: ViewedThreadEntry[]
@@ -80,6 +79,7 @@ export interface ThreadsState {
   targets: string[]
   /** Harnesses that can be driven interactively (ACP). */
   acpable: string[]
+  interactiveResume: string[]
   /** The native run for the viewed thread, if one was started. */
   run: ThreadRunState | null
   /** Every live run owned by Mako, with its start and current operation. */

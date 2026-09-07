@@ -1,14 +1,7 @@
+import { applyLiveSnapshot, hydrateLive } from "@/state/live-recovery"
 import { getMako, hasBridge } from "@/lib/bridge"
-import type {
-  AcpPermissionRequest,
-  AcpPromptAttachment,
-  ThreadRef,
-} from "@/lib/types"
-import {
-  activeIs,
-  applyAcpPermission as applyLiveAcpPermission,
-  updateLive,
-} from "@/state/acp-live"
+import type { PromptAttachment, ThreadRef } from "@/lib/types"
+import { activeIs, updateLive } from "@/state/acp-live"
 import { sendTo } from "@/state/acp-queue"
 import {
   beginStart,
@@ -26,7 +19,6 @@ import {
   liveAcpConversations,
   liveAcpForThread,
   removeAcpConversation,
-  updateAcpConversation,
   useAcp,
   type AcpConversation,
   type AcpQueuedPrompt,
@@ -34,7 +26,6 @@ import {
   type LiveAcpConversation,
   type StartingAcpConversation,
 } from "@/state/acp-state"
-import { draftText, rememberDraft } from "@/state/drafts"
 import { viewedThread } from "@/state/thread-viewing"
 import {
   canResumeInteractively,
@@ -55,11 +46,6 @@ export {
   liveAcpForThread,
   useAcp,
 }
-export {
-  applyAcpSession,
-  applyAcpUpdate,
-  applyAcpUpdates,
-} from "@/state/acp-live"
 export type {
   AcpConversation,
   AcpQueuedPrompt,
@@ -68,15 +54,13 @@ export type {
   StartingAcpConversation,
 }
 
-export function applyAcpPermission(request: AcpPermissionRequest): void {
-  applyLiveAcpPermission(request, acp.activate)
-}
-
 export const acp = {
   activate(key: string): boolean {
     const conversation = acpStore.get().conversations[key]
     if (!conversation) return false
     acpStore.set({ activeKey: key })
+    if (conversation.kind === "live" && !conversation.hydrated)
+      void hydrateLive(key)
     threadsStore.set({ composerHarness: conversation.harness })
     const path = conversation.threadPath
     if (path) markThreadReviewed(path)
@@ -120,18 +104,12 @@ export const acp = {
       )
       if (!ref || claimedPaths.has(ref.path)) continue
       claimedPaths.add(ref.path)
-      const heldDraft = draftText(conversation.draftKey)
-      const threadDraft = draftText(ref.path)
-      if (heldDraft && heldDraft !== threadDraft)
-        rememberDraft(
-          ref.path,
-          threadDraft ? `${threadDraft}\n\n${heldDraft}` : heldDraft
-        )
-      if (conversation.draftKey !== ref.path)
-        rememberDraft(conversation.draftKey, "")
+      void getMako()
+        .liveBind(conversation.key, ref.path)
+        .then(applyLiveSnapshot)
+        .catch((error) => toast.error(String(error)))
       const next = updateLive(conversation.key, (current) => ({
         ...current,
-        draftKey: ref.path,
         threadPath: ref.path,
         title: ref.title ?? current.title,
         updatedAt: Date.now(),
@@ -163,9 +141,7 @@ export const acp = {
     const existing = acpForThread(acpStore.get(), ref.path)
     if (existing) return acp.activate(existing.key)
     const canResume = canResumeInteractively(ref.harness)
-    const harness = canResume
-      ? ref.harness
-      : threadsStore.get().composerHarness
+    const harness = canResume ? ref.harness : threadsStore.get().composerHarness
     const starting = beginStart({
       harness,
       cwd: ref.cwd ?? "",
@@ -207,7 +183,7 @@ export const acp = {
   async resumeAndSend(
     ref: ThreadRef,
     prompt: string,
-    attachments: AcpPromptAttachment[] = []
+    attachments: PromptAttachment[] = []
   ): Promise<boolean> {
     if (!hasBridge()) return false
     const existing = acpForThread(acpStore.get(), ref.path)
@@ -215,12 +191,9 @@ export const acp = {
       acp.activate(existing.key)
       if (existing.kind === "live")
         return sendTo(existing.key, prompt, attachments)
-      updateAcpConversation(existing.key, (conversation) => ({
-        ...conversation,
-        queued: [...conversation.queued, { text: prompt, attachments }],
-        updatedAt: Date.now(),
-      }))
-      return true
+      return (await waitForPromotion(existing.draftKey))
+        ? sendTo(existing.key, prompt, attachments)
+        : false
     }
     setThreadRunning(ref.path, true)
     const starting = beginStart({
@@ -249,7 +222,7 @@ export const acp = {
     harness: string,
     cwd: string,
     prompt: string,
-    attachments: AcpPromptAttachment[] = [],
+    attachments: PromptAttachment[] = [],
     displayPrompt = prompt,
     threadPath?: string
   ): Promise<boolean> {
@@ -301,7 +274,7 @@ export const acp = {
       if (!ref) throw new Error("This live session is still being saved")
       const thread = await getMako().openThread(ref.path)
       if (!thread) throw new Error("This live session could not be read")
-      await getMako().acpClose(current.session.id)
+      await getMako().liveClose(current.session.id)
       if (current.threadPath) setThreadRunning(current.threadPath, false)
       removeAcpConversation(current.key)
       threadsStore.set({
@@ -325,28 +298,34 @@ export const acp = {
     }
   },
 
-  send(text: string, attachments: AcpPromptAttachment[] = []): Promise<boolean> {
+  send(text: string, attachments: PromptAttachment[] = []): Promise<boolean> {
     const current = activeAcp(acpStore.get())
     if (!current) return Promise.resolve(false)
-    if (current.kind === "starting") {
-      updateAcpConversation(current.key, (conversation) => ({
-        ...conversation,
-        queued: [...conversation.queued, { text, attachments }],
-        updatedAt: Date.now(),
-      }))
-      return waitForPromotion(current.draftKey)
-    }
+    if (current.kind === "starting")
+      return waitForPromotion(current.draftKey).then((ready) =>
+        ready ? sendTo(current.key, text, attachments) : false
+      )
     return sendTo(current.key, text, attachments)
   },
 
-  unqueue(): void {
-    const current = activeAcp(acpStore.get())
-    if (!current) return
-    updateAcpConversation(current.key, (conversation) => ({
+  async cancel(): Promise<boolean> {
+    const current = activeLiveAcp(acpStore.get())
+    if (!current || !hasBridge()) return false
+    updateLive(current.key, (conversation) => ({
       ...conversation,
-      queued: [],
-      updatedAt: Date.now(),
+      canceling: true,
     }))
+    try {
+      await getMako().liveCancel(current.key)
+      return true
+    } catch (error) {
+      updateLive(current.key, (conversation) => ({
+        ...conversation,
+        canceling: false,
+      }))
+      toast.error(error instanceof Error ? error.message : String(error))
+      return false
+    }
   },
 
   answerPermission(
@@ -355,62 +334,26 @@ export const acp = {
   ): void {
     const current = activeLiveAcp(acpStore.get())
     if (!current?.permission || !hasBridge()) return
-    void getMako().acpPermission(
-      current.session.id,
-      current.permission.id,
-      answers
-        ? { kind: "answers", answers }
-        : { kind: "choice", optionId }
-    )
-    updateLive(current.key, (conversation) => ({
-      ...conversation,
-      permission: null,
-      updatedAt: Date.now(),
-    }))
-    if (current.threadPath) setThreadAttention(current.threadPath, null)
+    void getMako()
+      .livePermission(
+        current.key,
+        current.permission.id,
+        answers ? { kind: "answers", answers } : { kind: "choice", optionId }
+      )
+      .catch((error) => toast.error(String(error)))
   },
 
   setMode(modeId: string): void {
     const current = activeLiveAcp(acpStore.get())
-    if (!current || !hasBridge()) return
-    void getMako().acpSetMode(current.session.id, modeId)
+    if (current && hasBridge())
+      void getMako()
+        .liveSetMode(current.key, modeId)
+        .catch((error) => toast.error(String(error)))
   },
 
-  async cancel(): Promise<boolean> {
+  async unqueue(): Promise<void> {
     const current = activeLiveAcp(acpStore.get())
-    if (!current || !hasBridge() || current.canceling) return false
-    updateLive(current.key, (conversation) => ({
-      ...conversation,
-      canceling: true,
-      updatedAt: Date.now(),
-    }))
-    try {
-      await getMako().acpCancel(current.session.id)
-      globalThis.setTimeout(() => {
-        const latest = acpStore.get().conversations[current.key]
-        if (
-          latest?.kind === "live" &&
-          latest.session.status === "running" &&
-          latest.canceling
-        ) {
-          updateLive(current.key, (conversation) => ({
-            ...conversation,
-            canceling: false,
-            updatedAt: Date.now(),
-          }))
-          toast.error("The provider did not stop the current turn")
-        }
-      }, 10_000)
-      return true
-    } catch (error) {
-      updateLive(current.key, (conversation) => ({
-        ...conversation,
-        canceling: false,
-        updatedAt: Date.now(),
-      }))
-      toast.error(error instanceof Error ? error.message : String(error))
-      return false
-    }
+    if (current) applyLiveSnapshot(await getMako().liveClearQueue(current.key))
   },
 
   close(): boolean {
@@ -421,7 +364,7 @@ export const acp = {
       removeAcpConversation(active.key)
       return true
     }
-    if (hasBridge()) void getMako().acpClose(active.session.id)
+    if (hasBridge()) void getMako().liveClose(active.session.id)
     if (active.threadPath) {
       setThreadRunning(active.threadPath, false)
       setThreadAttention(active.threadPath, null)

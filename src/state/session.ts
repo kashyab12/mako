@@ -1,3 +1,4 @@
+import { applyLiveBatch, hydrateLiveSummaries } from "@/state/live-recovery"
 import { createHook, createStore, shallowEqual } from "@/state/store"
 import type {
   Capabilities,
@@ -43,16 +44,7 @@ import {
   threads,
   threadsStore,
 } from "@/state/threads"
-import {
-  acp,
-  acpStore,
-  activeAcp,
-  activeLiveAcp,
-  applyAcpPermission,
-  applyAcpSession,
-  applyAcpUpdate,
-  applyAcpUpdates,
-} from "@/state/acp"
+import { acp, acpStore, activeAcp, activeLiveAcp } from "@/state/acp"
 import { watchOnboarding } from "@/state/onboarding"
 import { toast } from "sonner"
 
@@ -119,6 +111,10 @@ export function currentTurnRunning(): boolean {
  * not a render.
  */
 function apply(event: HostEvent) {
+  if (event.type === "live-batch") {
+    applyLiveBatch(event.batch)
+    return
+  }
   const active = tabsStore.get().activeId
   if (event.tabId && event.tabId !== active) {
     absorb(event.tabId, event)
@@ -264,18 +260,6 @@ function applyToActive(event: HostEvent) {
     case "file-changed":
       void viewer.refresh(event.path)
       break
-    case "acp-session":
-      applyAcpSession(event.session)
-      break
-    case "acp-update":
-      applyAcpUpdate(event.id, event.update)
-      break
-    case "acp-updates":
-      applyAcpUpdates(event.id, event.updates)
-      break
-    case "acp-permission":
-      applyAcpPermission(event.request)
-      break
     case "automation-run":
       noteAutomationRun(event.run)
       if (event.run.status === "started" && event.run.reason === "manual") {
@@ -322,12 +306,11 @@ function withTimeout<T>(
   ms: number,
   message: string
 ): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_resolve, reject) =>
-      setTimeout(() => reject(new Error(message)), ms)
-    ),
-  ])
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
 }
 
 async function guard<T>(run: () => Promise<T>): Promise<T | undefined> {
@@ -419,6 +402,7 @@ export const actions = {
         "The agent host did not answer within 45 seconds. Check the terminal it was launched from, then restart."
       )
       hydrate(boot.tabs, boot.activeTabId)
+      hydrateLiveSummaries(boot.live)
       const active =
         boot.tabs.find((tab) => tab.id === boot.activeTabId) ?? boot.tabs[0]
       if (!active) throw new Error("The host started without a conversation")
@@ -601,8 +585,7 @@ export const actions = {
       active?.kind !== "starting" &&
       (!active || viewing.path !== active.threadPath)
     )
-    if (viewingOwnsComposer && viewing)
-      return threads.abortReply(viewing)
+    if (viewingOwnsComposer && viewing) return threads.abortReply(viewing)
     if (active?.kind === "starting") return acp.close()
     if (live?.session.status === "running") return acp.cancel()
     if (store.get().meta?.isStreaming) {

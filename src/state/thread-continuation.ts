@@ -1,5 +1,5 @@
 import { getMako, hasBridge } from "@/lib/bridge"
-import type { ThreadRef } from "@/lib/types"
+import type { PromptAttachment, ThreadRef } from "@/lib/types"
 import { prefsStore } from "@/state/prefs"
 import {
   appendOptimisticReply,
@@ -88,11 +88,20 @@ export const threadContinuationActions = {
    * reply streams back through the file tail — the same path a terminal run
    * takes — so nothing here waits on the process.
    */
-  async reply(ref: ThreadRef, prompt: string): Promise<boolean> {
+  async reply(
+    ref: ThreadRef,
+    prompt: string,
+    attachments: PromptAttachment[] = []
+  ): Promise<boolean> {
     if (!hasBridge()) return false
     const status = threadStatus(ref)
     if (status.kind === "external-open" || status.kind === "external-active") {
-      return threadContinuationActions.moveAndSend(ref, ref.harness, prompt)
+      return threadContinuationActions.moveAndSend(
+        ref,
+        ref.harness,
+        prompt,
+        attachments
+      )
     }
     if (status.kind === "observed") {
       toast("Live activity detected", {
@@ -114,8 +123,9 @@ export const threadContinuationActions = {
     ) {
       const resumed = await (
         await import("@/state/acp")
-      ).acp.resumeAndSend(ref, prompt)
-      if (resumed) return true
+      ).acp.resumeAndSend(ref, prompt, attachments)
+      if (!resumed && echoed) removeOptimisticReply(ref, prompt)
+      return resumed
     }
     try {
       // The composer's tuning rides on the reply: pick a different model or
@@ -139,7 +149,8 @@ export const threadContinuationActions = {
   async moveAndSend(
     ref: ThreadRef,
     harness: string,
-    prompt: string
+    prompt: string,
+    attachments: PromptAttachment[] = []
   ): Promise<boolean> {
     if (!hasBridge()) return false
     threadsStore.set({ composerHarness: harness })
@@ -153,8 +164,15 @@ export const threadContinuationActions = {
         const thread = await getMako().openThread(result.path)
         if (thread) {
           threadsStore.set({ viewing: viewedThread(thread), run: null })
-          void getMako().followThread(result.path, thread.ref.bytes ?? 0)
-          return threadContinuationActions.reply(thread.ref, prompt)
+          void getMako().followThread(
+            result.path,
+            thread.checkpoint ?? thread.ref.bytes ?? 0
+          )
+          return threadContinuationActions.reply(
+            thread.ref,
+            prompt,
+            attachments
+          )
         }
       } else if (result.kind === "prepared") {
         const supportsLive = threadsStore.get().acpable.includes(harness)
@@ -165,7 +183,7 @@ export const threadContinuationActions = {
               harness,
               result.cwd,
               result.prompt,
-              [],
+              attachments,
               prompt,
               ref.path
             )
@@ -232,14 +250,20 @@ export const threadContinuationActions = {
    * Interrupt and send: stop the current turn, and the message goes out on
    * the release. One gesture — the queue machinery does the sequencing.
    */
-  async interruptAndSend(ref: ThreadRef, prompt: string): Promise<boolean> {
+  async interruptAndSend(
+    ref: ThreadRef,
+    prompt: string,
+    attachments: PromptAttachment[] = []
+  ): Promise<boolean> {
     if (!hasBridge()) return false
-    const ok = await threadContinuationActions.reply(ref, prompt)
+    const ok = await threadContinuationActions.reply(ref, prompt, attachments)
     if (ok && threadsStore.get().working[ref.path]) {
       try {
         await getMako().abortThreadRun(ref.path)
       } catch {
-        toast.error("The turn could not be stopped; your message remains queued")
+        toast.error(
+          "The turn could not be stopped; your message remains queued"
+        )
       }
     }
     return ok
@@ -283,7 +307,10 @@ export const threadContinuationActions = {
         const thread = await getMako().openThread(result.path)
         if (!thread) return false
         threadsStore.set({ viewing: viewedThread(thread), run: null })
-        void getMako().followThread(result.path, thread.ref.bytes ?? 0)
+        void getMako().followThread(
+          result.path,
+          thread.checkpoint ?? thread.ref.bytes ?? 0
+        )
         toast(`${label} session imported`, {
           description: "Reply below when you are ready to continue.",
         })

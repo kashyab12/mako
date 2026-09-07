@@ -1,3 +1,4 @@
+import type { LiveCapability } from "@/lib/types"
 import { getMako, hasBridge } from "@/lib/bridge"
 import type { ExternalThreadActivity, ThreadRef } from "@/lib/types"
 import { bindQueuedReplySender } from "@/state/thread-queue"
@@ -87,8 +88,8 @@ export function applyThreadRef(ref: ThreadRef) {
     Date.now() - updatedAt < OBSERVED_IDLE_MS
   const advanced = Boolean(
     previous &&
-      ((ref.bytes ?? 0) > (previous.bytes ?? 0) ||
-        ref.updatedAt !== previous.updatedAt)
+    ((ref.bytes ?? 0) > (previous.bytes ?? 0) ||
+      ref.updatedAt !== previous.updatedAt)
   )
   if (ref.active !== undefined) clearObserved(ref.path)
   else if (recentlyAdded || advanced) markObserved(ref.path)
@@ -132,7 +133,9 @@ export function applyThreadRemoved(path: string) {
   applyThreadActivity(path, null)
   setThreadRunning(path, false)
   setThreadAttention(path, null)
-  applyThreads(threadsStore.get().threads.filter((entry) => entry.path !== path))
+  applyThreads(
+    threadsStore.get().threads.filter((entry) => entry.path !== path)
+  )
 }
 
 export function uniqueThreadRefs(list: ThreadRef[]) {
@@ -175,11 +178,11 @@ const threadCatalogActions = {
 
   async load() {
     if (!hasBridge()) return
-    const [raw, resumable, targets, acpable]: [
+    const [raw, resumable, targets, capabilities]: [
       ThreadCatalogResponse,
       string[],
       string[],
-      string[],
+      LiveCapability[],
     ] = await Promise.all([
       getMako().threads().catch(unavailableThreadCatalog),
       getMako()
@@ -189,16 +192,22 @@ const threadCatalogActions = {
         .continueTargets()
         .catch((): string[] => []),
       getMako()
-        .acpHarnesses()
-        .catch((): string[] => []),
+        .liveCapabilities()
+        .catch((): LiveCapability[] => []),
     ])
     // An engine one vintage older answers with a bare array; treat it as
     // ready rather than spinning forever against the shape difference.
     const result = normalizeThreadCatalog(raw)
-    threadsStore.set({ resumable, targets, acpable })
+    threadsStore.set({
+      resumable,
+      targets,
+      acpable: capabilities.map((item) => item.provider),
+      interactiveResume: capabilities
+        .filter((item) => item.canResume)
+        .map((item) => item.provider),
+    })
     applyThreads(result.threads, result.ready)
-    if (result.activity)
-      threadsStore.set({ externalActivity: result.activity })
+    if (result.activity) threadsStore.set({ externalActivity: result.activity })
     // The catalog scans for a moment at boot, and its "here is the list"
     // push can fire while the window is still loading — a lossy first
     // handshake. Retrying until the host says ready is what makes the rail
