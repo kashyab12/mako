@@ -21,7 +21,7 @@ import { persistThreadAttachments } from "./attachment-storage.js"
  * Code and Codex confirming that emitted history returns in model context.
  */
 
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { mkdir, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
@@ -70,7 +70,10 @@ interface PersistedClaudeEntry {
  * Flatten canonical entries into alternating user/assistant text messages —
  * the intersection every harness's store can hold and replay.
  */
-function flatten(entries: ThreadEntry[]): Message[] {
+async function flatten(
+  entries: ThreadEntry[],
+  home: string
+): Promise<Message[]> {
   const messages: Message[] = []
   for (const entry of entries) {
     if (entry.kind === "user") {
@@ -101,9 +104,12 @@ function flatten(entries: ThreadEntry[]): Message[] {
             ? " — canceled"
             : ""
         const lines = [`[tool: ${block.name}${status}]`]
-        if (block.input) lines.push(`input: ${clip(block.input, 600)}`)
+        if (block.input)
+          lines.push(`input: ${await retainPayload(block.input, home, 600)}`)
         if (block.output?.trim())
-          lines.push(`output:\n${clip(block.output.trim(), 2000)}`)
+          lines.push(
+            `output:\n${await retainPayload(block.output, home, 2000)}`
+          )
         lines.push(describeAttachments(block.attachments ?? []))
         parts.push(lines.join("\n"))
       }
@@ -140,9 +146,10 @@ export async function emitClaudeSession(
 
   const lines: string[] = []
   let parentUuid: string | null = null
-  for (const message of flatten(
+  for (const message of await flatten(
     (await persistThreadAttachments(thread, join(home, ".mako", "attachments")))
-      .entries
+      .entries,
+    home
   )) {
     const uuid = randomUUID()
     const entry: PersistedClaudeEntry = {
@@ -208,9 +215,10 @@ export async function emitCodexSession(
       },
     }),
   ]
-  for (const message of flatten(
+  for (const message of await flatten(
     (await persistThreadAttachments(thread, join(home, ".mako", "attachments")))
-      .entries
+      .entries,
+    home
   )) {
     lines.push(
       JSON.stringify({
@@ -236,8 +244,18 @@ export async function emitCodexSession(
   return { sessionId, path }
 }
 
-function clip(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max)}… [truncated]` : text
+async function retainPayload(
+  text: string,
+  home: string,
+  inlineLimit: number
+): Promise<string> {
+  if (text.length <= inlineLimit) return text
+  const digest = createHash("sha256").update(text).digest("hex")
+  const root = join(home, ".mako", "native-import-artifacts")
+  await mkdir(root, { recursive: true })
+  const path = join(root, `${digest}.txt`)
+  await writeFile(path, text, { encoding: "utf8", mode: 0o600 })
+  return `Complete payload (${text.length} characters, sha256 ${digest}): ${path}. Read this file for the full content.`
 }
 
 /**
@@ -264,9 +282,10 @@ export async function emitGrokSession(
   )
   await mkdir(dir, { recursive: true })
 
-  const messages = flatten(
+  const messages = await flatten(
     (await persistThreadAttachments(thread, join(home, ".mako", "attachments")))
-      .entries
+      .entries,
+    home
   )
   const lines = messages.map((message) =>
     JSON.stringify(
@@ -337,13 +356,14 @@ export async function emitCursorSession(
     )
     const put = database.prepare("INSERT INTO blobs (id, data) VALUES (?, ?)")
     const hashes: Buffer[] = []
-    for (const message of flatten(
+    for (const message of await flatten(
       (
         await persistThreadAttachments(
           thread,
           join(home, ".mako", "attachments")
         )
-      ).entries
+      ).entries,
+      home
     )) {
       const data = Buffer.from(
         JSON.stringify(

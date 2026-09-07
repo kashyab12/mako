@@ -136,7 +136,10 @@ export function renderTranscriptBundle(
   let firstIncludedTurn = conversation.turns.length
   let includePreamble = false
 
-  if (conversation.turns.length > 0) {
+  if (!Number.isFinite(mainBudget) && !Number.isFinite(totalBudget)) {
+    firstIncludedTurn = 0
+    includePreamble = conversation.preamble.length > 0
+  } else if (conversation.turns.length > 0) {
     firstIncludedTurn = conversation.turns.length - 1
     while (firstIncludedTurn > 0) {
       const candidate = renderDocument(
