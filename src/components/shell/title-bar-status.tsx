@@ -1,3 +1,4 @@
+import { useHostConnection } from "@/state/host-connection"
 import { Slot } from "@/extend/slot"
 import { actions, useSession } from "@/state/session"
 import { stage } from "@/state/stage"
@@ -34,7 +35,8 @@ export function TitleBarStatus() {
 
 function ConnectionPill() {
   const phase = useSession((state) => state.phase)
-  if (phase === "ready") return null
+  const connected = useHostConnection((state) => state.kind === "connected")
+  if (phase === "ready" && connected) return null
   return (
     <button
       type="button"
@@ -43,7 +45,11 @@ function ConnectionPill() {
       className="no-drag flex items-center gap-1 rounded px-1.5 text-negative transition-colors duration-100 hover:bg-negative/10"
     >
       <PlugZapIcon className="size-3" />
-      {phase === "booting" ? "Connecting" : "Agent disconnected"}
+      {!connected
+        ? "Host disconnected"
+        : phase === "booting"
+          ? "Connecting"
+          : "Agent disconnected"}
     </button>
   )
 }
@@ -66,7 +72,9 @@ function ProjectContext() {
       </button>
       {ready && branch ? (
         <>
-          <span aria-hidden className="text-faint/50">/</span>
+          <span aria-hidden className="text-faint/50">
+            /
+          </span>
           <button
             type="button"
             onClick={() => stage.open("changes")}

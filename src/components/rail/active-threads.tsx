@@ -1,3 +1,4 @@
+import { useHostConnection } from "@/state/host-connection"
 import { harnessLabel } from "@/components/rail/harness-meta"
 import { ThreadRow } from "@/components/rail/thread-row"
 import { HarnessIcon } from "@/components/ui/provider-icon"
@@ -14,6 +15,8 @@ export function RunningThreads({
   refs: ThreadRef[]
   liveAgents: AcpPresence[]
 }) {
+  const connected = useHostConnection((state) => state.kind === "connected")
+  const sectionLabel = connected ? "Running now" : "Last known activity"
   const running = liveAgents.filter((presence) =>
     ["starting", "running", "needs-permission"].includes(presence.status)
   )
@@ -24,9 +27,9 @@ export function RunningThreads({
   return (
     <>
       {count > 0 && (
-        <section aria-label="Running now" className="pt-1 pb-2">
+        <section aria-label={sectionLabel} className="pt-1 pb-2">
           <h2 className="flex h-7 items-center px-1.5 text-label font-medium text-foreground/80">
-            Running now{" "}
+            {sectionLabel}{" "}
             <span className="tabular ml-auto text-faint">{count}</span>
           </h2>
           {running.map((presence) => (

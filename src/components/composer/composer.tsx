@@ -1,3 +1,4 @@
+import { hostConnectionStore, useHostConnection } from "@/state/host-connection"
 import { toast } from "sonner"
 import {
   useCallback,
@@ -83,6 +84,7 @@ function toAcpPromptAttachment(item: Attachment): PromptAttachment {
 const isMac = navigator.platform.startsWith("Mac")
 
 export function Composer() {
+  const hostConnected = useHostConnection((state) => state.kind === "connected")
   const sessionId = useSession((state) => state.meta?.sessionId)
   const viewingPath = useThreads(
     (state) => state.opening?.ref.path ?? state.viewing?.ref.path
@@ -271,6 +273,12 @@ export function Composer() {
 
   const submit = useCallback(
     async (mode?: "steer" | "followUp") => {
+      if (hostConnectionStore.get().kind === "disconnected") {
+        toast.error(
+          "Reconnect the Mako host before sending. Your draft is saved."
+        )
+        return
+      }
       if (threadsStore.get().opening) {
         toast.error(
           "Wait for this conversation to load before sending. Your draft is saved."
@@ -511,7 +519,7 @@ export function Composer() {
   })
   const hasContent = Boolean(draft.trim()) || attachments.items.length > 0
   const primaryAction = composerActionKind({
-    running: turnRunning,
+    running: turnRunning && hostConnected && !opening,
     hasContent,
   })
   const viewingArchived = useThreads((state) =>
@@ -711,7 +719,7 @@ export function Composer() {
               <ContextDial />
               <ComposerActionButton
                 action={primaryAction}
-                ready={hasContent && !opening}
+                ready={hasContent && !opening && hostConnected}
                 stopping={liveOwnsComposer && stopping}
                 onSend={() => void submit()}
                 onStop={() => void stopCurrentTurn()}

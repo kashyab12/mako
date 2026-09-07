@@ -1,3 +1,4 @@
+import { HostConnectionNotice } from "./host-connection-notice"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { CommandPalette } from "@/components/palette/command-palette"
@@ -17,6 +18,7 @@ import { PlugZapIcon } from "lucide-react"
 import { WorkspaceFocusProvider } from "@/components/stage/workspace-focus"
 
 export function AppShell() {
+  const bootHost = actions.boot
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsSection, setSettingsSection] = useState("agents")
   const phase = useSession((state) => state.phase)
@@ -32,7 +34,7 @@ export function AppShell() {
     let dispose: (() => void) | undefined
     queueMicrotask(() => {
       if (!active) return
-      void actions.boot().then((off) => {
+      void bootHost().then((off) => {
         if (active) dispose = off
         else off()
       })
@@ -41,7 +43,7 @@ export function AppShell() {
       active = false
       dispose?.()
     }
-  }, [])
+  }, [bootHost])
 
   // The working tree changes outside our process when a terminal switches a
   // branch. Refresh on focus rather than polling; the thread catalog owns its
@@ -85,60 +87,69 @@ export function AppShell() {
     <TooltipProvider delayDuration={350}>
       <WorkspaceFocusProvider>
         <div className="relative flex h-svh flex-col overflow-hidden bg-shell text-foreground">
-        <TitleBar />
-        <div className="relative z-10 flex min-h-0 flex-1">
-          {railOpen ? (
-            <>
-              <div
-                ref={railRef}
-                style={{ width: prefsStore.get().railWidth }}
-                className="flex min-h-0 shrink-0 flex-col overflow-hidden"
-              >
-                <SessionRail />
-              </div>
-              <Divider
-                side="left"
-                size={prefsStore.get().railWidth}
-                min={200}
-                max={420}
-                onResize={resizeRail}
-                onCommit={(next) => setPref("railWidth", next)}
-              />
-            </>
-          ) : null}
+          <TitleBar />
+          <HostConnectionNotice />
+          <div className="relative z-10 flex min-h-0 flex-1">
+            {railOpen ? (
+              <>
+                <div
+                  ref={railRef}
+                  style={{ width: prefsStore.get().railWidth }}
+                  className="flex min-h-0 shrink-0 flex-col overflow-hidden"
+                >
+                  <SessionRail />
+                </div>
+                <Divider
+                  side="left"
+                  size={prefsStore.get().railWidth}
+                  min={200}
+                  max={420}
+                  onResize={resizeRail}
+                  onCommit={(next) => setPref("railWidth", next)}
+                />
+              </>
+            ) : null}
 
-          {phase === "detached" ? (
-            <main className="card relative m-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-              <Blank
-                icon={<PlugZapIcon />}
-                title="No agent attached"
-                body={fault ?? "Launch the desktop app so the agent runtime can connect."}
-                action={
-                  <Action tone="outline" size="md" className="mt-2" onClick={() => location.reload()}>
-                    Retry
-                  </Action>
-                }
-              />
-            </main>
-          ) : (
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <Stage />
-            </div>
-          )}
+            {phase === "detached" ? (
+              <main className="card relative m-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                <Blank
+                  icon={<PlugZapIcon />}
+                  title="No agent attached"
+                  body={
+                    fault ??
+                    "Launch the desktop app so the agent runtime can connect."
+                  }
+                  action={
+                    <Action
+                      tone="outline"
+                      size="md"
+                      className="mt-2"
+                      onClick={() => location.reload()}
+                    >
+                      Retry
+                    </Action>
+                  }
+                />
+              </main>
+            ) : (
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <Stage />
+              </div>
+            )}
+          </div>
         </div>
-      </div>
-      <CommandPalette />
-      {/* Settings floats as a large centered dialog under the palette's z-50:
+        <CommandPalette />
+        {/* Settings floats as a large centered dialog under the palette's z-50:
           the desk stays visible behind the scrim, and Radix owns Escape, the
           scrim, and the focus trap. */}
-      <SettingsDialog
-        open={settingsOpen}
-        section={settingsSection}
-        onOpenChange={(open) => {
-          if (!open) setSettingsOpen(false)
-        }}
-        onSectionChange={setSettingsSection}
-      />
+        <SettingsDialog
+          open={settingsOpen}
+          section={settingsSection}
+          onOpenChange={(open) => {
+            if (!open) setSettingsOpen(false)
+          }}
+          onSectionChange={setSettingsSection}
+        />
         <Guide />
         <ConversionOverlay />
       </WorkspaceFocusProvider>
