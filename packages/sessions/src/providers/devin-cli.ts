@@ -1,3 +1,4 @@
+import { attachmentFromUrl, type AttachmentContent } from "../content.js"
 /**
  * devin-cli's own sessions — the ones Zed's agent panel (or any ACP host)
  * drives.
@@ -31,6 +32,7 @@ import {
   type ThreadRef,
   type TurnUsage,
 } from "../format.js"
+import { normalizeToolOutput } from "../tool-output.js"
 import type {
   NativeFile,
   SessionFollower,
@@ -326,7 +328,9 @@ export class DevinCliProvider implements SessionProvider {
 
 function mainChainId(db: DatabaseSync, sessionId: string): number {
   const stored = db
-    .prepare("SELECT COALESCE(main_chain_id, 0) AS main_chain_id FROM sessions WHERE id = ?")
+    .prepare(
+      "SELECT COALESCE(main_chain_id, 0) AS main_chain_id FROM sessions WHERE id = ?"
+    )
     .get(sessionId)
   return stored && isSqliteNumber(stored.main_chain_id)
     ? stored.main_chain_id
@@ -380,36 +384,7 @@ function translatedMainChain(
 }
 
 function entryDigest(entry: ThreadEntry): string {
-  const hash = createHash("sha256")
-  const add = (value: string | number | boolean | undefined) => {
-    hash.update(String(value ?? ""))
-    hash.update("\0")
-  }
-  add(entry.kind)
-  add(entry.at)
-  if (entry.kind === "user") add(entry.text)
-  else if (entry.kind === "event") {
-    add(entry.label)
-    add(entry.detail)
-  } else {
-    add(entry.model)
-    add(entry.usage?.input)
-    add(entry.usage?.output)
-    add(entry.usage?.cacheRead)
-    add(entry.usage?.cacheWrite)
-    add(entry.usage?.costUsd)
-    for (const block of entry.blocks) {
-      add(block.type)
-      if (block.type === "text" || block.type === "thinking") add(block.text)
-      else {
-        add(block.name)
-        add(block.input)
-        add(block.output)
-        add(block.error)
-      }
-    }
-  }
-  return hash.digest("base64url")
+  return createHash("sha256").update(JSON.stringify(entry)).digest("base64url")
 }
 
 async function lockedSessionIds(path: string): Promise<Set<string>> {
@@ -465,11 +440,19 @@ function translator(): MessageTranslator {
       }
       if (message.role === "user") {
         const text = contentText(message.content)
-        if (text.trim()) sink.push({ kind: "user", at, text })
+        const attachments = devinAttachments(message.content)
+        if (text.trim() || attachments.length)
+          sink.push({
+            kind: "user",
+            id: String(row.rowId),
+            at,
+            text,
+            attachments,
+          })
         return
       }
       if (message.role === "assistant") {
-        const blocks: EntryBlock[] = []
+        const blocks: EntryBlock[] = [...devinAttachments(message.content)]
         const thinking = contentText(message.thinking)
         if (thinking.trim()) blocks.push({ type: "thinking", text: thinking })
         for (const call of message.tool_calls ?? []) {
@@ -477,6 +460,7 @@ function translator(): MessageTranslator {
           const rawInput = call.arguments ?? call.function?.arguments
           const block: ToolBlock = {
             type: "tool",
+            id: call.id,
             name,
             input: toolInputText(rawInput),
           }
@@ -503,7 +487,9 @@ function translator(): MessageTranslator {
           : undefined
         if (!block) return
         const output = contentText(message.content)
-        if (output) block.output = clip(output)
+        if (output) block.output = clip(normalizeToolOutput(output))
+        const attachments = devinAttachments(message.content)
+        if (attachments.length) block.attachments = attachments
       }
     },
     snapshot() {
@@ -561,8 +547,11 @@ function parseMessageRow(fields: SqliteFields): MessageRow {
   }
 }
 
-function usageFromMetadata(metadata: JsonValue | undefined): TurnUsage | undefined {
-  if (!isJsonObject(metadata) || !isJsonObject(metadata.metrics)) return undefined
+function usageFromMetadata(
+  metadata: JsonValue | undefined
+): TurnUsage | undefined {
+  if (!isJsonObject(metadata) || !isJsonObject(metadata.metrics))
+    return undefined
   const values = {
     input: jsonNumber(metadata.metrics.input_tokens),
     output: jsonNumber(metadata.metrics.output_tokens),
@@ -695,4 +684,44 @@ function contentText(content: ChatContent | undefined): string {
       .join("\n")
   }
   return ""
+}
+
+function devinAttachments(
+  content: ChatContent | undefined
+): AttachmentContent[] {
+  if (!Array.isArray(content)) return []
+  const attachments: AttachmentContent[] = []
+  for (const part of content) {
+    if (!isJsonObject(part)) continue
+    const type = jsonText(part.type)
+    if (type !== "image_url" && type !== "input_audio" && type !== "file")
+      continue
+    const image = isJsonObject(part.image_url) ? part.image_url : undefined
+    const audio = isJsonObject(part.input_audio) ? part.input_audio : undefined
+    const url =
+      jsonText(image?.url) ?? jsonText(part.image_url) ?? jsonText(part.url)
+    const mimeType =
+      type === "image_url"
+        ? "image/png"
+        : type === "input_audio"
+          ? `audio/${jsonText(audio?.format) ?? "wav"}`
+          : "application/octet-stream"
+    const data = jsonText(audio?.data)
+    attachments.push(
+      url
+        ? attachmentFromUrl(type, mimeType, url)
+        : {
+            type: "attachment",
+            name: jsonText(part.filename) ?? type,
+            mimeType,
+            source: data
+              ? { kind: "inline", data }
+              : {
+                  kind: "unavailable",
+                  reason: "The provider did not retain attachment bytes",
+                },
+          }
+    )
+  }
+  return attachments
 }

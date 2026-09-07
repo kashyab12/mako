@@ -1,3 +1,5 @@
+import { acpAttachments } from "../acp-attachments.js"
+import type { AttachmentContent } from "../content.js"
 /**
  * Devin, running locally.
  *
@@ -21,8 +23,20 @@ import { readdir, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
 import type { DatabaseSync, SQLOutputValue, StatementSync } from "node:sqlite"
-import { clip, EntrySink, titleFrom, type Thread, type ThreadEntry, type ThreadRef } from "../format.js"
-import { createJsonlFollower, readLines, snapshotSink, type LineTranslator } from "../jsonl.js"
+import {
+  clip,
+  EntrySink,
+  titleFrom,
+  type Thread,
+  type ThreadEntry,
+  type ThreadRef,
+} from "../format.js"
+import {
+  createJsonlFollower,
+  readLines,
+  snapshotSink,
+  type LineTranslator,
+} from "../jsonl.js"
 import type { NativeFile, SessionProvider } from "./types.js"
 
 type JsonScalar = boolean | number | string | null
@@ -90,6 +104,7 @@ interface AcpMetadata {
 }
 
 interface AcpEventBase {
+  attachments?: AttachmentContent[]
   at?: string
 }
 
@@ -180,7 +195,9 @@ export class DevinLocalProvider implements SessionProvider {
   private metaByUuid = new Map<string, SessionMeta>()
   private metaLoadedAtMs = 0
 
-  constructor(userDir = join(homedir(), "Library", "Application Support", "Devin", "User")) {
+  constructor(
+    userDir = join(homedir(), "Library", "Application Support", "Devin", "User")
+  ) {
     this.userDir = userDir
   }
 
@@ -196,7 +213,8 @@ export class DevinLocalProvider implements SessionProvider {
       if (!name.endsWith(".ndjson")) continue
       const path = join(root, name)
       const info = await stat(path).catch(() => null)
-      if (info?.isFile()) files.push({ path, bytes: info.size, mtimeMs: info.mtimeMs })
+      if (info?.isFile())
+        files.push({ path, bytes: info.size, mtimeMs: info.mtimeMs })
     }
     return files
   }
@@ -247,20 +265,27 @@ export class DevinLocalProvider implements SessionProvider {
   async read(path: string): Promise<Thread | null> {
     const info = await stat(path).catch(() => null)
     if (!info) return null
-    const ref = await this.peek({ path, bytes: info.size, mtimeMs: info.mtimeMs })
+    const ref = await this.peek({
+      path,
+      bytes: info.size,
+      mtimeMs: info.mtimeMs,
+    })
     if (!ref) return null
     const into = translator()
-    await readLines(path, 0, into.push)
+    const checkpoint = await readLines(path, 0, into.push)
     const entries = into.done()
     if (!ref.title && into.title) ref.title = titleFrom(into.title)
-    return { ref, entries }
+    return { ref, checkpoint, entries }
   }
 
   createFollower(path: string, fromByte: number) {
     return createJsonlFollower(path, fromByte, translator)
   }
 
-  async tail(path: string, fromByte: number): Promise<{ entries: ThreadEntry[]; nextByte: number }> {
+  async tail(
+    path: string,
+    fromByte: number
+  ): Promise<{ entries: ThreadEntry[]; nextByte: number }> {
     const into = translator()
     const nextByte = await readLines(path, fromByte, into.push)
     return { entries: into.done(), nextByte }
@@ -281,7 +306,8 @@ export class DevinLocalProvider implements SessionProvider {
     if (!db) return
     try {
       const statement = db.prepare("SELECT value FROM ItemTable WHERE key = ?")
-      const row = (key: string): StateValueRow | null => parseStateValueRow(statement.get(key))
+      const row = (key: string): StateValueRow | null =>
+        parseStateValueRow(statement.get(key))
       const indexRaw = row("windsurf.acp.eventLog.index")?.value
       const metaRaw = row("windsurf.acp.metadataCache")?.value
       if (!indexRaw || !metaRaw) return
@@ -301,7 +327,8 @@ export class DevinLocalProvider implements SessionProvider {
       this.metaByUuid.clear()
       for (const [sessionId, entry] of index) {
         const meta = bySession.get(sessionId) ?? { sessionId }
-        if (entry.lastUpdated) meta.updatedAt = new Date(entry.lastUpdated).toISOString()
+        if (entry.lastUpdated)
+          meta.updatedAt = new Date(entry.lastUpdated).toISOString()
         this.metaByUuid.set(entry.uuid, meta)
       }
       this.metaLoadedAtMs = info.mtimeMs
@@ -357,22 +384,39 @@ function translator(): DevinTranslator {
 
     switch (event.sessionUpdate) {
       case "user_message_chunk": {
-        if (!event.text) return
+        if (!event.text && !event.attachments?.length) return
         const lastEntry = sink.entries.at(-1)
-        if (event.clientMessageId && event.clientMessageId === userId && lastEntry?.kind === "user") {
+        if (
+          event.clientMessageId &&
+          event.clientMessageId === userId &&
+          lastEntry?.kind === "user"
+        ) {
           lastEntry.text += event.text
+          if (event.attachments?.length)
+            lastEntry.attachments = [
+              ...(lastEntry.attachments ?? []),
+              ...event.attachments,
+            ]
           return
         }
         flushAssistant()
         userId = event.clientMessageId ?? null
         started = true
-        sink.push({ kind: "user", at: event.at, text: event.text })
+        const user: ThreadEntry = {
+          kind: "user",
+          at: event.at,
+          text: event.text,
+        }
+        if (event.attachments?.length) user.attachments = event.attachments
+        sink.push(user)
         return
       }
       case "agent_message_chunk":
         if (!started) needsReset = true
         started = true
         appendText("text", event.text, event.at)
+        if (event.attachments?.length)
+          ensureAssistant(event.at).blocks.push(...event.attachments)
         return
       case "agent_thought_chunk":
         if (!started) needsReset = true
@@ -384,16 +428,22 @@ function translator(): DevinTranslator {
         started = true
         const entry = ensureAssistant(event.at)
         const block = createToolBlock(event.name, event.input)
+        block.id = event.toolCallId
+        if (event.attachments?.length) block.attachments = event.attachments
         entry.blocks.push(block)
         if (event.toolCallId) toolsById.set(event.toolCallId, block)
         return
       }
       case "tool_call_update": {
-        const block = event.toolCallId ? toolsById.get(event.toolCallId) : undefined
+        const block = event.toolCallId
+          ? toolsById.get(event.toolCallId)
+          : undefined
         if (block) {
+          if (event.attachments?.length) block.attachments = event.attachments
           if (event.output)
             block.output = clip(`${block.output ?? ""}${event.output}`)
           if (event.status === "failed") block.error = true
+          if (/cancel/i.test(event.status ?? "")) block.canceled = true
         } else if (event.toolCallId) {
           needsReset = true
         }
@@ -406,7 +456,9 @@ function translator(): DevinTranslator {
           at: event.at,
           label: "Plan updated",
           detail: event.entries
-            .map((entry) => [entry.status, entry.content].filter(Boolean).join(": "))
+            .map((entry) =>
+              [entry.status, entry.content].filter(Boolean).join(": ")
+            )
             .join("\n"),
         })
         return
@@ -419,7 +471,9 @@ function translator(): DevinTranslator {
           detail: [
             event.used !== undefined ? `${event.used} used` : "",
             event.size !== undefined ? `${event.size} available` : "",
-            event.cost ? `${event.cost.amount}${event.cost.currency ? ` ${event.cost.currency}` : ""} spent` : "",
+            event.cost
+              ? `${event.cost.amount}${event.cost.currency ? ` ${event.cost.currency}` : ""} spent`
+              : "",
           ]
             .filter(Boolean)
             .join(" · "),
@@ -500,7 +554,9 @@ function parseSessionCache(raw: string): SessionCache | null {
   return { sessions }
 }
 
-function parseConfiguredModel(value: JsonValue | undefined): string | undefined {
+function parseConfiguredModel(
+  value: JsonValue | undefined
+): string | undefined {
   if (!isJsonArray(value)) return undefined
   for (const option of value) {
     if (!isJsonRecord(option) || readString(option, "id") !== "model") continue
@@ -510,7 +566,9 @@ function parseConfiguredModel(value: JsonValue | undefined): string | undefined 
 }
 
 function parseCreatedAt(value: JsonValue | undefined): string | undefined {
-  return isJsonRecord(value) ? readString(value, "cognition.ai/createdAt") : undefined
+  return isJsonRecord(value)
+    ? readString(value, "cognition.ai/createdAt")
+    : undefined
 }
 
 function parseAcpEvent(raw: string): AcpEvent | null {
@@ -529,17 +587,27 @@ function parseAcpEvent(raw: string): AcpEvent | null {
         sessionUpdate,
         at,
         text: parseAcpContent(notification["content"]),
+        attachments: acpAttachments(notification["content"]),
         clientMessageId: metadata.clientMessageId,
       }
     case "agent_message_chunk":
     case "agent_thought_chunk":
-      return { sessionUpdate, at, text: parseAcpContent(notification["content"]) }
+      return {
+        sessionUpdate,
+        at,
+        text: parseAcpContent(notification["content"]),
+        attachments: acpAttachments(notification["content"]),
+      }
     case "tool_call":
       return {
         sessionUpdate,
         at,
-        name: metadata.inferenceToolName ?? readString(notification, "title") ?? "tool",
+        name:
+          metadata.inferenceToolName ??
+          readString(notification, "title") ??
+          "tool",
         input: formatJson(notification["rawInput"]),
+        attachments: acpAttachments(notification["content"]),
         toolCallId: readString(notification, "toolCallId"),
       }
     case "tool_call_update":
@@ -548,10 +616,15 @@ function parseAcpEvent(raw: string): AcpEvent | null {
         at,
         output: parseAcpContent(notification["content"]),
         status: readString(notification, "status"),
+        attachments: acpAttachments(notification["content"]),
         toolCallId: readString(notification, "toolCallId"),
       }
     case "plan":
-      return { sessionUpdate, at, entries: parsePlanEntries(notification["entries"]) }
+      return {
+        sessionUpdate,
+        at,
+        entries: parsePlanEntries(notification["entries"]),
+      }
     case "usage_update":
       return {
         sessionUpdate,
@@ -599,7 +672,8 @@ function parseAcpCost(value: JsonValue | undefined): AcpCost | undefined {
 
 function parseAcpContent(value: JsonValue | undefined): string {
   if (isStringValue(value)) return value
-  if (isJsonArray(value)) return value.map(parseAcpContent).filter(Boolean).join("\n")
+  if (isJsonArray(value))
+    return value.map(parseAcpContent).filter(Boolean).join("\n")
   if (!isJsonRecord(value)) return ""
   const text = readString(value, "text")
   if (text) return text
@@ -630,7 +704,9 @@ function isJsonArray(value: JsonValue | undefined): value is JsonValue[] {
   return Array.isArray(value)
 }
 
-function isStringValue(value: JsonValue | SQLOutputValue | undefined): value is string {
+function isStringValue(
+  value: JsonValue | SQLOutputValue | undefined
+): value is string {
   return Object.prototype.toString.call(value) === "[object String]"
 }
 

@@ -1,3 +1,4 @@
+import { attachmentFromUrl, type AttachmentContent } from "../content.js"
 /**
  * Cursor CLI sessions.
  *
@@ -34,6 +35,7 @@ import {
   type ThreadEntry,
   type ThreadRef,
 } from "../format.js"
+import { normalizeToolOutput } from "../tool-output.js"
 import type { NativeFile, SessionProvider } from "./types.js"
 
 type JsonScalar = boolean | number | string | null
@@ -96,11 +98,13 @@ type CursorAssistantPart =
   | CursorReasoningPart
   | CursorToolCallPart
   | CursorOtherPart
+  | { type: "attachment"; value: AttachmentContent }
 type CursorToolPart = CursorToolResultPart | CursorOtherPart
 type CursorTextContent = string | CursorTextPart[]
 
 interface CursorUserMessage {
   role: "user"
+  attachments: AttachmentContent[]
   content: CursorTextContent
 }
 
@@ -158,7 +162,9 @@ async function openDatabase(path: string): Promise<DatabaseSync | null> {
   }
 }
 
-function isStringValue(value: JsonValue | SQLOutputValue | undefined): value is string {
+function isStringValue(
+  value: JsonValue | SQLOutputValue | undefined
+): value is string {
   return Object.prototype.toString.call(value) === "[object String]"
 }
 
@@ -198,7 +204,8 @@ function isoOf(value: string | number | undefined): string | undefined {
   if (value === undefined) return undefined
   if (isNumberValue(value)) return new Date(value).toISOString()
   const asNumber = Number(value)
-  if (Number.isFinite(asNumber) && asNumber > 1e12) return new Date(asNumber).toISOString()
+  if (Number.isFinite(asNumber) && asNumber > 1e12)
+    return new Date(asNumber).toISOString()
   return value
 }
 
@@ -261,7 +268,11 @@ function spokenText(content: CursorTextContent): string | null {
   if (match) return (match[1] ?? "").trim() || null
   // Older messages carry the bare prompt with no scaffolding at all.
   const trimmed = text.trim()
-  if (!trimmed || trimmed.startsWith("<") || trimmed.startsWith("[Previous conversation summary]")) {
+  if (
+    !trimmed ||
+    trimmed.startsWith("<") ||
+    trimmed.startsWith("[Previous conversation summary]")
+  ) {
     return null
   }
   return trimmed
@@ -276,17 +287,31 @@ async function nativeFiles(paths: string[]): Promise<NativeFile[]> {
       if (item.done) return
       // A session directory without a store yet.
       const info = await stat(item.value).catch(() => null)
-      if (info)
+      if (info) {
+        const sidecars = await Promise.all([
+          stat(`${item.value}-wal`).catch(() => null),
+          stat(join(dirname(item.value), "meta.json")).catch(() => null),
+        ])
+        const revision = [info, ...sidecars]
+          .map((value) =>
+            value
+              ? `${value.dev}:${value.ino}:${value.size}:${value.mtimeMs}:${value.ctimeMs}`
+              : "missing"
+          )
+          .join("|")
         files.push({
           path: item.value,
           bytes: info.size,
-          mtimeMs: info.mtimeMs,
+          mtimeMs: Math.max(
+            info.mtimeMs,
+            ...sidecars.map((value) => value?.mtimeMs ?? 0)
+          ),
+          revision,
         })
+      }
     }
   }
-  await Promise.all(
-    Array.from({ length: Math.min(16, paths.length) }, worker)
-  )
+  await Promise.all(Array.from({ length: Math.min(16, paths.length) }, worker))
   return files
 }
 
@@ -347,16 +372,22 @@ export class CursorProvider implements SessionProvider {
         // last turn; mtime is only the fallback when the sidecar is absent.
         updatedAt: new Date(file.mtimeMs).toISOString(),
         bytes: file.bytes,
+        revision: file.revision,
       }
       // meta.json is the cheap source of cwd and honest activity times.
-      const sidecar = await readFile(join(dirname(file.path), "meta.json"), "utf8").catch(() => null)
+      const sidecar = await readFile(
+        join(dirname(file.path), "meta.json"),
+        "utf8"
+      ).catch(() => null)
       if (sidecar) {
         const parsed = parseSidecar(sidecar)
         if (parsed?.cwd) ref.cwd = parsed.cwd
         if (!ref.title && parsed?.title) ref.title = titleFrom(parsed.title)
         if (parsed?.model) ref.model = parsed.model
-        if (parsed?.updatedAtMs) ref.updatedAt = new Date(parsed.updatedAtMs).toISOString()
-        if (parsed?.createdAtMs) ref.startedAt = new Date(parsed.createdAtMs).toISOString()
+        if (parsed?.updatedAtMs)
+          ref.updatedAt = new Date(parsed.updatedAtMs).toISOString()
+        if (parsed?.createdAtMs)
+          ref.startedAt = new Date(parsed.createdAtMs).toISOString()
       } else {
         // Old-format stores have no sidecar. The last-inserted blobs carry
         // the real timestamps of the final turns; scan a few for the newest
@@ -387,9 +418,9 @@ export class CursorProvider implements SessionProvider {
   }
 
   async read(path: string): Promise<Thread | null> {
-    const file = await stat(path).catch(() => null)
+    const [file] = await nativeFiles([path])
     if (!file) return null
-    const ref = await this.peek({ path, bytes: file.size, mtimeMs: file.mtimeMs })
+    const ref = await this.peek(file)
     if (!ref) return null
     const database = await openDatabase(path)
     if (!database) return null
@@ -409,9 +440,14 @@ export class CursorProvider implements SessionProvider {
         switch (message.role) {
           case "user": {
             const spoken = spokenText(message.content)
-            if (!spoken) continue
+            if (!spoken && !message.attachments.length) continue
             assistant = null
-            sink.push({ kind: "user", text: spoken })
+            sink.push({
+              kind: "user",
+              id: hash,
+              text: spoken ?? "",
+              attachments: message.attachments,
+            })
             continue
           }
           case "tool":
@@ -420,6 +456,12 @@ export class CursorProvider implements SessionProvider {
               const block = toolsById.get(part.toolCallId)
               if (block) {
                 block.output = clip(formatToolResult(part.result))
+                const attachments = cursorAttachments(
+                  isJsonObject(part.result)
+                    ? part.result["content"]
+                    : part.result
+                )
+                if (attachments.length) block.attachments = attachments
                 if (message.isError) block.error = true
                 toolsById.delete(part.toolCallId)
               }
@@ -427,7 +469,12 @@ export class CursorProvider implements SessionProvider {
             continue
           case "assistant":
             if (!assistant) {
-              assistant = { kind: "assistant", model: message.model, blocks: [] }
+              assistant = {
+                kind: "assistant",
+                id: hash,
+                model: message.model,
+                blocks: [],
+              }
               sink.push(assistant)
             } else if (!assistant.model && message.model) {
               assistant.model = message.model
@@ -435,14 +482,20 @@ export class CursorProvider implements SessionProvider {
             for (const part of message.content) {
               switch (part.type) {
                 case "text":
-                  if (part.text) assistant.blocks.push({ type: "text", text: part.text })
+                  if (part.text)
+                    assistant.blocks.push({ type: "text", text: part.text })
                   break
                 case "reasoning":
-                  if (part.text) assistant.blocks.push({ type: "thinking", text: part.text })
+                  if (part.text)
+                    assistant.blocks.push({ type: "thinking", text: part.text })
+                  break
+                case "attachment":
+                  assistant.blocks.push(part.value)
                   break
                 case "tool-call": {
                   const block: ToolBlock = {
                     type: "tool",
+                    id: part.toolCallId,
                     name: part.toolName,
                     input: clip(formatJson(part.args)),
                   }
@@ -469,7 +522,9 @@ export class CursorProvider implements SessionProvider {
 
   private readMeta(database: DatabaseSync): CursorMeta | null {
     try {
-      const result = database.prepare("SELECT value FROM meta WHERE key = '0'").get()
+      const result = database
+        .prepare("SELECT value FROM meta WHERE key = '0'")
+        .get()
       const row = parseMetaValueRow(result)
       if (!row) return null
       const text = isStringValue(row.value)
@@ -491,7 +546,9 @@ export class CursorProvider implements SessionProvider {
   private readLastActivity(database: DatabaseSync): string | undefined {
     try {
       const rows: SqliteRows = database
-        .prepare("SELECT data FROM blobs WHERE length(data) < 262144 ORDER BY rowid DESC LIMIT 30")
+        .prepare(
+          "SELECT data FROM blobs WHERE length(data) < 262144 ORDER BY rowid DESC LIMIT 30"
+        )
         .all()
       const floor = Date.UTC(2015, 0, 1)
       const ceiling = Date.now() + 10 * 60_000
@@ -531,10 +588,15 @@ export class CursorProvider implements SessionProvider {
     }
   }
 
-  private readRoot(database: DatabaseSync, rootId: string | undefined): CursorRoot | null {
+  private readRoot(
+    database: DatabaseSync,
+    rootId: string | undefined
+  ): CursorRoot | null {
     if (!rootId) return null
     try {
-      const result = database.prepare("SELECT data FROM blobs WHERE id = ?").get(rootId)
+      const result = database
+        .prepare("SELECT data FROM blobs WHERE id = ?")
+        .get(rootId)
       const row = parseBlobDataRow(result)
       return row ? parseRoot(row.data) : null
     } catch {
@@ -542,11 +604,18 @@ export class CursorProvider implements SessionProvider {
     }
   }
 
-  private readMessage(database: DatabaseSync, hash: string): CursorMessage | null {
+  private readMessage(
+    database: DatabaseSync,
+    hash: string
+  ): CursorMessage | null {
     try {
-      const result = database.prepare("SELECT data FROM blobs WHERE id = ?").get(hash)
+      const result = database
+        .prepare("SELECT data FROM blobs WHERE id = ?")
+        .get(hash)
       const row = parseBlobDataRow(result)
-      return row ? parseCursorMessage(Buffer.from(row.data).toString("utf8")) : null
+      return row
+        ? parseCursorMessage(Buffer.from(row.data).toString("utf8"))
+        : null
     } catch {
       return null
     }
@@ -568,7 +637,8 @@ function parseBlobDataRow(result: SqliteStatementResult): BlobDataRow | null {
 function parseCursorMeta(raw: string): CursorMeta | null {
   const value = parseJson(raw)
   if (!isJsonObject(value)) return null
-  const createdAt = stringValue(value["createdAt"]) ?? numberValue(value["createdAt"])
+  const createdAt =
+    stringValue(value["createdAt"]) ?? numberValue(value["createdAt"])
   return {
     agentId: stringValue(value["agentId"]),
     name: stringValue(value["name"]),
@@ -595,7 +665,11 @@ function parseCursorMessage(raw: string): CursorMessage | null {
   if (!isJsonObject(value)) return null
   switch (stringValue(value["role"])) {
     case "user":
-      return { role: "user", content: parseTextContent(value["content"]) }
+      return {
+        role: "user",
+        content: parseTextContent(value["content"]),
+        attachments: cursorAttachments(value["content"]),
+      }
     case "assistant":
       return {
         role: "assistant",
@@ -618,20 +692,25 @@ function parseTextContent(value: JsonValue | undefined): CursorTextContent {
   if (!Array.isArray(value)) return []
   const parts: CursorTextPart[] = []
   for (const candidate of value) {
-    if (!isJsonObject(candidate) || stringValue(candidate["type"]) !== "text") continue
+    if (!isJsonObject(candidate) || stringValue(candidate["type"]) !== "text")
+      continue
     const text = stringValue(candidate["text"])
     if (text !== undefined) parts.push({ type: "text", text })
   }
   return parts
 }
 
-function parseAssistantContent(value: JsonValue | undefined): CursorAssistantPart[] {
+function parseAssistantContent(
+  value: JsonValue | undefined
+): CursorAssistantPart[] {
   if (!Array.isArray(value)) return []
   return value.map(parseAssistantPart)
 }
 
 function parseAssistantPart(value: JsonValue): CursorAssistantPart {
   if (!isJsonObject(value)) return { type: "other" }
+  const attachment = cursorAttachments([value])[0]
+  if (attachment) return { type: "attachment", value: attachment }
   switch (stringValue(value["type"])) {
     case "text": {
       const text = stringValue(value["text"])
@@ -639,7 +718,9 @@ function parseAssistantPart(value: JsonValue): CursorAssistantPart {
     }
     case "reasoning": {
       const text = stringValue(value["text"])
-      return text === undefined ? { type: "other" } : { type: "reasoning", text }
+      return text === undefined
+        ? { type: "other" }
+        : { type: "reasoning", text }
     }
     case "tool-call":
       return {
@@ -685,9 +766,60 @@ function formatJson(value: JsonValue | undefined): string | undefined {
 }
 
 function formatToolResult(value: JsonValue | undefined): string {
-  return isStringValue(value) ? value : (JSON.stringify(value ?? "") ?? "")
+  const text = isStringValue(value)
+    ? value
+    : (JSON.stringify(value ?? "") ?? "")
+  return normalizeToolOutput(text)
 }
 
 function plainText(content: CursorTextContent): string {
-  return Array.isArray(content) ? content.map((part) => part.text).join("") : content
+  return Array.isArray(content)
+    ? content.map((part) => part.text).join("")
+    : content
+}
+
+function cursorAttachments(
+  content: JsonValue | undefined
+): AttachmentContent[] {
+  if (!Array.isArray(content)) return []
+  const result: AttachmentContent[] = []
+  for (const candidate of content) {
+    if (!isJsonObject(candidate)) continue
+    const type = stringValue(candidate["type"])
+    if (type !== "image" && type !== "file") continue
+    const name = stringValue(candidate["filename"]) ?? type
+    const mimeType =
+      stringValue(candidate["mimeType"]) ??
+      stringValue(candidate["mediaType"]) ??
+      (type === "image" ? "image/png" : "application/octet-stream")
+    const value =
+      stringValue(candidate["image"]) ??
+      stringValue(candidate["data"]) ??
+      stringValue(candidate["url"])
+    const path = stringValue(candidate["path"])
+    result.push(
+      value
+        ? /^(?:https?:|file:|data:)/.test(value)
+          ? attachmentFromUrl(name, mimeType, value)
+          : {
+              type: "attachment",
+              name,
+              mimeType,
+              source: { kind: "inline", data: value },
+            }
+        : {
+            type: "attachment",
+            name,
+            mimeType,
+            source: path
+              ? { kind: "file", path }
+              : {
+                  kind: "unavailable",
+                  reason:
+                    "Attachment bytes are unavailable in this native record",
+                },
+          }
+    )
+  }
+  return result
 }

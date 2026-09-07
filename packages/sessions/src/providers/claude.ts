@@ -1,3 +1,4 @@
+import { attachmentFromUrl, type AttachmentContent } from "../content.js"
 /**
  * Claude Code sessions.
  *
@@ -32,6 +33,7 @@ import {
   walkFiles,
   type LineTranslator,
 } from "../jsonl.js"
+import { normalizeToolOutput } from "../tool-output.js"
 import type { NativeFile, SessionProvider } from "./types.js"
 
 type ClaudeJsonScalar = boolean | number | string | null
@@ -75,6 +77,7 @@ type ClaudeContentBlock =
   | ClaudeToolUseContent
   | ClaudeToolResultContent
   | ClaudeOtherContent
+  | { type: "attachment"; value: AttachmentContent }
 type ClaudeContent = string | ClaudeContentBlock[]
 
 interface ClaudeUsage {
@@ -132,6 +135,46 @@ function stringValue(value: ClaudeJsonValue | undefined): string | undefined {
 function parseContentBlock(value: ClaudeJsonValue): ClaudeContentBlock {
   if (!isJsonObject(value)) return { type: "other" }
   switch (stringValue(value["type"])) {
+    case "image":
+    case "document": {
+      const source = isJsonObject(value["source"]) ? value["source"] : {}
+      const mimeType =
+        stringValue(source["media_type"]) ?? "application/octet-stream"
+      const name =
+        stringValue(value["title"]) ??
+        stringValue(value["type"]) ??
+        "Attachment"
+      const url = stringValue(source["url"])
+      const data = stringValue(source["data"])
+      const text = stringValue(source["text"])
+      const attachment: AttachmentContent = url
+        ? attachmentFromUrl(name, mimeType, url)
+        : {
+            type: "attachment",
+            name,
+            mimeType,
+            source:
+              data !== undefined
+                ? {
+                    kind: "inline",
+                    data:
+                      stringValue(source["type"]) === "text"
+                        ? Buffer.from(data).toString("base64")
+                        : data,
+                  }
+                : text !== undefined
+                  ? {
+                      kind: "inline",
+                      data: Buffer.from(text).toString("base64"),
+                    }
+                  : {
+                      kind: "unavailable",
+                      reason:
+                        "The provider did not retain attachment bytes or a readable URL",
+                    },
+          }
+      return { type: "attachment", value: attachment }
+    }
     case "text":
       return { type: "text", text: stringValue(value["text"]) }
     case "thinking":
@@ -140,7 +183,7 @@ function parseContentBlock(value: ClaudeJsonValue): ClaudeContentBlock {
       return {
         type: "tool_use",
         id: stringValue(value["id"]),
-        name: String(value["name"] ?? "tool"),
+        name: stringValue(value["name"])?.trim() || "tool",
         input: value["input"],
       }
     case "tool_result":
@@ -375,8 +418,8 @@ export class ClaudeProvider implements SessionProvider {
     })
     if (!ref) return null
     const into = translator()
-    await readLines(path, 0, into.push)
-    return { ref, entries: into.done() }
+    const checkpoint = await readLines(path, 0, into.push)
+    return { ref, checkpoint, entries: into.done() }
   }
 
   createFollower(path: string, fromByte: number) {
@@ -419,7 +462,8 @@ function translator(): ClaudeTranslator {
           }
           const block = toolsById.get(part.toolUseId)
           if (block) {
-            block.output = clip(plainText(part.content))
+            block.output = clip(normalizeToolOutput(plainText(part.content)))
+            block.attachments = attachmentParts(part.content)
             if (part.isError) block.error = true
             toolsById.delete(part.toolUseId)
           } else if (part.toolUseId) {
@@ -440,10 +484,21 @@ function translator(): ClaudeTranslator {
         return
       }
       const text = plainText(content)
-      if (!text.trim() || NOT_A_PROMPT.test(text.trimStart())) return
+      const attachments = attachmentParts(content)
+      if (
+        (!text.trim() && !attachments.length) ||
+        NOT_A_PROMPT.test(text.trimStart())
+      )
+        return
       assistant = null
       started = true
-      sink.push({ kind: "user", at: line.timestamp, text })
+      sink.push({
+        kind: "user",
+        id: line.uuid,
+        at: line.timestamp,
+        text,
+        attachments,
+      })
       return
     }
 
@@ -457,8 +512,9 @@ function translator(): ClaudeTranslator {
       }
       return
     }
-    if (!assistant) {
+    if (!assistant || (line.uuid && assistant.id !== line.uuid)) {
       assistant = {
+        id: line.uuid,
         kind: "assistant",
         at: line.timestamp,
         model: message.model,
@@ -476,9 +532,13 @@ function translator(): ClaudeTranslator {
           if (part.thinking)
             turn.blocks.push({ type: "thinking", text: part.thinking })
           break
+        case "attachment":
+          turn.blocks.push(part.value)
+          break
         case "tool_use": {
           const block: ClaudeToolBlock = {
             type: "tool",
+            id: part.id,
             name: part.name,
             input: clip(
               part.input === undefined ? undefined : JSON.stringify(part.input)
@@ -509,4 +569,14 @@ function translator(): ClaudeTranslator {
       return needsReset
     },
   }
+}
+
+function attachmentParts(
+  content: ClaudeContent | undefined
+): AttachmentContent[] {
+  return Array.isArray(content)
+    ? content.flatMap((part) =>
+        part.type === "attachment" ? [part.value] : []
+      )
+    : []
 }

@@ -1,3 +1,5 @@
+import { acpAttachments } from "../acp-attachments.js"
+import type { AttachmentContent } from "../content.js"
 /**
  * Grok sessions.
  *
@@ -22,7 +24,13 @@ import {
   type ThreadRef,
   type TurnUsage,
 } from "../format.js"
-import { createJsonlFollower, readLines, snapshotSink, type LineTranslator } from "../jsonl.js"
+import {
+  createJsonlFollower,
+  readLines,
+  snapshotSink,
+  type LineTranslator,
+} from "../jsonl.js"
+import { normalizeToolOutput } from "../tool-output.js"
 import type { NativeFile, SessionProvider } from "./types.js"
 
 const USER_QUERY = /<user_query>([\s\S]*?)<\/user_query>/
@@ -46,6 +54,7 @@ interface GrokSummary {
 }
 
 interface GrokUpdateBase {
+  attachments?: AttachmentContent[]
   at?: string
 }
 
@@ -154,7 +163,12 @@ function isNumber(value: JsonValue | undefined): value is number {
 }
 
 function isJsonObject(value: JsonValue | undefined): value is JsonObject {
-  return value !== undefined && value !== null && !Array.isArray(value) && Object.prototype.toString.call(value) === "[object Object]"
+  return (
+    value !== undefined &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.prototype.toString.call(value) === "[object Object]"
+  )
 }
 
 function stringValue(value: JsonValue | undefined): string | undefined {
@@ -184,7 +198,14 @@ function contentText(content: JsonValue | undefined): string {
   if (!isJsonObject(content)) return ""
   const direct = stringValue(content["text"])
   if (direct !== undefined) return direct
-  for (const key of ["content", "output_for_prompt", "output", "result", "message", "error"]) {
+  for (const key of [
+    "content",
+    "output_for_prompt",
+    "output",
+    "result",
+    "message",
+    "error",
+  ]) {
     const nested = contentText(content[key])
     if (nested) return nested
   }
@@ -197,7 +218,10 @@ function encodedJson(value: JsonValue | undefined): string | undefined {
   return clip(JSON.stringify(value))
 }
 
-function isoTimestamp(root: JsonObject, params: JsonObject): string | undefined {
+function isoTimestamp(
+  root: JsonObject,
+  params: JsonObject
+): string | undefined {
   const metadata = objectValue(params["_meta"])
   const agentTimestamp = numberValue(metadata?.["agentTimestampMs"])
   if (agentTimestamp !== undefined) return dateFromMillis(agentTimestamp)
@@ -226,9 +250,12 @@ function parseSummary(raw: string): GrokSummary | null {
   return {
     id,
     cwd: stringValue(info?.["cwd"]),
-    title: stringValue(root["session_summary"]) || stringValue(root["generated_title"]),
+    title:
+      stringValue(root["session_summary"]) ||
+      stringValue(root["generated_title"]),
     createdAt: stringValue(root["created_at"]),
-    updatedAt: stringValue(root["updated_at"]) || stringValue(root["last_active_at"]),
+    updatedAt:
+      stringValue(root["updated_at"]) || stringValue(root["last_active_at"]),
     model: stringValue(root["current_model_id"]),
     effort: stringValue(root["reasoning_effort"]),
   }
@@ -271,7 +298,10 @@ function parsePlanEntries(value: JsonValue | undefined): GrokPlanEntry[] {
   })
 }
 
-function failedToolUpdate(status: string | undefined, rawOutput: JsonValue | undefined): boolean {
+function failedToolUpdate(
+  status: string | undefined,
+  rawOutput: JsonValue | undefined
+): boolean {
   if (status === "failed" || status === "error") return true
   const output = objectValue(rawOutput)
   const exitCode = numberValue(output?.["exit_code"])
@@ -297,12 +327,14 @@ function parseUpdateLine(raw: string): GrokUpdate | null {
   switch (sessionUpdate) {
     case "user_message_chunk": {
       const text = contentText(update["content"])
-      if (!text) return null
+      const attachments = acpAttachments(update["content"])
+      if (!text && !attachments.length) return null
       const promptIndex = numberValue(metadata?.["promptIndex"])
       return {
         sessionUpdate,
         at,
         text,
+        attachments,
         promptKey:
           stringValue(metadata?.["promptId"]) ??
           stringValue(metadata?.["clientMessageId"]) ??
@@ -312,28 +344,36 @@ function parseUpdateLine(raw: string): GrokUpdate | null {
     case "agent_message_chunk":
     case "agent_thought_chunk": {
       const text = contentText(update["content"])
-      return text ? { sessionUpdate, at, text } : null
+      const attachments = acpAttachments(update["content"])
+      return text || attachments.length
+        ? { sessionUpdate, at, text, attachments }
+        : null
     }
     case "tool_call": {
       return {
         sessionUpdate,
         at,
+        attachments: acpAttachments(update["content"]),
         toolCallId: stringValue(update["toolCallId"]),
         name: toolName(update),
         input: encodedJson(update["rawInput"]),
-        output: clip(contentText(update["content"])) || undefined,
+        output:
+          clip(normalizeToolOutput(contentText(update["content"]))) ||
+          undefined,
       }
     }
     case "tool_call_update": {
       const status = stringValue(update["status"])
-      const content = contentText(update["content"]) || contentText(update["rawOutput"])
+      const content =
+        contentText(update["content"]) || contentText(update["rawOutput"])
       return {
         sessionUpdate,
         at,
+        attachments: acpAttachments(update["content"]),
         toolCallId: stringValue(update["toolCallId"]),
         name: toolName(update),
         input: encodedJson(update["rawInput"]),
-        output: clip(content) || undefined,
+        output: clip(normalizeToolOutput(content)) || undefined,
         status,
         failed: failedToolUpdate(status, update["rawOutput"]),
       }
@@ -357,11 +397,13 @@ function parseLegacyCalls(value: JsonValue | undefined): LegacyAssistantCall[] {
   return value.flatMap((item) => {
     const call = objectValue(item)
     if (!call) return []
-    return [{
-      id: stringValue(call["id"]),
-      name: stringValue(call["name"]) ?? "tool",
-      input: encodedJson(call["arguments"]),
-    }]
+    return [
+      {
+        id: stringValue(call["id"]),
+        name: stringValue(call["name"]) ?? "tool",
+        input: encodedJson(call["arguments"]),
+      },
+    ]
   })
 }
 
@@ -383,7 +425,7 @@ function parseLegacyLine(raw: string): LegacyGrokLine | null {
       return {
         type: "tool_result",
         toolCallId: stringValue(root["tool_call_id"]),
-        output: contentText(root["content"]),
+        output: normalizeToolOutput(contentText(root["content"])),
       }
     default:
       return null
@@ -426,13 +468,21 @@ export class GrokProvider implements SessionProvider {
             const updatesPath = join(sessionPath, "updates.jsonl")
             const updatesInfo = await stat(updatesPath).catch(() => null)
             if (updatesInfo) {
-              files.push({ path: updatesPath, bytes: updatesInfo.size, mtimeMs: updatesInfo.mtimeMs })
+              files.push({
+                path: updatesPath,
+                bytes: updatesInfo.size,
+                mtimeMs: updatesInfo.mtimeMs,
+              })
               return
             }
             const legacyPath = join(sessionPath, "chat_history.jsonl")
             const legacyInfo = await stat(legacyPath).catch(() => null)
             if (legacyInfo) {
-              files.push({ path: legacyPath, bytes: legacyInfo.size, mtimeMs: legacyInfo.mtimeMs })
+              files.push({
+                path: legacyPath,
+                bytes: legacyInfo.size,
+                mtimeMs: legacyInfo.mtimeMs,
+              })
             }
           })
         )
@@ -442,7 +492,10 @@ export class GrokProvider implements SessionProvider {
   }
 
   async peek(file: NativeFile): Promise<ThreadRef | null> {
-    const raw = await readFile(join(dirname(file.path), "summary.json"), "utf8").catch(() => null)
+    const raw = await readFile(
+      join(dirname(file.path), "summary.json"),
+      "utf8"
+    ).catch(() => null)
     if (!raw) return null
     const summary = parseSummary(raw)
     if (!summary) return null
@@ -477,18 +530,25 @@ export class GrokProvider implements SessionProvider {
   async read(path: string): Promise<Thread | null> {
     const file = await stat(path).catch(() => null)
     if (!file) return null
-    const ref = await this.peek({ path, bytes: file.size, mtimeMs: file.mtimeMs })
+    const ref = await this.peek({
+      path,
+      bytes: file.size,
+      mtimeMs: file.mtimeMs,
+    })
     if (!ref) return null
     const into = createTranslator(path)()
-    await readLines(path, 0, into.push)
-    return { ref, entries: into.done() }
+    const checkpoint = await readLines(path, 0, into.push)
+    return { ref, checkpoint, entries: into.done() }
   }
 
   createFollower(path: string, fromByte: number) {
     return createJsonlFollower(path, fromByte, createTranslator(path))
   }
 
-  async tail(path: string, fromByte: number): Promise<{ entries: ThreadEntry[]; nextByte: number }> {
+  async tail(
+    path: string,
+    fromByte: number
+  ): Promise<{ entries: ThreadEntry[]; nextByte: number }> {
     const into = createTranslator(path)()
     const nextByte = await readLines(path, fromByte, into.push)
     return { entries: into.done(), nextByte }
@@ -496,7 +556,9 @@ export class GrokProvider implements SessionProvider {
 }
 
 function createTranslator(path: string): () => GrokTranslator {
-  return basename(path) === "updates.jsonl" ? updatesTranslator : legacyTranslator
+  return basename(path) === "updates.jsonl"
+    ? updatesTranslator
+    : legacyTranslator
 }
 
 function updatesTranslator(): GrokTranslator {
@@ -523,7 +585,11 @@ function updatesTranslator(): GrokTranslator {
     return assistant
   }
 
-  const appendBlockText = (type: "text" | "thinking", text: string, at?: string): void => {
+  const appendBlockText = (
+    type: "text" | "thinking",
+    text: string,
+    at?: string
+  ): void => {
     const entry = ensureAssistant(at)
     const last = entry.blocks.at(-1)
     if (last?.type === type) last.text += text
@@ -552,6 +618,11 @@ function updatesTranslator(): GrokTranslator {
       case "user_message_chunk": {
         if (user && userKey === event.promptKey) {
           user.text += event.text
+          if (event.attachments?.length)
+            user.attachments = [
+              ...(user.attachments ?? []),
+              ...event.attachments,
+            ]
           return
         }
         flushAssistant()
@@ -559,6 +630,7 @@ function updatesTranslator(): GrokTranslator {
         latestAssistant = null
         plan = null
         user = { kind: "user", at: event.at, text: event.text }
+        if (event.attachments?.length) user.attachments = event.attachments
         userKey = event.promptKey
         started = true
         sink.push(user)
@@ -568,6 +640,8 @@ function updatesTranslator(): GrokTranslator {
         if (!started) needsReset = true
         started = true
         appendBlockText("text", event.text, event.at)
+        if (event.attachments?.length)
+          ensureAssistant(event.at).blocks.push(...event.attachments)
         return
       case "agent_thought_chunk":
         if (!started) needsReset = true
@@ -577,7 +651,13 @@ function updatesTranslator(): GrokTranslator {
       case "tool_call": {
         if (!started) needsReset = true
         started = true
-        const block = createTool(event.toolCallId, event.name, event.input, event.at)
+        const block = createTool(
+          event.toolCallId,
+          event.name,
+          event.input,
+          event.at
+        )
+        if (event.attachments?.length) block.attachments = event.attachments
         if (event.output) block.output = event.output
         return
       }
@@ -589,12 +669,16 @@ function updatesTranslator(): GrokTranslator {
         const target =
           block ??
           createTool(event.toolCallId, event.name, event.input, event.at)
+        if (event.attachments?.length) target.attachments = event.attachments
         if (!target.input && event.input) target.input = event.input
         if (event.output) {
           const complete = event.status === "completed" || event.failed
-          target.output = clip(complete ? event.output : `${target.output ?? ""}${event.output}`)
+          target.output = clip(
+            complete ? event.output : `${target.output ?? ""}${event.output}`
+          )
         }
         if (event.failed) target.error = true
+        if (/cancel/i.test(event.status ?? "")) target.canceled = true
         return
       }
       case "plan": {
@@ -607,13 +691,19 @@ function updatesTranslator(): GrokTranslator {
           return
         }
         flushAssistant()
-        plan = { kind: "event", at: event.at, label: "Plan updated", detail: detail || undefined }
+        plan = {
+          kind: "event",
+          at: event.at,
+          label: "Plan updated",
+          detail: detail || undefined,
+        }
         sink.push(plan)
         return
       }
       case "turn_completed": {
         const completedAssistant = assistant ?? latestAssistant
-        if (completedAssistant && event.usage) completedAssistant.usage = event.usage
+        if (completedAssistant && event.usage)
+          completedAssistant.usage = event.usage
         flushAssistant()
         if (
           event.stopReason &&
@@ -711,7 +801,9 @@ function legacyTranslator(): GrokTranslator {
         return
       }
       case "tool_result": {
-        const block = line.toolCallId ? toolsById.get(line.toolCallId) : undefined
+        const block = line.toolCallId
+          ? toolsById.get(line.toolCallId)
+          : undefined
         if (block) {
           block.output = clip(line.output)
           toolsById.delete(line.toolCallId ?? "")

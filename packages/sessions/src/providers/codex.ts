@@ -1,3 +1,4 @@
+import { attachmentFromUrl, type AttachmentContent } from "../content.js"
 /**
  * Codex CLI sessions.
  *
@@ -41,6 +42,7 @@ import {
   walkFiles,
   type LineTranslator,
 } from "../jsonl.js"
+import { normalizeToolOutput } from "../tool-output.js"
 import type { NativeFile, SessionProvider } from "./types.js"
 
 const MAX_TRANSLATED_BYTES = 64 * 1024 * 1024
@@ -97,11 +99,15 @@ interface CodexTokenCountEvent extends CodexRolloutBase {
 }
 
 interface CodexUserResponse extends CodexRolloutBase {
+  id?: string
+  attachments?: AttachmentContent[]
   kind: "user_response"
   text: string
 }
 
 interface CodexAssistantResponse extends CodexRolloutBase {
+  id?: string
+  attachments?: AttachmentContent[]
   kind: "assistant_response"
   text: string
 }
@@ -120,10 +126,20 @@ interface CodexFunctionCallResponse extends CodexRolloutBase {
   callId?: string
   name: string
   input?: string
+  output?: string
+  error?: boolean
+  canceled?: boolean
+}
+
+interface CodexToolCompletion {
+  output?: string
+  error?: boolean
+  canceled?: boolean
 }
 
 interface CodexFunctionOutputResponse extends CodexRolloutBase {
   kind: "function_output_response"
+  attachments?: AttachmentContent[]
   callId?: string
   output: string
 }
@@ -193,10 +209,37 @@ function textOf(content: JsonValue | undefined): string {
   return text
 }
 
+function encodedInput(input: JsonValue | undefined): string | undefined {
+  if (input === undefined) return undefined
+  return isString(input) ? input : JSON.stringify(input)
+}
+
+function completedTool(status: string | undefined): CodexToolCompletion {
+  const normalized = status?.toLowerCase()
+  if (
+    ["completed", "complete", "done", "success", "succeeded"].includes(
+      normalized ?? ""
+    )
+  )
+    return { output: "" }
+  if (["failed", "failure", "error", "errored"].includes(normalized ?? ""))
+    return { output: "", error: true }
+  if (
+    ["canceled", "cancelled", "interrupted", "aborted"].includes(
+      normalized ?? ""
+    )
+  )
+    return { output: "", canceled: true }
+  return {}
+}
+
 function outputText(output: JsonValue | undefined): string {
-  if (isString(output)) return output
-  const content = stringValue(objectValue(output)?.["content"])
-  return content ?? JSON.stringify(output ?? "") ?? ""
+  const text = isString(output)
+    ? output
+    : (stringValue(objectValue(output)?.["content"]) ??
+      JSON.stringify(output ?? "") ??
+      "")
+  return normalizeToolOutput(text)
 }
 
 function parseTokenUsage(payload: JsonObject): CodexTokenUsage | undefined {
@@ -220,9 +263,21 @@ function parseResponseItem(
       const text = textOf(payload["content"])
       switch (stringValue(payload["role"])) {
         case "user":
-          return { kind: "user_response", at, text }
+          return {
+            kind: "user_response",
+            id: stringValue(payload["id"]),
+            at,
+            text,
+            attachments: responseAttachments(payload["content"]),
+          }
         case "assistant":
-          return { kind: "assistant_response", at, text }
+          return {
+            kind: "assistant_response",
+            id: stringValue(payload["id"]),
+            at,
+            text,
+            attachments: responseAttachments(payload["content"]),
+          }
         default:
           return { kind: "plumbing_response", at }
       }
@@ -233,20 +288,58 @@ function parseResponseItem(
         at,
         text: textOf(payload["summary"]) || textOf(payload["content"]),
       }
-    case "function_call":
+    case "tool_search_call":
+      return {
+        kind: "function_call_response",
+        at,
+        callId: stringValue(payload["call_id"]) ?? stringValue(payload["id"]),
+        name: "ToolSearch",
+        input: encodedInput(payload["arguments"]),
+        ...completedTool(stringValue(payload["status"])),
+      }
+    case "web_search_call":
+      return {
+        kind: "function_call_response",
+        at,
+        callId: stringValue(payload["call_id"]) ?? stringValue(payload["id"]),
+        name: "web_search",
+        input: encodedInput(payload["action"]),
+        ...completedTool(stringValue(payload["status"])),
+      }
+    case "local_shell_call": {
+      const action = objectValue(payload["action"])
+      const command = action?.["command"]
+      const text = Array.isArray(command)
+        ? command.flatMap((part) => (isString(part) ? [part] : [])).join(" ")
+        : stringValue(command)
       return {
         kind: "function_call_response",
         at,
         callId: stringValue(payload["call_id"]),
-        name: String(payload["name"] ?? "tool"),
-        input: stringValue(payload["arguments"]),
+        name: "exec_command",
+        input: text ? JSON.stringify({ command: text }) : undefined,
+      }
+    }
+    case "function_call":
+    case "custom_tool_call":
+      return {
+        kind: "function_call_response",
+        at,
+        callId: stringValue(payload["call_id"]),
+        name: stringValue(payload["name"])?.trim() || "tool",
+        input:
+          stringValue(payload["arguments"]) ?? stringValue(payload["input"]),
       }
     case "function_call_output":
+    case "custom_tool_call_output":
+    case "tool_search_output":
+    case "web_search_output":
       return {
         kind: "function_output_response",
         at,
         callId: stringValue(payload["call_id"]),
         output: outputText(payload["output"]),
+        attachments: responseAttachments(payload["output"]),
       }
     default:
       return { kind: "ignored", at }
@@ -377,9 +470,7 @@ export class CodexProvider implements SessionProvider {
         const updatedAtMs = sqliteNumber(row.updated_at_ms)
         const storedTitle = sqliteText(row.title)
         const conciseTitle =
-          storedTitle &&
-          !storedTitle.includes("\n") &&
-          storedTitle.length <= 80
+          storedTitle && !storedTitle.includes("\n") && storedTitle.length <= 80
             ? titleFrom(storedTitle)
             : undefined
         const metadata = {
@@ -492,7 +583,7 @@ export class CodexProvider implements SessionProvider {
     if (!ref) return null
     const into = translator()
     const fromByte = Math.max(0, file.size - MAX_TRANSLATED_BYTES)
-    await readLines(path, fromByte, into.push)
+    const checkpoint = await readLines(path, fromByte, into.push)
     const entries = into.done()
     if (fromByte > 0) {
       entries.unshift({
@@ -501,7 +592,7 @@ export class CodexProvider implements SessionProvider {
         detail: `The most recent ${MAX_TRANSLATED_BYTES / 1024 / 1024} MB is shown; earlier history remains in the native session file`,
       })
     }
-    return { ref, entries }
+    return { ref, checkpoint, entries }
   }
 
   createFollower(path: string, fromByte: number) {
@@ -563,17 +654,30 @@ function translator(): CodexTranslator {
         return
       case "user_response": {
         const text = userTextFrom(event.text)
-        if (!text) return
+        if (!text && !event.attachments?.length) return
         assistant = null
         started = true
-        sink.push({ kind: "user", at: event.at, text })
+        sink.push({
+          kind: "user",
+          id: event.id,
+          at: event.at,
+          text: text ?? "",
+          attachments: event.attachments,
+        })
         return
       }
       case "assistant_response":
-        if (!event.text) return
+        if (!event.text && !event.attachments?.length) return
         if (!started) needsReset = true
         started = true
-        openAssistant(event.at).blocks.push({ type: "text", text: event.text })
+        if (event.id && assistant?.id !== event.id) assistant = null
+        openAssistant(event.at).id = event.id
+        if (event.text)
+          openAssistant(event.at).blocks.push({
+            type: "text",
+            text: event.text,
+          })
+        openAssistant(event.at).blocks.push(...(event.attachments ?? []))
         return
       case "reasoning_response":
         if (!event.text.trim()) return
@@ -589,9 +693,13 @@ function translator(): CodexTranslator {
         started = true
         const block: ToolBlock = {
           type: "tool",
+          id: event.callId,
           name: event.name,
           input: clip(event.input),
         }
+        if (event.output !== undefined) block.output = event.output
+        if (event.error) block.error = true
+        if (event.canceled) block.canceled = true
         if (event.callId) callsById.set(event.callId, block)
         openAssistant(event.at).blocks.push(block)
         return
@@ -601,6 +709,8 @@ function translator(): CodexTranslator {
         const block = callsById.get(id)
         if (block) {
           block.output = clip(event.output)
+          if (block && event.attachments?.length)
+            block.attachments = event.attachments
           callsById.delete(id)
         } else if (id) {
           needsReset = true
@@ -637,4 +747,48 @@ function translator(): CodexTranslator {
       return needsReset
     },
   }
+}
+
+function responseAttachments(
+  content: JsonValue | undefined
+): AttachmentContent[] {
+  if (!Array.isArray(content)) return []
+  const attachments: AttachmentContent[] = []
+  for (const value of content) {
+    const part = objectValue(value)
+    if (!part) continue
+    const type = stringValue(part["type"]) ?? ""
+    if (!/image|audio|file/.test(type)) continue
+    const name = stringValue(part["filename"]) ?? type.replaceAll("_", " ")
+    const mimeType =
+      stringValue(part["mime_type"]) ??
+      (type.includes("image")
+        ? "image/png"
+        : type.includes("audio")
+          ? "audio/wav"
+          : "application/octet-stream")
+    const url =
+      stringValue(part["audio_url"]) ??
+      stringValue(part["image_url"]) ??
+      stringValue(part["url"]) ??
+      stringValue(part["file_url"])
+    const path = stringValue(part["path"])
+    attachments.push(
+      url
+        ? attachmentFromUrl(name, mimeType, url)
+        : {
+            type: "attachment",
+            name,
+            mimeType,
+            source: path
+              ? { kind: "file", path }
+              : {
+                  kind: "unavailable",
+                  reason:
+                    "The provider did not retain attachment bytes or a readable URL",
+                },
+          }
+    )
+  }
+  return attachments
 }

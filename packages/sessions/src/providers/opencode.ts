@@ -1,3 +1,4 @@
+import { attachmentFromUrl, type AttachmentContent } from "../content.js"
 import { stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
@@ -12,6 +13,7 @@ import {
   type ThreadRef,
   type TurnUsage,
 } from "../format.js"
+import { normalizeToolOutput } from "../tool-output.js"
 import type {
   NativeFile,
   SessionFollower,
@@ -116,7 +118,10 @@ export class OpenCodeProvider implements SessionProvider {
               }))
             )
           }
-          if (hasTable(database, "session_v2") && hasTable(database, "session_message")) {
+          if (
+            hasTable(database, "session_v2") &&
+            hasTable(database, "session_message")
+          ) {
             files.push(
               ...sessionRows(
                 database,
@@ -187,9 +192,10 @@ export class OpenCodeProvider implements SessionProvider {
         database.exec("COMMIT")
         return null
       }
-      const entries = kind === "current"
-        ? currentEntries(database, row.id)
-        : legacyEntries(database, row.id)
+      const entries =
+        kind === "current"
+          ? currentEntries(database, row.id)
+          : legacyEntries(database, row.id)
       const model =
         modelFromSession(row) ??
         latestModel(database, kind, row.id) ??
@@ -216,11 +222,12 @@ export class OpenCodeProvider implements SessionProvider {
   createFollower(path: string, fromByte: number): SessionFollower {
     const held = this.snapshots.get(path)
     let cursor = fromByte
-    let previous = held?.revision === fromByte
-      ? [...held.values]
-      : fromByte === 0
-        ? []
-        : null
+    let previous =
+      held?.revision === fromByte
+        ? [...held.values]
+        : fromByte === 0
+          ? []
+          : null
 
     return {
       get offset() {
@@ -311,7 +318,9 @@ function hasTable(database: DatabaseSync, table: string): boolean {
 function storeKind(database: DatabaseSync, path: string): StoreKind | null {
   const names = new Set(
     database
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('session', 'message', 'part', 'session_message')")
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('session', 'message', 'part', 'session_message')"
+      )
       .all()
       .map((row) => sqliteText(row.name))
       .filter((name): name is string => name !== undefined)
@@ -339,7 +348,9 @@ function sessionRows(
       )
     )
     .all(limit)
-  return rows.map(parseSessionRow).filter((row): row is SessionRow => row !== null)
+  return rows
+    .map(parseSessionRow)
+    .filter((row): row is SessionRow => row !== null)
 }
 
 function sessionRow(
@@ -368,12 +379,14 @@ function sessionQuery(
   hasPending = false
 ): string {
   const source = kind === "current" ? "session_message" : "message"
-  const partRevision = kind === "legacy"
-    ? ", COALESCE((SELECT MAX(p2.time_updated) FROM part p2 WHERE p2.session_id = s.id), 0)"
-    : ""
-  const partCount = kind === "legacy"
-    ? " + (SELECT COUNT(*) FROM part p3 WHERE p3.session_id = s.id)"
-    : ""
+  const partRevision =
+    kind === "legacy"
+      ? ", COALESCE((SELECT MAX(p2.time_updated) FROM part p2 WHERE p2.session_id = s.id), 0)"
+      : ""
+  const partCount =
+    kind === "legacy"
+      ? " + (SELECT COUNT(*) FROM part p3 WHERE p3.session_id = s.id)"
+      : ""
   const model = kind === "current" ? ", s.model AS model" : ""
   const active =
     kind === "current"
@@ -401,7 +414,9 @@ function sessionQuery(
     : sessionTable === "session_v2"
       ? "s.parent_id IS NULL AND NOT EXISTS (SELECT 1 FROM session legacy WHERE legacy.id = s.id)"
       : "s.parent_id IS NULL"
-  const suffix = one ? "LIMIT 1" : "ORDER BY s.time_updated DESC, s.id DESC LIMIT ?"
+  const suffix = one
+    ? "LIMIT 1"
+    : "ORDER BY s.time_updated DESC, s.id DESC LIMIT ?"
   return `SELECT s.id AS id, s.directory AS directory, s.title AS title,
                  s.time_created AS time_created, s.time_updated AS time_updated,
                  s.time_archived AS time_archived, p.worktree AS project_worktree,
@@ -430,7 +445,8 @@ function parseSessionRow(fields: SqliteFields): SessionRow | null {
     model: parseObject(sqliteText(fields.model)),
     startedAt: sqliteNumber(fields.time_created),
     updatedAt,
-    archived: fields.time_archived !== null && fields.time_archived !== undefined,
+    archived:
+      fields.time_archived !== null && fields.time_archived !== undefined,
     active:
       sqliteNumber(fields.pending) === 1 ||
       (sqliteNumber(fields.active) === 1 &&
@@ -512,7 +528,9 @@ function latestModel(
 ): { id?: string; provider?: string } | null {
   const table = kind === "current" ? "session_message" : "message"
   const rows = database
-    .prepare(`SELECT data FROM ${table} WHERE session_id = ? ORDER BY time_created DESC, id DESC LIMIT 20`)
+    .prepare(
+      `SELECT data FROM ${table} WHERE session_id = ? ORDER BY time_created DESC, id DESC LIMIT 20`
+    )
     .all(sessionId)
   for (const row of rows) {
     const data = parseObject(sqliteText(row.data))
@@ -523,7 +541,10 @@ function latestModel(
   return null
 }
 
-function currentEntries(database: DatabaseSync, sessionId: string): ThreadEntry[] {
+function currentEntries(
+  database: DatabaseSync,
+  sessionId: string
+): ThreadEntry[] {
   const stored = database
     .prepare(
       `SELECT id, type, time_created, data FROM (
@@ -540,7 +561,10 @@ function currentEntries(database: DatabaseSync, sessionId: string): ThreadEntry[
   return sink.done()
 }
 
-function legacyEntries(database: DatabaseSync, sessionId: string): ThreadEntry[] {
+function legacyEntries(
+  database: DatabaseSync,
+  sessionId: string
+): ThreadEntry[] {
   const messages = database
     .prepare(
       `SELECT id, time_created, data FROM (
@@ -584,7 +608,13 @@ function pushCurrent(sink: EntrySink, row: StoredRow): void {
   const at = isoOf(timeCreated(row.data) ?? row.timeCreated)
   if (type === "user") {
     const text = jsonText(row.data.text)
-    if (text?.trim()) sink.push({ kind: "user", at, text })
+    const attachments = fileParts([
+      ...(Array.isArray(row.data.content) ? row.data.content : []),
+      ...(Array.isArray(row.data.parts) ? row.data.parts : []),
+      ...(Array.isArray(row.data.files) ? row.data.files : []),
+    ])
+    if (text?.trim() || attachments.length)
+      sink.push({ kind: "user", id: row.id, at, text: text ?? "", attachments })
     return
   }
   if (type === "assistant") {
@@ -593,7 +623,8 @@ function pushCurrent(sink: EntrySink, row: StoredRow): void {
     const model = modelFromData(row.data)
     if (blocks.length > 0 || usage)
       pushAssistant(sink, at, model?.id, usage, blocks)
-    if (isInterrupted(row.data)) sink.push({ kind: "event", at, label: "Interrupted" })
+    if (isInterrupted(row.data))
+      sink.push({ kind: "event", at, label: "Interrupted" })
     return
   }
   if (type === "shell") {
@@ -602,7 +633,14 @@ function pushCurrent(sink: EntrySink, row: StoredRow): void {
     sink.push({
       kind: "assistant",
       at,
-      blocks: [{ type: "tool", name: "shell", input: clip(command), output: clip(output) }],
+      blocks: [
+        {
+          type: "tool",
+          name: "shell",
+          input: clip(command),
+          output: clip(normalizeToolOutput(output)),
+        },
+      ],
     })
     return
   }
@@ -614,7 +652,12 @@ function pushCurrent(sink: EntrySink, row: StoredRow): void {
     const model = jsonObject(row.data.model)
     const id = model ? jsonText(model.id) : undefined
     const provider = model ? jsonText(model.providerID) : undefined
-    sink.push({ kind: "event", at, label: "Model changed", detail: modelLabel(id, provider) })
+    sink.push({
+      kind: "event",
+      at,
+      label: "Model changed",
+      detail: modelLabel(id, provider),
+    })
     return
   }
   if (type === "agent-switched") {
@@ -630,22 +673,27 @@ function pushLegacy(
 ): void {
   const role = jsonText(message.data.role)
   const at = isoOf(timeCreated(message.data) ?? message.timeCreated)
-  const compaction = parts.find((part) => jsonText(part.data.type) === "compaction")
+  const compaction = parts.find(
+    (part) => jsonText(part.data.type) === "compaction"
+  )
   if (compaction) {
     pushCompaction(sink, at, jsonBoolean(compaction.data.auto) === true)
     return
   }
   if (role === "user") {
     const text = parts
-      .filter((part) =>
-        jsonText(part.data.type) === "text" &&
-        jsonBoolean(part.data.synthetic) !== true &&
-        jsonBoolean(part.data.ignored) !== true
+      .filter(
+        (part) =>
+          jsonText(part.data.type) === "text" &&
+          jsonBoolean(part.data.synthetic) !== true &&
+          jsonBoolean(part.data.ignored) !== true
       )
       .map((part) => jsonText(part.data.text) ?? "")
       .filter((value) => value.trim().length > 0)
       .join("\n")
-    if (text) sink.push({ kind: "user", at, text })
+    const attachments = fileParts(parts.map((part) => part.data))
+    if (text || attachments.length)
+      sink.push({ kind: "user", id: message.id, at, text, attachments })
     return
   }
   if (role !== "assistant") return
@@ -653,6 +701,10 @@ function pushLegacy(
   let usage = usageFrom(message.data)
   for (const part of parts) {
     const type = jsonText(part.data.type)
+    if (type === "file") {
+      blocks.push(...fileParts([part.data]))
+      continue
+    }
     if (type === "reasoning") {
       const text = jsonText(part.data.text)
       if (text) blocks.push({ type: "thinking", text })
@@ -664,7 +716,8 @@ function pushLegacy(
         text &&
         jsonBoolean(part.data.synthetic) !== true &&
         jsonBoolean(part.data.ignored) !== true
-      ) blocks.push({ type: "text", text })
+      )
+        blocks.push({ type: "text", text })
       continue
     }
     if (type === "tool") {
@@ -676,7 +729,8 @@ function pushLegacy(
   const model = modelFromData(message.data)
   if (blocks.length > 0 || usage)
     pushAssistant(sink, at, model?.id, usage, blocks)
-  if (isInterrupted(message.data)) sink.push({ kind: "event", at, label: "Interrupted" })
+  if (isInterrupted(message.data))
+    sink.push({ kind: "event", at, label: "Interrupted" })
 }
 
 function pushAssistant(
@@ -686,7 +740,10 @@ function pushAssistant(
   usage: TurnUsage | undefined,
   blocks: EntryBlock[]
 ): void {
-  const entry: Extract<ThreadEntry, { kind: "assistant" }> = { kind: "assistant", blocks }
+  const entry: Extract<ThreadEntry, { kind: "assistant" }> = {
+    kind: "assistant",
+    blocks,
+  }
   if (at !== undefined) entry.at = at
   if (model !== undefined) entry.model = model
   if (usage !== undefined) entry.usage = usage
@@ -709,6 +766,7 @@ function assistantContent(value: JsonValue | undefined): EntryBlock[] {
       if (text) blocks.push({ type: "thinking", text })
       continue
     }
+    if (type === "file") blocks.push(...fileParts([part]))
     if (type === "tool") blocks.push(toolBlock(part, "current"))
   }
   return blocks
@@ -724,21 +782,28 @@ function toolBlock(data: JsonObject, kind: StoreKind): ToolBlock {
     name,
     input: clip(formatJson(input)),
   }
+  const id = jsonText(data.callID) ?? jsonText(data.id)
+  if (id) block.id = id
   if (!state) return block
+  const attachments = fileParts(state.attachments ?? state.content)
+  if (attachments.length) block.attachments = attachments
   if (status === "completed") {
-    const output = kind === "legacy"
-      ? jsonText(state.output)
-      : contentText(state.content) || formatJson(state.result)
-    block.output = clip(output)
+    const output =
+      kind === "legacy"
+        ? jsonText(state.output)
+        : contentText(state.content) || formatJson(state.result)
+    block.output = clip(normalizeToolOutput(output))
     return block
   }
   if (status === "error") {
-    const error = kind === "legacy"
-      ? jsonText(state.error)
-      : contentText(state.content) || errorText(state.error)
-    block.output = clip(error)
+    const error =
+      kind === "legacy"
+        ? jsonText(state.error)
+        : contentText(state.content) || errorText(state.error)
+    block.output = clip(normalizeToolOutput(error))
     block.error = true
   }
+  if (/cancel/i.test(status ?? "")) block.canceled = true
   return block
 }
 
@@ -753,12 +818,16 @@ function usageFrom(data: JsonObject): TurnUsage | undefined {
     costUsd: jsonNumber(data.cost),
   }
   const usage = Object.fromEntries(
-    Object.entries(values).filter((entry): entry is [string, number] => entry[1] !== undefined)
+    Object.entries(values).filter(
+      (entry): entry is [string, number] => entry[1] !== undefined
+    )
   ) satisfies TurnUsage
   return Object.keys(usage).length > 0 ? usage : undefined
 }
 
-function modelFromSession(row: SessionRow): { id?: string; provider?: string } | null {
+function modelFromSession(
+  row: SessionRow
+): { id?: string; provider?: string } | null {
   if (!row.model) return null
   return {
     id: jsonText(row.model.id) ?? jsonText(row.model.modelID),
@@ -766,14 +835,22 @@ function modelFromSession(row: SessionRow): { id?: string; provider?: string } |
   }
 }
 
-function modelFromData(data: JsonObject): { id?: string; provider?: string } | null {
+function modelFromData(
+  data: JsonObject
+): { id?: string; provider?: string } | null {
   const model = jsonObject(data.model)
-  const id = jsonText(data.modelID) ?? (model ? jsonText(model.id) ?? jsonText(model.modelID) : undefined)
-  const provider = jsonText(data.providerID) ?? (model ? jsonText(model.providerID) : undefined)
+  const id =
+    jsonText(data.modelID) ??
+    (model ? (jsonText(model.id) ?? jsonText(model.modelID)) : undefined)
+  const provider =
+    jsonText(data.providerID) ??
+    (model ? jsonText(model.providerID) : undefined)
   return id || provider ? { id, provider } : null
 }
 
-function modelFromEntries(entries: ThreadEntry[]): { id?: string; provider?: string } | null {
+function modelFromEntries(
+  entries: ThreadEntry[]
+): { id?: string; provider?: string } | null {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index]
     if (entry?.kind === "assistant" && entry.model) return { id: entry.model }
@@ -781,7 +858,11 @@ function modelFromEntries(entries: ThreadEntry[]): { id?: string; provider?: str
   return null
 }
 
-function pushCompaction(sink: EntrySink, at: string | undefined, automatic: boolean): void {
+function pushCompaction(
+  sink: EntrySink,
+  at: string | undefined,
+  automatic: boolean
+): void {
   sink.push({
     kind: "event",
     at,
@@ -792,12 +873,24 @@ function pushCompaction(sink: EntrySink, at: string | undefined, automatic: bool
 
 function isInterrupted(data: JsonObject): boolean {
   const finish = jsonText(data.finish)?.toLowerCase()
-  if (finish && ["abort", "aborted", "cancelled", "interrupted"].includes(finish)) return true
+  if (
+    finish &&
+    ["abort", "aborted", "cancelled", "interrupted"].includes(finish)
+  )
+    return true
   const error = jsonObject(data.error)
   if (!error) return false
-  const name = (jsonText(error.name) ?? jsonText(error.type) ?? "").toLowerCase()
+  const name = (
+    jsonText(error.name) ??
+    jsonText(error.type) ??
+    ""
+  ).toLowerCase()
   const message = errorText(error).toLowerCase()
-  return name.includes("abort") || name.includes("interrupt") || message.includes("interrupt")
+  return (
+    name.includes("abort") ||
+    name.includes("interrupt") ||
+    message.includes("interrupt")
+  )
 }
 
 function errorText(value: JsonValue | undefined): string {
@@ -811,11 +904,16 @@ function errorText(value: JsonValue | undefined): string {
 
 function contentText(value: JsonValue | undefined): string {
   if (isStringValue(value)) return value
-  if (Array.isArray(value)) return value.map(contentText).filter(Boolean).join("\n")
+  if (Array.isArray(value))
+    return value.map(contentText).filter(Boolean).join("\n")
   if (!isJsonObject(value)) return ""
   const text = jsonText(value.text)
   if (text) return text
-  if (isStringValue(value.value) || isNumberValue(value.value) || isBooleanValue(value.value))
+  if (
+    isStringValue(value.value) ||
+    isNumberValue(value.value) ||
+    isBooleanValue(value.value)
+  )
     return String(value.value)
   return value.content !== undefined ? contentText(value.content) : ""
 }
@@ -844,7 +942,7 @@ function parseObject(raw: string | undefined): JsonObject | undefined {
 
 function timeCreated(data: JsonObject): number | undefined {
   const time = jsonObject(data.time)
-  return time ? jsonNumber(time.created) ?? jsonNumber(time.start) : undefined
+  return time ? (jsonNumber(time.created) ?? jsonNumber(time.start)) : undefined
 }
 
 function revisionOf(timestamp: number, count: number): number {
@@ -880,7 +978,10 @@ function parseSessionPath(
   }
 }
 
-function modelLabel(id: string | undefined, provider: string | undefined): string | undefined {
+function modelLabel(
+  id: string | undefined,
+  provider: string | undefined
+): string | undefined {
   if (id && provider) return `${provider}/${id}`
   return id ?? provider
 }
@@ -936,4 +1037,34 @@ function sqliteNumber(value: SQLOutputValue | undefined): number | undefined {
 
 function unchangedUpdate(nextByte: number): SessionUpdate {
   return { entries: [], nextByte, replace: false }
+}
+
+function fileParts(value: JsonValue | undefined): AttachmentContent[] {
+  if (!Array.isArray(value)) return []
+  const attachments: AttachmentContent[] = []
+  for (const part of value) {
+    if (!isJsonObject(part)) continue
+    const type = jsonText(part.type)
+    if (type !== "file" && (type !== undefined || !jsonText(part.url))) continue
+    const name = jsonText(part.filename) ?? "Attachment"
+    const mime =
+      jsonText(part.mime) ??
+      jsonText(part.mediaType) ??
+      "application/octet-stream"
+    const url = jsonText(part.url)
+    attachments.push(
+      url
+        ? attachmentFromUrl(name, mime, url)
+        : {
+            type: "attachment",
+            name,
+            mimeType: mime,
+            source: {
+              kind: "unavailable",
+              reason: "The provider did not retain a readable file URL",
+            },
+          }
+    )
+  }
+  return attachments
 }
