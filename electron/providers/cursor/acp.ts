@@ -3,6 +3,7 @@ import type { ProviderAcpSource } from "../acp-source.js"
 
 export const cursorAcpSource: ProviderAcpSource = {
   provider: "cursor",
+  canResume: false,
   available: () => resolveExecutable("cursor-agent") !== null,
   async launch() {
     return {

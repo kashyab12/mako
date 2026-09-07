@@ -1,3 +1,4 @@
+import { acpLiveDriver } from "../acp-live-driver.js"
 import { emitGrokSession } from "@mako/sessions"
 import type { ProviderModule } from "../host.js"
 import { grokAcpSource } from "./acp.js"
@@ -10,6 +11,7 @@ import { grokSkillSource } from "./skills.js"
 export const installGrok: ProviderModule = (host) => {
   host.nativeRunners.register(grokNativeRunner)
   host.acpSources.register(grokAcpSource)
+  host.liveDrivers.register(acpLiveDriver(grokAcpSource))
   host.profiles.register(grokProfileLoader)
   host.processProbes.register(grokProcessProbe)
   host.mcpSources.register(grokMcpSource)

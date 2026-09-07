@@ -3,6 +3,7 @@ import type { ProviderAcpSource } from "../acp-source.js"
 
 export const grokAcpSource: ProviderAcpSource = {
   provider: "grok",
+  canResume: true,
   available: () => resolveExecutable("grok") !== null,
   async launch(options) {
     const args = ["agent", "--no-leader"]

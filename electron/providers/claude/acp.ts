@@ -16,6 +16,7 @@ function adapterPath(appPath: string): string {
 
 export const claudeAcpSource: ProviderAcpSource = {
   provider: "claude",
+  canResume: true,
   available: (appPath) =>
     existsSync(adapterPath(appPath)) &&
     resolveExecutable(process.env.CLAUDE_CODE_EXECUTABLE ?? "claude") !== null,

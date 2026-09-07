@@ -1,3 +1,4 @@
+import { acpLiveDriver } from "../acp-live-driver.js"
 import { emitCursorSession } from "@mako/sessions"
 import type { ProviderModule } from "../host.js"
 import { cursorAcpSource } from "./acp.js"
@@ -10,6 +11,7 @@ import { cursorSkillSource } from "./skills.js"
 export const installCursor: ProviderModule = (host) => {
   host.nativeRunners.register(cursorNativeRunner)
   host.acpSources.register(cursorAcpSource)
+  host.liveDrivers.register(acpLiveDriver(cursorAcpSource))
   host.profiles.register(cursorProfileLoader)
   host.processProbes.register(cursorProcessProbe)
   host.mcpSources.register(cursorMcpSource)

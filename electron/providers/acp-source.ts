@@ -22,6 +22,7 @@ export interface AcpLaunch {
 
 /** Provider-owned process launch and environment for an interactive ACP agent. */
 export interface ProviderAcpSource extends ProviderCapability {
+  canResume: boolean
   available(appPath: string): boolean
   launch(options: AcpLaunchOptions): Promise<AcpLaunch | null>
 }

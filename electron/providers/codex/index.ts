@@ -1,3 +1,4 @@
+import { codexLiveDriver } from "./live-driver.js"
 import { emitCodexSession } from "@mako/sessions"
 import type { ProviderModule } from "../host.js"
 import { codexAccountCapability } from "./accounts.js"
@@ -8,6 +9,7 @@ import { codexProfileLoader } from "./profile.js"
 import { codexSkillSource } from "./skills.js"
 
 export const installCodex: ProviderModule = (host) => {
+  host.liveDrivers.register(codexLiveDriver)
   host.accountCapabilities.register(codexAccountCapability)
   host.nativeRunners.register(codexNativeRunner)
   host.profiles.register(codexProfileLoader)

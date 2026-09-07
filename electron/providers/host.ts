@@ -1,3 +1,4 @@
+import type { ProviderLiveDriver } from "./live-driver.js"
 import type { ProviderAccountCapability } from "./account-capability.js"
 import type { ProviderAcpSource } from "./acp-source.js"
 import type { ProviderMcpSource } from "./mcp-source.js"
@@ -9,6 +10,7 @@ import type { ProviderSkillSource } from "./skill-source.js"
 import { ProviderRegistry } from "./registry.js"
 
 export interface ProviderHost {
+  liveDrivers: ProviderRegistry<ProviderLiveDriver>
   nativeRunners: ProviderRegistry<NativeRunner>
   acpSources: ProviderRegistry<ProviderAcpSource>
   profiles: ProviderRegistry<ProviderProfileLoader>
@@ -23,6 +25,7 @@ export type ProviderModule = (host: ProviderHost) => void
 
 export function createProviderHost(): ProviderHost {
   return {
+    liveDrivers: new ProviderRegistry(),
     nativeRunners: new ProviderRegistry(),
     acpSources: new ProviderRegistry(),
     profiles: new ProviderRegistry(),

@@ -11,6 +11,7 @@ interface OpenCodeAcpConfig {
 
 export const openCodeAcpSource: ProviderAcpSource = {
   provider: "opencode",
+  canResume: true,
   available: () => openCodeInstallation() !== null,
   async launch(options) {
     const generation = options.resume

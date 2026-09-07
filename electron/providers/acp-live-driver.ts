@@ -1,0 +1,24 @@
+import type { ProviderAcpSource } from "./acp-source.js"
+import type { ProviderLiveDriver } from "./live-driver.js"
+
+/** Shared ACP transport; each provider contributes its own launch capability. */
+export function acpLiveDriver(source: ProviderAcpSource): ProviderLiveDriver {
+  return {
+    provider: source.provider,
+    canResume: source.canResume,
+    available: (appPath) => source.available(appPath),
+    start: async (cwd, options) =>
+      (await import("../acp.js")).liveStart(source.provider, cwd, options),
+    prompt: async (...args) => (await import("../acp.js")).livePrompt(...args),
+    permission: async (...args) => {
+      ;(await import("../acp.js")).acpRespondPermission(...args)
+    },
+    cancel: async (id) => (await import("../acp.js")).liveCancel(id),
+    close: (id) => {
+      void import("../acp.js").then((module) => module.liveClose(id))
+    },
+    setMode: async (...args) => {
+      await (await import("../acp.js")).liveSetMode(...args)
+    },
+  }
+}
