@@ -5,11 +5,25 @@ import type {
 } from "../shared.js"
 import type { LiveStartOptions } from "../contracts/live-conversations.js"
 import type { ProviderCapability } from "./registry.js"
+import type { ControlCredentials } from "../control-service.js"
+
+export interface ConversationTools {
+  url: string
+  token: string
+  control?: ControlCredentials
+}
+
+/** Host-only launch credentials. Never included in the renderer wire contract or journals. */
+export interface ProviderStartOptions extends LiveStartOptions {
+  fork?: { nativeId: string; runId: string }
+  conversationTools?: ConversationTools
+}
 
 export interface ProviderLiveDriver extends ProviderCapability {
+  canForkAtRun?: boolean
   canResume: boolean
   available(appPath: string): boolean
-  start(cwd: string, options: LiveStartOptions): Promise<LiveSessionState>
+  start(cwd: string, options: ProviderStartOptions): Promise<LiveSessionState>
   prompt(
     id: string,
     text: string,

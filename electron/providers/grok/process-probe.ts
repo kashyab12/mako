@@ -26,7 +26,7 @@ export function parseGrokActiveSessions<Value>(
   return GrokActiveSessionsSchema.parse(value).flatMap((session) => {
     const nativeId = session.session_id ?? session.sessionId ?? session.id
     return nativeId && isAlive(session.pid)
-      ? [{ nativeId, status: "active" } satisfies ProviderActivitySession]
+      ? [{ nativeId, status: "open" } satisfies ProviderActivitySession]
       : []
   })
 }
@@ -46,7 +46,7 @@ async function validatedSessions<Value>(
         signal,
       }))
     )
-      active.push({ nativeId, status: "active" })
+      active.push({ nativeId, status: "open" })
   }
   return active
 }

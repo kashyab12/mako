@@ -26,7 +26,7 @@ export function parseCursorOpenSessionPaths(
 }
 
 function sessions(paths: string[]): ProviderActivitySession[] {
-  return paths.map((path) => ({ path, status: "active" }))
+  return paths.map((path) => ({ path, status: "open" }))
 }
 
 export const cursorProcessProbe: ProviderProcessProbe = {
@@ -38,9 +38,7 @@ export const cursorProcessProbe: ProviderProcessProbe = {
       join(home, ".cursor", "chats"),
       join(home, ".cursor", "acp-sessions"),
     ]
-    const prefixes = roots.map(
-      (root) => `${root.replace(/[\\/]$/, "")}/`
-    )
+    const prefixes = roots.map((root) => `${root.replace(/[\\/]$/, "")}/`)
     const result = await probeOpenFiles({
       processNames: ["cursor-agent", "Cursor"],
       signal,

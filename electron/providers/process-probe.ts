@@ -1,6 +1,6 @@
 import type { ProviderCapability } from "./registry.js"
 
-export type ProviderActivityStatus = "active" | "needs-input"
+export type ProviderActivityStatus = "active" | "needs-input" | "open"
 
 export interface ProviderActivitySession {
   nativeId?: string
