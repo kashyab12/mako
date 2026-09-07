@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils"
 import type { McpSyncTarget } from "@/lib/types"
 import { mcp, useMcp } from "@/state/mcp"
 import { AlertTriangleIcon, RefreshCwIcon } from "lucide-react"
+import { BrowserConnections } from "./browser-connections"
 
 export function McpSection() {
   const state = useMcp((value) => value)
@@ -38,6 +39,7 @@ export function McpSection() {
         Environment and header values stay in the host.
       </p>
 
+      <BrowserConnections />
       {state.permissions?.supported ? (
         <div className="mb-3 flex items-center gap-3 rounded-lg bg-surface px-2.5 py-2 ring-1 ring-hairline">
           <span className="min-w-0 flex-1">
