@@ -61,8 +61,14 @@ export const grokProcessProbe: ProviderProcessProbe = {
   staleAfterMs: 10_000,
   async probe(signal) {
     const path = join(grokHome(), "active_sessions.json")
-    const info = await stat(path).catch(() => null)
-    if (!info) return { kind: "available", sessions: [] }
+    let info
+    try {
+      info = await stat(path)
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT")
+        return { kind: "available", sessions: [] }
+      return { kind: "unavailable", reason: "failed" }
+    }
     if (info.size > MAX_REGISTRY_BYTES)
       return { kind: "unavailable", reason: "failed" }
     try {

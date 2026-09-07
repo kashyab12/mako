@@ -33,15 +33,31 @@ export function createComputerToolsServer(
   backend?: ComputerBackend,
   taskId = process.env.MAKO_TASK_ID ?? randomUUID()
 ): Server {
-  const client = new Client({ name: "mako-computer-use", version: "2.0.0" })
+  let client = new Client({ name: "mako-computer-use", version: "2.0.0" })
+  let closed = false
   let starting: Promise<Tool[]> | undefined
   const tools = () => {
     starting ??= (async () => {
+      if (closed) throw new Error("Computer control connection is closed")
       if (!backend) return []
+      const connection = new Client({
+        name: "mako-computer-use",
+        version: "2.0.0",
+      })
+      client = connection
+      connection.onclose = () => {
+        if (client === connection) starting = undefined
+      }
       const transport = new StdioClientTransport({ ...backend, stderr: "pipe" })
-      await client.connect(transport)
-      const result = await client.listTools()
-      return result.tools
+      try {
+        await connection.connect(transport)
+        const result = await connection.listTools()
+        return result.tools
+      } catch (error) {
+        await connection.close()
+        await transport.close()
+        throw error
+      }
     })().catch((error) => {
       starting = undefined
       throw error
@@ -50,6 +66,7 @@ export function createComputerToolsServer(
   }
   class ComputerServer extends Server {
     override async close(): Promise<void> {
+      closed = true
       await super.close()
       await client.close()
     }
@@ -59,6 +76,7 @@ export function createComputerToolsServer(
     { capabilities: { tools: {} }, instructions }
   )
   server.onclose = () => {
+    closed = true
     void client.close()
   }
   server.setRequestHandler(ListToolsRequestSchema, async () => ({

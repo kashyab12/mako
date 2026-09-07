@@ -57,32 +57,35 @@ async function registrySessions(
   signal: AbortSignal
 ): Promise<ProviderActivitySession[] | null> {
   const root = join(home, ".claude", "sessions")
-  const files = await readdir(root).catch(() => null)
-  if (!files) return null
+  let files: string[]
+  try {
+    files = await readdir(root)
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT")
+      return null
+    throw error
+  }
   const sessions: ProviderActivitySession[] = []
   for (const file of files.slice(0, 1_000)) {
     if (signal.aborted) return null
     if (!file.endsWith(".json")) continue
     const path = join(root, file)
-    const info = await stat(path).catch(() => null)
-    if (!info || info.size > MAX_REGISTRY_ENTRY_BYTES) continue
-    try {
-      const agent = ClaudeAgentSchema.parse(
-        JSON.parse(await readFile(path, { encoding: "utf8", signal }))
-      )
-      if (
-        agent.pid &&
-        agent.sessionId &&
-        (await processIdentityMatches({
-          pid: agent.pid,
-          startedAt: agent.startedAt,
-          signal,
-        }))
-      )
-        sessions.push(activity(agent))
-    } catch {
-      continue
-    }
+    const info = await stat(path)
+    if (info.size > MAX_REGISTRY_ENTRY_BYTES)
+      throw new Error("Claude activity record exceeds the read limit")
+    const agent = ClaudeAgentSchema.parse(
+      JSON.parse(await readFile(path, { encoding: "utf8", signal }))
+    )
+    if (
+      agent.pid &&
+      agent.sessionId &&
+      (await processIdentityMatches({
+        pid: agent.pid,
+        startedAt: agent.startedAt,
+        signal,
+      }))
+    )
+      sessions.push(activity(agent))
   }
   return sessions
 }
@@ -93,7 +96,15 @@ export function claudeProcessProbeFor(home = homedir()): ProviderProcessProbe {
     pollIntervalMs: 5_000,
     staleAfterMs: 15_000,
     async probe(signal) {
-      const registered = await registrySessions(home, signal)
+      let registered: ProviderActivitySession[] | null
+      try {
+        registered = await registrySessions(home, signal)
+      } catch {
+        return {
+          kind: "unavailable",
+          reason: signal.aborted ? "timeout" : "failed",
+        }
+      }
       if (registered) return { kind: "available", sessions: registered }
       const running = await probeOpenFiles({
         processNames: ["claude"],
