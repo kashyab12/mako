@@ -1,15 +1,13 @@
-import { useEffect, useMemo, useState } from "react"
+import { threads, threadsStore } from "@/state/threads"
+import { loadEarlierLive } from "@/state/live-recovery"
+import { useEffect, useState } from "react"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { SearchSelect } from "@/components/ui/search-select"
 import { harnessLabel } from "@/components/rail/harness-meta"
 import { ConversationTimeline } from "@/components/transcript/conversation-timeline"
-import { acpBlocksToMessages, type AcpPlanEntry } from "@/lib/acp-blocks"
-import { toExchanges } from "@/lib/exchanges"
-import { threadToMessages } from "@/lib/foreign-thread"
-import { foldTools } from "@/lib/tools"
+import { type AcpPlanEntry } from "@/lib/acp-blocks"
 import { acp, acpStore, activeAcp, activeLiveAcp, useAcp } from "@/state/acp"
-import { threads, useThreads } from "@/state/threads"
-import type { AcpPermissionRequest } from "@/lib/types"
+import type { LivePermissionRequest } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import {
   CheckCheckIcon,
@@ -93,7 +91,9 @@ export function AcpPanel() {
         </button>
       </div>
 
+      {session.connection === "disconnected" ? <CaptureNotice /> : null}
       <Blocks />
+      <RetainedRequests />
       <Permission />
     </div>
   )
@@ -118,12 +118,12 @@ function LiveStatus() {
       : sending
         ? "Starting turn…"
         : session.status === "running"
-        ? queued.length > 0
-          ? `Working · ${queued.length} queued`
-          : "Working"
-        : session.status === "failed"
-          ? "Failed"
-          : "Ready"
+          ? queued.length > 0
+            ? `Working · ${queued.length} queued`
+            : "Working"
+          : session.status === "failed"
+            ? "Failed"
+            : "Ready"
   return (
     <span
       className={cn(
@@ -162,53 +162,23 @@ function ModePicker() {
 
 function Blocks({ starting = false }: { starting?: boolean }) {
   const session = useAcp((state) => activeLiveAcp(state)?.session ?? null)
-  const blocks = useAcp((state) => activeAcp(state)?.blocks ?? EMPTY_QUEUE)
-  const threadPath = useAcp((state) => activeAcp(state)?.threadPath)
-  const composerHarness = useThreads((state) => state.composerHarness)
-  const viewed = useThreads((state) => state.viewing)
-  const history = viewed?.ref.path === threadPath ? viewed : null
-  const running = starting || session?.status === "running"
-  const historyMessages = useMemo(
-    () =>
-      history
-        ? threadToMessages(
-            history.entries.filter(
-              (entry) => entry.kind !== "user" || entry.echo !== true
-            ),
-            history.pageStart,
-            history.ref.harness
-          )
-        : [],
-    [history]
-  )
-  const historyExchanges = useMemo(
-    () => toExchanges(foldTools(historyMessages)),
-    [historyMessages]
-  )
-  const conversation = useMemo(
-    () =>
-      acpBlocksToMessages(blocks, running, session?.harness ?? composerHarness),
-    [blocks, composerHarness, running, session?.harness]
-  )
-  const liveExchanges = useMemo(
-    () => toExchanges(foldTools(conversation.messages)),
-    [conversation.messages]
-  )
-  const exchanges = useMemo(
-    () => [...historyExchanges, ...liveExchanges],
-    [historyExchanges, liveExchanges]
-  )
+  const projection = useAcp((state) => activeAcp(state)?.projection)
+  const history = useAcp((state) => activeAcp(state)?.base)
+  const running =
+    starting || session?.status === "starting" || session?.status === "running"
+  const exchanges = projection?.exchanges ?? EMPTY_QUEUE
+  const conversation = { plan: projection?.plan ?? EMPTY_QUEUE }
   const lastExchangeId = exchanges.at(-1)?.id
 
   return (
     <ConversationTimeline
+      source={{ liveId: session?.id }}
       identity={`${history?.ref.path ?? "new"}:${session?.id ?? "starting"}`}
+      hasEarlier={history?.hasEarlier}
+      onLoadEarlier={session ? () => loadEarlierLive(session.id) : undefined}
       exchanges={exchanges}
       streamingId={running ? lastExchangeId : undefined}
       failedId={session?.status === "failed" ? lastExchangeId : undefined}
-      hasEarlier={history?.hasEarlier}
-      loadingEarlier={history?.loadingEarlier}
-      onLoadEarlier={history ? () => threads.loadEarlier() : undefined}
       empty={
         <div className="mx-auto flex w-full max-w-content flex-col gap-4 px-6 py-6">
           <p className="pt-8 text-center text-ui leading-relaxed text-faint">
@@ -256,12 +226,16 @@ function AcpActivity({
 }
 
 function Plan({ entries }: { entries: AcpPlanEntry[] }) {
-  const completed = entries.filter((entry) => entry.status === "completed").length
+  const completed = entries.filter(
+    (entry) => entry.status === "completed"
+  ).length
   return (
     <div className="contain-turn rounded-md border border-hairline/60 px-2.5 py-1.5">
       <p className="flex items-center justify-between gap-3 pb-1 text-label text-faint">
         <span className="font-medium">Plan</span>
-        <span className="tabular">{completed}/{entries.length} complete</span>
+        <span className="tabular">
+          {completed}/{entries.length} complete
+        </span>
       </p>
       <ul aria-label="Agent plan">
         {entries.map((entry, index) => {
@@ -286,9 +260,15 @@ function Plan({ entries }: { entries: AcpPlanEntry[] }) {
               {entry.status === "completed" ? (
                 <CheckIcon aria-hidden className="size-3 text-positive/80" />
               ) : entry.status === "in_progress" ? (
-                <Loader2Icon aria-hidden className="size-3 animate-spin text-faint" />
+                <Loader2Icon
+                  aria-hidden
+                  className="size-3 animate-spin text-faint"
+                />
               ) : failed ? (
-                <TriangleAlertIcon aria-hidden className="size-3 text-negative" />
+                <TriangleAlertIcon
+                  aria-hidden
+                  className="size-3 text-negative"
+                />
               ) : canceled ? (
                 <XIcon aria-hidden className="size-3 text-faint" />
               ) : (
@@ -368,7 +348,7 @@ function Permission() {
 function QuestionPermission({
   permission,
 }: {
-  permission: AcpPermissionRequest
+  permission: LivePermissionRequest
 }) {
   const questions = permission.questions ?? []
   const [answers, setAnswers] = useState<Record<string, string[]>>(() =>
@@ -491,6 +471,66 @@ function QuestionPermission({
           Send answers
         </button>
       </div>
+    </div>
+  )
+}
+
+function CaptureNotice() {
+  const path = useAcp((state) => activeAcp(state)?.threadPath)
+  return (
+    <div className="border-b border-hairline px-3.5 py-2 text-ui text-muted-foreground">
+      This is a saved Mako capture. The provider’s history may have changed
+      since this connection ended.
+      {path ? (
+        <button
+          className="pressable ml-2 underline"
+          onClick={() => {
+            const ref = threadsStore
+              .get()
+              .threads.find((item) => item.path === path)
+            if (ref) void threads.view(ref)
+          }}
+        >
+          View current provider history
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
+function RetainedRequests() {
+  const requests = useAcp((state) => activeAcp(state)?.requests ?? EMPTY_QUEUE)
+  const retained = requests.filter(
+    (request) =>
+      request.status === "queued" ||
+      request.status === "uncertain" ||
+      request.status === "failed" ||
+      request.status === "interrupted"
+  )
+  if (!retained.length) return null
+  return (
+    <div className="max-h-48 shrink-0 overflow-y-auto border-t border-hairline p-3 text-ui">
+      {retained.map((request) => (
+        <div key={request.id} className="contain-turn mb-2">
+          <p className="text-muted-foreground">
+            {request.status === "queued"
+              ? "Queued message"
+              : request.status === "uncertain"
+                ? "Completion not confirmed"
+                : request.status === "interrupted"
+                  ? "Message interrupted"
+                  : "Message failed"}
+            : {request.error}
+          </p>
+          <p className="line-clamp-3 whitespace-pre-wrap">{request.text}</p>
+          <button
+            className="pressable underline"
+            onClick={() => void navigator.clipboard.writeText(request.text)}
+          >
+            Copy message
+          </button>
+        </div>
+      ))}
     </div>
   )
 }

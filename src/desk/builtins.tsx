@@ -21,6 +21,7 @@ import {
   EditBody,
   SkillBody,
   SubagentBody,
+  WaitBody,
   WriteBody,
 } from "@/components/transcript/tool-views"
 import {
@@ -102,7 +103,8 @@ export function installBuiltins(): () => void {
           return edits.length > 1 ? `${path} · ${edits.length} edits` : path
         },
         body: EditBody,
-        openPath: (call: ToolCall) => primaryArgument(call.arguments) || undefined,
+        openPath: (call: ToolCall) =>
+          primaryArgument(call.arguments) || undefined,
       })
     ),
     ...["write", "Write"].map((name) =>
@@ -110,7 +112,8 @@ export function installBuiltins(): () => void {
         summary: (call: ToolCall) =>
           `${primaryArgument(call.arguments)} · ${countLines(argAt(call.arguments, "content"))} lines`,
         body: WriteBody,
-        openPath: (call: ToolCall) => primaryArgument(call.arguments) || undefined,
+        openPath: (call: ToolCall) =>
+          primaryArgument(call.arguments) || undefined,
       })
     ),
     ...["read", "Read", "ReadFile", "read_file"].map((name) =>
@@ -119,7 +122,8 @@ export function installBuiltins(): () => void {
           const path = primaryArgument(call.arguments)
           return path ? fileName(path) : ""
         },
-        openPath: (call: ToolCall) => primaryArgument(call.arguments) || undefined,
+        openPath: (call: ToolCall) =>
+          primaryArgument(call.arguments) || undefined,
       })
     ),
     ...["grep", "Grep", "rg", "find", "Glob", "glob"].map((name) =>
@@ -153,12 +157,7 @@ export function installBuiltins(): () => void {
         body: SkillBody,
       })
     ),
-    ...[
-      "TaskCreate",
-      "TaskUpdate",
-      "TodoWrite",
-      "CreatePlan",
-    ].map((name) =>
+    ...["TaskCreate", "TaskUpdate", "TodoWrite", "CreatePlan"].map((name) =>
       registerToolView(name, {
         summary: (call: ToolCall) =>
           argAt(call.arguments, "subject") ??
@@ -175,6 +174,13 @@ export function installBuiltins(): () => void {
           "Question",
       })
     ),
+    registerToolView("wait", {
+      summary: (call: ToolCall) => {
+        const cell = argAt(call.arguments, "cell_id")
+        return cell ? `Command ${cell}` : "Command output"
+      },
+      body: WaitBody,
+    }),
     ...["ScheduleWakeup", "AwaitShell", "write_stdin", "ToolSearch"].map(
       (name) =>
         registerToolView(name, {

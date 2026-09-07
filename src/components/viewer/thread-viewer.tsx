@@ -11,6 +11,7 @@ import {
   type ThreadStatus,
 } from "@/state/threads"
 import type { Exchange as ExchangeData } from "@/lib/exchanges"
+import type { ThreadRef } from "@/lib/types"
 import type { ViewedThread } from "@/state/thread-state"
 import { pendingThreadInput, threadToMessages } from "@/lib/foreign-thread"
 import {
@@ -182,32 +183,64 @@ export function ThreadViewer() {
     return () => window.removeEventListener("keydown", onKey)
   }, [busy, thread])
 
-  if (busy) {
-    return (
-      <div className="flex min-h-0 flex-1 items-center justify-center bg-surface">
-        <div className="flex items-center gap-2 text-ui text-faint">
-          {opening ? (
-            <HarnessIcon harness={opening.harness} className="size-3.5" />
-          ) : null}
-          <span>
-            Opening {opening?.title ?? (opening ? harnessLabel(opening.harness) : "conversation")}…
-          </span>
-        </div>
-      </div>
-    )
-  }
+  if (busy && !thread) return <ThreadLoadingShell opening={opening} />
   if (!thread) return null
 
   return (
-    <div className="animate-enter flex min-h-0 flex-1 flex-col bg-surface">
+    <div
+      aria-busy={busy || undefined}
+      className="animate-enter flex min-h-0 flex-1 flex-col bg-surface"
+    >
       <SessionBar />
       <Conversation key={thread.ref.path} />
     </div>
   )
 }
 
+function ThreadLoadingShell({ opening }: { opening: ThreadRef | null }) {
+  return (
+    <div aria-busy="true" className="flex min-h-0 flex-1 flex-col bg-surface">
+      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-hairline px-3.5">
+        {opening ? (
+          <HarnessIcon harness={opening.harness} className="size-3.5" />
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-ui font-medium text-foreground/90">
+            {opening?.title ?? "Conversation"}
+          </p>
+          <p role="status" className="text-label text-faint">
+            Loading messages…
+          </p>
+        </div>
+        <IconAction
+          label="Close session"
+          side="bottom"
+          size="xs"
+          onClick={() => threads.closeViewer()}
+        >
+          <XIcon />
+        </IconAction>
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="mx-auto flex h-full w-full max-w-content flex-col justify-end gap-8 px-6 py-8">
+          <div className="ml-auto flex w-2/3 flex-col items-end gap-2">
+            <span className="skeleton h-3 w-3/4 rounded" />
+            <span className="skeleton h-3 w-1/2 rounded" />
+          </div>
+          <div className="flex w-5/6 flex-col gap-2">
+            <span className="skeleton h-3 w-full rounded" />
+            <span className="skeleton h-3 w-11/12 rounded" />
+            <span className="skeleton h-3 w-2/3 rounded" />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SessionBar() {
   const thread = useThreads((state) => state.viewing)
+  const syncing = useThreads((state) => state.viewingBusy)
   const sessionStatus = useThreads((state) =>
     thread ? threadStatus(thread.ref, state) : null
   )
@@ -232,6 +265,11 @@ function SessionBar() {
           {status}
         </p>
       </div>
+      {syncing ? (
+        <span role="status" className="shrink-0 text-label text-faint">
+          Syncing messages…
+        </span>
+      ) : null}
       <Action
         size="xs"
         aria-label={`Continue with ${harnessLabel(thread.ref.harness)}`}
@@ -352,6 +390,7 @@ function Conversation() {
   const lastExchangeId = exchanges.at(-1)?.id
   return (
     <ConversationTimeline
+      source={{ threadPath: thread.ref.path }}
       identity={thread.ref.path}
       exchanges={exchanges}
       streamingId={live ? lastExchangeId : undefined}
