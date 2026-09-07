@@ -41,7 +41,6 @@ interface SessionRow {
   startedAt?: number
   updatedAt?: number
   archived: boolean
-  active: boolean
   revision: number
 }
 
@@ -114,7 +113,6 @@ export class OpenCodeProvider implements SessionProvider {
                 path: sessionPath(path, row.id),
                 bytes: row.revision,
                 mtimeMs: row.updatedAt ?? info.mtimeMs,
-                locked: row.active,
               }))
             )
           }
@@ -132,7 +130,6 @@ export class OpenCodeProvider implements SessionProvider {
                 path: sessionPath(path, row.id, true),
                 bytes: row.revision,
                 mtimeMs: row.updatedAt ?? info.mtimeMs,
-                locked: row.active,
               }))
             )
           }
@@ -343,8 +340,7 @@ function sessionRows(
       sessionQuery(
         kind,
         false,
-        sessionTable,
-        hasTable(database, "session_pending")
+        sessionTable
       )
     )
     .all(limit)
@@ -364,8 +360,7 @@ function sessionRow(
       sessionQuery(
         kind,
         true,
-        sessionTable,
-        hasTable(database, "session_pending")
+        sessionTable
       )
     )
     .get(id)
@@ -375,8 +370,7 @@ function sessionRow(
 function sessionQuery(
   kind: StoreKind,
   one: boolean,
-  sessionTable = "session",
-  hasPending = false
+  sessionTable = "session"
 ): string {
   const source = kind === "current" ? "session_message" : "message"
   const partRevision =
@@ -388,27 +382,6 @@ function sessionQuery(
       ? " + (SELECT COUNT(*) FROM part p3 WHERE p3.session_id = s.id)"
       : ""
   const model = kind === "current" ? ", s.model AS model" : ""
-  const active =
-    kind === "current"
-      ? `(SELECT CASE WHEN m3.type = 'assistant'
-                   AND json_extract(m3.data, '$.finish') IS NULL
-                   AND json_extract(m3.data, '$.error') IS NULL
-                  THEN 1 ELSE 0 END
-           FROM session_message m3 WHERE m3.session_id = s.id
-           ORDER BY m3.seq DESC LIMIT 1)`
-      : `(SELECT CASE WHEN json_extract(m3.data, '$.role') = 'assistant'
-                   AND json_extract(m3.data, '$.time.completed') IS NULL
-                   AND json_extract(m3.data, '$.finish') IS NULL
-                   AND json_extract(m3.data, '$.error') IS NULL
-                  THEN 1 ELSE 0 END
-           FROM message m3 WHERE m3.session_id = s.id
-           ORDER BY m3.time_created DESC, m3.id DESC LIMIT 1)`
-  const pending = hasPending
-    ? `CASE WHEN EXISTS (
-               SELECT 1 FROM session_pending pending
-               WHERE pending.session_id = s.id
-             ) THEN 1 ELSE 0 END`
-    : "0"
   const where = one
     ? "s.id = ?"
     : sessionTable === "session_v2"
@@ -421,8 +394,6 @@ function sessionQuery(
                  s.time_created AS time_created, s.time_updated AS time_updated,
                  s.time_archived AS time_archived, p.worktree AS project_worktree,
                  p.name AS project_name${model},
-                 COALESCE(${active}, 0) AS active,
-                 ${pending} AS pending,
                  MAX(s.time_updated,
                      COALESCE((SELECT MAX(m.time_updated) FROM ${source} m WHERE m.session_id = s.id), 0)
                      ${partRevision}) AS revision_time,
@@ -447,10 +418,6 @@ function parseSessionRow(fields: SqliteFields): SessionRow | null {
     updatedAt,
     archived:
       fields.time_archived !== null && fields.time_archived !== undefined,
-    active:
-      sqliteNumber(fields.pending) === 1 ||
-      (sqliteNumber(fields.active) === 1 &&
-        Date.now() - revisionTime < 5 * 60_000),
     revision: revisionOf(
       revisionTime,
       sqliteNumber(fields.revision_count) ?? 0
@@ -481,7 +448,6 @@ function refFrom(
     updatedAt: isoOf(row.updatedAt),
     bytes: revision,
     archived: row.archived,
-    active: row.active,
   }
   return ref
 }
