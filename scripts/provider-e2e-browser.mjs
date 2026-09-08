@@ -4,7 +4,13 @@ import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { imageFixture } from "./provider-e2e-fixtures.mjs"
 
-export async function runBrowserFixture(owner, root, providers) {
+export async function runBrowserFixture(
+  owner,
+  root,
+  providers,
+  browserOperations,
+  models
+) {
   const proof = randomUUID()
   const submissions = []
   const image = imageFixture().toString("base64")
@@ -83,7 +89,9 @@ export async function runBrowserFixture(owner, root, providers) {
               (tool) =>
                 permission.title ===
                   `mako-browser-use: Allow the mako-browser-use MCP server to run tool "${tool}"?` ||
-                permission.title === `mcp__mako-browser-use__${tool}`
+                permission.title === `mcp__mako-browser-use__${tool}` ||
+                permission.title === `mako-browser-use: ${tool}` ||
+                permission.title === `mako-browser-use-${tool}: ${tool}`
             )
             if (!once || !permitted)
               throw new Error(
@@ -105,6 +113,7 @@ export async function runBrowserFixture(owner, root, providers) {
         await owner.start(provider, cwd, {
           conversationId: id,
           title: "Mako model browser fixture",
+          tuning: models[provider] ? { model: models[provider] } : undefined,
         })
         await wait((snapshot) => snapshot?.session.status === "ready")
         owner.submit(
@@ -138,8 +147,14 @@ export async function runBrowserFixture(owner, root, providers) {
           throw new Error(
             `Real browser form was not submitted exactly once with trusted input and correct values: ${JSON.stringify(records)}`
           )
-        if (!JSON.stringify(calls).includes("mako_browser_screenshot"))
-          throw new Error("Model did not request a browser screenshot")
+        const operations = browserOperations
+          .filter((operation) => operation.conversationId === id)
+          .map((operation) => operation.action)
+        if (!operations.includes("screenshot"))
+          throw new Error(
+            "No browser screenshot completed for this conversation"
+          )
+        result.operations = operations
         if (!reply.includes(proof))
           throw new Error(
             "Model response did not include the observed fixture value"

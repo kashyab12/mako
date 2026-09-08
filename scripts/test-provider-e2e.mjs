@@ -64,6 +64,13 @@ async function runElectron() {
   const { startControlService } =
     await import("../dist-electron/control-service.js")
   const browser = new BrowserService()
+  const browserOperations = []
+  const executeBrowser = browser.execute.bind(browser)
+  browser.execute = async (conversationId, command, ...args) => {
+    const value = await executeBrowser(conversationId, command, ...args)
+    browserOperations.push({ conversationId, action: command.action })
+    return value
+  }
   let control
   let mcp
   const dependencies = {
@@ -266,7 +273,9 @@ async function runElectron() {
         ...(await runBrowserFixture(
           owner,
           root,
-          drivers.map((driver) => driver.provider)
+          drivers.map((driver) => driver.provider),
+          browserOperations,
+          models
         ))
       )
       await writeFile(

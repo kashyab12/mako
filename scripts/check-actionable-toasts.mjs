@@ -1,15 +1,11 @@
-import { execFileSync } from "node:child_process"
-import { readFileSync, writeFileSync } from "node:fs"
+import { readFileSync, readdirSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
 import ts from "typescript"
 
 const write = process.argv.includes("--write")
-const paths = execFileSync(
-  "rg",
-  ["--files", "src", "-g", "*.ts", "-g", "*.tsx"],
-  { encoding: "utf8" }
-)
-  .trim()
-  .split("\n")
+const paths = readdirSync("src", { recursive: true, withFileTypes: true })
+  .filter((entry) => entry.isFile() && /\.tsx?$/.test(entry.name))
+  .map((entry) => join(entry.parentPath, entry.name))
 let violations = 0
 for (const path of paths) {
   let text = readFileSync(path, "utf8")

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { mock } from "node:test"
 import { BrowserService } from "../electron/browser-service.js"
 import { ControlPreviews } from "../electron/control-previews.js"
 import {
@@ -92,8 +93,21 @@ try {
     null,
     "Native sources are task scoped"
   )
+  const now = Date.now()
+  const clock = mock.method(Date, "now", () => now + 6_000)
+  assert.equal(
+    previews.read("task", true)?.window,
+    undefined,
+    "Idle native previews release the video source"
+  )
+  clock.mock.restore()
   authorized = false
   assert.throws(() => previews.nativeWindow("task"), /Binding closed/)
+  assert.equal(
+    previews.read("task", true),
+    null,
+    "Revoked tasks remove retained previews and stop live video"
+  )
   for (let index = 0; index < 65; index++)
     previews.observe({ ...activity, conversationId: `task-${index}` })
   assert.equal(previews.read("task", false), null, "Retention is bounded")
