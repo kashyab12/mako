@@ -77,7 +77,12 @@ export function acpBlocksToMessages(
         const canceled = /cancel/i.test(block.status)
         const finished =
           failed || canceled || /complete|done/i.test(block.status)
-        if (finished || block.output !== undefined) {
+        if (
+          finished ||
+          block.output !== undefined ||
+          block.attachments?.length ||
+          block.details?.length
+        ) {
           append(
             {
               type: "toolResult",
@@ -88,6 +93,7 @@ export function acpBlocksToMessages(
               isCanceled: canceled,
               streaming: !finished,
               attachments: block.attachments,
+              details: block.details,
             },
             index
           )
@@ -96,6 +102,16 @@ export function acpBlocksToMessages(
       }
       case "plan":
         plan = block.entries
+        append(
+          {
+            type: "toolResult",
+            id: `plan-${index}`,
+            name: "Plan",
+            text: "",
+            details: [{ type: "plan", entries: block.entries }],
+          },
+          index
+        )
         break
     }
   }

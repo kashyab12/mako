@@ -7,17 +7,14 @@ import { HarnessIcon } from "@/components/ui/provider-icon"
 import { SearchSelect } from "@/components/ui/search-select"
 import { harnessLabel } from "@/components/rail/harness-meta"
 import { ConversationTimeline } from "@/components/transcript/conversation-timeline"
-import { type AcpPlanEntry } from "@/lib/acp-blocks"
 import { acp, acpStore, activeAcp, activeLiveAcp, useAcp } from "@/state/acp"
 import type { LivePermissionRequest } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import {
   CheckCheckIcon,
   CheckIcon,
-  CircleIcon,
   Loader2Icon,
   ShieldQuestionIcon,
-  TriangleAlertIcon,
   XIcon,
 } from "lucide-react"
 
@@ -171,7 +168,6 @@ function Blocks({ starting = false }: { starting?: boolean }) {
   const running =
     starting || session?.status === "starting" || session?.status === "running"
   const exchanges = projection?.exchanges ?? EMPTY_QUEUE
-  const conversation = { plan: projection?.plan ?? EMPTY_QUEUE }
   const lastExchangeId = exchanges.at(-1)?.id
 
   return (
@@ -189,109 +185,27 @@ function Blocks({ starting = false }: { starting?: boolean }) {
             The session is loaded. Anything you send continues it — same
             conversation, same working directory.
           </p>
-          <AcpActivity
-            plan={conversation.plan}
-            running={running}
-            starting={starting}
-          />
+          <AcpActivity running={running} starting={starting} />
         </div>
       }
-      footer={
-        <AcpActivity
-          plan={conversation.plan}
-          running={running}
-          starting={starting}
-        />
-      }
+      footer={<AcpActivity running={running} starting={starting} />}
     />
   )
 }
 
 function AcpActivity({
-  plan,
   running,
   starting = false,
 }: {
-  plan: AcpPlanEntry[]
   running: boolean
   starting?: boolean
 }) {
-  return (
-    <>
-      {plan.length > 0 ? <Plan entries={plan} /> : null}
-      {running ? (
-        <div className="flex items-center gap-1.5 py-2 text-label text-faint">
-          <Loader2Icon className="size-3 animate-spin" />
-          {starting ? "starting the agent" : "working"}
-        </div>
-      ) : null}
-    </>
-  )
-}
-
-function Plan({ entries }: { entries: AcpPlanEntry[] }) {
-  const completed = entries.filter(
-    (entry) => entry.status === "completed"
-  ).length
-  return (
-    <div className="contain-turn rounded-md border border-hairline/60 px-2.5 py-1.5">
-      <p className="flex items-center justify-between gap-3 pb-1 text-label text-faint">
-        <span className="font-medium">Plan</span>
-        <span className="tabular">
-          {completed}/{entries.length} complete
-        </span>
-      </p>
-      <ul aria-label="Agent plan">
-        {entries.map((entry, index) => {
-          const failed = entry.status === "failed"
-          const canceled = /cancel/i.test(entry.status)
-          const status =
-            entry.status === "completed"
-              ? "completed"
-              : entry.status === "in_progress"
-                ? "in progress"
-                : failed
-                  ? "failed"
-                  : canceled
-                    ? "canceled"
-                    : "not started"
-          return (
-            <li
-              key={`${entry.content}-${index}`}
-              aria-label={`${status}: ${entry.content}`}
-              className="flex items-center gap-1.5 py-px text-ui text-muted-foreground"
-            >
-              {entry.status === "completed" ? (
-                <CheckIcon aria-hidden className="size-3 text-positive/80" />
-              ) : entry.status === "in_progress" ? (
-                <Loader2Icon
-                  aria-hidden
-                  className="size-3 animate-spin text-faint"
-                />
-              ) : failed ? (
-                <TriangleAlertIcon
-                  aria-hidden
-                  className="size-3 text-negative"
-                />
-              ) : canceled ? (
-                <XIcon aria-hidden className="size-3 text-faint" />
-              ) : (
-                <CircleIcon aria-hidden className="size-2.5 text-faint/60" />
-              )}
-              <span
-                className={cn(
-                  entry.status === "completed" && "text-faint line-through",
-                  failed && "text-negative"
-                )}
-              >
-                {entry.content}
-              </span>
-            </li>
-          )
-        })}
-      </ul>
+  return running ? (
+    <div className="flex items-center gap-1.5 py-2 text-label text-faint">
+      <Loader2Icon className="size-3 animate-spin" />
+      {starting ? "starting the agent" : "working"}
     </div>
-  )
+  ) : null
 }
 
 /**
@@ -483,7 +397,8 @@ function CaptureNotice() {
   const path = useAcp((state) => activeAcp(state)?.threadPath)
   return (
     <div className="border-b border-hairline px-3.5 py-2 text-ui text-muted-foreground">
-      This conversation is saved. Sending a message starts a provider connection from this captured history.
+      This conversation is saved. Sending a message starts a provider connection
+      from this captured history.
       {path ? (
         <button
           className="pressable ml-2 underline"

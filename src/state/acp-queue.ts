@@ -1,3 +1,4 @@
+import { liveSettingsTarget, settingsForSend } from "@/state/composer-settings"
 import { getMako, hasBridge } from "@/lib/bridge"
 import type { PromptAttachment } from "@/lib/types"
 import {
@@ -31,7 +32,7 @@ export async function sendTo(
     updatedAt: Date.now(),
   }))
   try {
-    await getMako().livePrompt(id, requestId, text, attachments)
+    await getMako().livePrompt(id, requestId, text, attachments, await settingsForSend(liveSettingsTarget(current)))
     return true
   } catch (error) {
     const snapshot = await getMako()

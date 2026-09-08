@@ -6,6 +6,7 @@ import type {
   SessionMeta,
   SessionSummary,
 } from "@/lib/types"
+import type { AttachmentContent, ToolDetail } from "@mako/sessions"
 import type { AttachmentInput } from "@/lib/attachments"
 import type { Checkpoint } from "@/lib/thread"
 
@@ -92,6 +93,8 @@ export interface ToolCall {
   name: string
   arguments?: unknown
   result?: string
+  attachments?: AttachmentContent[]
+  details?: ToolDetail[]
   isError?: boolean
   isCanceled?: boolean
   pending: boolean

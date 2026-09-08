@@ -348,7 +348,7 @@ export function Composer() {
         // session (same harness or any other) from the archived history,
         // and the message goes out as its next turn.
         ok =
-          harness === viewingRef.harness && !viewingRef.archived
+          harness === viewingRef.harness && !viewingRef.archived && !viewingRef.resumeUnavailable
             ? mode
               ? await threads.interruptAndSend(viewingRef, full, acpAttachments)
               : await threads.reply(viewingRef, full, acpAttachments)
@@ -528,6 +528,7 @@ export function Composer() {
     running: turnRunning && hostConnected && !opening,
     hasContent,
   })
+  const viewingResumeUnavailable = useThreads((state) => state.viewing?.ref.resumeUnavailable)
   const viewingArchived = useThreads((state) =>
     Boolean(state.viewing?.ref.archived)
   )
@@ -543,6 +544,8 @@ export function Composer() {
       : routedHarness
         ? newHarness !== routedHarness
           ? `Reply — moves this conversation to ${harnessTitle(newHarness)}`
+          : viewingResumeUnavailable
+            ? `Reply — continues in a new ${harnessTitle(routedHarness)} session`
           : viewingArchived
             ? `Reply — revives this archived conversation in ${harnessTitle(routedHarness)}`
             : viewingRunning

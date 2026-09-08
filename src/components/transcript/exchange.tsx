@@ -1,6 +1,7 @@
 import { ChangingLabel } from "@/components/ui/changing-label"
 import { useCopy } from "@/components/ui/use-copy"
 import { acp, useAcp, activeLiveAcp } from "@/state/acp"
+import { PlanSummary } from "./tool-details"
 import { TranscriptAttachment } from "./attachment"
 import { memo, useMemo, useState } from "react"
 import { Prose } from "@/components/transcript/markdown"
@@ -72,6 +73,7 @@ export const Exchange = memo(function Exchange({
     () => responseSections(exchange.response),
     [exchange.response]
   )
+  const plan = exchange.response.flatMap((message) => message.blocks.flatMap((block) => block.type === "toolResult" ? (block.details ?? []).filter((detail) => detail.type === "plan") : [])).at(-1)
   const provider = exchange.response.find(
     (message) => message.provider && HARNESS_LABEL[message.provider]
   )?.provider
@@ -105,6 +107,7 @@ export const Exchange = memo(function Exchange({
         </div>
       ) : null}
 
+      {plan ? <div className="mt-3"><PlanSummary plan={plan} /></div> : null}
       {!streaming && exchange.response.length > 0 ? (
         <Footer exchange={exchange} />
       ) : null}
@@ -391,7 +394,9 @@ function WorkSummary({
           open && "rotate-90"
         )}
       />
-      <span className="truncate"><ChangingLabel text={pieces.join(" · ")} /></span>
+      <span className="truncate">
+        <ChangingLabel text={pieces.join(" · ")} />
+      </span>
     </button>
   )
 }
@@ -432,11 +437,7 @@ function Response({
   }, [message.blocks])
 
   const attachments = message.blocks.flatMap((block) =>
-    block.type === "attachment"
-      ? [block]
-      : block.type === "toolResult"
-        ? (block.attachments ?? [])
-        : []
+    block.type === "attachment" ? [block] : []
   )
   const blank =
     !attachments.length && !thinking && !tools.length && !text && !message.error
@@ -516,9 +517,9 @@ function Thinking({ text, live }: { text: string; live: boolean }) {
         ) : null}
       </button>
       {open ? (
-        <p className="border-t border-hairline px-2.5 py-2 text-ui leading-[1.65] whitespace-pre-wrap text-muted-foreground">
-          {text}
-        </p>
+        <div className="border-t border-hairline px-2.5 py-2 text-muted-foreground">
+          <Prose text={text} streaming={live} />
+        </div>
       ) : null}
     </div>
   )
@@ -568,7 +569,9 @@ function Footer({ exchange }: { exchange: ExchangeData }) {
           ) : (
             <CopyIcon className="size-3" />
           )}
-          <span role="status" className="min-w-20"><ChangingLabel text={copied ? "Copied answer" : "Copy answer"} /></span>
+          <span role="status" className="min-w-20">
+            <ChangingLabel text={copied ? "Copied answer" : "Copy answer"} />
+          </span>
         </button>
       ) : null}
       <ForkButton exchange={exchange} />
@@ -597,14 +600,22 @@ function ForkButton({ exchange }: { exchange: ExchangeData }) {
     const match = /^acp-user-(\d+)$/.exec(exchange.prompt?.id ?? "")
     const block = match ? live?.blocks[Number(match[1])] : undefined
     if (block?.type !== "user" || !block.requestId) return null
-    return live?.requests?.find((request) => request.id === block.requestId)?.status === "completed" ? block.requestId : null
+    return live?.requests?.find((request) => request.id === block.requestId)
+      ?.status === "completed"
+      ? block.requestId
+      : null
   })
-  if (liveRequestId) return (
-    <button type="button" title="Create an idle fork after this answer" onClick={() => void acp.fork(liveRequestId)}
-      className="pressable flex items-center gap-1 rounded px-1 hover:text-foreground">
-      <GitForkIcon className="size-3" /> Fork
-    </button>
-  )
+  if (liveRequestId)
+    return (
+      <button
+        type="button"
+        title="Create an idle fork after this answer"
+        onClick={() => void acp.fork(liveRequestId)}
+        className="pressable flex items-center gap-1 rounded px-1 hover:text-foreground"
+      >
+        <GitForkIcon className="size-3" /> Fork
+      </button>
+    )
   const at = last ? /^foreign-entry-(\d+)$/.exec(last.id) : null
   const entryIndex = at ? Number(at[1]) : null
   if (!viewing && nativeEntry) {

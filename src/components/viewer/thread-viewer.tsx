@@ -280,7 +280,12 @@ function SessionBar() {
   const provider = harnessLabel(thread.ref.harness)
   const status = waitingForInput
     ? `Waiting for input in ${provider}`
-    : statusLabel(sessionStatus, thread.ref.archived === true, provider)
+    : statusLabel(
+        sessionStatus,
+        thread.ref.archived === true,
+        provider,
+        thread.ref.resumeUnavailable
+      )
   return (
     <div className="flex h-11 shrink-0 items-center gap-2 border-b border-hairline px-3.5">
       <HarnessIcon harness={thread.ref.harness} className="size-3.5" />
@@ -302,9 +307,10 @@ function SessionBar() {
         size="xs"
         aria-label={`Continue with ${harnessLabel(thread.ref.harness)}`}
         title={
-          openElsewhere
+          thread.ref.resumeUnavailable ??
+          (openElsewhere
             ? `Starts a new ${harnessLabel(thread.ref.harness)} session here; the session open elsewhere stays unchanged`
-            : `Resume with ${harnessLabel(thread.ref.harness)}`
+            : `Resume with ${harnessLabel(thread.ref.harness)}`)
         }
         onClick={() => {
           setComposerHarness(thread.ref.harness)
@@ -337,7 +343,8 @@ function SessionBar() {
 function statusLabel(
   status: ThreadStatus,
   archived: boolean,
-  provider: string
+  provider: string,
+  resumeUnavailable?: string
 ): string {
   switch (status.kind) {
     case "working":
@@ -355,7 +362,11 @@ function statusLabel(
     case "external-active":
       return `Live in ${provider}`
     case "idle":
-      return archived ? "Archived history" : "Ready to resume"
+      return archived
+        ? "Archived history"
+        : resumeUnavailable
+          ? "Read-only native history"
+          : "Ready to resume"
   }
 }
 
@@ -452,7 +463,9 @@ function Conversation() {
               className="animate-live size-3.5"
             />
             <span className="shimmer">
-              {harnessLabel(thread.ref.harness)} is working…
+              {status?.kind === "observed"
+                ? "Receiving session updates…"
+                : `${harnessLabel(thread.ref.harness)} is working…`}
             </span>
           </div>
         ) : null

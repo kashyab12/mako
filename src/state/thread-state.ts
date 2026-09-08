@@ -8,21 +8,6 @@ import type {
 } from "@/lib/types"
 import type { ThreadStatus } from "@/state/thread-status"
 
-export interface HarnessOptionValues {
-  [option: string]: string | boolean
-}
-
-export interface ComposerTuning {
-  model?: string
-  effort?: string
-  fast?: boolean
-  options?: HarnessOptionValues
-}
-
-interface ComposerTuningByHarness {
-  [harness: string]: ComposerTuning
-}
-
 interface WorkingThreadsByPath {
   [path: string]: Extract<ThreadStatus, { kind: "working" }>
 }
@@ -87,8 +72,6 @@ export interface ThreadsState {
   converting: { from: string; to: string; title?: string; done: boolean } | null
   /** The composer's chosen harness for new conversations. */
   composerHarness: string
-  /** Per-harness tuning chosen in the composer. */
-  composerTuning: ComposerTuningByHarness
   /** Prompts waiting for a thread's current run to end, per path. */
   nativeRequests: NativeRequest[]
 }

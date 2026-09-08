@@ -1,3 +1,4 @@
+import { acknowledgeComposerSettings } from "@/state/composer-settings"
 import { playFeedback } from "@/state/feedback"
 import { getMako, hasBridge } from "@/lib/bridge"
 import type { LiveBatch, LiveSnapshot, LiveSummary } from "@/lib/types"
@@ -42,6 +43,7 @@ export function applyLiveSnapshot(snapshot: LiveSnapshot): void {
     canceling: false,
   })
   const restored = acpStore.get().conversations[id]
+  if (restored?.kind === "live") acknowledgeComposerSettings(restored)
   if (restored?.kind === "live")
     syncThreadStatus(
       restored,
@@ -132,6 +134,7 @@ export function applyLiveBatch(batch: LiveBatch): void {
     )
   )) playFeedback("complete")
   const next = acpStore.get().conversations[batch.id]
+  if (next && batch.session?.settings) acknowledgeComposerSettings(next)
   if (
     next?.kind === "live" &&
     (batch.session || batch.permissions || batch.requests)

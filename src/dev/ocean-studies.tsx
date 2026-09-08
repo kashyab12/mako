@@ -1,82 +1,48 @@
 import { createRoot } from "react-dom/client"
-import { DitherField } from "@/components/ui/dither-field"
-import { setPref, usePrefs, type OceanTone } from "@/state/prefs"
+import { OceanScene } from "@/components/ui/ocean-scene"
+import { MakoMark } from "@/components/ui/mako-mark"
+import { setPref, usePrefs } from "@/state/prefs"
 import "../index.css"
 
-const treatments: { tone: OceanTone; title: string; description: string }[] = [
-  {
-    tone: "ink",
-    title: "Warm ink",
-    description: "The original engraving, with a warm moving wake.",
-  },
-  {
-    tone: "sea",
-    title: "Sea glass",
-    description: "Muted green water against the warm desk. My recommendation.",
-  },
-  {
-    tone: "moon",
-    title: "Moonlight",
-    description: "Cool blue-grey ink with a silver wake.",
-  },
-]
+// The selected treatment, not a gallery of alternatives.
+setPref("oceanTone", "ink")
 
 export function Studies() {
   const motion = usePrefs((prefs) => prefs.oceanMotion)
-  const selected = usePrefs((prefs) => prefs.oceanTone)
   return (
-    <div className="h-full overflow-y-auto bg-background p-6 text-ui text-foreground">
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-title font-semibold">Moving water</h1>
-          <p className="mt-1 text-muted-foreground">
-            Actual production artwork and motion. Focus a draft to pause its
-            wake.
-          </p>
-        </div>
+    <div className="flex h-full flex-col bg-background text-ui text-foreground">
+      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-6">
+        <span className="flex items-center gap-2 font-medium">
+          <MakoMark className="size-4" /> Mako
+        </span>
         <button
-          className="pressable rounded-md bg-fill-selected px-3 py-2"
+          type="button"
+          aria-pressed={motion}
           onClick={() => setPref("oceanMotion", !motion)}
+          className="pressable ocean-preview-controls rounded-md px-3 py-1.5 text-muted-foreground hover:bg-fill-hover hover:text-foreground focus-visible:outline focus-visible:outline-1"
         >
-          {motion ? "Pause motion" : "Play motion"}
+          {motion ? "Pause animation" : "Play animation"}
         </button>
-      </div>
-      <div className="grid gap-5 lg:grid-cols-3">
-        {treatments.map(({ tone, title, description }) => (
-          <section key={tone}>
-            <div className="ocean-preview">
-              <DitherField tone={tone} />
-              <div className="relative p-6">
-                <h2 className="text-title font-medium">
-                  What are we working on?
-                </h2>
-                <p className="mt-2 text-faint">Your next idea starts here.</p>
-              </div>
-              <textarea
-                rows={2}
-                aria-label={`${title} draft`}
-                placeholder="Type here to pause the water…"
-                className="absolute inset-x-4 bottom-4 resize-none rounded-lg border border-border bg-popover p-3 outline-none"
-              />
-            </div>
-            <div className="mt-4 flex items-center justify-between gap-3">
-              <h2 className="text-title font-medium">{title}</h2>
-              <button
-                className="pressable rounded-md bg-fill-selected px-3 py-1.5"
-                onClick={() => setPref("oceanTone", tone)}
-              >
-                {selected === tone ? "Selected" : "Use this color"}
-              </button>
-            </div>
-            <p className="mt-2 text-muted-foreground">{description}</p>
-          </section>
-        ))}
-      </div>
-      <p className="mt-6 text-faint">
-        Color and motion choices also appear in Mako’s Appearance settings. The
-        engraving stays fixed. Only the small wake moves; reduced motion and
-        hidden views pause it.
-      </p>
+      </header>
+      <main className="min-h-0 flex-1">
+        <div className="ocean-preview ocean-preview-selected flex flex-col items-center">
+          <div className="relative mt-20 px-6 text-center">
+            <MakoMark className="mx-auto mb-5 size-9 text-muted-foreground" />
+            <h1 className="text-welcome font-medium">What are we working on?</h1>
+            <p className="mt-3 text-muted-foreground">A little room for your next idea.</p>
+          </div>
+          <OceanScene tone="ink" animated={motion} />
+          <div className="relative mt-auto w-full max-w-content px-6 pb-6">
+            <textarea
+              rows={3}
+              aria-label="Draft"
+              placeholder="Start with a thought…"
+              className="ocean-preview-controls w-full resize-none rounded-xl border border-border bg-popover p-4 text-ui outline-none focus:border-ring"
+            />
+            <p className="mt-2 text-center text-label text-faint">The water rests while you write.</p>
+          </div>
+        </div>
+      </main>
     </div>
   )
 }

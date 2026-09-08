@@ -1,3 +1,4 @@
+import { ArtifactPreview } from "./artifact-preview"
 import { useEffect, useRef } from "react"
 import { File, Virtualizer } from "@pierre/diffs/react"
 import { FileIcon } from "lucide-react"
@@ -59,6 +60,18 @@ export function FileView({
   }, [file, line, mode])
 
   if (file.binary) return <MediaPreview file={file} />
+
+  if (mode === "preview" && file.artifactPreview)
+    return file.artifactPreview.kind === "html" ? (
+      <ArtifactPreview
+        html={file.artifactPreview.html}
+        name={file.path.split("/").at(-1) ?? "Artifact"}
+      />
+    ) : (
+      <p className="p-5 text-ui text-muted-foreground">
+        {file.artifactPreview.reason}
+      </p>
+    )
 
   if (mode === "preview" && isMarkdownPath(file.path)) {
     return (

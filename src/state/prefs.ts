@@ -1,3 +1,4 @@
+import { SessionSettingsSchema, SettingsPreferenceSchema, type SessionSettings, type SettingsPreference } from "@mako/sessions/settings"
 import { createHook, createStore } from "@/state/store"
 
 /**
@@ -6,7 +7,7 @@ import { createHook, createStore } from "@/state/store"
  */
 
 export type Theme = "dark" | "light" | "system"
-export type OceanTone = "ink" | "sea" | "moon"
+export type OceanTone = "ink" | "moon"
 
 /** What the left rail is showing: your conversations, or the project. */
 export type RailMode = "threads" | "agents" | "files"
@@ -62,18 +63,10 @@ export interface Prefs {
   agentHarnessFilter: string[]
   /** The composer's chosen agent, kept across launches. */
   composerHarness?: string
-  /** Per-harness model/effort/fast choices — Mako's own memory of them. */
-  composerTuning: Record<
-    string,
-    {
-      model?: string
-      effort?: string
-      fast?: boolean
-      options?: Record<string, string | boolean>
-    }
-  >
-  /** Providers whose initial settings have already been copied into Mako. */
-  providerTuningImported: string[]
+  /** Intentional new-thread defaults; migrated values retain their uncertain origin. */
+  providerSettings: Record<string, SettingsPreference>
+  /** Pending selections scoped to a workspace draft or a single conversation. */
+  settingsOverrides: Record<string, SessionSettings>
   keybindings: PreferenceStringMap
   terminalOptionAsMeta: "auto" | "on" | "off"
   /**
@@ -96,7 +89,7 @@ const KEY = "mako.prefs.v1"
 const LEGACY_KEY = "pi.prefs.v1"
 
 const defaults: Prefs = {
-  oceanTone: "sea",
+  oceanTone: "ink",
   oceanMotion: true,
   soundEnabled: false,
   soundVolume: 0.25,
@@ -123,8 +116,8 @@ const defaults: Prefs = {
   pinnedThreads: [],
   pinnedProjects: [],
   agentHarnessFilter: [],
-  composerTuning: {},
-  providerTuningImported: [],
+  providerSettings: {},
+  settingsOverrides: {},
   keybindings: {},
   terminalOptionAsMeta: "auto",
   titleOverrides: {},
@@ -222,19 +215,37 @@ function readTuningOptions(
   return options
 }
 
-function readComposerTuning(value: StoredValue): Prefs["composerTuning"] {
-  if (!isJsonObject(value)) return {}
-  const tuning: Prefs["composerTuning"] = {}
-  for (const [harness, entry] of Object.entries(value)) {
-    if (!isJsonObject(entry)) continue
-    tuning[harness] = {
-      model: readOptionalString(entry.model),
-      effort: readOptionalString(entry.effort),
-      fast: isJsonBoolean(entry.fast) ? entry.fast : undefined,
-      options: readTuningOptions(entry.options),
+function readProviderSettings(value: StoredValue, legacy: StoredValue): Prefs["providerSettings"] {
+  const result: Prefs["providerSettings"] = {}
+  if (isJsonObject(value)) {
+    for (const [key, entry] of Object.entries(value)) {
+      const parsed = SettingsPreferenceSchema.safeParse(entry)
+      if (parsed.success) result[key] = parsed.data
     }
+    return result
   }
-  return tuning
+  if (!isJsonObject(legacy)) return result
+  for (const [key, entry] of Object.entries(legacy)) {
+    if (!isJsonObject(entry)) continue
+    const options = readTuningOptions(entry.options) ?? {}
+    const effort = readOptionalString(entry.effort)
+    if (effort !== undefined && options.effort === undefined) options.effort = effort
+    if (isJsonBoolean(entry.fast) && options.fast === undefined && options.serviceTier === undefined) {
+      options.fast = entry.fast
+    }
+    result[key] = { source: "legacy", settings: { model: readOptionalString(entry.model), options } }
+  }
+  return result
+}
+
+function readSettingsOverrides(value: StoredValue): Prefs["settingsOverrides"] {
+  if (!isJsonObject(value)) return {}
+  const result: Prefs["settingsOverrides"] = {}
+  for (const [key, entry] of Object.entries(value)) {
+    const parsed = SessionSettingsSchema.safeParse(entry)
+    if (parsed.success) result[key] = parsed.data
+  }
+  return result
 }
 
 /** One-shot migration from the inspector-era width and open state. */
@@ -256,11 +267,7 @@ function readLastCompanion(value: JsonObject): string | null {
 function parsePrefs(value: JsonValue): Prefs | null {
   if (!isJsonObject(value)) return null
   const prefs: Prefs = {
-    oceanTone: readChoice(
-      value.oceanTone,
-      ["ink", "sea", "moon"],
-      defaults.oceanTone
-    ),
+    oceanTone: readChoice(value.oceanTone, ["ink", "moon"], defaults.oceanTone),
     oceanMotion: readBoolean(value.oceanMotion, defaults.oceanMotion),
     soundEnabled: readBoolean(value.soundEnabled, defaults.soundEnabled),
     soundVolume: Math.max(
@@ -318,11 +325,8 @@ function parsePrefs(value: JsonValue): Prefs | null {
       defaults.agentHarnessFilter
     ),
     composerHarness: readComposerHarness(value.composerHarness),
-    composerTuning: readComposerTuning(value.composerTuning),
-    providerTuningImported: readStringList(
-      value.providerTuningImported,
-      defaults.providerTuningImported
-    ),
+    providerSettings: readProviderSettings(value.providerSettings, value.composerTuning),
+    settingsOverrides: readSettingsOverrides(value.settingsOverrides),
     keybindings: readStringRecord(value.keybindings),
     terminalOptionAsMeta: readChoice(
       value.terminalOptionAsMeta,
@@ -346,14 +350,6 @@ function parsePrefs(value: JsonValue): Prefs | null {
   if (value.railScopeMigrated !== true) prefs.railScope = "all"
   if (value.transcriptReplayDefaultMigrated !== true) {
     prefs.conversionMode = "transcript"
-  }
-  if (value.openCodeProviderDefaultMigrated !== true) {
-    const composerTuning = { ...prefs.composerTuning }
-    delete composerTuning.opencode
-    prefs.composerTuning = composerTuning
-    prefs.providerTuningImported = prefs.providerTuningImported.filter(
-      (provider) => provider !== "opencode"
-    )
   }
   return prefs
 }

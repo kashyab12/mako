@@ -32,7 +32,9 @@ import {
 
 /** The highlighting runtime is heavy and nobody has opened a file yet. */
 const View = lazy(() =>
-  import("@/components/viewer/file-view").then((module) => ({ default: module.FileView }))
+  import("@/components/viewer/file-view").then((module) => ({
+    default: module.FileView,
+  }))
 )
 
 /**
@@ -82,7 +84,9 @@ export function FileViewer({
     if (!node) return
     const update = (width: number, height: number) => {
       setBounds((current) =>
-        current.width === width && current.height === height ? current : { width, height }
+        current.width === width && current.height === height
+          ? current
+          : { width, height }
       )
     }
     const initial = node.getBoundingClientRect()
@@ -91,7 +95,10 @@ export function FileViewer({
       const content = entries[0]?.contentRect
       if (!content) return
       if (resizeTimer.current) clearTimeout(resizeTimer.current)
-      resizeTimer.current = setTimeout(() => update(content.width, content.height), 80)
+      resizeTimer.current = setTimeout(
+        () => update(content.width, content.height),
+        80
+      )
     })
     observer.observe(node)
     return () => {
@@ -102,11 +109,17 @@ export function FileViewer({
 
   const hasSecondPane = panes.length === 2
   const horizontal = split === "right"
-  const secondMin = horizontal ? Math.min(240, bounds.width / 2) : Math.min(180, bounds.height / 2)
+  const secondMin = horizontal
+    ? Math.min(240, bounds.width / 2)
+    : Math.min(180, bounds.height / 2)
   const secondMax = horizontal
     ? Math.max(secondMin, bounds.width - secondMin - 1)
     : Math.max(secondMin, bounds.height - secondMin - 1)
-  const secondSize = clamp(horizontal ? paneWidth : paneHeight, secondMin, secondMax)
+  const secondSize = clamp(
+    horizontal ? paneWidth : paneHeight,
+    secondMin,
+    secondMax
+  )
 
   return (
     <div
@@ -150,7 +163,9 @@ export function FileViewer({
             />
             <div
               ref={secondary}
-              style={horizontal ? { width: secondSize } : { height: secondSize }}
+              style={
+                horizontal ? { width: secondSize } : { height: secondSize }
+              }
               className="flex min-h-0 min-w-0 shrink-0"
             >
               <FilePane
@@ -211,11 +226,16 @@ const FilePane = memo(function FilePane({
 })
 
 function DocumentView({ document }: { document: ViewerDocument }) {
-  const previewable = document.kind === "file" && hasRichPreview(document.path)
+  const previewable =
+    document.kind === "file" &&
+    (hasRichPreview(document.path) || Boolean(document.file?.artifactPreview))
   return (
     <>
       <div className="flex h-8 shrink-0 items-center gap-1 border-b border-hairline px-2">
-        <span className="min-w-0 flex-1 truncate px-1 font-mono text-label text-faint" title={document.path}>
+        <span
+          className="min-w-0 flex-1 truncate px-1 font-mono text-label text-faint"
+          title={document.path}
+        >
           {document.path}
         </span>
         {document.file?.truncated ? (
@@ -234,7 +254,11 @@ function DocumentView({ document }: { document: ViewerDocument }) {
               )
             }
           >
-            {document.renderMode === "preview" ? <Code2Icon /> : <BookOpenIcon />}
+            {document.renderMode === "preview" ? (
+              <Code2Icon />
+            ) : (
+              <BookOpenIcon />
+            )}
             <span>
               {document.renderMode === "preview" ? "Source" : "Preview"}
             </span>
@@ -247,7 +271,9 @@ function DocumentView({ document }: { document: ViewerDocument }) {
               size="xs"
               onClick={() => {
                 window.dispatchEvent(
-                  new CustomEvent("mako:insert", { detail: `@${document.path} ` })
+                  new CustomEvent("mako:insert", {
+                    detail: `@${document.path} `,
+                  })
                 )
               }}
             >
@@ -276,14 +302,23 @@ function DocumentView({ document }: { document: ViewerDocument }) {
         ) : null}
       </div>
 
-      <div className={cn("min-h-0 flex-1 overflow-auto", document.loading && "opacity-60")}>
+      <div
+        className={cn(
+          "min-h-0 flex-1 overflow-auto",
+          document.loading && "opacity-60"
+        )}
+      >
         {document.error ? (
           <p className="p-4 text-ui text-removed">{document.error}</p>
         ) : document.kind === "diff" && document.diff ? (
           <CenterDiff diffs={document.diff.diffs} note={document.diff.note} />
         ) : document.kind === "file" && document.file ? (
           <Suspense fallback={<p className="shimmer p-4 text-ui">Opening…</p>}>
-            <View file={document.file} line={document.line} mode={document.renderMode} />
+            <View
+              file={document.file}
+              line={document.line}
+              mode={document.renderMode}
+            />
           </Suspense>
         ) : (
           <p className="shimmer p-4 text-ui">Reading {document.path}…</p>
@@ -302,11 +337,21 @@ const LazyDiff = lazy(async () => {
     import("@pierre/diffs/react"),
     import("@/state/prefs"),
   ])
-  function Center({ diffs, note }: { diffs: import("@/lib/types").GitDiff[]; note?: string }) {
+  function Center({
+    diffs,
+    note,
+  }: {
+    diffs: import("@/lib/types").GitDiff[]
+    note?: string
+  }) {
     const theme = prefsStore.get().theme
-    const showable = diffs.filter((diff) => !diff.binary && (diff.oldFile || diff.newFile))
+    const showable = diffs.filter(
+      (diff) => !diff.binary && (diff.oldFile || diff.newFile)
+    )
     if (showable.length === 0) {
-      return <p className="p-4 text-ui text-faint">No text content to compare.</p>
+      return (
+        <p className="p-4 text-ui text-faint">No text content to compare.</p>
+      )
     }
     return (
       <Virtualizer className="min-h-full">
@@ -331,7 +376,13 @@ const LazyDiff = lazy(async () => {
   return { default: Center }
 })
 
-function CenterDiff({ diffs, note }: { diffs: import("@/lib/types").GitDiff[]; note?: string }) {
+function CenterDiff({
+  diffs,
+  note,
+}: {
+  diffs: import("@/lib/types").GitDiff[]
+  note?: string
+}) {
   return (
     <Suspense fallback={<p className="shimmer p-4 text-ui">Loading diff…</p>}>
       <LazyDiff diffs={diffs} note={note} />

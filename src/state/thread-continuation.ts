@@ -1,3 +1,4 @@
+import { settingsForSend, threadSettingsTarget, currentSettingsTarget } from "@/state/composer-settings"
 import { applyLiveSnapshot } from "@/state/live-recovery"
 import { acpForThread, acpStore } from "@/state/acp-state"
 import { getMako, hasBridge } from "@/lib/bridge"
@@ -66,6 +67,7 @@ export const threadContinuationActions = {
     attachments: PromptAttachment[] = []
   ): Promise<boolean> {
     if (!hasBridge()) return false
+    if (ref.resumeUnavailable) return threadContinuationActions.moveAndSend(ref, ref.harness, prompt, attachments)
     const status = threadStatus(ref)
     if (status.kind === "external-open" || status.kind === "external-active") {
       return threadContinuationActions.moveAndSend(
@@ -101,7 +103,7 @@ export const threadContinuationActions = {
     try {
       // The composer's tuning rides on the reply: pick a different model or
       // effort while a conversation is open and the next turn uses it.
-      const tuning = threadsStore.get().composerTuning[ref.harness]
+      const tuning = await settingsForSend(threadSettingsTarget(ref))
       await getMako().nativeSubmit({
         id: requestId,
         path: ref.path,
@@ -316,7 +318,7 @@ export const threadContinuationActions = {
   async startNew(harness: string, prompt: string) {
     if (!hasBridge()) return false
     try {
-      const options = threadsStore.get().composerTuning[harness] ?? {}
+      const options = await settingsForSend(currentSettingsTarget(harness))
       await getMako().startHarness(harness, prompt, options)
       toast(`${harnessLabelOf(harness)} is on it`, {
         description:

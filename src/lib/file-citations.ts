@@ -109,3 +109,13 @@ export function markdownFileTarget(
   }
   return null
 }
+
+
+/** Inline code becomes a file action only when the whole span is a recognizable path. */
+export function inlineFileTarget(text: string): FileCitation | null {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text) || /[\n\r`<>|;&=]/.test(text)) return null
+  const target = markdownFileTarget(text)
+  if (!target || !/\.(?:[cm]?[jt]sx?|json[cl]?|mdx?|markdown|py|rs|go|java|swift|kt|c|cpp|h|hpp|css|scss|sass|less|html?|vue|svelte|sh|bash|zsh|ya?ml|toml|ini|cfg|conf|sql|graphql|proto|txt|csv|tsv|xml|log|png|jpe?g|gif|webp|svg|pdf|mp[34]|wav|mov|webm)$/i.test(target.path)) return null
+  if (!/^(?:\.{0,2}\/|~\/|[A-Za-z]:[\\/])/.test(target.path) && /\s/.test(target.path)) return null
+  return target
+}

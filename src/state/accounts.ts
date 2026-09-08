@@ -1,6 +1,7 @@
 import { createHook, createStore } from "@/state/store"
 import { getMako, hasBridge } from "@/lib/bridge"
 import { toast } from "sonner"
+import { providers } from "@/state/providers"
 
 /**
  * Provider accounts — several logins per CLI, switchable.
@@ -93,6 +94,7 @@ export const accounts = {
     try {
       await getMako().selectAccount(harness, name === "default" ? null : name)
       accounts.load(true)
+      await providers.refreshAccount(harness)
     } catch (error) {
       toast.error("Account was not switched", {
         duration: Infinity,
@@ -119,6 +121,7 @@ export const accounts = {
     try {
       await getMako().removeAccount(harness, name)
       accounts.load(true)
+      await providers.refreshAccount(harness)
     } catch (error) {
       toast.error("Account was not removed", {
         duration: Infinity,

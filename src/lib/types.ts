@@ -1,8 +1,3 @@
-import type {
-  HarnessModel as SharedHarnessModel,
-  HarnessProfile as SharedHarnessProfile,
-} from "../../electron/shared.ts"
-
 export type {
   AccountHarness,
   AccountProvider,
@@ -113,19 +108,6 @@ export {
   THINKING_LEVELS,
 } from "../../electron/shared.ts"
 
-export function harnessModelByIdentity(
-  profile: SharedHarnessProfile | undefined,
-  identity: string | undefined
-): SharedHarnessModel | undefined {
-  if (!profile || !identity) return undefined
-  return profile.models.find(
-    (model) =>
-      model.id === identity ||
-      model.launchId === identity ||
-      model.aliases?.includes(identity) ||
-      model.variants?.some((variant) => variant.id === identity)
-  )
-}
 
 export type {
   LiveSnapshot,

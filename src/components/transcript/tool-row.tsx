@@ -10,7 +10,9 @@ import {
 } from "@/lib/tools"
 import { cn } from "@/lib/utils"
 import { usePrefs } from "@/state/prefs"
-import { useThreads } from "@/state/threads"
+import { useTranscriptSource } from "./source-context"
+import { ToolDetails } from "./tool-details"
+import { TranscriptAttachment } from "./attachment"
 import { viewer } from "@/state/viewer"
 import {
   ChevronRightIcon,
@@ -31,7 +33,7 @@ import { ToolGlyph } from "@/components/transcript/tool-views"
 export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
   const [open, setOpen] = useState(false)
   const dense = usePrefs((prefs) => prefs.denseTools)
-  const threadPath = useThreads((state) => state.viewing?.ref.path)
+  const source = useTranscriptSource()
   const view = useToolView(call.name)
 
   const summary = view?.summary?.(call) ?? primaryArgument(call.arguments)
@@ -51,10 +53,11 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
       <div className="group/tool flex items-center">
         <button
           type="button"
+          aria-expanded={open}
           data-open={open || undefined}
           data-pending={call.pending || undefined}
           onClick={() => setOpen((value) => !value)}
-          className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left transition-colors duration-100 hover:bg-fill-hover"
+          className="pressable flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left transition-colors duration-100 hover:bg-fill-hover"
         >
           <LeadSlot call={call} open={open} icon={view?.icon} />
           <span className="shrink-0 text-ui font-medium text-foreground/90">
@@ -70,7 +73,14 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
             type="button"
             title={`Open ${openPath}`}
             aria-label={`Open ${openPath}`}
-            onClick={() => void viewer.open(openPath, undefined, threadPath)}
+            onClick={() =>
+              void viewer.open(
+                openPath,
+                undefined,
+                source.threadPath,
+                source.liveId
+              )
+            }
             className="pressable mr-1 rounded p-1 text-faint opacity-0 transition-opacity duration-100 group-hover/tool:opacity-100 hover:text-foreground focus:opacity-100"
           >
             <FileTextIcon className="size-3" />
@@ -80,11 +90,22 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
 
       {open ? (
         <div className="border-t border-hairline">
-          {Body ? (
+          {call.details?.length ? <ToolDetails details={call.details} /> : null}
+          {Body && !call.details?.some((detail) => detail.type === "diff") ? (
             <Body call={call} expanded />
           ) : (
             <DefaultBody call={call} dense={dense} />
           )}
+          {call.attachments?.length ? (
+            <div className="space-y-2 p-2.5">
+              {call.attachments.map((attachment, index) => (
+                <TranscriptAttachment
+                  key={attachment.id ?? index}
+                  attachment={attachment}
+                />
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -192,9 +213,11 @@ function DefaultBody({ call, dense }: { call: ToolCall; dense: boolean }) {
         <p className="text-ui text-faint">canceled</p>
       ) : call.result ? (
         <Output text={call.result} dense={dense} isError={call.isError} />
-      ) : (
-        <p className="shimmer text-ui">waiting for result…</p>
-      )}
+      ) : call.pending ? (
+        <p className="shimmer text-ui">Waiting for result…</p>
+      ) : !call.attachments?.length && !call.details?.length ? (
+        <p className="text-ui text-faint">Completed with no text output.</p>
+      ) : null}
     </div>
   )
 }
@@ -266,7 +289,9 @@ function CopyableBlock({
         className={cn(
           "pressable absolute top-1 right-1 rounded-md bg-raised p-1 ring-1 ring-hairline backdrop-blur-sm",
           "text-faint transition-opacity duration-100 hover:text-foreground",
-          copied ? "opacity-100" : "opacity-0 group-hover/copyblock:opacity-100 focus-visible:opacity-100"
+          copied
+            ? "opacity-100"
+            : "opacity-0 group-hover/copyblock:opacity-100 focus-visible:opacity-100"
         )}
       >
         {copied ? (

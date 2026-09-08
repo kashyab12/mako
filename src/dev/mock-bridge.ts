@@ -369,6 +369,7 @@ export function installMockBridge() {
       throw new Error("Appshots require a native window")
     },
     controlPreview: async () => null,
+    prepareBrowserExtension: async () => ({ directory: "/fixture/mako-browser", extensionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }),
     browserControlStatus: async () => [
       {
         id: "chrome",

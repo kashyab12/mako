@@ -1,4 +1,5 @@
 import type { AttachmentContent } from "@mako/sessions"
+import { MediaPreview } from "./media-preview"
 import { viewer } from "@/state/viewer"
 import { useTranscriptSource } from "./source-context"
 
@@ -15,6 +16,8 @@ export function TranscriptAttachment({
         {name}: {source.reason}
       </p>
     )
+  if (/^(?:image|audio|video)\//i.test(mimeType))
+    return <MediaPreview attachment={attachment} />
   if (source.kind === "file")
     return (
       <button
@@ -65,27 +68,6 @@ export function TranscriptAttachment({
       <p className="text-ui text-muted">
         {name}: this attachment has no supported preview URL
       </p>
-    )
-  if (mimeType.startsWith("image/") && mimeType !== "image/svg+xml")
-    return (
-      <img
-        src={url}
-        alt={name}
-        loading="lazy"
-        className="max-h-96 max-w-full rounded object-contain"
-      />
-    )
-  if (mimeType.startsWith("audio/"))
-    return <audio src={url} controls preload="none" aria-label={name} />
-  if (mimeType.startsWith("video/"))
-    return (
-      <video
-        src={url}
-        controls
-        preload="none"
-        aria-label={name}
-        className="max-h-96 max-w-full"
-      />
     )
   return (
     <a

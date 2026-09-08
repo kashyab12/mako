@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client"
 import { flushSync } from "react-dom"
 import { Prose } from "@/components/transcript/markdown"
 import { Divider } from "@/components/shell/divider"
-import { DitherField } from "@/components/ui/dither-field"
+import { OceanScene } from "@/components/ui/ocean-scene"
 import { Transcript } from "@/components/transcript/transcript"
 import { Composer } from "@/components/composer/composer"
 import { store as sessionStore } from "@/state/session"
@@ -69,11 +69,20 @@ async function openingDraft() {
   const sceneTop = bounds.top - paneTop()
   const headingTop = heading.getBoundingClientRect().top - paneTop()
   const inputHeight = input.getBoundingClientRect().height
+  const wake = fixture.querySelector<HTMLElement>(".ocean-light")!
+  check(
+    getComputedStyle(wake).animationPlayState === "running",
+    "reflected light animates before writing"
+  )
   input.focus({ preventScroll: true })
   await new Promise((resolve) => requestAnimationFrame(resolve))
   check(
     input.getBoundingClientRect().height === inputHeight,
     "focusing an empty composer does not change its height"
+  )
+  check(
+    getComputedStyle(wake).animationPlayState === "paused",
+    "focusing the composer pauses reflected light"
   )
   for (const lines of [1, 12, 30]) {
     window.dispatchEvent(
@@ -369,97 +378,174 @@ async function divider() {
   check(committed === 310, "unmount does not persist an unfinished drag")
 }
 
-async function dither() {
-  const originalRequest = window.requestAnimationFrame
-  const originalCancel = window.cancelAnimationFrame
-  const pending = new Set<number>()
-  let calls = 0
-  let frames = 0
+async function reflectedLight() {
+  const originalFrame = window.requestAnimationFrame
   const originalMedia = window.matchMedia
+  let requests = 0
   window.requestAnimationFrame = (callback) => {
-    calls++
-    const id = originalRequest((time) => {
-      pending.delete(id)
-      frames++
-      callback(time)
-    })
-    pending.add(id)
-    return id
+    requests++
+    return originalFrame(callback)
   }
-  window.cancelAnimationFrame = (id) => {
-    pending.delete(id)
-    originalCancel(id)
-  }
+  const render = (animated: boolean) =>
+    flushSync(() =>
+      root.render(
+        <div className="relative h-48">
+          <OceanScene animated={animated} />
+        </div>
+      )
+    )
   try {
-    flushSync(() =>
-      root.render(
-        <div className="relative h-48">
-          <DitherField />
-        </div>
-      )
-    )
-    await until(() => calls > 0 && pending.size === 0)
-    const settled = calls
-    await new Promise((resolve) => setTimeout(resolve, 320))
-    check(
-      calls === settled && pending.size === 0,
-      "dither has no animation frames after settling"
-    )
-    const canvas = fixture.querySelector("canvas")!
-    check(
-      canvas.width <= 480 && canvas.height <= 320,
-      "dither raster dimensions stay bounded"
-    )
-    flushSync(() => root.render(null))
-    check(pending.size === 0, "dither teardown cancels pending frames")
-
-    window.matchMedia = (query) => {
-      const media = originalMedia.call(window, query)
-      if (query === "(prefers-reduced-motion: reduce)")
-        Object.defineProperty(media, "matches", { value: true })
-      return media
+    render(true)
+    await until(() => fixture.querySelector("[data-water-moving]") !== null)
+    const light = fixture.querySelector<HTMLElement>(".ocean-light")!
+    const grain = fixture.querySelector<HTMLElement>(".ocean-grain")!
+    const fin = fixture.querySelector<SVGSVGElement>(".ocean-fin")!
+    const finGlint = fixture.querySelector<SVGRectElement>(".ocean-fin-glint")!
+    const image = fixture.querySelector<HTMLImageElement>(".ocean-engraving")!
+    await until(() => image.complete && image.naturalWidth > 0)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    const imageBounds = () => {
+      const rect = image.getBoundingClientRect()
+      const pane = fixture.getBoundingClientRect()
+      return [rect.left - pane.left, rect.top - pane.top, rect.width, rect.height]
     }
-    const before = frames
-    flushSync(() =>
-      root.render(
-        <div className="relative h-48">
-          <DitherField />
-        </div>
-      )
-    )
-    await until(() => frames > before && pending.size === 0)
-    await new Promise((resolve) => setTimeout(resolve, 260))
+    const bounds = imageBounds()
+    const first = getComputedStyle(light).maskPosition
+    const firstGrain = getComputedStyle(grain).transform
+    const firstFin = getComputedStyle(finGlint).transform
+    await new Promise((resolve) => setTimeout(resolve, 450))
     check(
-      frames - before <= 2 && pending.size === 0,
-      "reduced motion draws a static field without a running loop"
+      getComputedStyle(light).maskPosition !== first,
+      "reflected light visibly advances through its CSS animation"
     )
-    flushSync(() => root.render(null))
-    window.matchMedia = originalMedia
+    check(
+      getComputedStyle(grain).transform !== firstGrain,
+      "the dithered atmosphere drifts independently of the engraving"
+    )
+    check(
+      getComputedStyle(finGlint).transform !== firstFin &&
+        getComputedStyle(finGlint).animationDuration !== getComputedStyle(light).animationDuration,
+      "the fin has its own moving dither with an independent period"
+    )
+    const finRect = fin.getBoundingClientRect()
+    const engravingRect = image.getBoundingClientRect()
+    check(
+      [
+        finRect.x - engravingRect.x,
+        finRect.y - engravingRect.y,
+        finRect.width - engravingRect.width,
+        finRect.height - engravingRect.height,
+      ].every((delta) => Math.abs(delta) < 0.1) &&
+        fin.getAttribute("preserveAspectRatio") === "xMidYMax slice",
+      "the fin overlay shares the engraving's dimensions and bottom-aligned crop"
+    )
+    check(
+      imageBounds().every((value, index) => Math.abs(value - bounds[index]!) < 0.1),
+      `the engraving stays stationary throughout the light animation (${imageBounds().map((value, index) => (value - bounds[index]!).toFixed(2)).join(", ")})`
+    )
+    check(
+      !fixture.querySelector("canvas"),
+      "the generated-dot canvas is removed"
+    )
+    check(
+      requests === 0,
+      "reflected light schedules zero JavaScript animation frames"
+    )
 
-    flushSync(() =>
-      root.render(
-        <div className="relative h-48">
-          <DitherField />
-        </div>
+    const sweep = light.getAnimations()[0]!
+    const savedTime = sweep.currentTime
+    sweep.pause()
+    // Account for the -1.5s phase offset at both ends of the round trip.
+    for (const boundary of [4500, 10500]) {
+      sweep.currentTime = boundary - 10
+      const before = getComputedStyle(light).maskPosition
+      sweep.currentTime = boundary + 10
+      check(
+        getComputedStyle(light).maskPosition === before,
+        `the reflection crosses its ${boundary}ms loop boundary without jumping`
       )
-    )
-    await until(() => pending.size > 0)
+    }
+    sweep.currentTime = savedTime
+    sweep.play()
+
+    const shimmer = finGlint.getAnimations()[0]!
+    const savedFinTime = shimmer.currentTime
+    shimmer.pause()
+    for (const boundary of [3700, 8200]) {
+      shimmer.currentTime = boundary - 10
+      const before = getComputedStyle(finGlint).transform
+      shimmer.currentTime = boundary + 10
+      check(
+        getComputedStyle(finGlint).transform === before,
+        `the fin crosses its ${boundary}ms loop boundary without jumping`
+      )
+    }
+    shimmer.currentTime = savedFinTime
+    shimmer.play()
+
     Object.defineProperty(document, "hidden", {
       configurable: true,
       value: true,
     })
     document.dispatchEvent(new Event("visibilitychange"))
     check(
-      pending.size === 0,
-      "hiding the document cancels the field immediately"
+      getComputedStyle(light).animationPlayState === "paused",
+      "hiding the document immediately pauses reflected light"
+    )
+    check(
+      getComputedStyle(grain).animationPlayState === "paused",
+      "hiding the document also pauses the dithered atmosphere"
+    )
+    check(
+      getComputedStyle(finGlint).animationPlayState === "paused",
+      "hiding the document pauses the fin shimmer too"
+    )
+    Reflect.deleteProperty(document, "hidden")
+    document.dispatchEvent(new Event("visibilitychange"))
+    await until(() => fixture.querySelector("[data-water-moving]") !== null)
+
+    fixture.style.display = "none"
+    await until(() => fixture.querySelector("[data-water-moving]") === null)
+    check(
+      getComputedStyle(light).animationPlayState === "paused",
+      "covered or offscreen artwork stops animating"
+    )
+    fixture.style.removeProperty("display")
+    await until(() => fixture.querySelector("[data-water-moving]") !== null)
+
+    render(false)
+    await until(() => fixture.querySelector("[data-water-moving]") === null)
+    check(
+      getComputedStyle(light).animationPlayState === "paused",
+      "the still treatment disables reflected light"
+    )
+    check(
+      getComputedStyle(grain).animationPlayState === "paused",
+      "the motion preference stops both animated layers"
     )
     flushSync(() => root.render(null))
-    Reflect.deleteProperty(document, "hidden")
+    window.matchMedia = (query) => {
+      const media = originalMedia.call(window, query)
+      if (query === "(prefers-reduced-motion: reduce)")
+        Object.defineProperty(media, "matches", { value: true })
+      return media
+    }
+    render(true)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    check(
+      !fixture.querySelector("[data-water-moving]"),
+      "reduced motion keeps the engraving still"
+    )
+    flushSync(() => root.render(null))
+    check(
+      requests === 0,
+      "unmount leaves no JavaScript animation loop to clean up"
+    )
   } finally {
-    window.matchMedia = originalMedia
+    fixture.style.removeProperty("display")
     Reflect.deleteProperty(document, "hidden")
-    window.requestAnimationFrame = originalRequest
-    window.cancelAnimationFrame = originalCancel
+    window.matchMedia = originalMedia
+    window.requestAnimationFrame = originalFrame
   }
 }
 
@@ -472,7 +558,7 @@ button.onclick = async () => {
     await transcriptAnchor()
     await clipboard()
     await divider()
-    await dither()
+    await reflectedLight()
     output.textContent += "\n\nAll UI regression checks passed."
   } catch (error) {
     output.textContent += `\nFAIL ${error instanceof Error ? error.message : String(error)}`

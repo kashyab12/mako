@@ -93,6 +93,8 @@ export function threadToMessages(
         })
         if (
           block.output !== undefined ||
+          Boolean(block.attachments?.length) ||
+          Boolean(block.details?.length) ||
           block.error === true ||
           block.canceled === true
         ) {
@@ -102,6 +104,7 @@ export function threadToMessages(
             name: block.name,
             text: block.output ?? "",
             attachments: block.attachments,
+            details: block.details,
           }
           if (block.error) result.isError = true
           if (block.canceled) result.isCanceled = true

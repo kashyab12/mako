@@ -57,6 +57,8 @@ const TOOL_LABELS = new Map([
   ["wait", "Wait for command"],
   ["write_stdin", "Terminal input"],
   ["TodoWrite", "Plan"],
+  ["todo_write", "Plan"],
+  ["update_plan", "Plan"],
   ["CreatePlan", "Plan"],
   ["TaskCreate", "Create task"],
   ["TaskUpdate", "Update task"],
@@ -144,6 +146,13 @@ export function foldTools(messages: ChatMessage[]): ChatMessage[] {
             id: message.toolCallId,
             name: message.toolName,
             isError: message.isError,
+            attachments: message.blocks.flatMap((block) =>
+              block.type === "attachment"
+                ? [block]
+                : block.type === "toolResult"
+                  ? (block.attachments ?? [])
+                  : []
+            ),
             text: message.blocks
               .map((block) =>
                 block.type === "text" || block.type === "toolResult"
@@ -186,6 +195,8 @@ export function pairTools(blocks: Block[]): ToolCall[] {
       `result-${order.length}`
     const existing = byId.get(id)
     if (existing) {
+      existing.details = block.details
+      existing.attachments = block.attachments
       existing.result = block.text
       existing.isError = block.isError
       existing.isCanceled = block.isCanceled
@@ -196,6 +207,8 @@ export function pairTools(blocks: Block[]): ToolCall[] {
         id,
         name: block.name ?? "tool",
         result: block.text,
+        attachments: block.attachments,
+        details: block.details,
         isError: block.isError,
         isCanceled: block.isCanceled,
         pending: block.streaming === true,
@@ -261,7 +274,7 @@ export function summarizeToolWork(calls: ToolCall[]): ToolWorkSummary {
     } else if (name === "skill") {
       skills += 1
     } else if (
-      ["todowrite", "createplan", "taskcreate", "taskupdate"].includes(name)
+      ["todowrite", "todo_write", "update_plan", "plan", "createplan", "taskcreate", "taskupdate"].includes(name)
     ) {
       plans += 1
     } else {

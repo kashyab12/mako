@@ -251,7 +251,9 @@ export const viewer = {
           ? await getMako().readThreadFile(threadPath, path)
           : await getMako().readFile(path)
       if (!requestIsCurrent(document.id, mine)) return
-      updateDocument(document.id, { file, loading: false })
+      const patch: Partial<ViewerDocument> = {file, loading: false}
+      if (!document.file && file.artifactPreview && line === undefined) patch.renderMode = "preview"
+      updateDocument(document.id, patch)
     } catch (error) {
       if (!requestIsCurrent(document.id, mine)) return
       updateDocument(document.id, {

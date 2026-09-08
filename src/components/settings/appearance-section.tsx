@@ -40,18 +40,17 @@ export function AppearanceSection() {
           value={oceanTone}
           options={[
             { value: "ink", label: "Warm ink" },
-            { value: "sea", label: "Sea glass" },
-            { value: "moon", label: "Moonlight" },
+            { value: "moon", label: "Silver ink" },
           ]}
           onChange={(next) => setPref("oceanTone", next)}
         />
       </SettingRow>
       <SettingRow
-        title="Moving water"
+        title="Reflected light"
         description="Pauses while writing and respects reduced motion"
       >
         <Toggle
-          label="Moving water"
+          label="Reflected light"
           on={oceanMotion}
           onChange={() => setPref("oceanMotion", !oceanMotion)}
         />

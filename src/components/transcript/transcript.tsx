@@ -1,4 +1,4 @@
-import { DitherField } from "@/components/ui/dither-field"
+import { OceanScene } from "@/components/ui/ocean-scene"
 import { useMemo } from "react"
 import { ConversationTimeline } from "@/components/transcript/conversation-timeline"
 import { Launcher } from "@/components/transcript/launcher"
@@ -33,7 +33,7 @@ function SessionTranscript({ sessionId }: { sessionId: string | undefined }) {
       <Slot name="transcript.header" meta={undefined} />
       {exchanges.length === 0 ? (
         <>
-          <DitherField />
+          <OceanScene />
           <div className="min-h-0 flex-1 overflow-y-auto" data-empty-transcript>
             <EmptyTranscript />
           </div>

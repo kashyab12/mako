@@ -105,7 +105,7 @@ export function installBuiltins(): () => void {
 
     ...["bash", "Bash", "shell", "Shell", "exec_command"].map((name) =>
       registerToolView(name, {
-        summary: (call: ToolCall) => argAt(call.arguments, "command") ?? "",
+        summary: (call: ToolCall) => argAt(call.arguments, "description") ?? argAt(call.arguments, "command") ?? argAt(call.arguments, "cmd") ?? "",
         body: BashBody,
       })
     ),

@@ -791,7 +791,9 @@
 .mako-prose table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: 13px;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .mako-prose th,
@@ -803,7 +805,8 @@
 
 .mako-prose th {
   background: var(--raised);
-  font-weight: 550;
+  font-weight: 530;
+  white-space: nowrap;
 }
 
 .mako-prose img {
@@ -829,29 +832,23 @@
   }
 }
 
-/* An original marine engraving keeps its own detail at native image resolution.
- * Only the small moving wake is rasterized by the bounded canvas. */
+/* Light blends with the existing engraving; no synthetic marks cover its waves. */
 .ocean-scene {
   --ocean-filter: sepia(0.3);
-  --ocean-ink: oklch(0.78 0.035 65);
+  --ocean-opacity: 0.3;
   position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: -1;
   overflow: hidden;
   mix-blend-mode: screen;
+  opacity: var(--ocean-opacity);
   animation: ocean-arrive 220ms var(--ease-out) both;
   mask-image: linear-gradient(to bottom, transparent 20%, black 60%, black 89%, transparent);
 }
 
-.ocean-scene[data-ocean-tone="sea"] {
-  --ocean-filter: sepia(1) saturate(0.65) hue-rotate(105deg);
-  --ocean-ink: oklch(0.79 0.065 170);
-}
-
 .ocean-scene[data-ocean-tone="moon"] {
-  --ocean-filter: sepia(1) saturate(0.75) hue-rotate(165deg);
-  --ocean-ink: oklch(0.82 0.065 245);
+  --ocean-filter: grayscale(1);
 }
 
 /* The scene belongs to the whole agent pane, including the composer. Its
@@ -868,57 +865,118 @@
   object-fit: cover;
   object-position: center bottom;
   filter: invert(1) var(--ocean-filter);
-  opacity: 0.3;
 }
 
 .light .ocean-scene {
+  --ocean-opacity: 0.25;
   mix-blend-mode: multiply;
 }
 
 .light .ocean-engraving {
   filter: var(--ocean-filter);
-  opacity: 0.25;
 }
 
 @keyframes ocean-arrive {
   from { opacity: 0; transform: translateY(5px); }
-  to { opacity: 1; transform: translateY(0); }
+  to { opacity: var(--ocean-opacity); transform: translateY(0); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .ocean-scene { animation: none; }
 }
 
-.dither-field {
+.ocean-light {
   position: absolute;
-  left: 25%;
-  bottom: 8%;
-  width: 65%;
-  height: 15%;
-  color: var(--ocean-ink);
-  opacity: 0.3;
-  image-rendering: pixelated;
+  inset: 0;
+  /* Reveal brighter copies of the actual etched lines. The vertical mask
+   * confines the reflection to the foreground water; the diagonal mask travels. */
+  mask-image:
+    linear-gradient(to bottom, transparent 57%, black 76%),
+    linear-gradient(110deg, transparent 34%, black 50%, transparent 66%);
+  mask-size: 100% 100%, 250% 100%;
+  mask-composite: intersect;
   pointer-events: none;
-  animation: ocean-water 7s ease-in-out infinite;
+  animation: ocean-water 6s ease-in-out infinite alternate;
+  animation-delay: -1.5s;
   animation-play-state: paused;
 }
 
-.ocean-scene[data-water-moving] .dither-field {
+.ocean-light .ocean-engraving {
+  filter: invert(1) var(--ocean-filter) brightness(4);
+}
+
+.ocean-scene:has(.ocean-light) > .ocean-engraving {
+  opacity: 0.55;
+}
+
+.light .ocean-light .ocean-engraving {
+  filter: var(--ocean-filter) brightness(0.45);
+}
+
+.ocean-grain {
+  position: absolute;
+  inset: -4%;
+  background: var(--foreground);
+  mask: url("/artwork/ocean-grain.svg") center / cover no-repeat;
+  opacity: 0.7;
+  animation: ocean-air 12s ease-in-out infinite alternate;
+  animation-play-state: paused;
+}
+
+@keyframes ocean-air {
+  from { transform: translate3d(-1.5%, 1%, 0); }
+  to { transform: translate3d(1.5%, -1%, 0); }
+}
+
+.ocean-scene[data-water-moving] .ocean-light,
+.ocean-scene[data-water-moving] .ocean-grain,
+.ocean-scene[data-water-moving] .ocean-fin-glint {
   animation-play-state: running;
 }
 
-.agent-surface:has(.composer-input:focus) .dither-field,
-.ocean-preview:has(textarea:focus) .dither-field {
+.ocean-scene:not([data-water-moving]) .ocean-light {
+  visibility: hidden;
+}
+
+.agent-surface:has(.composer-input:focus) .ocean-light,
+.agent-surface:has(.composer-input:focus) .ocean-grain,
+.agent-surface:has(.composer-input:focus) .ocean-fin-glint,
+.ocean-preview:has(textarea:focus) .ocean-light,
+.ocean-preview:has(textarea:focus) .ocean-grain,
+.ocean-preview:has(textarea:focus) .ocean-fin-glint {
   animation-play-state: paused;
 }
 
 @keyframes ocean-water {
-  0%, 100% { transform: translateX(-12px); opacity: 0.18; }
-  50% { transform: translateX(12px); opacity: 0.65; }
+  from { mask-position: 0 0, 100% 0; }
+  to { mask-position: 0 0, 0% 0; }
+}
+
+.ocean-fin {
+  position: absolute;
+  bottom: -16%;
+  width: 100%;
+  height: 100%;
+  color: var(--foreground);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.ocean-fin-mask { mask-type: alpha; }
+
+.ocean-fin-glint {
+  animation: ocean-fin-shimmer 4.5s ease-in-out infinite alternate;
+  animation-delay: -0.8s;
+  animation-play-state: paused;
+}
+
+@keyframes ocean-fin-shimmer {
+  from { transform: translate3d(-10px, 38px, 0); opacity: 0.55; }
+  to { transform: translate3d(10px, -38px, 0); opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dither-field { animation: none; }
+  .ocean-light, .ocean-grain, .ocean-fin-glint { animation: none; }
 }
 
 .ocean-preview {
@@ -932,6 +990,20 @@
 
 .ocean-preview .ocean-scene {
   bottom: 0;
+}
+
+.ocean-preview .ocean-engraving,
+.ocean-preview .ocean-fin {
+  bottom: 0;
+}
+
+.ocean-preview-selected {
+  height: 100%;
+  border: 0;
+}
+
+.ocean-preview-controls {
+  transition: border-color 120ms var(--ease-out), background-color 120ms var(--ease-out);
 }
 
 .usage-dither {
@@ -976,4 +1048,26 @@
 @media (prefers-reduced-motion: reduce) {
   .changing-label, .companion-panel, .terminal-panel { animation: none; }
   [data-sonner-toaster] [data-sonner-toast] { transition: none; }
+}
+
+.transcript-media {
+  display: inline-flex;
+  flex-direction: column;
+  max-width: 100%;
+  min-height: 2rem;
+  vertical-align: middle;
+}
+
+:root {
+  --shiki-foreground: var(--foreground);
+  --shiki-background: var(--raised);
+  --shiki-token-constant: var(--foreground);
+  --shiki-token-string: var(--muted-foreground);
+  --shiki-token-comment: var(--faint);
+  --shiki-token-keyword: var(--foreground);
+  --shiki-token-parameter: var(--muted-foreground);
+  --shiki-token-function: var(--foreground);
+  --shiki-token-string-expression: var(--muted-foreground);
+  --shiki-token-punctuation: var(--faint);
+  --shiki-token-link: var(--foreground);
 }

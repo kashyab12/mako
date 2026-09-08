@@ -1,3 +1,4 @@
+import { currentSettingsTarget, threadSettingsTarget, settingsForSend } from "@/state/composer-settings"
 import { leaveViewerForLive } from "@/state/thread-viewing"
 import { applyLiveSnapshot, hydrateLive } from "@/state/live-recovery"
 import { getMako, hasBridge } from "@/lib/bridge"
@@ -144,6 +145,7 @@ export const acp = {
     const canResume = canResumeInteractively(ref.harness)
     const harness = canResume ? ref.harness : threadsStore.get().composerHarness
     const starting = beginStart({
+      settingsTarget: canResume ? threadSettingsTarget(ref) : { kind: "new", harness, cwd: ref.cwd ?? "" },
       harness,
       cwd: ref.cwd ?? "",
       title: ref.title,
@@ -170,7 +172,6 @@ export const acp = {
       }
       const options: AcpStartOptions = {
         title: ref.title,
-        tuning: threadsStore.get().composerTuning[harness],
       }
       if (canResume) options.resume = ref.nativeId
       return launch(starting, options, contextPrompt ?? undefined)
@@ -198,6 +199,7 @@ export const acp = {
     }
     setThreadRunning(ref.path, true)
     const starting = beginStart({
+      settingsTarget: threadSettingsTarget(ref),
       harness: ref.harness,
       cwd: ref.cwd ?? "",
       title: ref.title,
@@ -210,7 +212,6 @@ export const acp = {
       {
         title: ref.title,
         resume: ref.nativeId,
-        tuning: threadsStore.get().composerTuning[ref.harness],
       },
       prompt,
       attachments
@@ -244,7 +245,7 @@ export const acp = {
     })
     return launch(
       starting,
-      { tuning: threadsStore.get().composerTuning[harness] },
+      {},
       prompt,
       attachments
     )
@@ -329,7 +330,7 @@ export const acp = {
     harness: string,
     prompt: string,
     attachments: PromptAttachment[] = [],
-    tuning: TransferInput["tuning"] = threadsStore.get().composerTuning[harness]
+    tuning?: TransferInput["tuning"]
   ): Promise<boolean> {
     const current = activeLiveAcp(acpStore.get())
     if (!current || !hasBridge()) return false
@@ -340,7 +341,7 @@ export const acp = {
         provider: harness,
         text: prompt,
         attachments,
-        tuning,
+        tuning: tuning ?? await settingsForSend(currentSettingsTarget(harness)),
       })
       applyLiveSnapshot(snapshot)
       leaveViewerForLive(harness)

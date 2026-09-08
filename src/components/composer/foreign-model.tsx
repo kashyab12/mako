@@ -1,69 +1,44 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { useMemo, useState } from "react"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { Eyebrow } from "@/components/ui/kit"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { harnessLabel } from "@/components/rail/harness-meta"
 import {
-  setComposerTuning,
-  useThreads,
-} from "@/state/threads"
-import { providers, useProviders } from "@/state/providers"
+  chooseComposerModel,
+  resetComposerSettings,
+} from "@/state/composer-settings"
+import type { ComposerSettingsView } from "./use-composer-settings"
+import { settingSourceLabel } from "./settings-source"
 import { fuzzy } from "@/lib/fuzzy"
 import { cn } from "@/lib/utils"
-import {
-  modelKey,
-  toggleFavoriteModel,
-  usePrefs,
-} from "@/state/prefs"
-import { harnessModelByIdentity } from "@/lib/types"
+import { modelKey, toggleFavoriteModel, usePrefs } from "@/state/prefs"
 import type { HarnessModel } from "@/lib/types"
 import { CheckIcon, ChevronDownIcon, StarIcon } from "lucide-react"
 
-export function ForeignModelPicker({
-  harness,
-  threadModel,
-  onChange,
-}: {
-  harness: string
-  threadModel?: string
-  onChange?: () => void
-}) {
+export function ForeignModelPicker({ view }: { view: ComposerSettingsView }) {
+  const { target, profile, resolved, model: selected, refresh } = view
+  const harness = target.harness
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
-  const profile = useProviders((state) => state.profiles[harness])
-  const chosen = useThreads((state) => state.composerTuning[harness]?.model)
   const favorites = usePrefs((prefs) => prefs.favoriteModels)
-
-  const load = useCallback(() => {
-    void providers.load(harness)
-  }, [harness])
-
-  useEffect(() => {
-    load()
-  }, [load])
-
   const identity =
-    threadModel ?? chosen ?? profile?.configuredModel ?? profile?.defaultModel
-  const effective =
-    harnessModelByIdentity(profile ?? undefined, identity)?.id ?? identity
-  const selected = harnessModelByIdentity(profile ?? undefined, effective)
-  const variant = selected?.variants?.find(
-    (candidate) => candidate.id === identity
-  )
-  const label = variant?.label ?? selected?.label ?? effective
+    resolved.model.kind === "known" ? resolved.model.value : undefined
+  const effective = selected?.id ?? identity
+  const label =
+    selected?.label ??
+    identity ??
+    (target.kind === "new" ? "Provider default" : "Unknown model")
   const models = useMemo(
     () => rankModels(profile?.models ?? [], query, favorites, harness),
     [favorites, harness, profile?.models, query]
   )
 
   const set = (model: string) => {
-    setComposerTuning(harness, {
-      model,
-      effort: undefined,
-      fast: undefined,
-      options: undefined,
-    })
-    onChange?.()
+    chooseComposerModel(target, model)
     setOpen(false)
   }
 
@@ -72,36 +47,63 @@ export function ForeignModelPicker({
       open={open}
       onOpenChange={(next) => {
         setOpen(next)
-        if (next) load()
+        if (next) void refresh().catch(() => {})
       }}
     >
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={`Model: ${label ?? `${harnessLabel(harness)} default`}`}
+          aria-label={`Model: ${label ?? "Provider default"}`}
           className={cn(
-            "pressable no-drag flex h-7 min-w-0 max-w-[15rem] items-center gap-1.5 rounded-md px-2",
+            "pressable no-drag flex h-7 max-w-[15rem] min-w-0 items-center gap-1.5 rounded-md px-2",
             "text-ui font-medium text-foreground/85",
             "[transition:transform_var(--duration-press)_var(--ease-out),background-color_120ms_ease]",
             "hover:bg-fill-hover aria-expanded:bg-fill-selected"
           )}
         >
           <HarnessIcon harness={harness} className="size-3.5" />
-          <span className="truncate">
-            {label ?? `${harnessLabel(harness)} default`}
-          </span>
+          <span className="truncate">{label ?? "Provider default"}</span>
           <ChevronDownIcon className="size-3 shrink-0 text-faint/70" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" sideOffset={8} className="w-[23rem] gap-0 p-0">
+      <PopoverContent
+        align="start"
+        side="top"
+        sideOffset={8}
+        className="w-[23rem] gap-0 p-0"
+      >
         <div className="border-b border-hairline px-2 pt-2 pb-1.5">
-          <Eyebrow className="px-0.5 pb-1">{harnessLabel(harness)} models</Eyebrow>
+          <Eyebrow className="px-0.5 pb-1">
+            {harnessLabel(harness)} models
+          </Eyebrow>
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search models"
             className="h-7 w-full rounded-md bg-raised px-2 text-ui placeholder:text-faint focus:outline-none"
           />
+        </div>
+        <div className="border-b border-hairline p-1">
+          <button
+            type="button"
+            className="pressable w-full rounded-md px-2 py-2 text-left text-ui hover:bg-fill-hover"
+            onClick={() => {
+              resetComposerSettings(target)
+              setOpen(false)
+            }}
+          >
+            {target.kind === "new"
+              ? "Use provider defaults"
+              : "Use session settings"}
+          </button>
+          <p className="px-2 pb-1 text-label text-faint">
+            {settingSourceLabel(resolved.model)}
+          </p>
+          {profile?.configurationError || profile?.error ? (
+            <p className="px-2 pb-1 text-label text-faint">
+              {profile.configurationError ?? profile.error}
+            </p>
+          ) : null}
         </div>
         <div className="max-h-[20rem] overflow-y-auto overscroll-contain p-1">
           {models.map((model) => (
@@ -111,11 +113,15 @@ export function ForeignModelPicker({
               selected={effective === model.id}
               favorite={favorites.includes(modelKey(harness, model.id))}
               onChoose={() => set(model.id)}
-              onFavorite={() => toggleFavoriteModel(modelKey(harness, model.id))}
+              onFavorite={() =>
+                toggleFavoriteModel(modelKey(harness, model.id))
+              }
             />
           ))}
           {profile && models.length === 0 ? (
-            <p className="px-2 py-5 text-center text-ui text-faint">No models match.</p>
+            <p className="px-2 py-5 text-center text-ui text-faint">
+              No models match.
+            </p>
           ) : null}
         </div>
         <div className="border-t border-hairline px-2 py-1.5 text-label text-faint">
@@ -162,9 +168,7 @@ function ModelRow({
           <span
             className={cn(
               "block truncate text-ui",
-              selected
-                ? "font-medium text-foreground"
-                : "text-foreground/90"
+              selected ? "font-medium text-foreground" : "text-foreground/90"
             )}
           >
             {model.label}
@@ -189,7 +193,9 @@ function ModelRow({
       </button>
       <button
         type="button"
-        aria-label={favorite ? `Unfavorite ${model.label}` : `Favorite ${model.label}`}
+        aria-label={
+          favorite ? `Unfavorite ${model.label}` : `Favorite ${model.label}`
+        }
         onClick={onFavorite}
         className={cn(
           "mr-1.5 rounded p-1 text-faint transition-opacity duration-150 hover:text-foreground",

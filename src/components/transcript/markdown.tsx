@@ -1,3 +1,6 @@
+import { DiagramPreview, HighlightedCode } from "./code-preview"
+import { TranscriptAttachment } from "./attachment"
+import { markdownMedia, previewableMediaUrl } from "@/lib/transcript-media"
 import { Paragraph } from "./paragraph"
 import { ProseStreamingContext } from "./prose-layout-context"
 import { ChangingLabel } from "@/components/ui/changing-label"
@@ -8,6 +11,7 @@ import {
   isValidElement,
   memo,
   useEffect,
+  useContext,
   useRef,
   useState,
   type ComponentProps,
@@ -16,7 +20,14 @@ import {
 } from "react"
 import Markdown, { defaultUrlTransform } from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { CheckIcon, CopyIcon } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogTrigger,
+  DialogClose,
+} from "@/components/ui/dialog"
+import { CheckIcon, CopyIcon, ExpandIcon, XIcon } from "lucide-react"
 import { decodeFileCitation, markdownFileTarget } from "@/lib/file-citations"
 import { cn } from "@/lib/utils"
 import { useTranscriptSource } from "./source-context"
@@ -57,17 +68,19 @@ export const Prose = memo(function Prose({
   return (
     <div className={cn("mako-prose", className)}>
       <ProseStreamingContext value={Boolean(streaming)}>
-      <Markdown
-        remarkPlugins={[remarkGfm, remarkFileCitations]}
-        components={components}
-        urlTransform={(url) =>
-          decodeFileCitation(url) || markdownFileTarget(url)
-            ? url
-            : (urlTransform?.(url) ?? defaultUrlTransform(url))
-        }
-      >
-        {source}
-      </Markdown>
+        <Markdown
+          remarkPlugins={[remarkGfm, remarkFileCitations]}
+          components={components}
+          urlTransform={(url) =>
+            decodeFileCitation(url) ||
+            markdownFileTarget(url) ||
+            previewableMediaUrl(url)
+              ? url
+              : (urlTransform?.(url) ?? defaultUrlTransform(url))
+          }
+        >
+          {source}
+        </Markdown>
       </ProseStreamingContext>
     </div>
   )
@@ -108,11 +121,69 @@ const components = {
   p: Paragraph,
   pre: CodeBlock,
   a: CitationLink,
+  img: MarkdownMedia,
+  table: MarkdownTable,
 } satisfies Parameters<typeof Markdown>[0]["components"]
+
+function MarkdownTable({ children }: ComponentProps<"table">) {
+  return (
+    <div className="mako-table">
+      <div
+        className="overflow-x-auto"
+        tabIndex={0}
+        role="region"
+        aria-label="Table"
+      >
+        <table>{children}</table>
+      </div>
+      <Dialog>
+        <DialogTrigger asChild>
+          <button
+            type="button"
+            className="pressable mt-1 flex items-center gap-1 rounded px-1 py-0.5 text-label text-faint hover:text-foreground"
+          >
+            <ExpandIcon className="size-3" />
+            Expand table
+          </button>
+        </DialogTrigger>
+        <DialogContent className="max-w-[calc(100vw-2rem)] p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <DialogTitle>Table</DialogTitle>
+            <DialogClose
+              className="pressable rounded p-1"
+              aria-label="Close table"
+            >
+              <XIcon className="size-4" />
+            </DialogClose>
+          </div>
+          <div
+            className="mako-prose max-h-[80vh] overflow-auto"
+            tabIndex={0}
+            role="region"
+            aria-label="Expanded table"
+          >
+            <table>{children}</table>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function MarkdownMedia({ src, alt }: ComponentProps<"img">) {
+  if (!src) return <span>{alt || "Image unavailable"}</span>
+  return <TranscriptAttachment attachment={markdownMedia(src, alt)} />
+}
 
 function CitationLink({ href, children }: ComponentProps<"a">) {
   const source = useTranscriptSource()
   const target = markdownFileTarget(href)
+  if (!href)
+    return (
+      <span title="This action is unavailable outside the source app">
+        {children}
+      </span>
+    )
   if (!target)
     return (
       <a href={href} target="_blank" rel="noreferrer noopener">
@@ -131,7 +202,7 @@ function CitationLink({ href, children }: ComponentProps<"a">) {
           source.liveId
         )
       }
-      className="font-medium text-foreground underline decoration-border underline-offset-2 hover:decoration-foreground"
+      className="pressable font-medium text-foreground underline decoration-border underline-offset-2 hover:decoration-foreground"
     >
       {children}
     </button>
@@ -152,6 +223,9 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   const source = extractText(children)
   const { copied, copy } = useCopy(source)
   const language = extractLanguage(children)
+  const streaming = useContext(ProseStreamingContext)
+  const [showSource, setShowSource] = useState(false)
+  const diagram = language === "mermaid"
 
   return (
     <div className="mako-code group">
@@ -159,6 +233,15 @@ function CodeBlock({ children }: { children?: ReactNode }) {
         <span className="font-mono text-label tracking-wide text-faint select-none">
           {language ?? "text"}
         </span>
+        {diagram ? (
+          <button
+            type="button"
+            className="pressable ml-2 rounded px-1 text-label text-faint"
+            onClick={() => setShowSource((value) => !value)}
+          >
+            {showSource ? "Diagram" : "Source"}
+          </button>
+        ) : null}
         <button
           type="button"
           aria-label="Copy code"
@@ -176,10 +259,20 @@ function CodeBlock({ children }: { children?: ReactNode }) {
           ) : (
             <CopyIcon className="size-3" />
           )}
-          <span role="status" className="min-w-8"><ChangingLabel text={copied ? "Copied" : "Copy"} /></span>
+          <span role="status" className="min-w-8">
+            <ChangingLabel text={copied ? "Copied" : "Copy"} />
+          </span>
         </button>
       </div>
-      <pre>{children}</pre>
+      {diagram && !showSource && !streaming ? (
+        <DiagramPreview source={source} />
+      ) : (
+        <HighlightedCode
+          source={source}
+          language={language ?? "text"}
+          streaming={streaming}
+        />
+      )}
     </div>
   )
 }

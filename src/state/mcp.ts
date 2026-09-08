@@ -15,6 +15,8 @@ interface McpState {
   permissions?: MakoComputerPermissions
   error?: string
   browsers: BrowserControlStatus[]
+  browserSetup?: Awaited<ReturnType<ReturnType<typeof getMako>["prepareBrowserExtension"]>>
+  preparingBrowser: boolean
 }
 
 export const mcpStore = createStore<McpState>({
@@ -22,10 +24,22 @@ export const mcpStore = createStore<McpState>({
   snapshot: null,
   previews: {},
   browsers: [],
+  preparingBrowser: false,
 })
 export const useMcp = createHook(mcpStore)
 
 export const mcp = {
+  async prepareBrowser() {
+    if (mcpStore.get().preparingBrowser) return
+    mcpStore.set({ preparingBrowser: true, error: undefined })
+    try { mcpStore.set({ browserSetup: await getMako().prepareBrowserExtension() }) }
+    catch (error) { mcpStore.set({ error: error instanceof Error ? error.message : "Browser setup failed" }) }
+    finally { mcpStore.set({ preparingBrowser: false }) }
+  },
+  async refreshBrowsers() {
+    try { mcpStore.set({ browsers: await getMako().browserControlStatus() }) }
+    catch (error) { mcpStore.set({ error: error instanceof Error ? error.message : "Browser profiles could not be loaded" }) }
+  },
   async load() {
     if (!hasBridge()) return
     mcpStore.set({ status: "loading", error: undefined })

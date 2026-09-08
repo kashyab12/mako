@@ -1,6 +1,6 @@
 import type { Root, PhrasingContent } from "mdast"
 import { visit } from "unist-util-visit"
-import { linkFileCitations } from "./file-citations"
+import { inlineFileTarget, linkFileCitations } from "./file-citations"
 
 /** Transform prose nodes only; code examples and link labels remain literal. */
 export function remarkFileCitations() {
@@ -41,6 +41,12 @@ export function remarkFileCitations() {
         children.push({ type: "text", value: linked.slice(offset) })
       parent.children.splice(index, 1, ...children)
       return index + children.length
+    })
+    visit(tree, "inlineCode", (node, index, parent) => {
+      if (index === undefined || !parent || parent.type === "link" || parent.type === "linkReference") return
+      if (!inlineFileTarget(node.value)) return
+      parent.children.splice(index, 1, {type: "link", url: node.value, children: [node]})
+      return index + 1
     })
     visit(tree, "code", (node, index, parent) => {
       const citation = /^(\d+):(\d+):(.+)$/.exec(node.lang ?? "")

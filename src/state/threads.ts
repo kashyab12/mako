@@ -23,9 +23,7 @@ import {
 import type { ThreadStatus } from "@/state/thread-status"
 import {
   canResumeInteractively,
-  initializeComposerTuning,
   setComposerHarness,
-  setComposerTuning,
 } from "@/state/thread-tuning"
 import {
   applyThreadEntries,
@@ -59,11 +57,9 @@ export {
   applyThreadEntries,
   applyThreadRun,
   canResumeInteractively,
-  initializeComposerTuning,
   markThreadReviewed,
   recentThreadActivityDuration,
   setComposerHarness,
-  setComposerTuning,
   setThreadAttention,
   setThreadRunning,
   setThreadWorkDetail,

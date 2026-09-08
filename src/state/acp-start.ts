@@ -1,3 +1,4 @@
+import { currentSettingsTarget, settingsForSend, type ComposerTarget } from "@/state/composer-settings"
 import { applyLiveSnapshot } from "@/state/live-recovery"
 import { getMako } from "@/lib/bridge"
 import type { AcpBlock } from "@/lib/acp-blocks"
@@ -17,6 +18,7 @@ export type AcpStartOptions = Omit<
 >
 
 interface BeginStartInput {
+  settingsTarget?: ComposerTarget
   harness: string
   cwd: string
   title?: string
@@ -30,6 +32,7 @@ export function beginStart(input: BeginStartInput): StartingAcpConversation {
   const key = crypto.randomUUID()
   const conversation: StartingAcpConversation = {
     kind: "starting",
+    settingsTarget: input.settingsTarget ?? currentSettingsTarget(input.harness),
     key,
     draftKey: input.threadPath ?? key,
     harness: input.harness,
@@ -90,6 +93,7 @@ export async function launch(
   try {
     const snapshot = await getMako().liveStart(starting.harness, starting.cwd, {
       ...options,
+      tuning: options.tuning ?? await settingsForSend(starting.settingsTarget),
       conversationId: starting.key,
       threadPath: starting.threadPath,
       displayPrompt: starting.hiddenUserPrompt

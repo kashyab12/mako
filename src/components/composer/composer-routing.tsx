@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useComposerSettings } from "./use-composer-settings"
 import { AgentPicker } from "@/components/composer/agent-picker"
 import { ForeignEffortPicker } from "@/components/composer/foreign-effort"
 import { ForeignModelPicker } from "@/components/composer/foreign-model"
@@ -25,25 +25,18 @@ export function ComposerRouting() {
   const activeHarness = useAcp((state) => activeAcp(state)?.harness)
   const liveThreadPath = useAcp((state) => activeAcp(state)?.threadPath)
   const queued = useAcp((state) => activeAcp(state)?.queued ?? EMPTY_QUEUE)
-  const [modelChangedFor, setModelChangedFor] = useState<string | null>(null)
+  const settings = useComposerSettings()
   const liveOwnsComposer = Boolean(
     activeHarness && (!viewing || viewing.path === liveThreadPath)
   )
   const sourceHarness = liveOwnsComposer ? activeHarness : viewing?.harness
   const moving = Boolean(sourceHarness && harness !== sourceHarness)
-  const modelContext = `${viewing?.path ?? "new"}:${harness}`
-  const threadModel =
-    !moving && modelChangedFor !== modelContext ? viewing?.model : undefined
 
   return (
     <>
       <AgentPicker />
-      <ForeignModelPicker
-        harness={harness}
-        threadModel={threadModel}
-        onChange={() => setModelChangedFor(modelContext)}
-      />
-      <ForeignEffortPicker harness={harness} threadModel={threadModel} />
+      <ForeignModelPicker view={settings} />
+      <ForeignEffortPicker view={settings} />
       {liveOwnsComposer && queued.length > 0 ? (
         <button
           type="button"

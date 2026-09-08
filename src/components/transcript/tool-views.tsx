@@ -96,6 +96,8 @@ export function ToolGlyph({
 interface DiffLine {
   kind: "context" | "add" | "remove"
   text: string
+  oldLine?: number
+  newLine?: number
 }
 
 /**
@@ -127,20 +129,20 @@ function diffLines(before: string, after: string): DiffLine[] {
   const lines: DiffLine[] = []
   const context = 2
   for (let i = Math.max(0, head - context); i < head; i += 1) {
-    lines.push({ kind: "context", text: left[i] })
+    lines.push({ kind: "context", text: left[i], oldLine: i + 1, newLine: i + 1 })
   }
   for (let i = head; i < left.length - tail; i += 1) {
-    lines.push({ kind: "remove", text: left[i] })
+    lines.push({ kind: "remove", text: left[i], oldLine: i + 1 })
   }
   for (let i = head; i < right.length - tail; i += 1) {
-    lines.push({ kind: "add", text: right[i] })
+    lines.push({ kind: "add", text: right[i], newLine: i + 1 })
   }
   for (
     let i = left.length - tail;
     i < Math.min(left.length, left.length - tail + context);
     i += 1
   ) {
-    lines.push({ kind: "context", text: left[i] })
+    lines.push({ kind: "context", text: left[i], oldLine: i + 1, newLine: right.length - left.length + i + 1 })
   }
   return lines
 }
@@ -158,6 +160,8 @@ function DiffBlock({ lines }: { lines: DiffLine[] }) {
             line.kind === "context" && "text-faint"
           )}
         >
+          <span className="w-8 shrink-0 text-right text-label opacity-60 select-none">{line.oldLine ?? ""}</span>
+          <span className="w-8 shrink-0 text-right text-label opacity-60 select-none">{line.newLine ?? ""}</span>
           <span className="w-2 shrink-0 opacity-60 select-none">
             {line.kind === "add" ? "+" : line.kind === "remove" ? "−" : " "}
           </span>
@@ -193,7 +197,7 @@ export function WriteBody({ call }: ToolViewProps) {
       <DiffBlock
         lines={content
           .split("\n")
-          .map((text) => ({ kind: "add" as const, text }))}
+          .map((text, index) => ({ kind: "add" as const, text, newLine: index + 1 }))}
       />
     </div>
   )
@@ -290,9 +294,9 @@ export function SkillBody({ call }: ToolViewProps) {
         <p className="text-ui text-faint">canceled</p>
       ) : call.result ? (
         <Output text={call.result} dense isError={call.isError} />
-      ) : (
-        <p className="shimmer text-ui text-faint">loading instructions…</p>
-      )}
+      ) : call.pending ? (
+        <p className="shimmer text-ui text-faint">Loading instructions…</p>
+      ) : null}
     </div>
   )
 }
@@ -321,7 +325,7 @@ export function WaitBody({ call }: ToolViewProps) {
 }
 
 export function BashBody({ call }: ToolViewProps) {
-  const command = argAt(call.arguments, "command") ?? ""
+  const command = argAt(call.arguments, "command") ?? argAt(call.arguments, "cmd") ?? ""
   return (
     <div className="space-y-1.5 px-2.5 py-2">
       <div className="flex gap-2 font-mono text-ui text-foreground/90">
@@ -332,9 +336,15 @@ export function BashBody({ call }: ToolViewProps) {
         <p className="text-ui text-faint">canceled</p>
       ) : call.result ? (
         <Output text={call.result} isError={call.isError} />
+      ) : call.pending ? (
+        <p className="shimmer text-ui">Running…</p>
       ) : (
-        <p className="shimmer text-ui">running…</p>
+        <p className="text-ui text-faint">Completed with no text output.</p>
       )}
     </div>
   )
+}
+
+export function EditPreview({before, after}: {before: string; after: string}) {
+  return <DiffBlock lines={diffLines(before, after)} />
 }
