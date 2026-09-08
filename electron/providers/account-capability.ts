@@ -1,11 +1,15 @@
 import type {
   AccountUsage,
+  AccountProviderInfo,
   HarnessAccount,
   SelectedAccount,
 } from "../account-types.js"
 import type { ProviderCapability } from "./registry.js"
 
-interface AccountCapabilityBase extends ProviderCapability {
+interface AccountCapabilityBase
+  extends
+    ProviderCapability,
+    Pick<AccountProviderInfo, "label" | "loginCommand"> {
   /** Discover only public account metadata; credentials never cross this boundary. */
   listAccounts(selection: string | null): Promise<HarnessAccount[]>
   /** Apply provider-owned credential isolation to a fresh environment copy. */
@@ -22,7 +26,6 @@ interface AccountCapabilityBase extends ProviderCapability {
 
 export interface SelectableAccountCapability extends AccountCapabilityBase {
   mode: "selectable"
-  suggestionLabel: string
   captureAccount(name: string): Promise<void>
   removeAccount(name: string): Promise<void>
 }

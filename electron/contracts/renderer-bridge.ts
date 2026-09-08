@@ -59,7 +59,7 @@ import type {
   AccountHarness,
   AccountProvider,
   AccountUsage,
-  HarnessAccount,
+  AccountCatalog,
 } from "../accounts.js"
 
 export interface BridgeTransport {
@@ -219,7 +219,7 @@ export function createMakoBridge(transport: BridgeTransport) {
     liveClose: (id: string) => invokeTrustedHost<void>("mako:live-close", id),
 
     /* Harness accounts: several logins per CLI. */
-    accounts: () => invokeTrustedHost<HarnessAccount[]>("mako:accounts"),
+    accounts: () => invokeTrustedHost<AccountCatalog>("mako:accounts"),
     captureAccount: (harness: AccountHarness, name: string) =>
       invokeTrustedHost<void>("mako:account-capture", harness, name),
     selectAccount: (harness: AccountHarness, name: string | null) =>

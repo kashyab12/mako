@@ -40,6 +40,17 @@ const AUTH_ENV = [
 
 /** Everything except credentials stays shared across accounts. */
 const HOME = ".claude"
+function defaultHome(env: NodeJS.ProcessEnv = process.env) {
+  return env.CLAUDE_CONFIG_DIR || join(homedir(), HOME)
+}
+function hasCredentials(contents: string): boolean {
+  try {
+    return Boolean(parseAccessToken(contents))
+  } catch {
+    return false
+  }
+}
+
 const SHARED_LINKS = [
   "projects",
   "skills",
@@ -164,7 +175,7 @@ async function listAccounts(
   selection: string | null
 ): Promise<HarnessAccount[]> {
   const accounts: HarnessAccount[] = []
-  const defaultDir = join(homedir(), HOME)
+  const defaultDir = defaultHome()
   accounts.push({
     harness: "claude",
     name: "default",
@@ -214,7 +225,7 @@ function scopedService(configDir: string): string {
  */
 async function captureAccount(name: string): Promise<void> {
   const clean = cleanAccountName(name)
-  const realHome = join(homedir(), HOME)
+  const realHome = defaultHome()
   const dir = accountDir("claude", clean)
   await mkdir(join(accountsRoot(), "claude"), { recursive: true, mode: 0o700 })
   await mkdir(dir, { mode: 0o700 })
@@ -224,15 +235,30 @@ async function captureAccount(name: string): Promise<void> {
     let captured = false
     const source = join(realHome, ".credentials.json")
     if (existsSync(source)) {
-      await copyFile(source, join(dir, ".credentials.json"))
+      const credentials = await readFile(source, "utf8")
+      if (!hasCredentials(credentials))
+        throw new Error(
+          "The Claude Code login is invalid. Sign in with the CLI and capture it again."
+        )
+      await writeFile(join(dir, ".credentials.json"), credentials, {
+        mode: 0o600,
+      })
       await chmod(join(dir, ".credentials.json"), 0o600)
       captured = true
     }
 
     // On macOS live credentials usually live in Keychain. Claude Code 2.1+
     // reads an entry scoped to the config dir it wakes up in, so capture both.
-    const keychainJson = await readKeychain("Claude Code-credentials")
+    const keychainJson = await readKeychain(
+      process.env.CLAUDE_CONFIG_DIR
+        ? scopedService(realHome)
+        : "Claude Code-credentials"
+    )
     if (keychainJson) {
+      if (!hasCredentials(keychainJson))
+        throw new Error(
+          "The Claude Code login is invalid. Sign in with the CLI and capture it again."
+        )
       await writeFile(join(dir, ".credentials.json"), keychainJson, {
         mode: 0o600,
       })
@@ -242,7 +268,9 @@ async function captureAccount(name: string): Promise<void> {
 
     // The CLI's onboarding/config state is copied, not linked: it embeds
     // account state and prevents first-time setup from running again.
-    const config = join(homedir(), ".claude.json")
+    const config = process.env.CLAUDE_CONFIG_DIR
+      ? join(realHome, ".claude.json")
+      : join(homedir(), ".claude.json")
     if (existsSync(config)) await copyFile(config, join(dir, ".claude.json"))
 
     if (!captured) {
@@ -285,7 +313,14 @@ async function accountEnv(
     throw new Error(
       "The selected Claude Code account no longer exists. Select another account or capture it again."
     )
-  await ensureSharedLinks(join(homedir(), HOME), dir, SHARED_LINKS)
+  const credentials = existsSync(join(dir, ".credentials.json"))
+    ? await readFile(join(dir, ".credentials.json"), "utf8")
+    : await readKeychain(scopedService(dir))
+  if (!credentials || !hasCredentials(credentials))
+    throw new Error(
+      "The selected Claude Code account has no valid credentials. Sign in with the CLI and capture it again."
+    )
+  await ensureSharedLinks(defaultHome(base), dir, SHARED_LINKS)
   env.CLAUDE_CONFIG_DIR = dir
   return env
 }
@@ -345,14 +380,15 @@ async function accountUsage(name: string): Promise<AccountUsage> {
   )
   const dir =
     routed?.dir ??
-    (name === "default" ? join(homedir(), HOME) : accountDir("claude", name))
+    (name === "default" ? defaultHome() : accountDir("claude", name))
   return usageForDir(dir, name === "default")
 }
 
 export const claudeAccountCapability: SelectableAccountCapability = {
   provider: "claude",
   mode: "selectable",
-  suggestionLabel: "Claude Code",
+  label: "Claude Code",
+  loginCommand: "claude /login",
   listAccounts,
   captureAccount,
   removeAccount,

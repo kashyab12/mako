@@ -1,4 +1,8 @@
 import type { ProviderCapability } from "./registry.js"
+import type {
+  RequestPermissionRequest,
+  SessionNotification,
+} from "@agentclientprotocol/sdk"
 
 export interface AcpTuning {
   model?: string
@@ -18,6 +22,10 @@ export interface AcpLaunch {
   command: string
   args: string[]
   configureEnvironment(env: NodeJS.ProcessEnv): void
+  notifications?: {
+    permission(request: RequestPermissionRequest): void
+    update(notification: SessionNotification): SessionNotification
+  }
 }
 
 /** Provider-owned process launch and environment for an interactive ACP agent. */

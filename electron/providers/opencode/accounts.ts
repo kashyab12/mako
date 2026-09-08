@@ -30,7 +30,11 @@ interface UsageResponse {
 }
 
 function authFile(): string {
-  return join(homedir(), ".local", "share", "opencode", "auth.json")
+  return join(
+    process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"),
+    "opencode",
+    "auth.json"
+  )
 }
 
 function parseCredential(
@@ -187,6 +191,8 @@ async function accountUsage(providerId: string): Promise<AccountUsage> {
 export const openCodeAccountCapability: ObservedAccountCapability = {
   provider: "opencode",
   mode: "observed",
+  label: "OpenCode",
+  loginCommand: "opencode auth login",
   listAccounts: async () => {
     const path = authFile()
     return readFile(path, "utf8")

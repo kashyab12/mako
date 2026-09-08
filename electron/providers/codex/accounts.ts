@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs"
 import {
   chmod,
-  copyFile,
   mkdir,
   readdir,
   readFile,
@@ -35,6 +34,21 @@ const AUTH_ENV = ["OPENAI_API_KEY"]
 
 /** Everything except credentials stays shared across accounts. */
 const HOME = ".codex"
+function defaultHome(env: NodeJS.ProcessEnv = process.env) {
+  return env.CODEX_HOME || join(homedir(), HOME)
+}
+function hasCredentials(contents: string): boolean {
+  try {
+    const fields = jsonFields(contents)
+    return Boolean(
+      stringValue(fields.get("OPENAI_API_KEY")) ||
+      parseCodexAuth(contents).accessToken
+    )
+  } catch {
+    return false
+  }
+}
+
 const SHARED_LINKS = [
   "sessions",
   "skills",
@@ -178,7 +192,7 @@ async function listAccounts(
   selection: string | null
 ): Promise<HarnessAccount[]> {
   const accounts: HarnessAccount[] = []
-  const defaultDir = join(homedir(), HOME)
+  const defaultDir = defaultHome()
   accounts.push({
     harness: "codex",
     name: "default",
@@ -219,7 +233,7 @@ async function listAccounts(
  */
 async function captureAccount(name: string): Promise<void> {
   const clean = cleanAccountName(name)
-  const realHome = join(homedir(), HOME)
+  const realHome = defaultHome()
   const dir = accountDir("codex", clean)
   await mkdir(join(accountsRoot(), "codex"), { recursive: true, mode: 0o700 })
   await mkdir(dir, { mode: 0o700 })
@@ -232,7 +246,12 @@ async function captureAccount(name: string): Promise<void> {
         "No codex login found to capture — sign in with the CLI first"
       )
     }
-    await copyFile(source, join(dir, "auth.json"))
+    const credentials = await readFile(source, "utf8")
+    if (!hasCredentials(credentials))
+      throw new Error(
+        "The Codex login is missing or invalid. Sign in with the CLI and capture it again."
+      )
+    await writeFile(join(dir, "auth.json"), credentials, { mode: 0o600 })
     await chmod(join(dir, "auth.json"), 0o600)
 
     // Sessions and skills remain in the one watched store for every account.
@@ -287,7 +306,11 @@ async function accountEnv(
     throw new Error(
       "The selected Codex account has no credentials. Select another account or capture it again."
     )
-  await ensureSharedLinks(join(homedir(), HOME), dir, SHARED_LINKS)
+  if (!hasCredentials(await readFile(join(dir, "auth.json"), "utf8")))
+    throw new Error(
+      "The selected Codex account has invalid credentials. Sign in with the CLI and capture it again."
+    )
+  await ensureSharedLinks(defaultHome(base), dir, SHARED_LINKS)
   env.CODEX_HOME = dir
   return env
 }
@@ -352,14 +375,15 @@ async function accountUsage(name: string): Promise<AccountUsage> {
   )
   const dir =
     routed?.dir ??
-    (name === "default" ? join(homedir(), HOME) : accountDir("codex", name))
+    (name === "default" ? defaultHome() : accountDir("codex", name))
   return usageForDir(dir)
 }
 
 export const codexAccountCapability: SelectableAccountCapability = {
   provider: "codex",
   mode: "selectable",
-  suggestionLabel: "Codex",
+  label: "Codex",
+  loginCommand: "codex login",
   listAccounts,
   captureAccount,
   removeAccount,
