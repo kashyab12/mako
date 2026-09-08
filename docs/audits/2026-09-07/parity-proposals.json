@@ -1,0 +1,98 @@
+[
+  {
+    "repository": "stablyai/orca",
+    "number": 14877,
+    "title": "fix(codex): land an account-switch restart on the newly selected account",
+    "url": "https://github.com/stablyai/orca/pull/14877",
+    "state": "open",
+    "mergedAt": null,
+    "branch": "fix/codex-account-switch-restart",
+    "sha": "5f3ae17ce3388704ecb33915d3f83634726a4dc7",
+    "updatedAt": "2026-08-19T21:32:02Z",
+    "checkedAt": "2026-09-08T05:54:41.726Z"
+  },
+  {
+    "repository": "pingdotgg/t3code",
+    "number": 10501,
+    "title": "fix(mcp): keep preview snapshots usable by the agent and let it save them",
+    "url": "https://github.com/pingdotgg/t3code/pull/10501",
+    "state": "open",
+    "mergedAt": null,
+    "branch": "t3code/fix-image-preview-rendering",
+    "sha": "7a640176ac00f0f4086b1b059020be5d1a23f514",
+    "updatedAt": "2026-09-08T00:22:50Z",
+    "checkedAt": "2026-09-08T05:54:42.449Z"
+  },
+  {
+    "repository": "pingdotgg/t3code",
+    "number": 10401,
+    "title": "fix(server): don't kill opencode sessions when preview registration fails",
+    "url": "https://github.com/pingdotgg/t3code/pull/10401",
+    "state": "open",
+    "mergedAt": null,
+    "branch": "fix/opencode-preview-registration-best-effort",
+    "sha": "5fa848acddc65db166abda83d0d369be8b44fe4a",
+    "updatedAt": "2026-09-07T09:27:31Z",
+    "checkedAt": "2026-09-08T05:54:43.145Z"
+  },
+  {
+    "repository": "pingdotgg/t3code",
+    "number": 10141,
+    "title": "fix(preview): preserve detail in browser screenshots",
+    "url": "https://github.com/pingdotgg/t3code/pull/10141",
+    "state": "open",
+    "mergedAt": null,
+    "branch": "t3code/investigate-browser-screenshot-quality",
+    "sha": "cd1f8ab6518858e8178e025b1f4a106aed7654e2",
+    "updatedAt": "2026-09-07T22:53:10Z",
+    "checkedAt": "2026-09-08T05:54:43.875Z"
+  },
+  {
+    "repository": "pingdotgg/t3code",
+    "number": 9505,
+    "title": "fix(server): bound preview_snapshot metadata sent to the agent",
+    "url": "https://github.com/pingdotgg/t3code/pull/9505",
+    "state": "open",
+    "mergedAt": null,
+    "branch": "fix/preview-snapshot-metadata-budget",
+    "sha": "d7633d8b286c340d8205e304b463c10eb1b186fa",
+    "updatedAt": "2026-09-03T23:24:20Z",
+    "checkedAt": "2026-09-08T05:54:44.916Z"
+  },
+  {
+    "repository": "pingdotgg/t3code",
+    "number": 7302,
+    "title": "fix(preview): keep snapshots slim unless the agent asks",
+    "url": "https://github.com/pingdotgg/t3code/pull/7302",
+    "state": "open",
+    "mergedAt": null,
+    "branch": "fix/preview-slim-snapshot",
+    "sha": "2ad661c56b523f4848f1d6907af09947ca24b297",
+    "updatedAt": "2026-09-04T08:08:41Z",
+    "checkedAt": "2026-09-08T05:54:45.621Z"
+  },
+  {
+    "repository": "omnigent-ai/omnigent",
+    "number": 4647,
+    "title": "feat: surface native computer-use activity in the workspace panel",
+    "url": "https://github.com/omnigent-ai/omnigent/pull/4647",
+    "state": "open",
+    "mergedAt": null,
+    "branch": "feat/computer-use-submission",
+    "sha": "7131b73299770242540272ecd3e3973a4aab4587",
+    "updatedAt": "2026-08-12T07:30:09Z",
+    "checkedAt": "2026-09-08T05:54:46.427Z"
+  },
+  {
+    "repository": "omnigent-ai/omnigent",
+    "number": 5854,
+    "title": "fix(runner): don't fall through to Databricks auth when the accounts login expires",
+    "url": "https://github.com/omnigent-ai/omnigent/pull/5854",
+    "state": "open",
+    "mergedAt": null,
+    "branch": "fix/accounts-jwt-expiry-databricks-fallthrough",
+    "sha": "03fcc222e94ca89725b331dcec21849b88698818",
+    "updatedAt": "2026-08-30T14:11:19Z",
+    "checkedAt": "2026-09-08T05:54:47.081Z"
+  }
+]
