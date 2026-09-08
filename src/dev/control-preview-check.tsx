@@ -51,14 +51,16 @@ function render(second: boolean) {
       <>
         <div
           data-pane="one"
-          className="relative h-96 w-96 overflow-hidden border border-border"
+          style={{ height: 384, width: 384 }}
+          className="relative overflow-hidden border border-border"
         >
           <ControlPreviewOverlay conversationId="one" />
         </div>
         {second && (
           <div
             data-pane="two"
-            className="relative h-96 w-96 overflow-hidden border border-border"
+            style={{ height: 384, width: 384 }}
+          className="relative overflow-hidden border border-border"
           >
             <ControlPreviewOverlay conversationId="two" />
           </div>
