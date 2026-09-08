@@ -6,10 +6,12 @@ import {
   SettingRow,
   Toggle,
 } from "@/components/ui/kit"
-import { setPref, usePrefs, type Theme } from "@/state/prefs"
+import { setPref, usePrefs, type Theme, type OceanTone } from "@/state/prefs"
 
 export function AppearanceSection() {
   const theme = usePrefs((prefs) => prefs.theme)
+  const oceanTone = usePrefs((prefs) => prefs.oceanTone)
+  const oceanMotion = usePrefs((prefs) => prefs.oceanMotion)
 
   const enabled = usePrefs((prefs) => prefs.soundEnabled)
   const volume = usePrefs((prefs) => prefs.soundVolume)
@@ -29,6 +31,20 @@ export function AppearanceSection() {
           ]}
           onChange={(next) => setPref("theme", next)}
         />
+      </SettingRow>
+      <SettingRow title="Ocean color" description="Only the opening illustration changes">
+        <Segmented<OceanTone>
+          value={oceanTone}
+          options={[
+            { value: "ink", label: "Warm ink" },
+            { value: "sea", label: "Sea glass" },
+            { value: "moon", label: "Moonlight" },
+          ]}
+          onChange={(next) => setPref("oceanTone", next)}
+        />
+      </SettingRow>
+      <SettingRow title="Moving water" description="Pauses while writing and respects reduced motion">
+        <Toggle label="Moving water" on={oceanMotion} onChange={() => setPref("oceanMotion", !oceanMotion)} />
       </SettingRow>
       <SettingRow
         title="Interface sounds"
