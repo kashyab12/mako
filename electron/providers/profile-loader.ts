@@ -1,4 +1,4 @@
-import type { HarnessModelCatalog } from "../harness-models.js"
+import type { HarnessModelCatalog } from "@mako/sessions/model-catalog"
 import type { HarnessProfile } from "../shared.js"
 import type { ProviderCapability } from "./registry.js"
 
@@ -7,7 +7,7 @@ export interface ProviderProfileLoader extends ProviderCapability {
   transport: HarnessProfile["transport"]
   capabilities: string[]
   cacheKey(env: NodeJS.ProcessEnv): string
-  load(env: NodeJS.ProcessEnv): Promise<HarnessProfile>
+  load(env: NodeJS.ProcessEnv, cwd?: string): Promise<HarnessProfile>
 }
 
 export function availableProviderProfile(
@@ -22,6 +22,8 @@ export function availableProviderProfile(
     models: catalog.models,
     capabilities: loader.capabilities,
   }
+  if (catalog.settings) profile.settings = catalog.settings
+  if (catalog.configurationError) profile.configurationError = catalog.configurationError
   if (catalog.defaultModel) profile.defaultModel = catalog.defaultModel
   if (catalog.configuredModel) profile.configuredModel = catalog.configuredModel
   return profile

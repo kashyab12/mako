@@ -1,12 +1,9 @@
+import type { McpServer } from "@agentclientprotocol/sdk"
+import type { SessionSettings } from "@mako/sessions/settings"
 import type { ProviderCapability } from "./registry.js"
-import type { RequestPermissionRequest } from "@agentclientprotocol/sdk"
+import type { RequestPermissionRequest, NewSessionRequest } from "@agentclientprotocol/sdk"
 
-export interface AcpTuning {
-  model?: string
-  effort?: string
-  fast?: boolean
-  options?: Record<string, string | boolean>
-}
+export type AcpTuning = SessionSettings
 
 export interface AcpLaunchOptions {
   appPath: string
@@ -19,12 +16,15 @@ export interface AcpLaunch {
   command: string
   args: string[]
   configureEnvironment(env: NodeJS.ProcessEnv): void
+  prepareMcp?(servers: readonly McpServer[], env: NodeJS.ProcessEnv): Promise<() => Promise<void>>
   permissionTitle?(request: RequestPermissionRequest): string | undefined
 }
 
 /** Provider-owned process launch and environment for an interactive ACP agent. */
 export interface ProviderAcpSource extends ProviderCapability {
   canResume: boolean
+  launchOptionIds?: readonly string[]
+  sessionMetadata?(tuning: SessionSettings): NewSessionRequest["_meta"]
   available(appPath: string): boolean
   launch(options: AcpLaunchOptions): Promise<AcpLaunch | null>
 }

@@ -1,3 +1,4 @@
+import { prepareDevinMcp } from "./session-mcp.js"
 import type { ProviderAcpSource } from "../acp-source.js"
 import { devinExecutable } from "./executable.js"
 import { devinPermissionTitle } from "./permissions.js"
@@ -12,6 +13,7 @@ export const devinAcpSource: ProviderAcpSource = {
       args: ["acp"],
       configureEnvironment: () => {},
       permissionTitle: devinPermissionTitle,
+      prepareMcp: prepareDevinMcp,
     }
   },
 }

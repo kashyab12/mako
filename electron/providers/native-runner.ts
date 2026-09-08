@@ -1,11 +1,8 @@
+import type { SessionSettings } from "@mako/sessions/settings"
 import type { ProviderCapability } from "./registry.js"
 
-export interface NativeRunOptions {
+export interface NativeRunOptions extends SessionSettings {
   captureOutput?: boolean
-  model?: string
-  effort?: string
-  fast?: boolean
-  options?: Record<string, string | boolean>
   nativePath?: string
 }
 
@@ -47,11 +44,12 @@ export function commandTuning(
   const optionEffort = stringOption(options.options?.effort)
   const serviceTier = stringOption(options.options?.serviceTier)
   if (options.model !== undefined) tuning.model = options.model
-  if (options.effort !== undefined) tuning.effort = options.effort
-  if (options.effort || optionEffort !== undefined) {
-    tuning.cliEffort = options.effort ?? optionEffort
+  if (optionEffort !== undefined) {
+    tuning.effort = optionEffort
+    tuning.cliEffort = optionEffort
   }
-  if (options.fast !== undefined) tuning.fast = options.fast
+  const fast = options.options?.fast
+  if (fast === true || fast === false) tuning.fast = fast
   if (serviceTier !== undefined) tuning.serviceTier = serviceTier
   return tuning
 }

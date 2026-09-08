@@ -1,3 +1,4 @@
+import type { SessionSettings } from "@mako/sessions/settings"
 import type {
   LivePermissionResponse,
   PromptAttachment,
@@ -27,7 +28,8 @@ export interface ProviderLiveDriver extends ProviderCapability {
   prompt(
     id: string,
     text: string,
-    attachments: PromptAttachment[]
+    attachments: PromptAttachment[],
+    settings?: SessionSettings
   ): Promise<void>
   permission(
     id: string,

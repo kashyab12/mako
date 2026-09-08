@@ -1,10 +1,7 @@
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import {
-  normalizeGrokModels,
-  type GrokModelCache,
-} from "../../harness-models.js"
+import { normalizeGrokModels, type GrokModelCache } from "@mako/sessions/model-catalog"
 import {
   availableProviderProfile,
   type ProviderProfileLoader,
@@ -29,10 +26,10 @@ export const grokProfileLoader: ProviderProfileLoader = {
     "memory",
   ],
   cacheKey: () => "",
-  async load(env) {
+  async load(env, cwd) {
     const installed = join(homedir(), ".grok", "bin", "grok")
     const executable = existsSync(installed) ? installed : "grok"
-    const output = await runDiscovery(executable, ["models"], env)
+    const output = await runDiscovery(executable, ["models"], env, undefined, cwd)
     const cached = await readJson<GrokModelCache>(
       join(homedir(), ".grok", "models_cache.json")
     )

@@ -1,7 +1,4 @@
-import {
-  normalizeDevinModels,
-  type DevinModelListResponse,
-} from "../../harness-models.js"
+import { normalizeDevinModels, type DevinModelListResponse } from "@mako/sessions/model-catalog"
 import {
   availableProviderProfile,
   type ProviderProfileLoader,
@@ -25,11 +22,11 @@ export const devinProfileLoader: ProviderProfileLoader = {
     "models",
   ],
   cacheKey: () => "",
-  async load(env) {
+  async load(env, cwd) {
     const executable = devinExecutable()
     if (!executable) throw new Error("Devin CLI is not installed")
     const parsed: DevinModelListResponse = JSON.parse(
-      await runDiscovery(executable, ["models", "list", "--format", "json"], env)
+      await runDiscovery(executable, ["models", "list", "--format", "json"], env, undefined, cwd)
     )
     return availableProviderProfile(
       devinProfileLoader,

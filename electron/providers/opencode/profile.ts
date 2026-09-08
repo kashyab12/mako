@@ -3,11 +3,7 @@ import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { z } from "zod"
-import {
-  normalizeOpenCodeModels,
-  preferredOpenCodeDefault,
-  type OpenCodeModelRow,
-} from "../../harness-models.js"
+import { normalizeOpenCodeModels, type OpenCodeModelRow } from "@mako/sessions/model-catalog"
 import {
   availableProviderProfile,
   type ProviderProfileLoader,
@@ -72,7 +68,11 @@ const CacheProviderSchema = z
   .object({ models: z.record(z.string(), z.unknown()) })
   .passthrough()
 const CacheSchema = z.record(z.string(), z.unknown())
-const ConfigSchema = z.object({ model: z.string().optional() }).passthrough()
+const ConfigSchema = z.object({
+  model: z.string().optional(),
+  default_agent: z.string().optional(),
+  agent: z.record(z.string(), z.object({ model: z.string().optional(), variant: z.string().optional() })).optional(),
+})
 
 export const openCodeProfileLoader: ProviderProfileLoader = {
   provider: "opencode",
@@ -102,7 +102,7 @@ export const openCodeProfileLoader: ProviderProfileLoader = {
       return "missing"
     }
   },
-  async load(env) {
+  async load(env, cwd) {
     const installation = openCodeInstallation()
     if (!installation) throw new Error("OpenCode is not installed")
     const output = await runDiscovery(
@@ -110,19 +110,27 @@ export const openCodeProfileLoader: ProviderProfileLoader = {
       installation.generation === "v2"
         ? ["models"]
         : ["models", "--verbose"],
-      env
+      env,
+      undefined,
+      cwd
     )
     const rows =
       installation.generation === "v2"
         ? await v2Models(output)
         : parseModels(output)
     const catalog = normalizeOpenCodeModels(rows)
-    const configured = await configuredModel()
-    if (configured && catalog.models.some((model) => model.id === configured)) {
-      catalog.configuredModel = configured
-      catalog.defaultModel = configured
-    } else {
-      catalog.defaultModel = preferredOpenCodeDefault(catalog.models)
+    try {
+      const config = ConfigSchema.parse(JSON.parse(await runDiscovery(
+        installation.command, ["debug", "config"], env, undefined, cwd
+      )))
+      const agent = config.agent?.[config.default_agent ?? "build"]
+      const configured = agent?.model ?? config.model
+      if (configured) {
+        catalog.configuredModel = configured
+        catalog.settings = { model: configured, options: agent?.variant ? { effort: agent.variant } : {} }
+      }
+    } catch {
+      catalog.configurationError = "OpenCode did not report its resolved configuration. Its defaults will be confirmed when the session opens."
     }
     return availableProviderProfile(openCodeProfileLoader, catalog)
   },
@@ -224,19 +232,4 @@ function parseModels(output: string): OpenCodeModelRow[] {
     start = output.indexOf("{", end)
   }
   return rows
-}
-
-async function configuredModel(): Promise<string | undefined> {
-  for (const path of [
-    join(homedir(), ".config", "opencode", "opencode.json"),
-    join(homedir(), ".opencode", "config.json"),
-  ]) {
-    try {
-      const parsed = ConfigSchema.safeParse(JSON.parse(await readFile(path, "utf8")))
-      if (parsed.success && parsed.data.model) return parsed.data.model
-    } catch {
-      continue
-    }
-  }
-  return undefined
 }

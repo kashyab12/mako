@@ -31,12 +31,14 @@ export function runDiscovery(
   command: string,
   args: string[],
   env: NodeJS.ProcessEnv,
-  input?: string
+  input?: string,
+  cwd?: string
 ): Promise<string> {
   const executable = resolveExecutable(command, env)
   if (!executable) return Promise.reject(new Error(`${command} is not installed`))
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, {
+      cwd,
       env: environmentForExecutable(executable, env),
       stdio: ["pipe", "pipe", "pipe"],
     })
@@ -77,12 +79,14 @@ export function streamRequest<TMessage, TResult>(
   args: string[],
   request: JsonObject,
   env: NodeJS.ProcessEnv,
-  pick: (value: TMessage) => TResult | undefined
+  pick: (value: TMessage) => TResult | undefined,
+  cwd?: string
 ): Promise<TResult> {
   const executable = resolveExecutable(command, env)
   if (!executable) return Promise.reject(new Error(`${command} is not installed`))
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, {
+      cwd,
       env: environmentForExecutable(executable, env),
       stdio: ["pipe", "pipe", "pipe"],
     })
@@ -126,12 +130,15 @@ export function rpcRequest<TResult>(
   args: string[],
   method: string,
   env: NodeJS.ProcessEnv,
-  jsonrpc: boolean
+  jsonrpc: boolean,
+  params: JsonObject = {},
+  cwd?: string
 ): Promise<TResult> {
   const executable = resolveExecutable(command, env)
   if (!executable) return Promise.reject(new Error(`${command} is not installed`))
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, {
+      cwd,
       env: environmentForExecutable(executable, env),
       stdio: ["pipe", "pipe", "pipe"],
     })
@@ -161,7 +168,7 @@ export function rpcRequest<TResult>(
               throw new Error(message.error.message ?? "initialize failed")
             initialized = true
             send({ method: "initialized", params: {} })
-            send({ id: 2, method, params: {} })
+            send({ id: 2, method, params })
           } else if (message.id === 2) {
             settled = true
             clearTimeout(timer)

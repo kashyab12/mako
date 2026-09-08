@@ -1,3 +1,4 @@
+import { z } from "zod"
 import type { ProviderAcpSource } from "../acp-source.js"
 import {
   openCodeInstallation,
@@ -12,6 +13,7 @@ interface OpenCodeAcpConfig {
 export const openCodeAcpSource: ProviderAcpSource = {
   provider: "opencode",
   canResume: true,
+  launchOptionIds: ["effort"],
   available: () => openCodeInstallation() !== null,
   async launch(options) {
     const generation = options.resume
@@ -27,9 +29,8 @@ export const openCodeAcpSource: ProviderAcpSource = {
           return
         const config: OpenCodeAcpConfig = {}
         if (options.tuning.model) config.model = options.tuning.model
-        if (options.tuning.effort) {
-          config.agent = { build: { variant: options.tuning.effort } }
-        }
+        const effort = z.string().optional().parse(options.tuning.options?.effort)
+        if (effort) config.agent = { build: { variant: effort } }
         if (Object.keys(config).length > 0) {
           env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config)
         }

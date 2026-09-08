@@ -1,3 +1,4 @@
+import type { ProviderArtifactPreview } from "./artifact-preview.js"
 import type { ProviderLiveDriver } from "./live-driver.js"
 import type { ProviderAccountCapability } from "./account-capability.js"
 import type { ProviderAcpSource } from "./acp-source.js"
@@ -10,6 +11,7 @@ import type { ProviderSkillSource } from "./skill-source.js"
 import { ProviderRegistry } from "./registry.js"
 
 export interface ProviderHost {
+  artifactPreviews: ProviderRegistry<ProviderArtifactPreview>
   liveDrivers: ProviderRegistry<ProviderLiveDriver>
   nativeRunners: ProviderRegistry<NativeRunner>
   acpSources: ProviderRegistry<ProviderAcpSource>
@@ -25,6 +27,7 @@ export type ProviderModule = (host: ProviderHost) => void
 
 export function createProviderHost(): ProviderHost {
   return {
+    artifactPreviews: new ProviderRegistry(),
     liveDrivers: new ProviderRegistry(),
     nativeRunners: new ProviderRegistry(),
     acpSources: new ProviderRegistry(),
