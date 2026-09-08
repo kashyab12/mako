@@ -6,6 +6,7 @@ import {
 } from "./shared.js"
 
 const api = createMakoBridge({
+  nativeWindowVideo: true,
   // Electron owns and types this trusted local transport's return value.
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
   onEvent: (listener) => {

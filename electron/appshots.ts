@@ -7,10 +7,7 @@ import type {
   AppshotTarget,
   AppshotWindow,
 } from "./contracts/appshots.js"
-import {
-  ControlImageSchema,
-  type ControlImage,
-} from "./contracts/control-preview.js"
+import { ControlImageSchema } from "./contracts/control-preview.js"
 
 const windowList = z.object({
   windows: z

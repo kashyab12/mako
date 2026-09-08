@@ -1,4 +1,3 @@
-import { ControlPreviewWindow } from "./control-preview-window.js"
 import { resolveExecutable } from "./executable.js"
 import { Appshots } from "./appshots.js"
 import { imageSize } from "image-size"
@@ -234,15 +233,7 @@ const controlPreviews = new ControlPreviews(
       mimeType: "image/jpeg",
     }
   },
-  (activity) => {
-    emit({ type: "control-activity", activity })
-    controlPreviewWindow.observe(activity)
-  }
-)
-const controlPreviewWindow = new ControlPreviewWindow(
-  controlPreviews,
-  __dirname,
-  isDev ? process.env.VITE_DEV_SERVER_URL : undefined
+  (activity) => emit({ type: "control-activity", activity })
 )
 let controlService: Awaited<ReturnType<typeof startControlService>> | null =
   null
@@ -642,7 +633,6 @@ function bindIpc() {
         : null
     }
   )
-  handle("mako:control-preview-hide", () => controlPreviewWindow.hide())
   handle("mako:appshot-windows", () => appshots.windows(true))
   handle(
     "mako:appshot-capture",
@@ -1185,7 +1175,6 @@ app.on("before-quit", () => {
   powerMonitor.removeListener("unlock-screen", emitTerminalWake)
   terminalClient?.dispose()
   stopCuaEmbedded()
-  controlPreviewWindow.close()
   void appshots.close()
   controlService?.close()
   stopWorkspaceIpc()
