@@ -5,7 +5,7 @@ export class AudioFeedback {
   private context: AudioContext | undefined
   private master: GainNode | undefined
   private decode: Promise<AudioBuffer> | undefined
-  private voices = new Set<AudioScheduledSourceNode>()
+  private voices = new Map<AudioScheduledSourceNode, () => void>()
   private generation = 0
   private enabled = false
   private volume = 0.25
@@ -19,9 +19,9 @@ export class AudioFeedback {
 
   stop() {
     this.generation++
-    for (const voice of this.voices) {
+    for (const [voice, release] of this.voices) {
       voice.stop()
-      voice.disconnect()
+      release()
     }
     this.voices.clear()
   }
@@ -38,7 +38,7 @@ export class AudioFeedback {
         this.master.connect(context.destination)
       }
       await context.resume()
-      if (generation !== this.generation) return
+      if (generation !== this.generation || document.hidden) return
       if (cue === "complete") {
         this.decode ??= fetch(new URL("../assets/sounds/confirmation.ogg", import.meta.url))
           .then((response) => {
@@ -46,7 +46,10 @@ export class AudioFeedback {
             return response.arrayBuffer()
           })
           .then((bytes) => context.decodeAudioData(bytes))
-          .catch((error: Error) => { this.decode = undefined; throw error })
+          .catch(() => {
+            if (this.context === context) this.decode = undefined
+            throw new Error("Sound unavailable")
+          })
         const buffer = await this.decode
         if (generation !== this.generation || document.hidden) return
         const voice = context.createBufferSource()
@@ -75,12 +78,14 @@ export class AudioFeedback {
   }
 
   private own(voice: AudioScheduledSourceNode, cleanup?: () => void) {
-    this.voices.add(voice)
-    voice.onended = () => {
+    const release = () => {
+      voice.onended = null
       this.voices.delete(voice)
       voice.disconnect()
       cleanup?.()
     }
+    this.voices.set(voice, release)
+    voice.onended = release
   }
 
   dispose() {
