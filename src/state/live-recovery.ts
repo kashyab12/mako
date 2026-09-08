@@ -1,3 +1,4 @@
+import { playFeedback } from "@/state/feedback"
 import { getMako, hasBridge } from "@/lib/bridge"
 import type { LiveBatch, LiveSnapshot, LiveSummary } from "@/lib/types"
 import { acpStore, replaceAcpConversation } from "@/state/acp-state"
@@ -125,6 +126,11 @@ export function applyLiveBatch(batch: LiveBatch): void {
     projection: projectLive({ blocks, base, session }, current.projection),
     updatedAt: Date.now(),
   })
+  if (batch.requests?.some((request) =>
+    request.status === "completed" && current.requests?.some((previous) =>
+      previous.id === request.id && previous.status === "dispatching"
+    )
+  )) playFeedback("complete")
   const next = acpStore.get().conversations[batch.id]
   if (
     next?.kind === "live" &&

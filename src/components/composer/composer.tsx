@@ -21,6 +21,7 @@ import {
   buildForeignPrompt,
   useAttachments,
   type Attachment,
+  type AttachmentInput,
 } from "@/lib/attachments"
 import { composerActionKind, composerTurnRunning } from "@/lib/composer-action"
 import { textOf } from "@/lib/format"
@@ -116,6 +117,10 @@ export function Composer() {
   const scroller = useRef<HTMLDivElement>(null)
   const filePicker = useRef<HTMLInputElement>(null)
   const attachments = useAttachments(draftKey)
+  const activeAttachmentDraft = useRef(draftKey)
+  useLayoutEffect(() => {
+    activeAttachmentDraft.current = draftKey
+  }, [draftKey])
   const rejectedDrafts = useDrafts((state) =>
     state.rejected.filter((item) => item.key === draftKey)
   )
@@ -157,15 +162,19 @@ export function Composer() {
 
   /** Insert the markers the attachments produced at the caret. */
   const attach = useCallback(
-    async (files: File[]) => {
+    async (files: AttachmentInput[]) => {
       if (files.length === 0) return
       const markers = await attachments.add(files)
+      if (markers && activeAttachmentDraft.current !== draftKey) {
+        toast.info("Attachments were saved to the original task’s draft.")
+        return
+      }
       if (markers)
         window.dispatchEvent(
           new CustomEvent("mako:insert", { detail: `${markers} ` })
         )
     },
-    [attachments]
+    [attachments, draftKey]
   )
 
   // Swap in the draft belonging to whichever session just became active.
@@ -226,8 +235,10 @@ export function Composer() {
   useLayoutEffect(() => {
     const node = textarea.current
     if (!node) return
-    node.style.height = "0px"
-    node.style.height = `${node.scrollHeight}px`
+    if (!CSS.supports("field-sizing", "content")) {
+      node.style.height = "0px"
+      node.style.height = `${node.scrollHeight}px`
+    }
 
     // Keep the caret in view. After typing or pasting at the end — which is
     // nearly always — that means the bottom. Anywhere else and the browser has
@@ -678,7 +689,7 @@ export function Composer() {
               className={cn(
                 // No max-height and no scrolling of its own — the wrapper owns
                 // both, so the painted layer behind it stays in register.
-                "relative block w-full resize-none overflow-hidden bg-transparent px-3 pb-1",
+                "composer-input relative block w-full resize-none overflow-hidden bg-transparent px-3 pb-1",
                 expanded ? "min-h-[84px] pt-2.5" : "min-h-10 pt-2",
                 "font-sans text-ui leading-[1.55] placeholder:text-faint focus:outline-none",
                 // Transparent glyphs let the overlay show through; the caret
@@ -711,11 +722,21 @@ export function Composer() {
             >
               <PaperclipIcon />
             </IconAction>
-            <Slot name="composer.controls" meta={meta} disabled={busy} />
+            <Slot
+              name="composer.controls"
+              meta={meta}
+              disabled={busy}
+              attachFiles={attach}
+            />
             <ComposerRouting />
 
             <div className="ml-auto flex items-center gap-1">
-              <Slot name="composer.trailing" meta={meta} disabled={busy} />
+              <Slot
+                name="composer.trailing"
+                meta={meta}
+                disabled={busy}
+                attachFiles={attach}
+              />
               <ContextDial />
               <ComposerActionButton
                 action={primaryAction}

@@ -1,5 +1,8 @@
+import { AppshotButton } from "@/components/composer/appshot-button"
+import { ControlPreviewPanel } from "@/components/inspector/control-preview-panel"
 import {
   BotIcon,
+  MonitorIcon,
   FilesIcon,
   GitCompareIcon,
   HistoryIcon,
@@ -84,9 +87,18 @@ export function installBuiltins(): () => void {
       placement: "bottom",
       minHeight: 180,
     }),
+    registerSurface({
+      id: "control",
+      label: "Control",
+      icon: MonitorIcon,
+      render: ControlPreviewPanel,
+      order: 5,
+      minWidth: 360,
+    }),
     // Identity, through the same slots a plugin would use.
     registerSlot("identity", "titlebar.trailing", IdentityBadge, -10),
     registerSlot("identity", "rail.footer", IdentityRow, -10),
+    registerSlot("appshot", "composer.controls", AppshotButton, -10),
     registerSlot("terminal-dock", "composer.trailing", TerminalDockToggle, -10),
 
     ...["bash", "Bash", "shell", "Shell", "exec_command"].map((name) =>

@@ -24,6 +24,8 @@ import { toast } from "sonner"
  * shows as a numbered preview above the composer.
  */
 
+export type AttachmentInput = File | { file: File; context: string }
+
 export type AttachmentKind = "image" | "text" | "binary"
 
 export interface Attachment {
@@ -42,6 +44,9 @@ export interface Attachment {
   preview?: string
   /** Scratch-file path, for anything the model cannot take inline. */
   stagedPath?: string
+  /** Readable window context paired with an image capture. */
+  contextPath?: string
+  context?: string
   /** True while the file is being read or staged. */
   pending?: boolean
   error?: string
@@ -183,10 +188,12 @@ export function useAttachments(key = "default") {
 
   /** Returns the markers to insert, so the caller can place them at the caret. */
   const add = useCallback(
-    async (files: File[]): Promise<string> => {
+    async (files: AttachmentInput[]): Promise<string> => {
       const accepted: PendingAttachment[] = []
 
-      for (const file of files) {
+      for (const input of files) {
+        const file = input instanceof File ? input : input.file
+        const context = input instanceof File ? undefined : input.context
         if (file.size > MAX_BYTES) {
           toast.error(`${file.name} is larger than 256 MB`)
           continue
@@ -207,6 +214,7 @@ export function useAttachments(key = "default") {
             mimeType: file.type || "application/octet-stream",
             size: file.size,
             kind,
+            context,
             preview: kind === "image" ? URL.createObjectURL(file) : undefined,
             pending: true,
           },
@@ -347,9 +355,21 @@ async function resolve(
     attachment.kind === "text"
       ? await file.slice(0, MAX_INLINE_TEXT).text()
       : undefined
+  const context = attachment.context
+  const contextFile = context
+    ? await getMako().stageFile(
+        `${file.name}.context.txt`,
+        await toBase64(
+          new File([context], `${file.name}.context.txt`, {
+            type: "text/plain",
+          })
+        )
+      )
+    : undefined
   return {
     ...attachment,
     stagedPath: staged.path,
+    contextPath: contextFile?.path,
     data:
       attachment.kind === "image"
         ? (data ?? (await toBase64(file)))
@@ -403,7 +423,7 @@ export function buildPrompt(
     if (item.kind === "image" && item.data) {
       images.push({ mimeType: item.mimeType, data: item.data })
       appendix.push(
-        `[Attachment ${item.index}] ${item.name} — image, attached inline above.`
+        `[Attachment ${item.index}] ${item.name} — image, attached inline above.${item.context ? `\n${item.context}` : item.contextPath ? `\nWindow text saved at ${item.contextPath}; read it alongside the image.` : ""}`
       )
       continue
     }
@@ -442,7 +462,7 @@ export function buildForeignPrompt(draft: string, items: Attachment[]): string {
     if (item.stagedPath) {
       appendix.push(
         `[Attachment ${item.index}] ${item.name} — ${item.mimeType}, ${formatBytes(item.size)}. ` +
-          `Saved at ${item.stagedPath}; read it from there.`
+          `Saved at ${item.stagedPath}; read it from there.${item.contextPath ? ` Window text saved at ${item.contextPath}; read it alongside the image.` : ""}`
       )
     } else if (item.kind === "text" && item.text !== undefined) {
       appendix.push(`[Attachment ${item.index}] ${item.name}
@@ -497,4 +517,31 @@ export function formatBytes(bytes: number) {
   if (bytes < 1024 * 1024 * 1024)
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
+}
+
+/** Reloaded drafts keep disk paths, not stale blob URLs or base64 in localStorage. */
+export function useAttachmentPreview(item: Attachment): string | undefined {
+  const [resolved, setResolved] = useState<{
+    path: string
+    url: string
+  } | null>(null)
+  useEffect(() => {
+    const path = item.stagedPath
+    if (item.kind !== "image" || item.preview || !path) return
+    let current = true
+    void getMako()
+      .readFile(path)
+      .then((file) => {
+        if (current && file.previewUrl)
+          setResolved({ path, url: getMako().resolveFileUrl(file.previewUrl) })
+      })
+      .catch(() => {})
+    return () => {
+      current = false
+    }
+  }, [item.kind, item.preview, item.stagedPath])
+  return (
+    item.preview ??
+    (resolved?.path === item.stagedPath ? resolved?.url : undefined)
+  )
 }

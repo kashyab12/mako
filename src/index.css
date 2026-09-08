@@ -95,6 +95,9 @@
   --text-title--letter-spacing: -0.13px;
   /* The conversation's own size — the prompt bubble must match the prose
      that answers it, or the exchange reads as two different documents. */
+  --text-welcome: 30px;
+  --text-welcome--line-height: 1.12;
+  --text-welcome--letter-spacing: -1px;
   --text-prose: 14px;
   --text-prose--line-height: 1.6;
   --text-prose--letter-spacing: -0.04px;
@@ -818,4 +821,47 @@
     transform: translateX(2.2rem);
     opacity: 0;
   }
+}
+
+/* Decorative ink uses the existing warm foreground ramp. */
+.dither-field {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: var(--foreground);
+  opacity: 0.045;
+  image-rendering: pixelated;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.usage-dither {
+  background-color: color-mix(in srgb, var(--foreground) 10%, transparent);
+  background-image: radial-gradient(var(--faint) 0.6px, transparent 0.7px);
+  background-size: 3px 3px;
+}
+
+.copy-confirmation svg {
+  animation: enter 160ms var(--ease-out);
+}
+
+@supports (field-sizing: content) {
+  .composer-input { field-sizing: content; min-height: 1lh; }
+}
+
+html[data-control-preview="true"],
+html[data-control-preview="true"] body,
+html[data-control-preview="true"] #root {
+  background: transparent;
+}
+
+[data-sonner-toaster] [data-sonner-toast] {
+  font-family: var(--font-sans);
+  transition-duration: 180ms;
+  transition-timing-function: var(--ease-out);
+}
+[data-sonner-toaster] [data-sonner-toast][data-removed="true"] {
+  transition-duration: 120ms;
+  transition-timing-function: var(--ease-swift);
 }

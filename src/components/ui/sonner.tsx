@@ -1,5 +1,5 @@
-import type { CSSProperties } from "react"
-import { useTheme } from "next-themes"
+import { useEffect, useState, type CSSProperties } from "react"
+
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
@@ -17,17 +17,23 @@ const TOASTER_STYLE: ToasterStyle = {
   "--border-radius": "var(--radius-lg)",
 }
 
-function parseTheme(theme: string | undefined): NonNullable<ToasterProps["theme"]> {
-  if (theme === "light" || theme === "dark" || theme === "system") return theme
-  return "system"
-}
-
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme } = useTheme()
+  const [theme, setTheme] = useState<"light" | "dark">(() =>
+    document.documentElement.classList.contains("light") ? "light" : "dark"
+  )
+  useEffect(() => {
+    const observer = new MutationObserver(() => setTheme(
+      document.documentElement.classList.contains("light") ? "light" : "dark"
+    ))
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] })
+    return () => observer.disconnect()
+  }, [])
 
   return (
     <Sonner
-      theme={parseTheme(theme)}
+      theme={theme}
+      hotkey={[]}
+      closeButton
       className="toaster group"
       icons={{
         success: (

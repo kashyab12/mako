@@ -1,3 +1,4 @@
+import { useCopy } from "@/components/ui/use-copy"
 import { remarkFileCitations } from "@/lib/citation-markdown"
 import {
   Children,
@@ -142,7 +143,7 @@ function CitationLink({ href, children }: ComponentProps<"a">) {
  * header out in normal flow removes the specificity fight entirely.
  */
 function CodeBlock({ children }: { children?: ReactNode }) {
-  const [copied, setCopied] = useState(false)
+  const { copied, copy } = useCopy()
   const source = extractText(children)
   const language = extractLanguage(children)
 
@@ -156,9 +157,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
           type="button"
           aria-label="Copy code"
           onClick={() => {
-            void navigator.clipboard.writeText(source)
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1200)
+            void copy(source)
           }}
           className={cn(
             "pressable ml-auto flex h-5 items-center gap-1 rounded px-1.5 text-label",

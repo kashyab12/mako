@@ -2,7 +2,6 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 
 import "./index.css"
-import App from "./App.tsx"
 import { ErrorBoundary } from "./components/shell/error-boundary.tsx"
 import { watchForFailures } from "./desk/failures.ts"
 
@@ -17,6 +16,18 @@ async function start() {
     await installWebBridge()
   }
 
+  const previewId = new URLSearchParams(location.search).get("control-preview")
+  if (previewId) {
+    document.documentElement.dataset.controlPreview = "true"
+    const { ControlPreviewOverlay } =
+      await import("./components/inspector/control-preview-overlay")
+    createRoot(document.getElementById("root")!).render(
+      <ControlPreviewOverlay initialConversationId={previewId} />
+    )
+    return
+  }
+
+  const { default: App } = await import("./App.tsx")
   watchForFailures()
 
   createRoot(document.getElementById("root")!).render(

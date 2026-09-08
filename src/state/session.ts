@@ -1,3 +1,5 @@
+import { playFeedback } from "@/state/feedback"
+import { controlPreviewStore } from "@/state/control-preview"
 import { hostConnectionStore } from "@/state/host-connection"
 import { applyLiveBatch, hydrateLiveSummaries } from "@/state/live-recovery"
 import { createHook, createStore, shallowEqual } from "@/state/store"
@@ -115,6 +117,10 @@ export function currentTurnRunning(): boolean {
 function apply(event: HostEvent) {
   if (event.type === "host-disconnected") {
     hostConnectionStore.set({ kind: "disconnected", message: event.message })
+    return
+  }
+  if (event.type === "control-activity") {
+    controlPreviewStore.set({ latestActivity: event.activity })
     return
   }
   if (event.type === "browser-control") {
@@ -748,8 +754,15 @@ export const actions = {
     if (git && store.get().meta?.cwd === workspace) store.set({ git })
   },
 
-  copy(text: string) {
-    void guard(() => getMako().copy(text))
-    toast.success("Copied")
+  async copy(text: string, { notify = true }: { notify?: boolean } = {}) {
+    try {
+      await getMako().copy(text)
+      if (notify) toast.success("Copied", { id: "clipboard" })
+      playFeedback("copy")
+      return true
+    } catch {
+      toast.error("Could not copy. Try again.", { id: "clipboard" })
+      return false
+    }
   },
 }

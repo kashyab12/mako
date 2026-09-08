@@ -1,20 +1,25 @@
 import { cn } from "@/lib/utils"
-import { formatBytes, type Attachment } from "@/lib/attachments"
+import {
+  formatBytes,
+  useAttachmentPreview,
+  type Attachment,
+} from "@/lib/attachments"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import {
   FileArchiveIcon,
   FileAudioIcon,
   FileTextIcon,
   FileVideoIcon,
+  ImageIcon,
   PaperclipIcon,
   XIcon,
 } from "lucide-react"
 import type { ComponentType } from "react"
 
-/**
- * The attached files, numbered to match the `[Attachment N]` markers sitting
- * in the draft. The number is the whole point: it is what lets a sentence say
- * "compare 1 with 2" and have the agent know which is which.
- */
 export function AttachmentStrip({
   items,
   onRemove,
@@ -24,7 +29,7 @@ export function AttachmentStrip({
 }) {
   if (items.length === 0) return null
   return (
-    <div className="flex flex-wrap gap-1.5 px-2.5 pt-2.5">
+    <div className="flex flex-wrap gap-2 px-3 pt-3">
       {items.map((item) => (
         <Card key={item.id} item={item} onRemove={onRemove} />
       ))}
@@ -39,56 +44,92 @@ function Card({
   item: Attachment
   onRemove: (id: string) => void
 }) {
+  const preview = useAttachmentPreview(item)
+  const image = item.kind === "image"
   return (
     <div
       title={`Attachment ${item.index} · ${item.name} · ${formatBytes(item.size)}`}
-      className={cn(
-        "group relative flex h-14 items-center gap-2 overflow-hidden rounded-lg",
-        "bg-raised pr-2.5 ring-1 ring-hairline backdrop-blur-sm",
-        item.pending && "opacity-70"
-      )}
+      className={cn("group relative shrink-0", item.pending && "opacity-70")}
     >
-      {item.preview ? (
-        <img
-          src={item.preview}
-          alt={item.name}
-          className="h-full w-14 shrink-0 object-cover"
-        />
+      {image && preview ? (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label={`Preview attachment ${item.index}: ${item.name}`}
+              className="pressable relative block h-20 w-24 overflow-hidden rounded-xl border border-border bg-background outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <img
+                src={preview}
+                alt={item.name}
+                className="h-full w-full object-contain"
+                decoding="async"
+              />
+              <span className="absolute bottom-1 left-1 rounded bg-background/85 px-1 text-label text-muted-foreground">
+                {item.index}
+              </span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            side="top"
+            align="start"
+            sideOffset={12}
+            className="w-[min(36rem,calc(100vw-2rem))] gap-0 overflow-hidden rounded-xl border border-border p-0"
+          >
+            <img
+              src={preview}
+              alt={item.name}
+              className="max-h-[60vh] w-full bg-background object-contain"
+              decoding="async"
+            />
+            <div className="flex min-w-0 items-center gap-3 border-t border-hairline px-3 py-2 text-label text-muted-foreground">
+              <span className="truncate">{item.name}</span>
+              <span className="ml-auto shrink-0">
+                {item.contextPath || item.context
+                  ? "Image + window text"
+                  : formatBytes(item.size)}
+              </span>
+            </div>
+          </PopoverContent>
+        </Popover>
       ) : (
-        <span className="flex h-full w-11 shrink-0 items-center justify-center bg-surface/60 text-faint">
-          <Glyph item={item} />
-        </span>
+        <div className="flex h-16 max-w-64 items-center gap-2 rounded-lg border border-border bg-raised px-3 pr-7">
+          <span className="shrink-0 text-faint">
+            {image ? <ImageIcon className="size-4" /> : <Glyph item={item} />}
+          </span>
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate text-ui text-foreground/85">
+              {item.name}
+            </span>
+            <span className="text-label text-faint">
+              {item.error ??
+                (item.pending
+                  ? "Adding…"
+                  : `Attachment ${item.index} · ${formatBytes(item.size)}`)}
+            </span>
+          </span>
+        </div>
       )}
-
-      <span className="flex min-w-0 flex-col pr-3">
-        <span className="tabular text-label text-faint">
-          Attachment {item.index}
-        </span>
-        <span className="max-w-[10rem] truncate text-ui text-foreground/85">
-          {item.name}
-        </span>
-        <span className="text-label text-faint">
-          {item.error ?? (item.pending ? "reading…" : formatBytes(item.size))}
-        </span>
-      </span>
-
       <button
         type="button"
         aria-label={`Remove attachment ${item.index}`}
         onClick={() => onRemove(item.id)}
-        className={cn(
-          "absolute top-1 right-1 flex size-4 items-center justify-center rounded",
-          "bg-background/70 text-foreground opacity-0 transition-opacity duration-150",
-          "group-hover:opacity-100 focus-visible:opacity-100"
-        )}
+        className="pressable absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border border-border bg-popover text-muted-foreground hover:text-foreground"
       >
-        <XIcon className="size-2.5" />
+        <XIcon className="size-3" />
       </button>
+      {item.error && image && preview && (
+        <span
+          role="status"
+          className="mt-1 block max-w-40 text-label text-negative"
+        >
+          {item.error}
+        </span>
+      )}
     </div>
   )
 }
 
-/** Picking the glyph inside a component keeps the element type stable. */
 function Glyph({ item }: { item: Attachment }) {
   const Icon: ComponentType<{ className?: string }> = item.mimeType.startsWith(
     "video/"

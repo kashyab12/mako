@@ -6,6 +6,7 @@ import { AcpPanel } from "@/components/viewer/acp-panel"
 import { FileViewer } from "@/components/viewer/file-viewer"
 import { SearchView } from "@/components/search/search-view"
 import { Divider } from "@/components/shell/divider"
+import { ErrorBoundary } from "@/components/shell/error-boundary"
 import { useSurfaces, type SurfaceDefinition } from "@/extend/surfaces"
 import { stage, useStage } from "@/state/stage"
 import { useTabs } from "@/state/tabs"
@@ -184,7 +185,9 @@ export function Stage() {
               surfaces={sideSurfaces}
               activeId={sideSurface.id}
             />
-            <CompanionBody render={sideSurface.render} />
+            <ErrorBoundary key={sideSurface.id} surface={sideSurface.label}>
+              <CompanionBody render={sideSurface.render} />
+            </ErrorBoundary>
           </div>
         ) : null}
       </div>
@@ -211,7 +214,9 @@ export function Stage() {
             style={{ height: dockHeight }}
             className="relative flex shrink-0 flex-col overflow-hidden bg-surface"
           >
-            <CompanionBody render={dockSurface.render} />
+            <ErrorBoundary key={dockSurface.id} surface={dockSurface.label}>
+              <CompanionBody render={dockSurface.render} />
+            </ErrorBoundary>
           </div>
         </>
       ) : null}

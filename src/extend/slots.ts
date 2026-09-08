@@ -6,6 +6,7 @@ import type {
   SessionMeta,
   SessionSummary,
 } from "@/lib/types"
+import type { AttachmentInput } from "@/lib/attachments"
 import type { Checkpoint } from "@/lib/thread"
 
 /** A slot whose contributions receive nothing from the render site. */
@@ -26,6 +27,7 @@ export interface TranscriptTurnSlotProps {
 
 export interface ComposerControlSlotProps extends SessionMetaSlotProps {
   disabled: boolean
+  attachFiles: (files: AttachmentInput[]) => Promise<void>
 }
 
 export interface HistoryCheckpointSlotProps {

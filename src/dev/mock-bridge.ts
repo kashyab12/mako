@@ -362,6 +362,12 @@ export function installMockBridge() {
       accessibility: true,
       screenRecording: "granted" as const,
     }),
+    hideControlPreview: async () => {},
+    appshotWindows: async () => [],
+    captureAppshot: async () => {
+      throw new Error("Appshots require a native window")
+    },
+    controlPreview: async () => null,
     browserControlStatus: async () => [
       {
         id: "chrome",

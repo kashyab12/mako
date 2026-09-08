@@ -1,3 +1,4 @@
+import { DitherField } from "@/components/ui/dither-field"
 import { useMemo } from "react"
 import { ConversationTimeline } from "@/components/transcript/conversation-timeline"
 import { Launcher } from "@/components/transcript/launcher"
@@ -54,13 +55,14 @@ function EmptyTranscript() {
   const model = useSession((state) => state.meta?.model?.name)
 
   return (
-    <div className="flex min-h-full justify-center px-6">
-      <div className="my-auto w-full max-w-[460px] py-8">
+    <div className="relative isolate flex min-h-full justify-center overflow-hidden px-6">
+      <DitherField />
+      <div className="relative my-auto w-full max-w-[460px] py-12">
         <div className="flex items-center gap-3.5">
           <MakoMark className="size-8 shrink-0 text-foreground/85" />
           <div className="min-w-0">
-            <p className="text-title leading-tight font-semibold tracking-[-0.01em]">
-              Ask for anything
+            <p className="text-welcome font-medium">
+              What are we working on?
             </p>
             <p className="mt-1 flex min-w-0 items-center gap-1.5 text-ui text-faint">
               <FolderIcon className="size-3 shrink-0" />

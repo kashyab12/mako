@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { cn } from "@/lib/utils"
 
 /**
@@ -29,10 +29,14 @@ export function Divider({
     latest: number
     frame: number | null
   }>({ start: 0, base: 0, latest: 0, frame: null })
+  const cleanup = useRef<(() => void) | undefined>(undefined)
+  useEffect(() => () => cleanup.current?.(), [])
   const horizontal = side === "bottom"
 
   const onPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return
+      cleanup.current?.()
       event.preventDefault()
       const handle = event.currentTarget
       handle.setPointerCapture(event.pointerId)
@@ -59,22 +63,34 @@ export function Divider({
           onResize(state.current.latest)
         })
       }
-      const finish = () => {
+      const release = () => {
         handle.removeEventListener("pointermove", move)
         handle.removeEventListener("pointerup", finish)
-        handle.removeEventListener("pointercancel", finish)
+        handle.removeEventListener("pointercancel", cancel)
+        handle.removeEventListener("lostpointercapture", finish)
         document.body.style.cursor = cursor
         document.body.style.userSelect = userSelect
         if (state.current.frame !== null) {
           cancelAnimationFrame(state.current.frame)
           state.current.frame = null
-          onResize(state.current.latest)
         }
+        cleanup.current = undefined
+        if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId)
+      }
+      const finish = () => {
+        release()
+        onResize(state.current.latest)
         onCommit(state.current.latest)
       }
+      const cancel = () => {
+        release()
+        onResize(size)
+      }
+      cleanup.current = release
+      handle.addEventListener("lostpointercapture", finish)
       handle.addEventListener("pointermove", move)
       handle.addEventListener("pointerup", finish)
-      handle.addEventListener("pointercancel", finish)
+      handle.addEventListener("pointercancel", cancel)
     },
     [horizontal, max, min, onCommit, onResize, side, size]
   )
@@ -82,6 +98,21 @@ export function Divider({
   return (
     <div
       role="separator"
+      tabIndex={0}
+      aria-label={horizontal ? "Resize terminal dock" : `Resize ${side} sidebar`}
+      aria-valuetext={`${size} pixels`}
+      onKeyDown={(event) => {
+        const decrease = horizontal ? "ArrowDown" : side === "left" ? "ArrowLeft" : "ArrowRight"
+        const increase = horizontal ? "ArrowUp" : side === "left" ? "ArrowRight" : "ArrowLeft"
+        if (![decrease, increase, "Home", "End"].includes(event.key)) return
+        event.preventDefault()
+        const step = event.shiftKey ? 40 : 10
+        const target = event.key === "Home" ? min : event.key === "End" ? max :
+          size + (event.key === increase ? step : -step)
+        const next = Math.max(min, Math.min(max, target))
+        onResize(next)
+        onCommit(next)
+      }}
       aria-orientation={horizontal ? "horizontal" : "vertical"}
       aria-valuemin={min}
       aria-valuemax={max}
@@ -99,7 +130,7 @@ export function Divider({
     >
       <span
         className={cn(
-          "absolute transition-colors duration-150 group-hover:bg-foreground/20 group-active:bg-foreground/35",
+          "absolute transition-colors duration-150 group-hover:bg-foreground/20 group-focus-visible:bg-foreground/35 group-active:bg-foreground/35",
           horizontal ? "-top-1 -bottom-1 inset-x-0" : "inset-y-0 -left-1 -right-1"
         )}
       />

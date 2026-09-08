@@ -1,3 +1,4 @@
+import { useCopy } from "@/components/ui/use-copy"
 import { memo, useState, type ComponentType } from "react"
 import { useToolView, type ToolCall } from "@/extend/slots"
 import {
@@ -252,7 +253,7 @@ function CopyableBlock({
   text: string
   children: React.ReactNode
 }) {
-  const [copied, setCopied] = useState(false)
+  const { copied, copy } = useCopy()
   return (
     <div className="group/copyblock relative">
       {children}
@@ -260,14 +261,12 @@ function CopyableBlock({
         type="button"
         aria-label={`Copy ${label}`}
         onClick={() => {
-          void navigator.clipboard.writeText(text)
-          setCopied(true)
-          setTimeout(() => setCopied(false), 1200)
+          void copy(text)
         }}
         className={cn(
-          "absolute top-1 right-1 rounded-md bg-raised p-1 ring-1 ring-hairline backdrop-blur-sm",
+          "pressable absolute top-1 right-1 rounded-md bg-raised p-1 ring-1 ring-hairline backdrop-blur-sm",
           "text-faint transition-opacity duration-100 hover:text-foreground",
-          copied ? "opacity-100" : "opacity-0 group-hover/copyblock:opacity-100"
+          copied ? "opacity-100" : "opacity-0 group-hover/copyblock:opacity-100 focus-visible:opacity-100"
         )}
       >
         {copied ? (

@@ -65,6 +65,13 @@ function cycleEffort() {
 
 const DESK_COMMANDS: DeskCommand[] = [
   {
+    id: "view.notifications",
+    title: "Focus notifications",
+    section: "View",
+    keys: "alt+t",
+    run: () => document.querySelector<HTMLElement>("[data-sonner-toaster]")?.focus(),
+  },
+  {
     id: "view.command-palette",
     title: "Open command palette",
     section: "View",

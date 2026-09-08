@@ -24,6 +24,8 @@ interface SurfaceWidthMap {
 }
 
 export interface Prefs {
+  soundEnabled: boolean
+  soundVolume: number
   theme: Theme
   railOpen: boolean
   railWidth: number
@@ -91,6 +93,8 @@ const KEY = "mako.prefs.v1"
 const LEGACY_KEY = "pi.prefs.v1"
 
 const defaults: Prefs = {
+  soundEnabled: false,
+  soundVolume: 0.25,
   theme: "dark",
   railOpen: true,
   railWidth: 264,
@@ -249,6 +253,8 @@ function readLastCompanion(value: JsonObject): string | null {
 function parsePrefs(value: JsonValue): Prefs | null {
   if (!isJsonObject(value)) return null
   const prefs: Prefs = {
+    soundEnabled: readBoolean(value.soundEnabled, defaults.soundEnabled),
+    soundVolume: Math.max(0, Math.min(1, readNumber(value.soundVolume, defaults.soundVolume))),
     theme: readChoice(value.theme, ["dark", "light", "system"], defaults.theme),
     railOpen: readBoolean(value.railOpen, defaults.railOpen),
     railWidth: readNumber(value.railWidth, defaults.railWidth),

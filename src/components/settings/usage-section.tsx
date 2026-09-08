@@ -69,13 +69,13 @@ export function UsageSection() {
         </p>
 
         {peak > 0 ? (
-          <div className="mt-3" role="img" aria-label="API-equivalent cost by day">
+          <div className="mt-3" role="img" aria-label={`API-equivalent cost by day: ${data.days.map((day) => `${day.date}: ${money(day.cost)}`).join("; ")}`}>
             <div className="flex h-12 items-end gap-[2px]">
               {data.days.map((day) => (
                 <div
                   key={day.date}
                   title={`${day.date} · ${money(day.cost)} API equivalent`}
-                  className="min-w-[3px] flex-1 rounded-sm bg-foreground/20 transition-colors duration-100 hover:bg-foreground/45"
+                  className="usage-dither min-w-[3px] flex-1 transition-colors duration-100 hover:bg-foreground/30"
                   style={{ height: `${Math.max(2, (day.cost / peak) * 100)}%` }}
                 />
               ))}

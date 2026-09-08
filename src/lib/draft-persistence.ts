@@ -10,6 +10,7 @@ export const SavedAttachmentSchema = z.object({
   size: z.number(),
   kind: z.enum(["image", "text", "binary"]),
   stagedPath: z.string().optional(),
+  contextPath: z.string().optional(),
   error: z.string().optional(),
 })
 let warned = false

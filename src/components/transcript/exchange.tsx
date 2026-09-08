@@ -1,3 +1,4 @@
+import { useCopy } from "@/components/ui/use-copy"
 import { acp, useAcp, activeLiveAcp } from "@/state/acp"
 import { TranscriptAttachment } from "./attachment"
 import { memo, useMemo, useState } from "react"
@@ -541,7 +542,7 @@ function SystemNote({ message }: { message: ChatMessage }) {
 /* ------------------------------------------------------------------ */
 
 function Footer({ exchange }: { exchange: ExchangeData }) {
-  const [copied, setCopied] = useState(false)
+  const { copied, copy } = useCopy()
   const text = responseText(exchange)
   const last = exchange.response.at(-1)
   if (!text && !last?.timestamp) return null
@@ -557,9 +558,7 @@ function Footer({ exchange }: { exchange: ExchangeData }) {
           type="button"
           title="Copy the agent's whole answer to this question"
           onClick={() => {
-            actions.copy(text)
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1400)
+            void copy(text)
           }}
           className="pressable flex items-center gap-1 rounded px-1 hover:text-foreground"
         >
