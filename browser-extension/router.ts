@@ -48,7 +48,7 @@ export class ExtensionRouter {
     return ExtensionFieldsSchema.parse(result ?? {})
   }
 
-  private async targetCommand(client: string, command: ExtensionCommand) {
+  private async targetCommand(client: string, command: ExtensionCommand): Promise<ReturnType<typeof ExtensionFieldsSchema.parse>> {
     if (!this.clients.has(client)) throw new Error("Browser client disconnected")
     if (command.method === "Target.setDiscoverTargets") return {}
     if (command.method === "Target.detachFromTarget") {
