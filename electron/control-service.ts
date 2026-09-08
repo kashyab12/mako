@@ -1,6 +1,12 @@
 import { randomBytes } from "node:crypto"
 import { createServer, type IncomingMessage } from "node:http"
 import { z } from "zod"
+import type { ControlPreviews } from "./control-previews.js"
+import {
+  ComputerObservationSchema,
+  ControlImageSchema,
+} from "./contracts/control-preview.js"
+import { BrowserTargetSchema } from "./contracts/browser-control.js"
 import { BrowserService } from "./browser-service.js"
 import {
   BrowserCommandSchema,
@@ -16,13 +22,16 @@ interface Scope {
   bindingId: string
   expiresAt: number
 }
-async function body(request: IncomingMessage): Promise<string> {
+async function body(
+  request: IncomingMessage,
+  limit = 256 * 1024
+): Promise<string> {
   const chunks: Buffer[] = []
   let size = 0
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
     size += buffer.length
-    if (size > 256 * 1024) throw new Error("Control request is too large")
+    if (size > limit) throw new Error("Control request is too large")
     chunks.push(buffer)
   }
   return Buffer.concat(chunks).toString("utf8")
@@ -30,7 +39,8 @@ async function body(request: IncomingMessage): Promise<string> {
 
 export async function startControlService(
   browser: BrowserService,
-  authorize: (conversationId: string, bindingId: string) => void
+  authorize: (conversationId: string, bindingId: string) => void,
+  previews?: ControlPreviews
 ) {
   const scopes = new Map<string, Scope>()
   const server = createServer((request, response) => {
@@ -39,7 +49,7 @@ export async function startControlService(
     void (async () => {
       if (
         request.method !== "POST" ||
-        request.url !== "/browser" ||
+        !["/browser", "/computer-observation"].includes(request.url ?? "") ||
         request.headers.origin
       ) {
         response.writeHead(403).end()
@@ -52,18 +62,94 @@ export async function startControlService(
         return
       }
       authorize(scope.conversationId, scope.bindingId)
+      if (request.url === "/computer-observation") {
+        const observation = ComputerObservationSchema.parse(
+          JSON.parse(await body(request, 9 * 1024 * 1024))
+        )
+        authorize(scope.conversationId, scope.bindingId)
+        previews?.observe(
+          {
+            conversationId: scope.conversationId,
+            kind: "computer",
+            operation: observation.operation,
+            target: observation.target,
+            status: observation.status,
+          },
+          observation.image
+        )
+        if (observation.window)
+          previews?.computerTarget(
+            scope.conversationId,
+            observation.window,
+            () => authorize(scope.conversationId, scope.bindingId)
+          )
+        response
+          .writeHead(200, { "content-type": "application/json" })
+          .end(JSON.stringify({ ok: true, value: null }))
+        return
+      }
       const command = BrowserCommandSchema.parse(
         JSON.parse(await body(request))
       )
       authorize(scope.conversationId, scope.bindingId)
-      const value = await browser.execute(
-        scope.conversationId,
-        command,
-        abort.signal,
-        () => {
+      const target =
+        "target" in command
+          ? `${command.target.browser}:${command.target.tab}`
+          : "browser" in command
+            ? command.browser
+            : "Browser"
+      const tracksActivity = ![
+        "status",
+        "tabs",
+        "events",
+        "connect",
+        "release",
+      ].includes(command.action)
+      if (tracksActivity)
+        previews?.observe({
+          conversationId: scope.conversationId,
+          kind: "browser",
+          operation: command.action,
+          target,
+          status: "running",
+        })
+      const value = await browser
+        .execute(scope.conversationId, command, abort.signal, () => {
           authorize(scope.conversationId, scope.bindingId)
-        }
-      )
+        })
+        .catch((error) => {
+          if (tracksActivity)
+            previews?.observe({
+              conversationId: scope.conversationId,
+              kind: "browser",
+              operation: command.action,
+              target,
+              status: "error",
+            })
+          throw error
+        })
+      if (tracksActivity) {
+        const bound =
+          "target" in command
+            ? command.target
+            : BrowserTargetSchema.safeParse(value).data
+        previews?.observe(
+          {
+            conversationId: scope.conversationId,
+            kind: "browser",
+            operation: command.action,
+            target: bound ? `${bound.browser}:${bound.tab}` : target,
+            status: "observed",
+          },
+          command.action === "screenshot"
+            ? ControlImageSchema.safeParse(value).data
+            : undefined
+        )
+        if (bound && command.action !== "close")
+          previews?.browserTarget(scope.conversationId, bound, () =>
+            authorize(scope.conversationId, scope.bindingId)
+          )
+      }
       response
         .writeHead(200, { "content-type": "application/json" })
         .end(JSON.stringify({ ok: true, value }))
@@ -107,6 +193,7 @@ export async function startControlService(
       scopes.clear()
       server.closeAllConnections()
       server.close()
+      previews?.close()
       browser.close()
     },
   }

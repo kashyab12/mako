@@ -1,3 +1,8 @@
+import { ControlPreviewWindow } from "./control-preview-window.js"
+import { resolveExecutable } from "./executable.js"
+import { Appshots } from "./appshots.js"
+import { imageSize } from "image-size"
+import { ControlPreviews } from "./control-previews.js"
 import { RelayConversations } from "./relay-conversations.js"
 import { nativeCheckpoint, canResumeBinding } from "./native-continuation.js"
 import { NativeRequests } from "./native-requests.js"
@@ -202,7 +207,44 @@ function appIcon() {
 let conversationMcp: Awaited<ReturnType<typeof startConversationMcp>> | null =
   null
 let nativeRequests: NativeRequests | null = null
+const appshots = new Appshots(async () => {
+  const driver = resolveExecutable("cua-driver")
+  const socket = await ensureMakoLocalControl()
+  return driver && socket
+    ? { command: driver, args: ["mcp", "--embedded", "--socket", socket] }
+    : null
+})
 const browserControl = new BrowserService()
+const controlPreviews = new ControlPreviews(
+  browserControl,
+  (image) => {
+    const bytes = Buffer.from(image.data, "base64")
+    const dimensions = imageSize(bytes)
+    if (dimensions.width * dimensions.height > 32_000_000) return null
+    const decoded = nativeImage.createFromBuffer(bytes)
+    if (decoded.isEmpty()) return null
+    return {
+      data: decoded
+        .resize({
+          width: Math.min(960, decoded.getSize().width),
+          quality: "good",
+        })
+        .toJPEG(55)
+        .toString("base64"),
+      mimeType: "image/jpeg",
+    }
+  },
+  (activity) => {
+    emit({ type: "control-activity", activity })
+    controlPreviewWindow.observe(activity)
+  },
+  (target, signal) => appshots.preview(target, signal)
+)
+const controlPreviewWindow = new ControlPreviewWindow(
+  controlPreviews,
+  __dirname,
+  isDev ? process.env.VITE_DEV_SERVER_URL : undefined
+)
 let controlService: Awaited<ReturnType<typeof startControlService>> | null =
   null
 let liveConversations: LiveConversations
@@ -589,6 +631,18 @@ function bindIpc() {
   )
 
   handle("mako:computer-permissions", () => computerPermissions())
+  handle("mako:control-preview-hide", () => controlPreviewWindow.hide())
+  handle("mako:appshot-windows", () => appshots.windows(true))
+  handle(
+    "mako:appshot-capture",
+    (_event, target: import("./shared.js").AppshotTarget) =>
+      appshots.capture(target)
+  )
+  handle(
+    "mako:control-preview",
+    (_event, conversationId: string, watching: boolean, watcher: string) =>
+      controlPreviews.read(conversationId, watching, watcher)
+  )
   handle("mako:browser-control-status", () => browserControl.status())
   handle("mako:browser-control-connect", async (_event, browser: string) => {
     await browserControl.connect(browser)
@@ -1063,7 +1117,8 @@ app.whenReady().then(async () => {
     browserControl,
     (conversationId, bindingId) => {
       liveConversations.authorizeAgent(conversationId, bindingId)
-    }
+    },
+    controlPreviews
   )
   browserControl.subscribe((browsers) =>
     emit({ type: "browser-control", browsers })
@@ -1119,6 +1174,8 @@ app.on("before-quit", () => {
   powerMonitor.removeListener("unlock-screen", emitTerminalWake)
   terminalClient?.dispose()
   stopCuaEmbedded()
+  controlPreviewWindow.close()
+  void appshots.close()
   controlService?.close()
   stopWorkspaceIpc()
   stopWatching()

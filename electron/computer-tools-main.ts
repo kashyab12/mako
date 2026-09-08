@@ -1,3 +1,7 @@
+import { AppshotTargetSchema } from "./contracts/appshots.js"
+import { verifyForegroundInput } from "./computer-input-target.js"
+import { ComputerObservationClient } from "./computer-observation-client.js"
+import { ControlImageSchema } from "./contracts/control-preview.js"
 import { randomUUID } from "node:crypto"
 import { parseArgs } from "node:util"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
@@ -17,7 +21,7 @@ const instructions = `Mako computer control operates native applications through
 
 Use get_window_state to obtain the accessibility tree AND a real screenshot of the exact window. Ground actions in fresh element_token values or screenshot coordinates. Prefer tokens over numeric indices. Reobserve after an action and verify its result; transport success alone is not proof that the UI changed. If accessibility fails, use the pixel route on the same observed window. Respect screenshot scale and frame metadata. A missing or stale window/token requires rediscovery, never fallback to another window.
 
-The native API preserves window-local input without moving the user's physical pointer where supported. Foreground and desktop actions are explicit. Use native dialogs, menu paths, keyboard, pointer, clipboard and window controls as needed. Do not repeat text based on delivered_chars alone: the driver can report zero even when the field received the full text. Independently inspect the field; if it already contains the intended text, continue without replay. Otherwise establish the exact missing suffix before typing. A timeout or cancellation does not prove that an action did not execute.
+The native API preserves window-local input without moving the user's physical pointer where supported. Foreground and desktop actions are explicit. Foreground delivery is global input: it requires the exact window to already be frontmost, and Mako checks that before dispatch. Never escalate to foreground automatically after a background failure. Prefer set_value for a native editable accessibility element when typing cannot be delivered in the background, then verify the resulting field. If the target cannot accept background input, report that limitation rather than writing into another app. Use native dialogs, menu paths, keyboard, pointer, clipboard and window controls as needed. Do not repeat text based on delivered_chars alone: the driver can report zero even when the field received the full text. Independently inspect the field; if it already contains the intended text, continue without replay. Otherwise establish the exact missing suffix before typing. A timeout or cancellation does not prove that an action did not execute.
 
 For browser pages prefer Mako browser tools: they share a persistent approved browser connection and provide DOM/AX observations, screenshots, flexible JavaScript and full CDP commands. Computer controls remain available for browser chrome, OS dialogs and pages whose visual/native interaction is needed. macOS permissions, Chrome debugging consent and provider tool approval are distinct. Capture images are forwarded as native MCP image blocks with their structured targeting metadata intact.`
 const toolInputSchema = z.object({
@@ -33,6 +37,7 @@ export function createComputerToolsServer(
   backend?: ComputerBackend,
   taskId = process.env.MAKO_TASK_ID ?? randomUUID()
 ): Server {
+  const observations = new ComputerObservationClient()
   let client = new Client({ name: "mako-computer-use", version: "2.0.0" })
   let closed = false
   let starting: Promise<Tool[]> | undefined
@@ -67,6 +72,7 @@ export function createComputerToolsServer(
   class ComputerServer extends Server {
     override async close(): Promise<void> {
       closed = true
+      observations.close()
       await super.close()
       await client.close()
     }
@@ -77,6 +83,7 @@ export function createComputerToolsServer(
   )
   server.onclose = () => {
     closed = true
+    observations.close()
     void client.close()
   }
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -137,12 +144,53 @@ export function createComputerToolsServer(
       const args = { ...request.params.arguments }
       delete args.session
       if (input.properties?.session) args.session = `mako-${taskId}`
-      return await client.callTool(
+      if (args.delivery_mode === "foreground" && input.properties?.pid)
+        await verifyForegroundInput(client, args, extra.signal)
+      const capturedWindow = AppshotTargetSchema.safeParse({
+        pid: args.pid,
+        windowId: args.window_id,
+      }).data
+      const target = `Window ${String(args.window_id ?? "selected")} · app ${String(args.pid ?? "selected")}`
+      observations.submit({
+        operation: tool.name,
+        target,
+        status: "running",
+        window: capturedWindow,
+      })
+      const result = await client.callTool(
         { name: tool.name, arguments: args },
         undefined,
         { signal: extra.signal, timeout: 60_000 }
       )
+      const content = z
+        .object({
+          content: z
+            .array(
+              z.object({
+                type: z.string(),
+                data: z.string().optional(),
+                mimeType: z.string().optional(),
+              })
+            )
+            .optional(),
+          isError: z.boolean().optional(),
+        })
+        .parse(result)
+      const image = content.content?.find((block) => block.type === "image")
+      observations.submit({
+        operation: tool.name,
+        target,
+        status: content.isError ? "error" : "observed",
+        image: ControlImageSchema.safeParse(image).data,
+        window: capturedWindow,
+      })
+      return result
     } catch (error) {
+      observations.submit({
+        operation: request.params.name.replace(/^mako_computer_/, ""),
+        target: "Selected application",
+        status: "error",
+      })
       const detail = {
         code: "computer-control-error",
         message:

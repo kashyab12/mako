@@ -346,6 +346,35 @@ export class BrowserService {
     return target
   }
 
+  /** UI-only capture does not acknowledge uncertain agent input or refresh agent refs. */
+  async preview(
+    owner: string,
+    target: BrowserTarget,
+    signal: AbortSignal,
+    authorize: () => void
+  ): Promise<JsonValue> {
+    authorize()
+    const binding = this.binding(owner, target)
+    if (binding.running)
+      fault("target-busy", "The target is executing an agent command")
+    binding.running++
+    try {
+      return await this.bound(
+        binding,
+        {
+          action: "screenshot",
+          target,
+          format: "jpeg",
+          quality: 55,
+          fullPage: false,
+        },
+        signal
+      )
+    } finally {
+      binding.running--
+    }
+  }
+
   async execute(
     owner: string,
     command: BrowserCommand,

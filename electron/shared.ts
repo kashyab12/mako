@@ -21,3 +21,7 @@ export * from "./contracts/native-requests.js"
 export * from "./contracts/browser-control.js"
 
 export * from "./contracts/renderer-bridge.js"
+
+export * from "./contracts/control-preview.js"
+
+export * from "./contracts/appshots.js"

@@ -1,6 +1,15 @@
+import { z } from "zod"
 import { execFile } from "node:child_process"
+import { randomUUID } from "node:crypto"
 import { existsSync } from "node:fs"
-import { mkdir, readFile, symlink, writeFile } from "node:fs/promises"
+import {
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises"
 import { homedir, userInfo } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
@@ -16,6 +25,14 @@ export function accountsRoot(): string {
 }
 
 export function accountDir(provider: string, name: string): string {
+  if (!/^[a-z0-9-]+$/.test(provider))
+    throw new Error("Invalid account provider")
+  if (
+    !/^[a-z0-9][a-z0-9@._+-]{0,159}$/i.test(name) ||
+    name === "." ||
+    name === ".."
+  )
+    throw new Error("Invalid account name")
   return join(accountsRoot(), provider, name)
 }
 
@@ -48,23 +65,47 @@ export function numberValue(value: JsonValue | undefined): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+const selectionState = z.record(z.string(), z.string().max(160).nullable())
 function parseSelectionState(contents: string): Map<string, string | null> {
-  const state = new Map<string, string | null>()
-  for (const [provider, value] of jsonFields(contents)) {
-    const name = stringValue(value)
-    if (name !== undefined || value === null) state.set(provider, name ?? null)
-  }
-  return state
+  return new Map(Object.entries(selectionState.parse(JSON.parse(contents))))
+}
+
+function selectionPath(provider: string): string {
+  if (!/^[a-z0-9-]+$/.test(provider))
+    throw new Error("Invalid account provider")
+  return join(accountsRoot(), "selection", `${provider}.json`)
 }
 
 export async function readSelection(provider: string): Promise<string | null> {
+  let contents: string
   try {
-    return (
-      parseSelectionState(await readFile(statePath(), "utf8")).get(provider) ??
-      null
-    )
+    contents = await readFile(selectionPath(provider), "utf8")
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT"))
+      throw new Error(
+        "Account selection could not be read. Select the account again.",
+        { cause: error }
+      )
+    // Existing installations migrate each provider on its next explicit selection.
+    try {
+      contents = await readFile(statePath(), "utf8")
+    } catch (legacyError) {
+      if (
+        legacyError instanceof Error &&
+        "code" in legacyError &&
+        legacyError.code === "ENOENT"
+      )
+        return null
+      throw new Error(
+        "Account selection could not be read. Select the account again.",
+        { cause: legacyError }
+      )
+    }
+  }
+  try {
+    return parseSelectionState(contents).get(provider) ?? null
   } catch {
-    return null
+    throw new Error("Account selection is invalid. Select the account again.")
   }
 }
 
@@ -72,19 +113,22 @@ export async function writeSelection(
   provider: string,
   name: string | null
 ): Promise<void> {
-  let state = new Map<string, string | null>()
+  if (name !== null) accountDir(provider, name)
+  const destination = selectionPath(provider)
+  await mkdir(join(accountsRoot(), "selection"), {
+    recursive: true,
+    mode: 0o700,
+  })
+  const temporary = `${destination}.${randomUUID()}.tmp`
   try {
-    state = parseSelectionState(await readFile(statePath(), "utf8"))
-  } catch {
-    // The first selection creates the state file.
+    await writeFile(temporary, JSON.stringify({ [provider]: name }), {
+      mode: 0o600,
+      flag: "wx",
+    })
+    await rename(temporary, destination)
+  } finally {
+    await rm(temporary, { force: true })
   }
-  state.set(provider, name)
-  await mkdir(accountsRoot(), { recursive: true })
-  await writeFile(
-    statePath(),
-    JSON.stringify(Object.fromEntries(state), null, 2),
-    "utf8"
-  )
 }
 
 export function childProcessEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

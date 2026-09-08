@@ -120,7 +120,9 @@ export async function selectAccount(
   harness: AccountHarness,
   name: string | null
 ): Promise<void> {
-  selectableCapability(harness)
+  const capability = selectableCapability(harness)
+  if (name !== null)
+    await capability.accountEnv(name, childProcessEnv(process.env))
   await writeSelection(harness, name)
 }
 

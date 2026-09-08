@@ -16,12 +16,14 @@ const require = createRequire(import.meta.url)
 const electronPath = require("electron")
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const web = process.argv.includes("--web")
+const cacheDirectory = await mkdtemp(join(tmpdir(), "mako-vite-"))
 const socketDirectory = web
   ? await mkdtemp(join(tmpdir(), "mako-web-"))
   : undefined
 if (socketDirectory) await chmod(socketDirectory, 0o700)
 const socket = socketDirectory ? join(socketDirectory, "host.sock") : undefined
 const server = await createServer({
+  cacheDir: cacheDirectory,
   plugins: socket ? [webHostProxy(socket)] : [],
   root,
   server: {
@@ -35,6 +37,7 @@ server.printUrls()
 const url = server.resolvedUrls?.local[0]
 if (!url) {
   await server.close()
+  await rm(cacheDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   throw new Error("Vite did not expose a local development URL")
 }
 
@@ -56,6 +59,7 @@ async function stop(code, signal) {
   await server.close()
   if (socketDirectory)
     await rm(socketDirectory, { recursive: true, force: true })
+  await rm(cacheDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   process.exitCode = code
 }
 
