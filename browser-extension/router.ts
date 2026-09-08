@@ -1,5 +1,13 @@
-import type { ExtensionCommand, ExtensionMessage } from "../electron/browser-extension-protocol.js"
+import { z } from "zod"
+import type {
+  ExtensionCommand,
+  ExtensionMessage,
+} from "../electron/browser-extension-protocol.js"
 import { ExtensionFieldsSchema } from "../electron/browser-extension-protocol.js"
+
+type DebuggerEventParams = Parameters<
+  Parameters<typeof chrome.debugger.onEvent.addListener>[0]
+>[2]
 
 interface AttachedTarget {
   client: string
@@ -24,48 +32,85 @@ export class ExtensionRouter {
       const result = command.method.startsWith("Target.")
         ? await this.serial(() => this.targetCommand(client, command))
         : await this.sessionCommand(client, command)
-      this.emit({ kind: "response", client, id: command.id, result: result ?? {} })
+      this.emit({
+        kind: "response",
+        client,
+        id: command.id,
+        result: result ?? {},
+      })
     } catch (error) {
-      this.emit({ kind: "error", client, id: command.id, message: error instanceof Error ? error.message.slice(0, 4000) : "Browser command failed" })
+      this.emit({
+        kind: "error",
+        client,
+        id: command.id,
+        message:
+          error instanceof Error
+            ? error.message.slice(0, 4000)
+            : "Browser command failed",
+      })
     }
   }
 
   private serial<Value>(run: () => Promise<Value>): Promise<Value> {
     const next = this.tail.then(run, run)
-    this.tail = next.then(() => {}, () => {})
+    this.tail = next.then(
+      () => {},
+      () => {}
+    )
     return next
   }
 
   private owned(client: string, sessionId: string | undefined): AttachedTarget {
     const attached = sessionId ? this.attached.get(sessionId) : undefined
-    if (!attached || attached.client !== client) throw new Error("The exact tab session is no longer owned by this client")
+    if (!attached || attached.client !== client)
+      throw new Error("The exact tab session is no longer owned by this client")
     return attached
   }
 
   private async sessionCommand(client: string, command: ExtensionCommand) {
+    if (
+      command.method.startsWith("Browser.") ||
+      command.method.startsWith("SystemInfo.")
+    ) {
+      throw new Error(
+        "Chrome's extension debugger does not expose Browser or SystemInfo commands"
+      )
+    }
     const attached = this.owned(client, command.sessionId)
-    const result = await this.api.debugger.sendCommand({ targetId: attached.target.id }, command.method, command.params)
+    const result = await this.api.debugger.sendCommand(
+      { targetId: attached.target.id },
+      command.method,
+      command.params
+    )
     return ExtensionFieldsSchema.parse(result ?? {})
   }
 
-  private async targetCommand(client: string, command: ExtensionCommand): Promise<ReturnType<typeof ExtensionFieldsSchema.parse>> {
-    if (!this.clients.has(client)) throw new Error("Browser client disconnected")
+  private async targetCommand(
+    client: string,
+    command: ExtensionCommand
+  ): Promise<ReturnType<typeof ExtensionFieldsSchema.parse>> {
+    if (!this.clients.has(client))
+      throw new Error("Browser client disconnected")
     if (command.method === "Target.setDiscoverTargets") return {}
     if (command.method === "Target.detachFromTarget") {
-      const sessionId = command.params.sessionId
-      if (typeof sessionId !== "string") throw new Error("Missing tab session")
+      const sessionId = z.string().parse(command.params.sessionId)
       const attached = this.owned(client, sessionId)
       await this.api.debugger.detach({ targetId: attached.target.id })
       this.attached.delete(sessionId)
       return {}
     }
     if (command.method === "Target.createTarget") {
-      if (this.creating.size >= 512) throw new Error("Release unused tabs first")
-      const url = command.params.url
-      if (typeof url !== "string" || !/^(https?:|about:)/.test(url)) throw new Error("Unsupported page URL")
+      if (this.creating.size >= 512)
+        throw new Error("Release unused tabs first")
+      const url = z
+        .string()
+        .regex(/^(https?:|about:)/)
+        .parse(command.params.url)
       const tab = await this.api.tabs.create({ url, active: false })
       for (let attempt = 0; attempt < 20; attempt++) {
-        const target = (await this.api.debugger.getTargets()).find((entry) => entry.tabId === tab.id)
+        const target = (await this.api.debugger.getTargets()).find(
+          (entry) => entry.tabId === tab.id
+        )
         if (target) {
           if (!this.clients.has(client)) {
             if (tab.id !== undefined) await this.api.tabs.remove(tab.id)
@@ -80,13 +125,24 @@ export class ExtensionRouter {
       throw new Error("The new tab did not become available")
     }
     const targets = await this.api.debugger.getTargets()
-    if (command.method === "Target.getTargets") return { targetInfos: targets.map(targetInfo) }
+    if (command.method === "Target.getTargets")
+      return { targetInfos: targets.map(targetInfo) }
     const target = targets.find((entry) => entry.id === command.params.targetId)
     if (!target) throw new Error("No target with given id")
-    if (command.method === "Target.getTargetInfo") return { targetInfo: targetInfo(target) }
+    if (command.method === "Target.getTargetInfo")
+      return { targetInfo: targetInfo(target) }
     if (command.method === "Target.attachToTarget") {
-      if (this.attached.size >= 512) throw new Error("Release unused tab sessions first")
-      if ([...this.attached.values()].some((entry) => entry.target.id === target.id)) throw new Error("Another client owns this tab")
+      const creator = this.creating.get(target.id)
+      if (creator && creator !== client)
+        throw new Error("Another client owns this tab")
+      if (this.attached.size >= 512)
+        throw new Error("Release unused tab sessions first")
+      if (
+        [...this.attached.values()].some(
+          (entry) => entry.target.id === target.id
+        )
+      )
+        throw new Error("Another client owns this tab")
       await this.api.debugger.attach({ targetId: target.id }, "1.3")
       if (!this.clients.has(client)) {
         await this.api.debugger.detach({ targetId: target.id })
@@ -97,35 +153,65 @@ export class ExtensionRouter {
       this.creating.delete(target.id)
       return { sessionId }
     }
-    const owned = [...this.attached.values()].some((entry) => entry.client === client && entry.target.id === target.id)
-    if (!owned && this.creating.get(target.id) !== client) throw new Error("Another client owns this tab")
+    const owned = [...this.attached.values()].some(
+      (entry) => entry.client === client && entry.target.id === target.id
+    )
+    if (!owned && this.creating.get(target.id) !== client)
+      throw new Error("Another client owns this tab")
     if (command.method === "Target.closeTarget" && target.tabId !== undefined) {
       await this.api.tabs.remove(target.tabId)
       this.creating.delete(target.id)
       return { success: true }
     }
-    if (command.method === "Target.activateTarget" && target.tabId !== undefined) {
+    if (
+      command.method === "Target.activateTarget" &&
+      target.tabId !== undefined
+    ) {
       await this.api.tabs.update(target.tabId, { active: true })
       return {}
     }
-    throw new Error(`${command.method} is not available through the browser extension`)
+    throw new Error(
+      `${command.method} is not available through the browser extension`
+    )
   }
 
-  event(source: chrome.debugger.DebuggerSession, method: string, params: object | undefined): void {
+  event(
+    source: chrome.debugger.DebuggerSession,
+    method: string,
+    params: DebuggerEventParams
+  ): void {
     const fields = ExtensionFieldsSchema.safeParse(params ?? {})
     if (!fields.success) return
     for (const attached of this.attached.values()) {
-      if (source.targetId === attached.target.id || (source.tabId !== undefined && source.tabId === attached.target.tabId)) {
-        this.emit({ kind: "event", client: attached.client, sessionId: attached.sessionId, method, params: fields.data })
+      if (
+        source.targetId === attached.target.id ||
+        (source.tabId !== undefined && source.tabId === attached.target.tabId)
+      ) {
+        this.emit({
+          kind: "event",
+          client: attached.client,
+          sessionId: attached.sessionId,
+          method,
+          params: fields.data,
+        })
       }
     }
   }
 
   detached(source: chrome.debugger.Debuggee): void {
     for (const [id, attached] of this.attached) {
-      if (source.targetId !== attached.target.id && (source.tabId === undefined || source.tabId !== attached.target.tabId)) continue
+      if (
+        source.targetId !== attached.target.id &&
+        (source.tabId === undefined || source.tabId !== attached.target.tabId)
+      )
+        continue
       this.attached.delete(id)
-      this.emit({ kind: "event", client: attached.client, method: "Target.detachedFromTarget", params: { sessionId: id, targetId: attached.target.id } })
+      this.emit({
+        kind: "event",
+        client: attached.client,
+        method: "Target.detachedFromTarget",
+        params: { sessionId: id, targetId: attached.target.id },
+      })
     }
   }
 
@@ -134,16 +220,25 @@ export class ExtensionRouter {
     for (const [id, attached] of this.attached) {
       if (attached.client !== client) continue
       this.attached.delete(id)
-      await this.api.debugger.detach({ targetId: attached.target.id }).catch(() => {})
+      await this.api.debugger
+        .detach({ targetId: attached.target.id })
+        .catch(() => {})
     }
-    for (const [target, owner] of this.creating) if (owner === client) this.creating.delete(target)
+    for (const [target, owner] of this.creating)
+      if (owner === client) this.creating.delete(target)
   }
 
   async close(): Promise<void> {
-    for (const client of [...this.clients]) await this.disconnect(client)
+    for (const client of this.clients) await this.disconnect(client)
   }
 }
 
 function targetInfo(target: chrome.debugger.TargetInfo) {
-  return { targetId: target.id, type: target.type, title: target.title, url: target.url, attached: target.attached }
+  return {
+    targetId: target.id,
+    type: target.type,
+    title: target.title,
+    url: target.url,
+    attached: target.attached,
+  }
 }
