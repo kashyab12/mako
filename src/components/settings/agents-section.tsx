@@ -162,6 +162,7 @@ function HarnessAccounts() {
       setCaptureName("")
     } catch (error) {
       toast.error("Account was not captured", {
+          duration: Infinity,
         description: error instanceof Error ? error.message : String(error),
         action: { label: "Try again", onClick: () => void capture() },
       })

@@ -49,6 +49,7 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
       requestAnimationFrame(() => field.current?.focus())
     } catch (error) {
       toast.error("Commit message was not generated", {
+          duration: Infinity,
         description: error instanceof Error ? error.message : String(error),
         action: { label: "Retry", onClick: () => void draftCommitMessage() },
       })
@@ -66,6 +67,7 @@ export function CommitBox({ staged, total }: { staged: number; total: number }) 
       await actions.refreshGit()
     } catch (error) {
       toast.error("Changes were not committed", {
+          duration: Infinity,
         description: error instanceof Error ? error.message : String(error),
         action: { label: "Retry", onClick: () => void commitChanges() },
       })
@@ -177,6 +179,7 @@ async function guardedPush() {
     await actions.refreshGit()
   } catch (error) {
     toast.error("Branch was not pushed", {
+          duration: Infinity,
       description: error instanceof Error ? error.message : String(error),
       action: { label: "Retry", onClick: () => void guardedPush() },
     })

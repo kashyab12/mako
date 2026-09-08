@@ -8,9 +8,11 @@ export function ControlPreviewPanel() {
     (state) => activeLiveAcp(state)?.session.id ?? null
   )
   const preview = useControlPreview((state) =>
-    state.conversationId === conversationId ? state.preview : null
+    conversationId ? state.previews[conversationId] : null
   )
-  const error = useControlPreview((state) => state.error)
+  const error = useControlPreview((state) =>
+    conversationId ? state.errors[conversationId] : null
+  )
   useEffect(
     () => (conversationId ? watchControlPreview(conversationId) : undefined),
     [conversationId]

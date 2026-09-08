@@ -71,6 +71,7 @@ export function PullRequestCard() {
       await actions.refreshGit()
     } catch (error) {
       toast.error("Branch was not pushed", {
+          duration: Infinity,
         description: error instanceof Error ? error.message : String(error),
         action: { label: "Retry", onClick: () => void pushBranch() },
       })
@@ -281,6 +282,7 @@ function ComposePull({
       setBody((current) => current || rest.join("\n").trim())
     } catch (error) {
       toast.error("Pull request draft was not generated", {
+          duration: Infinity,
         description: error instanceof Error ? error.message : String(error),
         action: { label: "Retry", onClick: () => void composePull() },
       })
@@ -303,6 +305,7 @@ function ComposePull({
       onDone()
     } catch (error) {
       toast.error("Pull request was not created", {
+          duration: Infinity,
         description: error instanceof Error ? error.message : String(error),
         action: { label: "Retry", onClick: () => void createPullRequest() },
       })
@@ -406,6 +409,7 @@ function PullSummary({ pull, loading }: { pull: Pull; loading: boolean }) {
       toast.success(next?.state === "merged" ? `Merged #${next.number}` : "Pull request merged")
     } catch (error) {
       toast.error("Pull request was not merged", {
+          duration: Infinity,
         description: error instanceof Error ? error.message : String(error),
         action: {
           label: "Retry",

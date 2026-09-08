@@ -70,7 +70,11 @@ export function UsageSection() {
 
         {peak > 0 ? (
           <div className="mt-3" role="img" aria-label={`API-equivalent cost by day: ${data.days.map((day) => `${day.date}: ${money(day.cost)}`).join("; ")}`}>
-            <div className="flex h-12 items-end gap-[2px]">
+            <div className="mb-2 flex items-center justify-between gap-2 text-label text-faint">
+              <span>Daily API equivalent</span>
+              <span className="tabular">{money(peak)} peak daily cost</span>
+            </div>
+            <div className="flex h-20 items-end gap-[2px]">
               {data.days.map((day) => (
                 <div
                   key={day.date}
