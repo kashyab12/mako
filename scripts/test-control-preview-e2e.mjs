@@ -12,6 +12,10 @@ if (!process.versions.electron) {
   const child = spawn(resolve("node_modules/.bin/electron"), [fileURLToPath(import.meta.url)], { stdio: "inherit", env: { ...process.env, MAKO_PIP_TEST_ROOT: root } })
   child.on("exit", (code) => { process.exitCode = code ?? 1 })
 } else {
+  void run().catch((error) => { console.error(error); process.exit(1) })
+}
+
+async function run() {
   const { app, BrowserWindow, ipcMain } = await import("electron")
   const { ControlPreviewWindow } = await import("../dist-electron/control-preview-window.js")
   const { ControlPreviews } = await import("../dist-electron/control-previews.js")
