@@ -96,3 +96,29 @@ export async function stopControlTask(id: string): Promise<void> {
   await getMako().liveCancel(id)
   await hideControlPreview()
 }
+
+/** Electron captures only the already-authorized native window. No AX query or input is involved. */
+export async function controlPreviewStream(
+  id: string
+): Promise<MediaStream | null> {
+  const source = await getMako().controlPreviewSource(id)
+  if (!source) return null
+  const video: MediaTrackConstraints & {
+    mandatory: {
+      chromeMediaSource: string
+      chromeMediaSourceId: string
+      maxWidth: number
+      maxHeight: number
+      maxFrameRate: number
+    }
+  } = {
+    mandatory: {
+      chromeMediaSource: "desktop",
+      chromeMediaSourceId: source,
+      maxWidth: 960,
+      maxHeight: 720,
+      maxFrameRate: 4,
+    },
+  }
+  return navigator.mediaDevices.getUserMedia({ audio: false, video })
+}

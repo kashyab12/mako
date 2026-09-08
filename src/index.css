@@ -95,11 +95,11 @@
   --text-title--letter-spacing: -0.13px;
   /* The conversation's own size — the prompt bubble must match the prose
      that answers it, or the exchange reads as two different documents. */
-  --text-welcome: 30px;
+  --text-welcome: clamp(22px, 3vw, 30px);
   --text-welcome--line-height: 1.12;
   --text-welcome--letter-spacing: -1px;
-  --text-prose: 14px;
-  --text-prose--line-height: 1.6;
+  --text-prose: 15px;
+  --text-prose--line-height: 1.65;
   --text-prose--letter-spacing: -0.04px;
 
   /*
@@ -647,9 +647,9 @@
  * ------------------------------------------------------------------ */
 
 .mako-prose {
-  font-size: 14px;
-  line-height: 1.6;
-  letter-spacing: -0.04px;
+  font-size: var(--text-prose);
+  line-height: var(--text-prose--line-height);
+  letter-spacing: var(--text-prose--letter-spacing);
   color: var(--foreground);
   overflow-wrap: anywhere;
 }
@@ -842,10 +842,6 @@
   background-size: 3px 3px;
 }
 
-.copy-confirmation svg {
-  animation: enter 160ms var(--ease-out);
-}
-
 @supports (field-sizing: content) {
   .composer-input { field-sizing: content; min-height: 1lh; }
 }
@@ -864,4 +860,31 @@ html[data-control-preview="true"] #root {
 [data-sonner-toaster] [data-sonner-toast][data-removed="true"] {
   transition-duration: 120ms;
   transition-timing-function: var(--ease-swift);
+}
+
+.changing-label {
+  display: inline-block;
+  animation: label-arrive 160ms var(--ease-out);
+}
+@keyframes label-arrive {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .changing-label { animation: none; }
+  [data-sonner-toaster] [data-sonner-toast] { transition: none; }
+}
+
+.companion-panel { animation: companion-arrive 180ms var(--ease-out); }
+.terminal-panel { animation: terminal-arrive 180ms var(--ease-out); }
+@keyframes companion-arrive {
+  from { opacity: 0; transform: translateX(6px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes terminal-arrive {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .companion-panel, .terminal-panel { animation: none; }
 }
