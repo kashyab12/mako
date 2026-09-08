@@ -1,3 +1,5 @@
+import { devinReferences, devinPromptImages, devinMcpCall } from "./devin-presentation.js"
+import { todoDetails } from "../tool-plan.js"
 import { attachmentFromUrl, type AttachmentContent } from "../content.js"
 /**
  * devin-cli's own sessions — the ones Zed's agent panel (or any ACP host)
@@ -233,6 +235,7 @@ export class DevinCliProvider implements SessionProvider {
         cwd: row.workingDirectory,
         title,
         model: row.model,
+        settings: { model: row.model },
         modelProvider: "devin",
         startedAt: isoOf(row.createdAt),
         updatedAt: isoOf(row.lastActivityAt),
@@ -439,8 +442,9 @@ function translator(): MessageTranslator {
         return
       }
       if (message.role === "user") {
-        const text = contentText(message.content)
-        const attachments = devinAttachments(message.content)
+        const prompt = devinPromptImages(contentText(message.content))
+        const text = prompt.text
+        const attachments = [...devinAttachments(message.content), ...prompt.attachments]
         if (text.trim() || attachments.length)
           sink.push({
             kind: "user",
@@ -454,7 +458,7 @@ function translator(): MessageTranslator {
       if (message.role === "assistant") {
         const blocks: EntryBlock[] = [...devinAttachments(message.content)]
         const thinking = contentText(message.thinking)
-        if (thinking.trim()) blocks.push({ type: "thinking", text: thinking })
+        if (thinking.trim()) blocks.push({ type: "thinking", text: devinReferences(thinking) })
         for (const call of message.tool_calls ?? []) {
           const name = call.name ?? call.function?.name ?? "tool"
           const rawInput = call.arguments ?? call.function?.arguments
@@ -464,11 +468,14 @@ function translator(): MessageTranslator {
             name,
             input: toolInputText(rawInput),
           }
+          if (name === "todo_write") block.details = todoDetails(block.input)
+          const mcp = name === "mcp_call_tool" ? devinMcpCall(block.input) : undefined
+          if (mcp) { block.name = mcp.name; block.input = mcp.input }
           blocks.push(block)
           if (call.id) tools.set(call.id, block)
         }
         const text = contentText(message.content)
-        if (text.trim()) blocks.push({ type: "text", text })
+        if (text.trim()) blocks.push({ type: "text", text: devinReferences(text) })
         const usage = message.usage ?? row.usage
         if (blocks.length > 0 || usage) {
           const entry: Extract<ThreadEntry, { kind: "assistant" }> = {
@@ -487,7 +494,7 @@ function translator(): MessageTranslator {
           : undefined
         if (!block) return
         const output = contentText(message.content)
-        if (output) block.output = clip(normalizeToolOutput(output))
+        block.output = clip(normalizeToolOutput(output))
         const attachments = devinAttachments(message.content)
         if (attachments.length) block.attachments = attachments
       }

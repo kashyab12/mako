@@ -1,3 +1,4 @@
+import { describeToolDetails } from "./content.js"
 /**
  * Deterministic, reverse-time transcripts for handing a conversation to a
  * different agent. The Markdown is the index; large tool payloads are kept
@@ -560,7 +561,7 @@ function renderEntries(
         )
         renderToolField(
           parts,
-          block.output,
+          [block.output, describeToolDetails(block.details ?? [])].filter((value) => value !== undefined && value !== "").join("\n\n") || block.output,
           "output",
           toolOrdinal,
           inlinePayloadLimit,

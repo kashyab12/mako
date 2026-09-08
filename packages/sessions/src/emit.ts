@@ -1,3 +1,4 @@
+import { describeToolDetails } from "./content.js"
 import { describeAttachments } from "./attachment-envelope.js"
 import { persistThreadAttachments } from "./attachment-storage.js"
 /**
@@ -111,6 +112,7 @@ async function flatten(
             `output:\n${await retainPayload(block.output, home, 2000)}`
           )
         lines.push(describeAttachments(block.attachments ?? []))
+        lines.push(describeToolDetails(block.details ?? []))
         parts.push(lines.join("\n"))
       }
       // Thinking is the original model's private state; it does not replay.

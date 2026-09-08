@@ -1,3 +1,4 @@
+import { CursorDesktopStore } from "./cursor-desktop.js"
 import { attachmentFromUrl, type AttachmentContent } from "../content.js"
 /**
  * Cursor CLI sessions.
@@ -87,6 +88,7 @@ interface CursorToolResultPart {
   type: "tool-result"
   toolCallId: string
   result?: JsonValue
+  attachments: AttachmentContent[]
 }
 
 interface CursorOtherPart {
@@ -320,16 +322,18 @@ export class CursorProvider implements SessionProvider {
   displayName = "Cursor"
   rescanRoot = true
   rescanDebounceMs = 250
+  private readonly desktop: CursorDesktopStore
   private chatRoot: string
   private acpRoot: string
 
   constructor(home = homedir()) {
+    this.desktop = new CursorDesktopStore(home)
     this.chatRoot = join(home, ".cursor", "chats")
     this.acpRoot = join(home, ".cursor", "acp-sessions")
   }
 
   roots(): string[] {
-    return [this.chatRoot, this.acpRoot]
+    return [this.chatRoot, this.acpRoot, this.desktop.root]
   }
 
   async discover(): Promise<NativeFile[]> {
@@ -344,10 +348,11 @@ export class CursorProvider implements SessionProvider {
     const acpSessions = await readdir(this.acpRoot).catch((): string[] => [])
     for (const session of acpSessions)
       paths.push(join(this.acpRoot, session, "store.db"))
-    return nativeFiles(paths)
+    return [...(await nativeFiles(paths)), ...(await this.desktop.discover())]
   }
 
   async peek(file: NativeFile): Promise<ThreadRef | null> {
+    if (this.desktop.owns(file.path)) return this.desktop.peek(file)
     const database = await openDatabase(file.path)
     if (!database) return null
     try {
@@ -417,7 +422,12 @@ export class CursorProvider implements SessionProvider {
     }
   }
 
+  createFollower(path: string) {
+    return this.desktop.owns(path) ? this.desktop.createFollower(path) : null
+  }
+
   async read(path: string): Promise<Thread | null> {
+    if (this.desktop.owns(path)) return this.desktop.read(path)
     const [file] = await nativeFiles([path])
     if (!file) return null
     const ref = await this.peek(file)
@@ -456,11 +466,14 @@ export class CursorProvider implements SessionProvider {
               const block = toolsById.get(part.toolCallId)
               if (block) {
                 block.output = clip(formatToolResult(part.result))
-                const attachments = cursorAttachments(
-                  isJsonObject(part.result)
-                    ? part.result["content"]
-                    : part.result
-                )
+                const attachments = [
+                  ...part.attachments,
+                  ...cursorAttachments(
+                    isJsonObject(part.result)
+                      ? part.result["content"]
+                      : part.result
+                  ),
+                ]
                 if (attachments.length) block.attachments = attachments
                 if (message.isError) block.error = true
                 toolsById.delete(part.toolCallId)
@@ -758,6 +771,7 @@ function parseToolPart(value: JsonValue): CursorToolPart {
     type: "tool-result",
     toolCallId: stringValue(value["toolCallId"]) ?? "",
     result: value["result"],
+    attachments: cursorAttachments(value["experimental_content"]),
   }
 }
 

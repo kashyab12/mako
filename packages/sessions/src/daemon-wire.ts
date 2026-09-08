@@ -308,6 +308,8 @@ function parseThreadRef(value: JsonValue | undefined): ThreadRef | null {
   if (lineage) ref.lineage = lineage
   if (modelProvider !== undefined) ref.modelProvider = modelProvider
   if (archived !== undefined) ref.archived = archived
+  const resumeUnavailable = readString(value, "resumeUnavailable")
+  if (resumeUnavailable !== undefined) ref.resumeUnavailable = resumeUnavailable
   return ref
 }
 

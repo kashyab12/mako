@@ -1,5 +1,6 @@
+import { acpToolDetails } from "../acp-tool-details.js"
 import { acpAttachments } from "../acp-attachments.js"
-import type { AttachmentContent } from "../content.js"
+import type { AttachmentContent, ToolDetail } from "../content.js"
 /**
  * Devin, running locally.
  *
@@ -104,6 +105,7 @@ interface AcpMetadata {
 }
 
 interface AcpEventBase {
+  details?: ToolDetail[]
   attachments?: AttachmentContent[]
   at?: string
 }
@@ -429,6 +431,7 @@ function translator(): DevinTranslator {
         const entry = ensureAssistant(event.at)
         const block = createToolBlock(event.name, event.input)
         block.id = event.toolCallId
+        if (event.details?.length) block.details = event.details
         if (event.attachments?.length) block.attachments = event.attachments
         entry.blocks.push(block)
         if (event.toolCallId) toolsById.set(event.toolCallId, block)
@@ -439,6 +442,7 @@ function translator(): DevinTranslator {
           ? toolsById.get(event.toolCallId)
           : undefined
         if (block) {
+          if (event.details?.length) block.details = event.details
           if (event.attachments?.length) block.attachments = event.attachments
           if (event.output)
             block.output = clip(`${block.output ?? ""}${event.output}`)
@@ -452,14 +456,30 @@ function translator(): DevinTranslator {
       case "plan":
         flushAssistant()
         sink.push({
-          kind: "event",
+          kind: "assistant",
           at: event.at,
-          label: "Plan updated",
-          detail: event.entries
-            .map((entry) =>
-              [entry.status, entry.content].filter(Boolean).join(": ")
-            )
-            .join("\n"),
+          blocks: [
+            {
+              type: "tool",
+              name: "Plan",
+              output: "",
+              details: [
+                {
+                  type: "plan",
+                  entries: event.entries.flatMap((entry) =>
+                    entry.content
+                      ? [
+                          {
+                            content: entry.content,
+                            status: entry.status ?? "pending",
+                          },
+                        ]
+                      : []
+                  ),
+                },
+              ],
+            },
+          ],
         })
         return
       case "usage_update":
@@ -588,6 +608,7 @@ function parseAcpEvent(raw: string): AcpEvent | null {
         at,
         text: parseAcpContent(notification["content"]),
         attachments: acpAttachments(notification["content"]),
+        details: acpToolDetails(notification["content"]),
         clientMessageId: metadata.clientMessageId,
       }
     case "agent_message_chunk":
@@ -597,6 +618,7 @@ function parseAcpEvent(raw: string): AcpEvent | null {
         at,
         text: parseAcpContent(notification["content"]),
         attachments: acpAttachments(notification["content"]),
+        details: acpToolDetails(notification["content"]),
       }
     case "tool_call":
       return {
@@ -608,6 +630,7 @@ function parseAcpEvent(raw: string): AcpEvent | null {
           "tool",
         input: formatJson(notification["rawInput"]),
         attachments: acpAttachments(notification["content"]),
+        details: acpToolDetails(notification["content"]),
         toolCallId: readString(notification, "toolCallId"),
       }
     case "tool_call_update":
@@ -617,6 +640,7 @@ function parseAcpEvent(raw: string): AcpEvent | null {
         output: parseAcpContent(notification["content"]),
         status: readString(notification, "status"),
         attachments: acpAttachments(notification["content"]),
+        details: acpToolDetails(notification["content"]),
         toolCallId: readString(notification, "toolCallId"),
       }
     case "plan":

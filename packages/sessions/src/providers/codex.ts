@@ -1,3 +1,11 @@
+import {
+  codexPrompt,
+  codexPromptImages,
+  codexPresentation,
+} from "./codex-presentation.js"
+import { codexPlanDetails } from "../tool-plan.js"
+import { codexServiceTier } from "../model-catalog.js"
+import type { SessionSettings } from "../settings.js"
 import { attachmentFromUrl, type AttachmentContent } from "../content.js"
 /**
  * Codex CLI sessions.
@@ -26,7 +34,6 @@ import type { SQLOutputValue } from "node:sqlite"
 import {
   clip,
   titleFrom,
-  userTextFrom,
   EntrySink,
   type EntryBlock,
   type Thread,
@@ -80,6 +87,7 @@ interface CodexPeekResult {
 interface CodexTurnContext extends CodexRolloutBase {
   kind: "turn_context"
   model?: string
+  settings: SessionSettings
 }
 
 interface CodexUserMessageEvent extends CodexRolloutBase {
@@ -362,12 +370,19 @@ function parseCodexRolloutLine(raw: string): CodexRolloutEvent | null {
         startedAt: stringValue(payload?.["timestamp"]),
         threadSource: stringValue(payload?.["thread_source"]),
       }
-    case "turn_context":
+    case "turn_context": {
+      const options: NonNullable<SessionSettings["options"]> = {}
+      const effort = stringValue(payload?.["effort"])
+      const serviceTier = stringValue(payload?.["service_tier"])
+      if (effort) options.effort = effort
+      if (serviceTier) options.serviceTier = codexServiceTier(serviceTier)
       return {
         kind: "turn_context",
         at,
         model: stringValue(payload?.["model"]),
+        settings: { model: stringValue(payload?.["model"]), options },
       }
+    }
     case "event_msg":
       if (!payload) return { kind: "ignored", at }
       switch (stringValue(payload["type"])) {
@@ -577,12 +592,25 @@ export class CodexProvider implements SessionProvider {
         !ref.title &&
         (event.kind === "user_message_event" || event.kind === "user_response")
       ) {
-        ref.title = titleFrom(event.text)
+        ref.title = titleFrom(codexPrompt(event.text))
       }
       return spent < budget && !(ref.title && ref.model)
     })
     const ref = found.ref
     if (!ref) return null
+    // Head metadata identifies the thread. Only the bounded tail describes its latest settings.
+    ref.settings = {}
+    await readLines(
+      file.path,
+      Math.max(0, file.bytes - 2 * 1024 * 1024),
+      (raw) => {
+        const event = parseCodexRolloutLine(raw)
+        if (event?.kind === "turn_context") {
+          ref.settings = event.settings
+          if (event.model) ref.model = event.model
+        }
+      }
+    )
     const details = await this.threadMetadata(ref.nativeId)
     return details
       ? {
@@ -675,8 +703,11 @@ function translator(): CodexTranslator {
         }
         return
       case "user_response": {
-        const text = userTextFrom(event.text)
-        if (!text && !event.attachments?.length) return
+        const text = codexPrompt(event.text)
+        const attachments = event.attachments?.length
+          ? event.attachments
+          : codexPromptImages(event.text)
+        if (!text && !attachments.length) return
         assistant = null
         started = true
         sink.push({
@@ -684,7 +715,7 @@ function translator(): CodexTranslator {
           id: event.id,
           at: event.at,
           text: text ?? "",
-          attachments: event.attachments,
+          attachments,
         })
         return
       }
@@ -697,7 +728,7 @@ function translator(): CodexTranslator {
         if (event.text)
           openAssistant(event.at).blocks.push({
             type: "text",
-            text: event.text,
+            text: codexPresentation(event.text),
           })
         openAssistant(event.at).blocks.push(...(event.attachments ?? []))
         return
@@ -707,7 +738,7 @@ function translator(): CodexTranslator {
         started = true
         openAssistant(event.at).blocks.push({
           type: "thinking",
-          text: event.text,
+          text: codexPresentation(event.text),
         })
         return
       case "function_call_response": {
@@ -719,6 +750,11 @@ function translator(): CodexTranslator {
           name: event.name,
           input: clip(event.input),
         }
+        if (
+          event.name === "update_plan" ||
+          event.name === "functions.update_plan"
+        )
+          block.details = codexPlanDetails(block.input)
         if (event.output !== undefined) block.output = event.output
         if (event.error) block.error = true
         if (event.canceled) block.canceled = true

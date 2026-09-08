@@ -1,5 +1,6 @@
+import { SessionSettingsSchema } from "./settings.js"
 import { z } from "zod"
-import { AttachmentContentSchema } from "./content.js"
+import { AttachmentContentSchema, ToolDetailSchema } from "./content.js"
 
 export const TurnUsageSchema = z.object({
   input: z.number().optional(),
@@ -20,6 +21,7 @@ export const EntryBlockSchema = z.discriminatedUnion("type", [
     output: z.string().optional(),
     error: z.boolean().optional(),
     canceled: z.boolean().optional(),
+    details: z.array(ToolDetailSchema).optional(),
     attachments: z.array(AttachmentContentSchema).optional(),
   }),
 ])
@@ -53,6 +55,7 @@ export const ThreadRefSchema = z.object({
   workspace: z.string().optional(),
   title: z.string().optional(),
   model: z.string().optional(),
+  settings: SessionSettingsSchema.optional(),
   startedAt: z.string().optional(),
   updatedAt: z.string().optional(),
   bytes: z.number().nonnegative().optional(),
@@ -60,6 +63,7 @@ export const ThreadRefSchema = z.object({
   locked: z.boolean().optional(),
   active: z.boolean().optional(),
   archived: z.boolean().optional(),
+  resumeUnavailable: z.string().optional(),
   lineage: z
     .array(z.object({ harness: z.string(), title: z.string().optional() }))
     .optional(),

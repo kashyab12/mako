@@ -60,3 +60,21 @@ export function attachmentDescription(attachment: AttachmentContent): string {
       return `${attachment.name}: ${attachment.source.reason}`
   }
 }
+
+/** Provider-supplied results that cannot be reconstructed reliably from plain text. */
+export const ToolDetailSchema = z.discriminatedUnion("type", [
+  z.object({type: z.literal("diff"), path: z.string(), oldText: z.string().nullable(), newText: z.string()}),
+  z.object({type: z.literal("terminal"), terminalId: z.string()}),
+  z.object({type: z.literal("plan"), entries: z.array(z.object({content: z.string(), status: z.string()}))}),
+])
+export type ToolDetail = z.infer<typeof ToolDetailSchema>
+
+export function describeToolDetails(details: ToolDetail[]): string {
+  return details.map((detail) => {
+    switch (detail.type) {
+      case "diff": return `File: ${detail.path}\nBefore:\n${detail.oldText ?? ""}\nAfter:\n${detail.newText}`
+      case "terminal": return `Provider terminal: ${detail.terminalId}`
+      case "plan": return detail.entries.map((entry) => `${entry.status}: ${entry.content}`).join("\n")
+    }
+  }).join("\n\n")
+}

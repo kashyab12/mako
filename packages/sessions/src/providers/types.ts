@@ -69,7 +69,7 @@ export interface SessionProvider {
    * where to tail from next time. Providers whose store is not append-only
    * (Cursor's SQLite) fall back to a full re-read by omitting this.
    */
-  createFollower?(path: string, fromByte: number): SessionFollower
+  createFollower?(path: string, fromByte: number): SessionFollower | null
   close?(): void
   tail?(
     path: string,

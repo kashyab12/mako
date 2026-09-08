@@ -1,3 +1,5 @@
+import { claudeCommandPrompt, claudeInterrupted } from "./claude-presentation.js"
+import { todoDetails } from "../tool-plan.js"
 import { attachmentFromUrl, type AttachmentContent } from "../content.js"
 /**
  * Claude Code sessions.
@@ -398,12 +400,20 @@ export class ClaudeProvider implements SessionProvider {
         !line.isSidechain &&
         !line.isMeta
       ) {
-        const text = plainText(line.message?.content)
+        const text = claudeCommandPrompt(plainText(line.message?.content))
         if (text.trim() && !NOT_A_PROMPT.test(text.trimStart()))
           ref.title = titleFrom(text)
       }
       if (ref.nativeId && ref.title && ref.model) break
     }
+    ref.settings = {}
+    await readLines(file.path, Math.max(0, file.bytes - 2 * 1024 * 1024), (raw) => {
+      const line = parseClaudeLine(raw)
+      if (line?.type === "assistant" && !line.isSidechain && line.message?.model) {
+        ref.model = line.message.model
+        ref.settings = { model: line.message.model }
+      }
+    })
     // A session file with no session id yet is a placeholder, not a session.
     return ref.nativeId ? ref : null
   }
@@ -483,7 +493,12 @@ function translator(): ClaudeTranslator {
         assistant = null
         return
       }
-      const text = plainText(content)
+      const text = claudeCommandPrompt(plainText(content))
+      if (claudeInterrupted(text)) {
+        sink.push({kind: "event", at: line.timestamp, label: "Interrupted"})
+        assistant = null
+        return
+      }
       const attachments = attachmentParts(content)
       if (
         (!text.trim() && !attachments.length) ||
@@ -544,6 +559,7 @@ function translator(): ClaudeTranslator {
               part.input === undefined ? undefined : JSON.stringify(part.input)
             ),
           }
+          if (part.name === "TodoWrite") block.details = todoDetails(block.input)
           if (part.id !== undefined) toolsById.set(part.id, block)
           turn.blocks.push(block)
           break

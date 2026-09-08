@@ -431,6 +431,7 @@ function refFrom(
     cwd: row.directory ?? row.projectWorktree,
     title,
     model: modelId,
+    settings: { model: modelId },
     modelProvider: model?.provider,
     startedAt: isoOf(row.startedAt),
     updatedAt: isoOf(row.updatedAt),
@@ -999,13 +1000,13 @@ function fileParts(value: JsonValue | undefined): AttachmentContent[] {
   for (const part of value) {
     if (!isJsonObject(part)) continue
     const type = jsonText(part.type)
-    if (type !== "file" && (type !== undefined || !jsonText(part.url))) continue
+    const url = jsonText(part.url) ?? jsonText(part.uri)
+    if (type !== "file" && (type !== undefined || !url)) continue
     const name = jsonText(part.filename) ?? "Attachment"
     const mime =
       jsonText(part.mime) ??
       jsonText(part.mediaType) ??
       "application/octet-stream"
-    const url = jsonText(part.url)
     attachments.push(
       url
         ? attachmentFromUrl(name, mime, url)

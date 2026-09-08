@@ -1,5 +1,6 @@
+import { acpToolDetails } from "../acp-tool-details.js"
 import { acpAttachments } from "../acp-attachments.js"
-import type { AttachmentContent } from "../content.js"
+import type { AttachmentContent, ToolDetail } from "../content.js"
 /**
  * Grok sessions.
  *
@@ -54,6 +55,7 @@ interface GrokSummary {
 }
 
 interface GrokUpdateBase {
+  details?: ToolDetail[]
   attachments?: AttachmentContent[]
   at?: string
 }
@@ -146,7 +148,6 @@ type LegacyGrokLine =
   | LegacyToolResultLine
 
 type AssistantEntry = Extract<ThreadEntry, { kind: "assistant" }>
-type EventEntry = Extract<ThreadEntry, { kind: "event" }>
 type UserEntry = Extract<ThreadEntry, { kind: "user" }>
 type GrokToolBlock = EntryBlock & { type: "tool" }
 
@@ -354,6 +355,7 @@ function parseUpdateLine(raw: string): GrokUpdate | null {
         sessionUpdate,
         at,
         attachments: acpAttachments(update["content"]),
+        details: acpToolDetails(update["content"]),
         toolCallId: stringValue(update["toolCallId"]),
         name: toolName(update),
         input: encodedJson(update["rawInput"]),
@@ -370,6 +372,7 @@ function parseUpdateLine(raw: string): GrokUpdate | null {
         sessionUpdate,
         at,
         attachments: acpAttachments(update["content"]),
+        details: acpToolDetails(update["content"]),
         toolCallId: stringValue(update["toolCallId"]),
         name: toolName(update),
         input: encodedJson(update["rawInput"]),
@@ -521,6 +524,10 @@ export class GrokProvider implements SessionProvider {
       cwd: summary.cwd,
       title,
       model: summary.model,
+      settings: {
+        model: summary.model,
+        options: summary.effort ? { effort: summary.effort } : {},
+      },
       startedAt: summary.createdAt,
       updatedAt: summary.updatedAt ?? new Date(file.mtimeMs).toISOString(),
       bytes: file.bytes,
@@ -567,7 +574,7 @@ function updatesTranslator(): GrokTranslator {
   let latestAssistant: AssistantEntry | null = null
   let user: UserEntry | null = null
   let userKey: string | undefined
-  let plan: EventEntry | null = null
+  let plan: AssistantEntry | null = null
   const toolsById = new Map<string, GrokToolBlock>()
   let started = false
   let needsReset = false
@@ -657,6 +664,7 @@ function updatesTranslator(): GrokTranslator {
           event.input,
           event.at
         )
+        if (event.details?.length) block.details = event.details
         if (event.attachments?.length) block.attachments = event.attachments
         if (event.output) block.output = event.output
         return
@@ -669,6 +677,7 @@ function updatesTranslator(): GrokTranslator {
         const target =
           block ??
           createTool(event.toolCallId, event.name, event.input, event.at)
+        if (event.details?.length) target.details = event.details
         if (event.attachments?.length) target.attachments = event.attachments
         if (!target.input && event.input) target.input = event.input
         if (event.output) {
@@ -682,21 +691,19 @@ function updatesTranslator(): GrokTranslator {
         return
       }
       case "plan": {
-        const detail = event.entries
-          .map((entry) => `${entry.status}: ${entry.content}`)
-          .join("\n")
+        const block: GrokToolBlock = {
+          type: "tool",
+          name: "Plan",
+          output: "",
+          details: [{ type: "plan", entries: event.entries }],
+        }
         if (plan) {
           plan.at = event.at ?? plan.at
-          plan.detail = detail || undefined
+          plan.blocks = [block]
           return
         }
         flushAssistant()
-        plan = {
-          kind: "event",
-          at: event.at,
-          label: "Plan updated",
-          detail: detail || undefined,
-        }
+        plan = { kind: "assistant", at: event.at, blocks: [block] }
         sink.push(plan)
         return
       }

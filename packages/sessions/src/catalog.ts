@@ -486,19 +486,21 @@ export class SessionCatalog {
     for (const file of files) {
       seen.add(file.path)
       const cached = this.byPath.get(file.path)
-      const followed = (this.follows.get(file.path)?.listeners.size ?? 0) > 0
-      if (
-        !followed &&
+      const follow = this.follows.get(file.path)
+      const followed = (follow?.listeners.size ?? 0) > 0
+      const unchanged = Boolean(
         cached &&
         cached.bytes === file.bytes &&
         cached.mtimeMs === file.mtimeMs &&
         cached.revision === file.revision
       )
-        continue
-      const ref = withWorkspace(await provider.peek(file).catch(() => null))
-      if (!this.commit(file, ref)) continue
-      if (ref) this.emit({ type: cached?.ref ? "updated" : "added", ref })
-      const follow = this.follows.get(file.path)
+      // A follower may have a finer-grained cursor than the catalog stamp. Plain rereaders do not.
+      if (unchanged && (!followed || !follow?.follower)) continue
+      if (!unchanged) {
+        const ref = withWorkspace(await provider.peek(file).catch(() => null))
+        if (!this.commit(file, ref)) continue
+        if (ref) this.emit({ type: cached?.ref ? "updated" : "added", ref })
+      }
       if (follow && follow.listeners.size > 0) {
         if (!follow.follower) {
           follow.follower = this.makeFollower(

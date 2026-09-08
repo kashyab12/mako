@@ -1,3 +1,4 @@
+import type { SessionSettings } from "./settings.js"
 import { extractAttachmentEnvelope } from "./attachment-envelope.js"
 import type { z } from "zod"
 import type { EntryBlockSchema, ThreadEntrySchema } from "./thread-schema.js"
@@ -79,6 +80,8 @@ export interface ThreadRef {
   workspace?: string
   title?: string
   model?: string
+  /** Latest settings observed in the native store. Missing fields remain unknown. */
+  settings?: SessionSettings
   startedAt?: string
   updatedAt?: string
   /** Bytes of the native store — a cheap staleness check and a size hint. */
@@ -98,6 +101,8 @@ export interface ThreadRef {
    * movable to any harness — no longer resumable by its original CLI.
    */
   archived?: boolean
+  /** Native history is readable, but its owning control transport cannot resume it. */
+  resumeUnavailable?: string
 }
 
 /** A full conversation: the identity plus every entry, in order. */
@@ -309,6 +314,7 @@ function entryCharacters(entry: ThreadEntry): number {
     return (
       sum +
       JSON.stringify(block.attachments ?? []).length +
+      JSON.stringify(block.details ?? []).length +
       block.name.length +
       (block.input?.length ?? 0) +
       (block.output?.length ?? 0)

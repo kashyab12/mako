@@ -87,8 +87,12 @@ export function defaultCatalog(
 }
 
 export { AttachmentContentSchema, AttachmentSourceSchema } from "./content.js"
+export { ToolDetailSchema, describeToolDetails } from "./content.js"
+export type { ToolDetail } from "./content.js"
 export type { AttachmentContent } from "./content.js"
 
 export { ThreadEntrySchema, ThreadRefSchema } from "./thread-schema.js"
 
 export { attachmentFiles } from "./attachment-files.js"
+
+export * from "./settings.js"
