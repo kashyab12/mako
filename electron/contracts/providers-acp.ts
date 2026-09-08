@@ -3,61 +3,25 @@ export interface LiveCapability {
   canResume: boolean
 }
 
-export interface HarnessSelectValue {
-  value: string
-  label: string
-  description?: string
-  default?: boolean
-}
-
-export type HarnessModelOption =
-  | {
-      kind: "select"
-      id: string
-      label: string
-      current?: string
-      values: HarnessSelectValue[]
-      presentation?: "select" | "toggle"
-    }
-  | {
-      kind: "boolean"
-      id: string
-      label: string
-      current: boolean
-    }
-
-export interface HarnessModelVariant {
-  id: string
-  label: string
-  values: Record<string, string | boolean>
-  contextWindow?: number
-  maxOutputTokens?: number
-  description?: string
-}
-
-export interface HarnessModel {
-  /** Stable exact identity shown and persisted by Mako. */
-  id: string
-  /** Value the provider transport accepts when it differs from identity. */
-  launchId?: string
-  label: string
-  description?: string
-  aliases?: string[]
-  contextWindow?: number
-  maxOutputTokens?: number
-  options: HarnessModelOption[]
-  /** Flattened provider variants for transports that encode options in the model id. */
-  variants?: HarnessModelVariant[]
-}
+import type { SessionModel, SessionSettings } from "@mako/sessions/settings"
+export type {
+  ModelChoice as HarnessSelectValue,
+  ModelOption as HarnessModelOption,
+  ModelVariant as HarnessModelVariant,
+  SessionModel as HarnessModel,
+} from "@mako/sessions/settings"
 
 export interface HarnessProfile {
   id: string
   label: string
   available: boolean
   transport: "acp" | "app-server" | "remote"
-  models: HarnessModel[]
+  models: SessionModel[]
   defaultModel?: string
   configuredModel?: string
+  /** Provider-resolved defaults in the requested workspace. Never saved as user choices. */
+  settings?: SessionSettings
+  configurationError?: string
   capabilities: string[]
   error?: string
 }
@@ -77,7 +41,8 @@ export interface LiveSessionState {
   status: "starting" | "ready" | "running" | "failed" | "closed"
   modes: Array<{ id: string; name: string }>
   currentMode: string | null
-  configOptions: HarnessModelOption[]
+  configOptions: import("@mako/sessions/settings").ModelOption[]
+  settings?: SessionSettings
   lastStop?: string
   error?: string
 }

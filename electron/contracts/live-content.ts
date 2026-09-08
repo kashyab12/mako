@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { AttachmentContentSchema } from "@mako/sessions/content"
+import { AttachmentContentSchema, ToolDetailSchema } from "@mako/sessions/content"
 
 const plan = z.array(z.object({ content: z.string(), status: z.string() }))
 export const LiveUpdateSchema = z.discriminatedUnion("kind", [
@@ -35,6 +35,7 @@ export const LiveUpdateSchema = z.discriminatedUnion("kind", [
     status: z.string(),
     input: z.string().optional(),
     output: z.string().optional(),
+    details: z.array(ToolDetailSchema).optional(),
     attachments: z.array(AttachmentContentSchema).optional(),
   }),
   z.object({
@@ -44,6 +45,7 @@ export const LiveUpdateSchema = z.discriminatedUnion("kind", [
     status: z.string().optional(),
     input: z.string().optional(),
     output: z.string().optional(),
+    details: z.array(ToolDetailSchema).optional(),
     attachments: z.array(AttachmentContentSchema).optional(),
   }),
   z.object({ kind: z.literal("plan"), entries: plan }),
@@ -80,6 +82,7 @@ export const LiveBlockSchema = z.discriminatedUnion("type", [
     status: z.string(),
     input: z.string().optional(),
     output: z.string().optional(),
+    details: z.array(ToolDetailSchema).optional(),
     attachments: z.array(AttachmentContentSchema).optional(),
   }),
   z.object({ type: z.literal("plan"), entries: plan }),
@@ -153,6 +156,7 @@ export function reduceLiveUpdates(
           toolKind: update.toolKind,
           input: update.input,
           output: update.output,
+          details: update.details,
           attachments: update.attachments,
         }
         tools.set(update.id, index >= 0 ? index : next.length)
@@ -170,12 +174,13 @@ export function reduceLiveUpdates(
           status: update.status ?? block.status,
           input: update.input ?? block.input,
           output: update.output ?? block.output,
+          details: update.details ?? block.details,
           attachments: update.attachments ?? block.attachments,
         }
         break
       }
       case "plan": {
-        const index = next.findIndex((block) => block.type === "plan")
+        const index = next.findIndex((block, index) => index > turnStart && block.type === "plan")
         const block: LiveBlock = { type: "plan", entries: update.entries }
         if (index >= 0) next[index] = block
         else next.push(block)

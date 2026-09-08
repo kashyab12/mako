@@ -20,6 +20,7 @@ export const hostCallInputs = {
   "mako:browser-control-connect": z.tuple([z.string()]),
   "mako:browser-control-disconnect": z.tuple([z.string()]),
   "mako:browser-control-status": z.tuple([]),
+  "mako:browser-extension-setup": z.tuple([]),
   "mako:capabilities": z.tuple([]),
   "mako:check-updates": z.tuple([]),
   "mako:clear-crashes": z.tuple([]),
@@ -81,15 +82,17 @@ export const hostCallInputs = {
     z
       .object({
         model: z.string().optional(),
-        effort: z.string().optional(),
-        fast: z.boolean().optional(),
         options: z
           .record(z.string(), z.union([z.boolean(), z.string()]))
           .optional(),
       })
       .optional(),
   ]),
-  "mako:harness-tuning": z.tuple([z.string()]),
+  "mako:harness-tuning": z.tuple([
+    z.string(),
+    z.string().optional(),
+    z.boolean().optional(),
+  ]),
   "mako:install-update": z.tuple([]),
   "mako:integrations": z.tuple([]),
   "mako:list-files": z.tuple([]),
@@ -157,6 +160,14 @@ export const hostCallInputs = {
         })
       )
       .optional(),
+    z
+      .object({
+        model: z.string().optional(),
+        options: z
+          .record(z.string(), z.union([z.boolean(), z.string()]))
+          .optional(),
+      })
+      .optional(),
   ]),
   "mako:live-snapshot": z.tuple([z.string()]),
   "mako:live-start": z.tuple([
@@ -186,8 +197,6 @@ export const hostCallInputs = {
       tuning: z
         .object({
           model: z.string().optional(),
-          effort: z.string().optional(),
-          fast: z.boolean().optional(),
           options: z
             .record(z.string(), z.union([z.boolean(), z.string()]))
             .optional(),
@@ -214,8 +223,6 @@ export const hostCallInputs = {
       tuning: z
         .object({
           model: z.string().optional(),
-          effort: z.string().optional(),
-          fast: z.boolean().optional(),
           options: z
             .record(z.string(), z.union([z.boolean(), z.string()]))
             .optional(),
@@ -263,8 +270,6 @@ export const hostCallInputs = {
       tuning: z
         .object({
           model: z.string().optional(),
-          effort: z.string().optional(),
-          fast: z.boolean().optional(),
           options: z
             .record(z.string(), z.union([z.boolean(), z.string()]))
             .optional(),

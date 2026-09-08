@@ -1,3 +1,4 @@
+import type { SessionSettings } from "@mako/sessions/settings"
 import type {
   ContextManifest,
   ConversationControl,
@@ -18,15 +19,11 @@ export interface LiveStartOptions {
   title?: string
   threadPath?: string
   displayPrompt?: string
-  tuning?: {
-    model?: string
-    effort?: string
-    fast?: boolean
-    options?: Record<string, string | boolean>
-  }
+  tuning?: SessionSettings
 }
 
 export interface LiveRequest {
+  tuning?: SessionSettings
   inputDigest?: string
   nativeRun?: { bindingId: string; runId: string }
   id: string

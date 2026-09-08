@@ -1,3 +1,4 @@
+import { SessionSettingsSchema } from "@mako/sessions/settings"
 import { z } from "zod"
 
 export const PromptAttachmentSchema = z.object({
@@ -7,12 +8,7 @@ export const PromptAttachmentSchema = z.object({
   data: z.string().optional(),
   path: z.string().optional(),
 })
-export const ProviderSelectionSchema = z.object({
-  model: z.string().optional(),
-  effort: z.string().optional(),
-  fast: z.boolean().optional(),
-  options: z.record(z.string(), z.union([z.string(), z.boolean()])).optional(),
-})
+export const ProviderSelectionSchema = SessionSettingsSchema
 export const TransferInputSchema = z.object({
   id: z.string().uuid(),
   provider: z.string().min(1),

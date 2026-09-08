@@ -1,6 +1,7 @@
 import { z } from "zod"
 
 export const BrowserStateSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("connecting") }),
   z.object({ status: z.literal("disconnected") }),
   z.object({ status: z.literal("awaiting-approval"), startedAt: z.number() }),
   z.object({ status: z.literal("connected"), generation: z.string() }),

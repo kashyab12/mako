@@ -173,6 +173,9 @@ export interface FileContents {
   mimeType?: string
   previewUrl?: string
   thumbnailUrl?: string
+  /** Sandboxed document supplied by a registered provider artifact reader. */
+  artifactPreview?:
+    { kind: "html"; html: string } | { kind: "unavailable"; reason: string }
   /** Bytes on disk, not of `contents` — they differ when truncated. */
   size: number
   /** Not text. `contents` is empty; the viewer says so rather than rendering noise. */

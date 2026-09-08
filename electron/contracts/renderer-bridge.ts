@@ -1,3 +1,4 @@
+import type { SessionSettings } from "@mako/sessions/settings"
 import type { NativeRequest, NativeRequestInput } from "../shared.js"
 import type {
   DelegateInput,
@@ -141,12 +142,7 @@ export function createMakoBridge(transport: BridgeTransport) {
     startHarness: (
       harness: string,
       prompt: string,
-      options?: {
-        model?: string
-        effort?: string
-        fast?: boolean
-        options?: Record<string, string | boolean>
-      }
+      options?: SessionSettings
     ) =>
       invokeTrustedHost<{ run: ThreadRunState | null; cwd: string }>(
         "mako:harness-start",
@@ -154,8 +150,8 @@ export function createMakoBridge(transport: BridgeTransport) {
         prompt,
         options
       ),
-    harnessTuning: (harness: string) =>
-      invokeTrustedHost<HarnessProfile>("mako:harness-tuning", harness),
+    harnessTuning: (harness: string, cwd?: string, force?: boolean) =>
+      invokeTrustedHost<HarnessProfile>("mako:harness-tuning", harness, cwd, force),
     abortThreadRun: (path: string) =>
       invokeTrustedHost<void>("mako:thread-abort-run", path),
 
@@ -198,14 +194,16 @@ export function createMakoBridge(transport: BridgeTransport) {
       id: string,
       requestId: string,
       text: string,
-      attachments?: PromptAttachment[]
+      attachments?: PromptAttachment[],
+      tuning?: SessionSettings
     ) =>
       invokeTrustedHost<LiveRequest>(
         "mako:live-prompt",
         id,
         requestId,
         text,
-        attachments
+        attachments,
+        tuning
       ),
     livePermission: (
       id: string,
@@ -271,6 +269,8 @@ export function createMakoBridge(transport: BridgeTransport) {
       ),
     computerPermissions: () =>
       invokeTrustedHost<MakoComputerPermissions>("mako:computer-permissions"),
+    prepareBrowserExtension: () =>
+      invokeTrustedHost<import("../browser-extension-setup.js").BrowserExtensionSetup>("mako:browser-extension-setup"),
     browserControlStatus: () =>
       invokeTrustedHost<import("../shared.js").BrowserControlStatus[]>(
         "mako:browser-control-status"

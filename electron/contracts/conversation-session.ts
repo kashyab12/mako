@@ -1,5 +1,6 @@
 import type {
   AttachmentContent,
+  ToolDetail,
   TranscriptBundleMetadata,
 } from "@mako/sessions"
 
@@ -76,6 +77,7 @@ export type Block =
       isCanceled?: boolean
       streaming?: boolean
       attachments?: AttachmentContent[]
+      details?: ToolDetail[]
     }
   | AttachmentContent
 
