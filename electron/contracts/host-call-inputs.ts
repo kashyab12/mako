@@ -30,6 +30,7 @@ export const hostCallInputs = {
   "mako:computer-permissions-request": z.tuple([]),
   "mako:control-preview": z.tuple([z.string(), z.boolean(), z.string()]),
   "mako:control-preview-hide": z.tuple([]),
+  "mako:control-preview-source": z.tuple([z.string()]),
   "mako:copy": z.tuple([z.string()]),
   "mako:crashes": z.tuple([]),
   "mako:crashes-dir": z.tuple([]),

@@ -25,5 +25,6 @@ export interface ControlActivity {
 }
 export interface ControlPreview {
   activity: ControlActivity
+  window?: import("./appshots.js").AppshotTarget
   frame: { id: string; image: ControlImage; capturedAt: number } | null
 }

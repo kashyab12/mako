@@ -242,6 +242,11 @@ export function createMakoBridge(transport: BridgeTransport) {
     setDaemonLogin: (enabled: boolean) =>
       invokeTrustedHost<void>("mako:daemon-login-set", enabled),
 
+    controlPreviewSource: (conversationId: string) =>
+      invokeTrustedHost<string | null>(
+        "mako:control-preview-source",
+        conversationId
+      ),
     hideControlPreview: () =>
       invokeTrustedHost<void>("mako:control-preview-hide"),
     appshotWindows: () =>
