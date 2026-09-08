@@ -20,9 +20,9 @@ import { isMainModule } from "./main-module.js"
 
 const descriptions = {
   status:
-    "Read browser connection state without connecting, prompting, or opening tabs. Browser IDs here identify the exact local browser installation.",
+    "Read browser connection state without connecting, prompting, or opening tabs. Browser IDs here identify the exact connected extension profile.",
   connect:
-    "Connect the selected browser once for this Mako host session. Chrome may ask for approval. Concurrent tasks join the same pending connection. Closing an MCP client does not disconnect Chrome.",
+    "Connect the selected browser profile through its installed Mako Browser extension. Installation grants browser access; ordinary reconnects do not require another debugging approval. Concurrent tasks join the same pending connection. Closing an MCP client does not disconnect Chrome.",
   tabs: "List existing page, iframe and worker targets in a connected browser, with identity, URL, title and whether a task has claimed them. Does not select or activate a tab.",
   open: "Create and claim a new tab in a connected browser. Background by default. Returns the exact target handle for all later calls.",
   select:
@@ -34,8 +34,8 @@ const descriptions = {
   screenshot:
     "Return an actual image plus its exact target identity. JPEG is the compact default; PNG and full-page capture are available. Does not change the selected target or reconnect.",
   evaluate:
-    "Evaluate JavaScript in the exact tab and return the CDP result by value. Supports async expressions. May modify page state; use observations to read ordinary UI.",
-  cdp: "Send a Chrome DevTools Protocol command to this exact target. Supports DOM, Runtime, Input, Network, Emulation, Page dialogs, downloads and other protocol domains. Browser/SystemInfo commands act on the browser. Target lifecycle uses open/select/release/close so ownership remains explicit. Use concurrent:true to answer a paused Fetch request or JavaScript dialog while another command is waiting. No failed command is replayed.",
+    "Evaluate JavaScript in the exact tab and return the CDP result by value. Supports async expressions. May modify page state; use observations to read ordinary UI. For user interaction, use click/type or CDP Input commands: DOM click(), submit(), and dispatchEvent() do not produce trusted user input.",
+  cdp: "Send a Chrome DevTools Protocol command to this exact target. Supports DOM, Runtime, Input, Network, Emulation, Page dialogs and other permitted protocol domains. Chrome extensions do not expose Browser/SystemInfo commands; those require an explicitly configured direct-CDP transport. Target lifecycle uses open/select/release/close so ownership remains explicit. Use concurrent:true to answer a paused Fetch request or JavaScript dialog while another command is waiting. No failed command is replayed.",
   events:
     "Read a bounded, non-destructive event history for this exact tab. Pass the previous cursor; gap reports evicted history. Use cdp to enable needed domains, e.g. Network.enable. Page events are enabled automatically.",
   navigate:
@@ -43,7 +43,7 @@ const descriptions = {
   close:
     "Close this exact tab. Its old handle becomes invalid. Does not close Chrome or another task's tab.",
   click:
-    "Click a fresh observation ref or exact viewport CSS coordinates in the bound tab. Ref clicks verify the element is present and not covered. Coordinates come from this tab's latest screenshot. Does not move the physical pointer.",
+    'Click a fresh observation ref or exact viewport CSS coordinates in the bound tab. Ref clicks verify the element is present and not covered. Pass at as an object, for example {"ref":"observed-ref"} or {"x":100,"y":200}, never a JSON-encoded string. Coordinates come from this tab\'s latest screenshot. Does not move the physical pointer.',
   type: "Insert text through Chrome's Input domain. An optional fresh ref focuses that exact element first. Without a ref, types into the already-focused element of this tab.",
   upload:
     "Set explicit absolute local file paths on an observed file-input ref in this exact tab. Empty files clears the input. This may upload file contents to the page.",
@@ -167,11 +167,13 @@ export function createBrowserToolsServer(
     })
   )
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    let dispatched = false
     try {
       if (request.params.name === "mako_browser_exec") {
         const { source } = BROWSER_TOOL_INPUTS.exec.parse(
           request.params.arguments
         )
+        dispatched = true
         return { content: await runtime.run(source, extra.signal) }
       }
       if (request.params.name === "mako_browser_help") {
@@ -200,9 +202,10 @@ export function createBrowserToolsServer(
             progress: 0,
             total: 1,
             message:
-              "Connecting to Chrome. Approve its debugging connection if prompted; Mako will retain it across tasks.",
+              "Connecting to the browser profile. Tasks share the connection and keep separate tabs.",
           },
         })
+      dispatched = true
       const value = await call(command, extra.signal)
       if (command.action === "screenshot") {
         const image = imageResult.parse(value)
@@ -234,12 +237,12 @@ export function createBrowserToolsServer(
         error instanceof BrowserFault
           ? error.detail
           : {
-              code: "invalid-request",
+              code: dispatched ? "protocol-error" : "invalid-request",
               message:
                 error instanceof Error
                   ? error.message
                   : "Browser operation failed",
-              outcome: "unknown",
+              outcome: dispatched ? "unknown" : "not-dispatched",
             }
       return {
         isError: true,

@@ -135,6 +135,7 @@ export async function resumeNative(
   prompt: string,
   tuning?: FreshOptions
 ): Promise<ThreadRunState> {
+  if (ref.resumeUnavailable) throw new Error(ref.resumeUnavailable)
   const existing = runs.get(ref.path)
   if (existing && existing.state.status === "running") throw new Error("This native session already has an active writer")
 

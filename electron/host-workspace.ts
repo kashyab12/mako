@@ -1,3 +1,4 @@
+import { providerHost } from "./providers/index.js"
 import { filePreviewUrl } from "./file-previews.js"
 import { resolveMakoArtifact } from "./artifact-paths.js"
 import {
@@ -39,6 +40,8 @@ const MEDIA_TYPES = {
   ".pdf": { media: "pdf", mimeType: "application/pdf" },
   ".mp3": { media: "audio", mimeType: "audio/mpeg" },
   ".wav": { media: "audio", mimeType: "audio/wav" },
+  ".ogg": { media: "audio", mimeType: "audio/ogg" },
+  ".flac": { media: "audio", mimeType: "audio/flac" },
   ".m4a": { media: "audio", mimeType: "audio/mp4" },
   ".mp4": { media: "video", mimeType: "video/mp4" },
   ".mov": { media: "video", mimeType: "video/quicktime" },
@@ -223,13 +226,17 @@ export class WorkspaceFiles {
           truncated: false,
         }
       }
-      return {
-        path,
-        contents: buffer.toString("utf8"),
-        size: info.size,
-        binary: false,
-        truncated: info.size > FILE_VIEW_LIMIT,
-      }
+      const contents = buffer.toString("utf8")
+      const preview = providerHost.artifactPreviews.list().find((reader) => reader.matches(path))
+      const artifactPreview: FileContents["artifactPreview"] = preview
+        ? info.size > FILE_VIEW_LIMIT
+          ? {kind: "unavailable", reason: "This file exceeds the preview size limit"}
+          : await preview.render(contents).then(
+              (html) => ({kind: "html" as const, html}),
+              () => ({kind: "unavailable" as const, reason: "This artifact uses content or components the preview cannot render. Its source is available."})
+            )
+        : undefined
+      return { path, contents, size: info.size, binary: false, truncated: info.size > FILE_VIEW_LIMIT, artifactPreview }
     } finally {
       await handle.close()
     }

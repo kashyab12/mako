@@ -36,7 +36,8 @@ export class NativeMessageDecoder {
   private headerSize = 0
   private body: Uint8Array | null = null
   private bodySize = 0
-  constructor(private readonly limit: number) {}
+  private readonly limit: number
+  constructor(limit: number) { this.limit = limit }
   push(chunk: Uint8Array): string[] {
     const frames: string[] = []
     let offset = 0

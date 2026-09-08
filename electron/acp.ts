@@ -1,3 +1,4 @@
+import { z } from "zod"
 import type { ConversationTools } from "./providers/live-driver.js"
 /**
  * Interactive foreign agents, over ACP.
@@ -44,7 +45,7 @@ import {
   type SessionNotification,
 } from "@agentclientprotocol/sdk"
 import { accountEnv } from "./accounts.js"
-import { resolveAcpConfigValue } from "./acp-config.js"
+import { acpObservedSettings, applyAcpSettings } from "./acp-config.js"
 import { elicitationContent, elicitationQuestion } from "./acp-elicitation.js"
 import { forward } from "./acp-notifications.js"
 import { normalizeAcpOptions } from "./harnesses.js"
@@ -62,15 +63,10 @@ import type {
   LiveDriverEvent,
 } from "./shared.js"
 
-interface ClaudeCodeOptions {
-  model?: string
-  effort?: string
-  fastMode?: boolean
-}
-
 interface OpenedAcpSession {
   sessionId: string
   modes: SessionModeState | null
+  model?: string
   configOptions: SessionConfigOption[]
 }
 
@@ -93,6 +89,7 @@ interface Live {
     audio?: boolean
     embeddedContext?: boolean
   }
+  configOptions: SessionConfigOption[]
   mcpServers: McpServer[]
   turn: Promise<unknown> | null
 }
@@ -206,10 +203,23 @@ export async function liveStart(
   const executable = resolveExecutable(spec.command, env)
   if (!executable) throw new Error(`${harness} is not installed`)
 
+  const conversationMcp: McpServer | null = options.conversationTools ? {
+    type: "http",
+    name: "mako-conversations",
+    url: options.conversationTools.url,
+    headers: [{ name: "Authorization", value: `Bearer ${options.conversationTools.token}` }],
+  } : null
+  const preparedServers = acpMcpServers(mcpSnapshot, harness, ["stdio", "http", "sse"], options.conversationTools?.control, id)
+  if (conversationMcp) preparedServers.push(conversationMcp)
+  const disposeMcp = await spec.prepareMcp?.(preparedServers, env)
   const child = spawn(executable, spec.args, {
     cwd: workingDir,
     stdio: ["pipe", "pipe", "pipe"],
     env: environmentForExecutable(executable, env),
+  })
+
+  child.once("close", () => {
+    void disposeMcp?.().catch(() => console.error("Provider MCP configuration cleanup failed"))
   })
 
   const live: Live = {
@@ -232,6 +242,7 @@ export async function liveStart(
     },
     pendingPermissions: new Map(),
     promptCapabilities: {},
+    configOptions: [],
     mcpServers: [],
     turn: null,
   }
@@ -280,7 +291,8 @@ export async function liveStart(
       return requestElicitation(live, params)
     },
     async sessionUpdate(params: SessionNotification) {
-      forward(live, params, emit, updateState)
+      if (params.update.sessionUpdate === "config_option_update") live.configOptions = params.update.configOptions
+      forward(live, params, emit, updateState, live.state.settings)
     },
   }
 
@@ -317,18 +329,7 @@ export async function liveStart(
           id
         )
       : []
-    if (options.conversationTools && mcpCapabilities?.http)
-      live.mcpServers.push({
-        type: "http",
-        name: "mako-conversations",
-        url: options.conversationTools.url,
-        headers: [
-          {
-            name: "Authorization",
-            value: `Bearer ${options.conversationTools.token}`,
-          },
-        ],
-      })
+    if (conversationMcp && mcpCapabilities?.http) live.mcpServers.push(conversationMcp)
     const session = options.resume
       ? parseLoadedAcpSession(
           await startupStep(
@@ -359,19 +360,9 @@ export async function liveStart(
           )
         )
     live.sessionId = session.sessionId
-    const initialOptions = session.configOptions
-    const hasModelOption = Boolean(
-      options.tuning?.model &&
-      findConfigOption(initialOptions, "model", options.tuning.model)
-    )
-    const rawOptions = await applyInitialTuning(
-      live,
-      initialOptions,
-      options.tuning
-    )
-    if (options.tuning?.model && !hasModelOption) {
-      await setLegacySessionModel(live, options.tuning.model)
-    }
+    live.configOptions = session.configOptions
+    live.state.settings = acpObservedSettings(session.configOptions, session.model)
+    const applied = await applyTuning(live, options.tuning, true)
     update(live, {
       nativeId: session.sessionId,
       status: "ready",
@@ -382,7 +373,8 @@ export async function liveStart(
           name: mode.name,
         })) ?? [],
       currentMode: session.modes?.currentModeId ?? null,
-      configOptions: normalizeAcpOptions(rawOptions),
+      configOptions: normalizeAcpOptions(applied.options),
+      settings: applied.settings,
     })
     return live.state
   } catch (error) {
@@ -399,19 +391,6 @@ export async function liveStart(
   }
 }
 
-function addClaudeSessionMetadata(
-  request: NewSessionRequest | LoadSessionRequest,
-  harness: string,
-  tuning?: AcpTuning
-): void {
-  if (harness !== "claude" || !tuning) return
-  const options: ClaudeCodeOptions = {}
-  if (tuning.model) options.model = tuning.model
-  if (tuning.effort) options.effort = tuning.effort
-  if (tuning.fast !== undefined) options.fastMode = tuning.fast
-  request._meta = { claudeCode: { options } }
-}
-
 function newSessionRequest(
   cwd: string,
   harness: string,
@@ -419,7 +398,7 @@ function newSessionRequest(
   mcpServers: NewSessionRequest["mcpServers"]
 ): NewSessionRequest {
   const request: NewSessionRequest = { cwd, mcpServers }
-  addClaudeSessionMetadata(request, harness, tuning)
+  if (tuning) request._meta = providerHost.acpSources.get(harness)?.sessionMetadata?.(tuning)
   return request
 }
 
@@ -431,14 +410,22 @@ function loadSessionRequest(
   mcpServers: LoadSessionRequest["mcpServers"]
 ): LoadSessionRequest {
   const request: LoadSessionRequest = { sessionId, cwd, mcpServers }
-  addClaudeSessionMetadata(request, harness, tuning)
+  if (tuning) request._meta = providerHost.acpSources.get(harness)?.sessionMetadata?.(tuning)
   return request
+}
+
+const LegacyAcpModelsSchema = z.object({ models: z.object({ currentModelId: z.string() }).nullish() })
+
+function legacyAcpModel(response: NewSessionResponse | LoadSessionResponse): string | undefined {
+  const parsed = LegacyAcpModelsSchema.safeParse(response)
+  return parsed.success ? parsed.data.models?.currentModelId : undefined
 }
 
 function parseNewAcpSession(response: NewSessionResponse): OpenedAcpSession {
   return {
     sessionId: response.sessionId,
     modes: response.modes ?? null,
+    model: legacyAcpModel(response),
     configOptions: response.configOptions ?? [],
   }
 }
@@ -450,91 +437,30 @@ function parseLoadedAcpSession(
   return {
     sessionId,
     modes: response.modes ?? null,
+    model: legacyAcpModel(response),
     configOptions: response.configOptions ?? [],
   }
 }
 
-async function applyInitialTuning(
-  live: Live,
-  initial: SessionConfigOption[],
-  tuning?: AcpTuning
-): Promise<SessionConfigOption[]> {
+async function applyTuning(live: Live, tuning?: AcpTuning, initial = false) {
   const connection = live.connection
   const sessionId = live.sessionId
-  if (!connection || !sessionId || !tuning) return initial
-
-  let options = initial
-  const selected = new Map<string, string | boolean>()
-  if (tuning.options) {
-    for (const [id, value] of Object.entries(tuning.options)) {
-      selected.set(id, value)
-    }
-  }
-  if (tuning.effort !== undefined && !selected.has("effort")) {
-    selected.set("effort", tuning.effort)
-  }
-  if (tuning.fast !== undefined && !selected.has("fast")) {
-    selected.set("fast", tuning.fast)
-  }
-
-  if (tuning.model) {
-    const model = findConfigOption(options, "model", tuning.model)
-    if (model) {
-      const response = await connection.setSessionConfigOption({
-        sessionId,
-        configId: model.id,
-        value: resolveAcpConfigValue(model, tuning.model),
-      })
-      options = response.configOptions
-    }
-  }
-
-  const optionOrder = ["thinking", "context", "effort", "reasoning", "fast"]
-  const ordered = Array.from(selected.entries()).sort(
-    ([left], [right]) => optionOrder.indexOf(left) - optionOrder.indexOf(right)
-  )
-  for (const [id, value] of ordered) {
-    const option = findConfigOption(options, id, value)
-    if (!option) continue
-    const response =
-      value === true || value === false
-        ? await connection.setSessionConfigOption({
-            sessionId,
-            configId: option.id,
-            type: "boolean",
-            value,
-          })
-        : await connection.setSessionConfigOption({
-            sessionId,
-            configId: option.id,
-            value,
-          })
-    options = response.configOptions
-  }
-  return options
-}
-
-function findConfigOption(
-  options: SessionConfigOption[],
-  requestedId: string,
-  value: string | boolean
-): SessionConfigOption | null {
-  const normalized = requestedId.toLowerCase()
-  for (const option of options) {
-    const identity =
-      `${option.id} ${option.name} ${option.category ?? ""}`.toLowerCase()
-    if (identity.includes(normalized)) return option
-    if (
-      requestedId === "model" &&
-      value !== true &&
-      value !== false &&
-      option.type === "select" &&
-      JSON.stringify(option.options).includes(value)
-    ) {
-      return option
-    }
-  }
-  return null
+  if (!connection || !sessionId) throw new Error("This provider session is not connected")
+  const result = await applyAcpSettings({
+    settings: tuning ?? {},
+    observed: live.state.settings ?? {},
+    options: live.configOptions,
+    launchOptionIds: initial ? providerHost.acpSources.get(live.harness)?.launchOptionIds : undefined,
+    setModel: (model) => setLegacySessionModel(live, model),
+    setOption: async (option, value) => {
+      const response = value === true || value === false
+        ? await connection.setSessionConfigOption({ sessionId, configId: option.id, type: "boolean", value })
+        : await connection.setSessionConfigOption({ sessionId, configId: option.id, value })
+      return response.configOptions
+    },
+  })
+  live.configOptions = result.options
+  return result
 }
 
 async function setLegacySessionModel(
@@ -557,7 +483,8 @@ async function setLegacySessionModel(
 export async function livePrompt(
   id: string,
   text: string,
-  attachments: PromptAttachment[] = []
+  attachments: PromptAttachment[] = [],
+  tuning?: AcpTuning
 ): Promise<void> {
   const live = sessions.get(id)
   if (!live?.sessionId || !live.connection)
@@ -566,7 +493,8 @@ export async function livePrompt(
     throw new Error("The agent is already working")
   const connection = live.connection
   const sessionId = live.sessionId
-  update(live, { status: "running" })
+  const applied = await applyTuning(live, tuning)
+  update(live, { status: "running", settings: applied.settings, configOptions: normalizeAcpOptions(applied.options) })
   emit({ type: "acp-update", id, update: { kind: "user", text } })
   const prompt: ContentBlock[] = [{ type: "text", text }]
   for (const attachment of attachments) {
@@ -648,6 +576,9 @@ function update(live: Live, patch: Partial<LiveSessionState>): void {
 }
 
 function updateState(live: Live, patch: Partial<LiveSessionState>): void {
+  if (patch.configOptions && !patch.settings) {
+    patch.settings = acpObservedSettings(live.configOptions, live.state.settings?.model)
+  }
   live.state = { ...live.state, ...patch }
   emit({ type: "acp-session", session: live.state })
 }

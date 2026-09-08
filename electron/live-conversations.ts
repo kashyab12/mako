@@ -1,3 +1,4 @@
+import type { SessionSettings } from "@mako/sessions/settings"
 import { captureNativeHistory } from "./native-history.js"
 import { prepareLiveContext, contextPrompt } from "./live-context.js"
 import { LiveTransfers } from "./live-transfers.js"
@@ -296,13 +297,13 @@ export class LiveConversations {
         ? [
             LiveRequestSchema.parse({
               ...options.initialRequest,
+              tuning: options.tuning,
               inputDigest: promptFingerprint(
                 options.initialRequest.text,
-                options.initialRequest.attachments
+                options.initialRequest.attachments,
+                options.tuning
               ),
-              attachments: this.assets.retainPrompt(
-                options.initialRequest.attachments
-              ),
+              attachments: this.assets.retainPrompt(options.initialRequest.attachments),
               status: "queued",
             }),
           ]
@@ -516,7 +517,8 @@ export class LiveConversations {
     id: string,
     requestId: string,
     text: string,
-    attachments: PromptAttachment[] = []
+    attachments: PromptAttachment[] = [],
+    tuning?: SessionSettings
   ): LiveRequest {
     const resident = this.require(id)
     if (this.transfers.pending(resident))
@@ -528,9 +530,10 @@ export class LiveConversations {
       id: requestId,
       text,
       attachments,
+      tuning,
       status: "queued",
     })
-    const inputDigest = promptFingerprint(request.text, request.attachments)
+    const inputDigest = promptFingerprint(request.text, request.attachments, request.tuning)
     const existing = resident.snapshot.requests.find(
       (candidate) => candidate.id === request.id
     )
@@ -539,7 +542,8 @@ export class LiveConversations {
         existing.inputDigest
           ? existing.inputDigest !== inputDigest
           : existing.text !== text ||
-            JSON.stringify(existing.attachments) !== JSON.stringify(attachments)
+            JSON.stringify(existing.attachments) !== JSON.stringify(attachments) ||
+            JSON.stringify(existing.tuning) !== JSON.stringify(tuning)
       )
         throw new Error(
           "This request ID was already accepted with different content"
@@ -555,6 +559,7 @@ export class LiveConversations {
         provider: resident.snapshot.session.harness,
         text,
         attachments,
+        tuning,
       })
       return request
     }
@@ -1237,7 +1242,8 @@ export class LiveConversations {
           (text, manifest) => contextPrompt(manifest, text),
           request.text
         ),
-        request.attachments
+        request.attachments,
+        request.tuning
       )
       .catch((error) => {
         if (

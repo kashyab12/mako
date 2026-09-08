@@ -1,3 +1,4 @@
+import type { SessionSettings } from "@mako/sessions/settings"
 import { RelayPlanStatusSchema } from "@mako/relay"
 import { mkdir, copyFile } from "node:fs/promises"
 import { basename, join } from "node:path"
@@ -7,7 +8,6 @@ import type {
   RelayCanonicalEvent,
   RelayControl,
   RelayExecution,
-  RuntimeSelection,
 } from "@mako/relay"
 import type { PromptAttachment, LiveSnapshot } from "./shared.js"
 import { LiveConversations } from "./live-conversations.js"
@@ -72,7 +72,7 @@ export class RelayConversations {
     sourcePath?: string
     text: string
     attachments: PromptAttachment[]
-    tuning: RuntimeSelection
+    tuning: SessionSettings
     signal: AbortSignal
     emit: (event: RelayCanonicalEvent) => void
   }): Promise<RelayExecution> {
@@ -228,8 +228,8 @@ export class RelayConversations {
           return {
             harness: input.provider,
             model: input.tuning.model,
-            effort: input.tuning.effort,
-            fast: input.tuning.fast,
+            effort: z.string().optional().parse(input.tuning.options?.effort),
+            fast: z.boolean().optional().parse(input.tuning.options?.fast),
             status:
               request.status === "completed"
                 ? "done"

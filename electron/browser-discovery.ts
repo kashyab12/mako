@@ -3,14 +3,18 @@ import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { BrowserFault } from "./contracts/browser-control.js"
+import { extensionBrowsers } from "./browser-extension-registration.js"
 
 export interface LocalBrowser {
   id: string
   name: string
   endpoint: () => Promise<string>
+  requiresApproval?: boolean
 }
 
 export function localBrowsers(): LocalBrowser[] {
+  const extensions = extensionBrowsers()
+  if (process.env.MAKO_LEGACY_BROWSER_DEBUGGING !== "1") return extensions
   const home = homedir()
   const locations =
     process.platform === "darwin"
@@ -63,7 +67,7 @@ export function localBrowsers(): LocalBrowser[] {
             ["chromium", "Chromium", join(home, ".config/chromium")],
             ["edge", "Microsoft Edge", join(home, ".config/microsoft-edge")],
           ]
-  return locations
+  return [...extensions, ...locations
     .filter(([, , directory]) => existsSync(directory))
     .map(([id, name, directory]) => ({
       id,
@@ -92,5 +96,5 @@ export function localBrowsers(): LocalBrowser[] {
           })
         }
       },
-    }))
+    }))]
 }

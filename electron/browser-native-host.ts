@@ -1,3 +1,5 @@
+import { z } from "zod"
+import type { IncomingMessage } from "node:http"
 import { randomBytes, randomUUID } from "node:crypto"
 import { mkdir, chmod, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
@@ -17,7 +19,11 @@ interface BrowserClient {
 }
 
 /** Chrome launches this through Native Messaging. It never opens a Chrome debugging socket. */
-export async function startBrowserNativeHost(root: string, input: Readable, output: Writable) {
+export async function startBrowserNativeHost(
+  root: string,
+  input: Readable,
+  output: Writable
+) {
   const clients = new Map<string, BrowserClient>()
   const decoder = new NativeMessageDecoder(32 * 1024 * 1024)
   let server: WebSocketServer | undefined
@@ -25,18 +31,29 @@ export async function startBrowserNativeHost(root: string, input: Readable, outp
   let endpoint: string | undefined
   let stopping = false
   let greeted = false
-  let resolveHello: (hello: Extract<ExtensionMessage, { kind: "hello" }>) => void = () => {}
+  let resolveHello: (
+    hello: Extract<ExtensionMessage, { kind: "hello" }>
+  ) => void = () => {}
   let rejectHello: (error: Error) => void = () => {}
-  const hello = new Promise<Extract<ExtensionMessage, { kind: "hello" }>>((resolve, reject) => {
-    resolveHello = resolve
-    rejectHello = reject
-  })
-  const greetingTimeout = setTimeout(() => rejectHello(new Error("Browser extension did not identify its profile")), 5000)
+  const hello = new Promise<Extract<ExtensionMessage, { kind: "hello" }>>(
+    (resolve, reject) => {
+      resolveHello = resolve
+      rejectHello = reject
+    }
+  )
+  const greetingTimeout = setTimeout(
+    () =>
+      rejectHello(new Error("Browser extension did not identify its profile")),
+    5000
+  )
 
   function send(message: ExtensionHostMessage): void {
     if (stopping) return
     const body = Buffer.from(JSON.stringify(message))
-    if (body.byteLength > 1024 * 1024 || output.writableLength > 2 * 1024 * 1024) {
+    if (
+      body.byteLength > 1024 * 1024 ||
+      output.writableLength > 2 * 1024 * 1024
+    ) {
       void close()
       return
     }
@@ -56,7 +73,8 @@ export async function startBrowserNativeHost(root: string, input: Readable, outp
     server?.close()
     if (registration) {
       const value = await readFile(registration, "utf8").catch(() => "")
-      if (endpoint && value.includes(endpoint)) await rm(registration, { force: true })
+      if (endpoint && value.includes(endpoint))
+        await rm(registration, { force: true })
     }
   }
 
@@ -78,11 +96,24 @@ export async function startBrowserNativeHost(root: string, input: Readable, outp
           continue
         }
         if (message.kind === "event") {
-          client.socket.send(JSON.stringify({ sessionId: message.sessionId, method: message.method, params: message.params }))
+          client.socket.send(
+            JSON.stringify({
+              sessionId: message.sessionId,
+              method: message.method,
+              params: message.params,
+            })
+          )
         } else if (client.pending.delete(message.id)) {
-          client.socket.send(JSON.stringify(message.kind === "response"
-            ? { id: message.id, result: message.result }
-            : { id: message.id, error: { code: -32000, message: message.message } }))
+          client.socket.send(
+            JSON.stringify(
+              message.kind === "response"
+                ? { id: message.id, result: message.result }
+                : {
+                    id: message.id,
+                    error: { code: -32000, message: message.message },
+                  }
+            )
+          )
         }
       }
     } catch {
@@ -101,8 +132,14 @@ export async function startBrowserNativeHost(root: string, input: Readable, outp
     if (stopping) throw new Error("Browser extension disconnected")
     const secret = randomBytes(32).toString("base64url")
     server = new WebSocketServer({
-      host: "127.0.0.1", port: 0, maxPayload: 1024 * 1024, perMessageDeflate: false,
-      verifyClient: ({ req }) => !req.headers.origin && req.url === `/mako-browser/${secret}` && clients.size < 16,
+      host: "127.0.0.1",
+      port: 0,
+      maxPayload: 1024 * 1024,
+      perMessageDeflate: false,
+      verifyClient: ({ req }: { req: IncomingMessage }) =>
+        !req.headers.origin &&
+        req.url === `/mako-browser/${secret}` &&
+        clients.size < 16,
     })
     server.on("connection", (socket) => {
       const client = randomUUID()
@@ -110,8 +147,11 @@ export async function startBrowserNativeHost(root: string, input: Readable, outp
       clients.set(client, { socket, pending })
       socket.on("message", (data) => {
         try {
-          const command = ExtensionCommandSchema.parse(JSON.parse(data.toString()))
-          if (pending.size >= 128 || pending.has(command.id)) throw new Error("Browser client request limit exceeded")
+          const command = ExtensionCommandSchema.parse(
+            JSON.parse(data.toString())
+          )
+          if (pending.size >= 128 || pending.has(command.id))
+            throw new Error("Browser client request limit exceeded")
           pending.add(command.id)
           send({ kind: "request", client, command })
         } catch {
@@ -128,13 +168,24 @@ export async function startBrowserNativeHost(root: string, input: Readable, outp
       server?.once("listening", resolve)
       server?.once("error", reject)
     })
-    const address = server.address()
-    if (!address || typeof address === "string") throw new Error("Browser bridge could not start")
+    const address = z
+      .object({ port: z.number().int().positive() })
+      .parse(server.address())
     endpoint = `ws://127.0.0.1:${address.port}/mako-browser/${secret}`
     const id = `${profile.browser}:${profile.profileId}`
     registration = join(root, `${profile.browser}-${profile.profileId}.json`)
     const temporary = `${registration}.${process.pid}.tmp`
-    await writeFile(temporary, JSON.stringify({ version: 1, id, name: profile.label, endpoint, pid: process.pid }), { mode: 0o600, flag: "wx" })
+    await writeFile(
+      temporary,
+      JSON.stringify({
+        version: 1,
+        id,
+        name: profile.label,
+        endpoint,
+        pid: process.pid,
+      }),
+      { mode: 0o600, flag: "wx" }
+    )
     await rename(temporary, registration)
     if (stopping) throw new Error("Browser extension disconnected")
     send({ kind: "ready" })

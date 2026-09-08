@@ -1,3 +1,4 @@
+import { ModelOptionSchema, SessionSettingsSchema } from "@mako/sessions/settings"
 import {
   ContextManifestSchema,
   ConversationControlSchema,
@@ -11,28 +12,6 @@ import { ThreadEntrySchema, ThreadRefSchema } from "@mako/sessions"
 import { LiveBlockSchema } from "./contracts/live-content.js"
 import type { LiveSnapshot } from "./contracts/live-conversations.js"
 
-const valueOption = z.object({
-  value: z.string(),
-  label: z.string(),
-  description: z.string().optional(),
-  default: z.boolean().optional(),
-})
-const configOption = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("select"),
-    id: z.string(),
-    label: z.string(),
-    current: z.string().optional(),
-    values: z.array(valueOption),
-    presentation: z.enum(["select", "toggle"]).optional(),
-  }),
-  z.object({
-    kind: z.literal("boolean"),
-    id: z.string(),
-    label: z.string(),
-    current: z.boolean(),
-  }),
-])
 const question = z.object({
   id: z.string(),
   header: z.string(),
@@ -53,6 +32,7 @@ const question = z.object({
   defaultValues: z.array(z.string()).optional(),
 })
 export const LiveRequestSchema = z.object({
+  tuning: SessionSettingsSchema.optional(),
   inputDigest: z.string().optional(),
   nativeRun: z.object({ bindingId: z.string(), runId: z.string() }).optional(),
   id: z.string().uuid(),
@@ -82,7 +62,8 @@ const MetadataSchema = z.object({
     status: z.enum(["starting", "ready", "running", "failed", "closed"]),
     modes: z.array(z.object({ id: z.string(), name: z.string() })),
     currentMode: z.string().nullable(),
-    configOptions: z.array(configOption),
+    configOptions: z.array(ModelOptionSchema),
+    settings: SessionSettingsSchema.optional(),
     lastStop: z.string().optional(),
     error: z.string().optional(),
   }),

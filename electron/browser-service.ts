@@ -79,10 +79,12 @@ export class BrowserService {
     (statuses: BrowserControlStatus[]) => void
   >()
   private closing = false
+  private readonly discover: () => LocalBrowser[]
 
-  constructor(definitions: LocalBrowser[] = localBrowsers()) {
+  constructor(definitions?: LocalBrowser[]) {
+    this.discover = definitions ? () => definitions : localBrowsers
     this.browsers = new Map(
-      definitions.map((definition) => [
+      this.discover().map((definition) => [
         definition.id,
         {
           definition,
@@ -99,6 +101,36 @@ export class BrowserService {
 
   status(): BrowserControlStatus[] {
     return Array.from(this.browsers.values(), (entry) => entry.status)
+  }
+  refresh(): BrowserControlStatus[] {
+    const definitions = this.discover()
+    const available = new Set(definitions.map((definition) => definition.id))
+    let changed = false
+    for (const [id, entry] of this.browsers) {
+      if (!available.has(id) && !entry.connection && !entry.connecting) {
+        this.browsers.delete(id)
+        changed = true
+      }
+    }
+    for (const definition of definitions) {
+      const entry = this.browsers.get(definition.id)
+      if (entry) {
+        entry.definition = definition
+        if (entry.status.name !== definition.name) {
+          entry.status = { ...entry.status, name: definition.name }
+          changed = true
+        }
+      } else {
+        this.browsers.set(definition.id, {
+          definition,
+          selections: Promise.resolve(),
+          status: { id: definition.id, name: definition.name, connection: { status: "disconnected" } },
+        })
+        changed = true
+      }
+    }
+    if (changed) this.changed()
+    return this.status()
   }
   subscribe(listener: (statuses: BrowserControlStatus[]) => void): () => void {
     this.listeners.add(listener)
@@ -144,7 +176,9 @@ export class BrowserService {
       abort.signal.throwIfAborted()
       entry.status = {
         ...entry.status,
-        connection: { status: "awaiting-approval", startedAt: Date.now() },
+        connection: entry.definition.requiresApproval === false
+          ? { status: "connecting" }
+          : { status: "awaiting-approval", startedAt: Date.now() },
       }
       this.changed()
       const connection = await BrowserConnection.connect(endpoint, abort.signal)
@@ -402,7 +436,7 @@ export class BrowserService {
     authorize()
     signal.throwIfAborted()
     if (command.action === "status")
-      return this.status().map((status) => ({
+      return this.refresh().map((status) => ({
         ...status,
         connection: { ...status.connection },
       }))

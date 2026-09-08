@@ -456,6 +456,34 @@ export function listThreads(
   return refs.slice(0, LIST_CAP).map(annotate)
 }
 
+// Cache only the small grant list, never media bytes or complete conversations.
+const threadFileGrants = new Map<
+  string,
+  { revision: string; files: Promise<string[]> }
+>()
+
+async function referencedThreadFiles(
+  threadPath: string,
+  ref: ThreadRef | undefined
+): Promise<string[]> {
+  const revision = JSON.stringify([ref?.revision, ref?.bytes, ref?.updatedAt])
+  const cached = threadFileGrants.get(threadPath)
+  if (cached?.revision === revision) return cached.files
+  const files = openThread(threadPath).then((thread) =>
+    attachmentFiles(thread?.entries ?? [])
+  )
+  threadFileGrants.set(threadPath, { revision, files })
+  if (threadFileGrants.size > 32)
+    threadFileGrants.delete(threadFileGrants.keys().next().value!)
+  try {
+    return await files
+  } catch (error) {
+    if (threadFileGrants.get(threadPath)?.files === files)
+      threadFileGrants.delete(threadPath)
+    throw error
+  }
+}
+
 export async function readThreadFile(
   threadPath: string,
   filePath: string
@@ -464,14 +492,20 @@ export async function readThreadFile(
     ? mirror.get(threadPath)
     : catalog?.list().find((candidate) => candidate.path === threadPath)
   const cwd = ref?.workspace ?? ref?.cwd
-  const thread = await openThread(threadPath)
-  const files = attachmentFiles(thread?.entries ?? [])
-  if (!cwd && !files.includes(filePath))
-    throw new Error("This conversation has no readable workspace")
-  return new WorkspaceFiles(cwd ?? "/", new WorkspaceGit(cwd ?? "/")).read(
-    filePath,
-    files
+  const workspace = new WorkspaceFiles(cwd ?? "/", new WorkspaceGit(cwd ?? "/"))
+  // A normal workspace preview needs no transcript hydration, even on its first read.
+  if (
+    cwd &&
+    (await workspace.resolvePath(filePath).then(
+      () => true,
+      () => false
+    ))
   )
+    return workspace.read(filePath)
+  const files = await referencedThreadFiles(threadPath, ref)
+  if (!files.includes(filePath))
+    throw new Error("This file is not an attachment of this conversation")
+  return workspace.read(filePath, files)
 }
 
 export async function pageThread(

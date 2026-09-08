@@ -1,4 +1,6 @@
-import type { AttachmentContent } from "@mako/sessions"
+import { acpObservedSettings } from "./acp-config.js"
+import type { SessionSettings } from "@mako/sessions/settings"
+import type { AttachmentContent, ToolDetail } from "@mako/sessions"
 import type {
   ContentBlock,
   SessionNotification,
@@ -25,7 +27,8 @@ export function forward<LiveSession extends { id: string }>(
   live: LiveSession,
   notification: SessionNotification,
   emit: (event: LiveDriverEvent) => void,
-  updateState: (live: LiveSession, patch: Partial<LiveSessionState>) => void
+  updateState: (live: LiveSession, patch: Partial<LiveSessionState>) => void,
+  currentSettings?: SessionSettings
 ): void {
   const raw = notification.update
   let update: LiveUpdate
@@ -99,6 +102,10 @@ export function forward<LiveSession extends { id: string }>(
     case "config_option_update":
       updateState(live, {
         configOptions: normalizeAcpOptions(raw.configOptions),
+        settings: acpObservedSettings(
+          raw.configOptions,
+          currentSettings?.model
+        ),
       })
       return
     default:
@@ -169,6 +176,7 @@ function contentAttachment(
 interface ToolContent {
   output?: string
   attachments?: AttachmentContent[]
+  details?: ToolDetail[]
 }
 
 function toolContent(
@@ -180,17 +188,19 @@ function toolContent(
   if (!content) return {}
   const text: string[] = []
   const attachments: AttachmentContent[] = []
+  const details: ToolDetail[] = []
   for (const part of content) {
     if (part.type === "content") {
       if (part.content.type === "text") text.push(part.content.text)
       else attachments.push(contentAttachment(part.content))
     } else if (part.type === "diff") {
-      text.push(`File: ${part.path}\n${part.oldText ?? ""}\n${part.newText}`)
+      details.push({type: "diff", path: part.path, oldText: part.oldText ?? null, newText: part.newText})
     } else if (part.type === "terminal")
-      text.push(`Terminal: ${part.terminalId}`)
+      details.push({type: "terminal", terminalId: part.terminalId})
   }
   return {
     output: text.length ? text.join("\n") : undefined,
     attachments: attachments.length ? attachments : undefined,
+    details: details.length ? details : undefined,
   }
 }

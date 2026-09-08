@@ -1,3 +1,4 @@
+import type { SessionSettings } from "@mako/sessions/settings"
 import { resolveExecutable } from "./executable.js"
 import { Appshots } from "./appshots.js"
 import { imageSize } from "image-size"
@@ -8,6 +9,7 @@ import { NativeRequests } from "./native-requests.js"
 import type { NativeRequestInput } from "./shared.js"
 import { startConversationMcp } from "./conversation-mcp.js"
 import { BrowserService } from "./browser-service.js"
+import { prepareBrowserExtension } from "./browser-extension-setup.js"
 import { startControlService } from "./control-service.js"
 import type { DelegateInput, ForkInput, TransferInput } from "./shared.js"
 import { attachmentFiles } from "@mako/sessions"
@@ -646,7 +648,8 @@ function bindIpc() {
       return watching ? preview : null
     }
   )
-  handle("mako:browser-control-status", () => browserControl.status())
+  handle("mako:browser-control-status", () => browserControl.refresh())
+  handle("mako:browser-extension-setup", () => prepareBrowserExtension(app.getAppPath(), process.execPath))
   handle("mako:browser-control-connect", async (_event, browser: string) => {
     await browserControl.connect(browser)
     return browserControl.status()
@@ -767,7 +770,7 @@ function bindIpc() {
     "mako:live-start",
     async (_event, harness: string, cwd: string, options: LiveStartOptions) => {
       await ensureMakoLocalControl().catch(() => null)
-      const profile = await harnessProfile(harness)
+      const profile = await harnessProfile(harness, false, cwd)
       await liveConversations.start(harness, cwd, {
         ...options,
         tuning: resolveHarnessTuning(profile, options.tuning),
@@ -864,13 +867,19 @@ function bindIpc() {
   )
   handle(
     "mako:live-prompt",
-    (
+    async (
       _event,
       id: string,
       requestId: string,
       text: string,
-      attachments?: PromptAttachment[]
-    ) => liveConversations.submit(id, requestId, text, attachments)
+      attachments?: PromptAttachment[],
+      tuning?: SessionSettings
+    ) => {
+      const session = liveConversations.snapshot(id)?.session
+      if (!session) throw new Error("This conversation is no longer available")
+      const profile = await harnessProfile(session.harness, false, session.cwd)
+      return liveConversations.submit(id, requestId, text, attachments, resolveHarnessTuning(profile, tuning))
+    }
   )
   handle(
     "mako:live-permission",
@@ -892,16 +901,11 @@ function bindIpc() {
       _e,
       harness: string,
       prompt: string,
-      options?: {
-        model?: string
-        effort?: string
-        fast?: boolean
-        options?: Record<string, string | boolean>
-      }
+      options?: SessionSettings
     ) => {
       const live = await ready()
       const cwd = live.active.workspace
-      const profile = await harnessProfile(harness)
+      const profile = await harnessProfile(harness, false, cwd)
       return {
         run: await startFresh(
           harness,
@@ -914,8 +918,8 @@ function bindIpc() {
     }
   )
 
-  handle("mako:harness-tuning", (_e, harness: string) =>
-    harnessProfile(harness)
+  handle("mako:harness-tuning", async (_e, harness: string, cwd?: string, force?: boolean) =>
+    harnessProfile(harness, force, cwd ?? (await ready()).active.workspace)
   )
 
   handle("mako:thread-run", (_e, path: string) => threadRun(path))
@@ -1100,7 +1104,7 @@ app.whenReady().then(async () => {
       read: async (path) => (await openThread(path))?.ref ?? null,
       running: (path) => threadRun(path)?.status === "running",
       execute: async (ref, text, tuning) => {
-        const profile = await harnessProfile(ref.harness)
+        const profile = await harnessProfile(ref.harness, false, ref.cwd)
         await resumeNative(ref, text, {
           ...resolveHarnessTuning(profile, tuning),
           captureOutput: true,

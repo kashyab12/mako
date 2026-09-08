@@ -1,3 +1,4 @@
+import type { SessionSettings } from "@mako/sessions/settings"
 import { createHash, randomUUID } from "node:crypto"
 import {
   constants,
@@ -16,7 +17,8 @@ import type { LiveUpdate } from "./contracts/live-content.js"
 
 export function promptFingerprint(
   text: string,
-  attachments: PromptAttachment[]
+  attachments: PromptAttachment[],
+  settings?: SessionSettings
 ): string {
   return createHash("sha256")
     .update(
@@ -29,6 +31,7 @@ export function promptFingerprint(
           attachment.data,
           attachment.path,
         ]),
+        ...(settings ? [[settings.model, Object.entries(settings.options ?? {}).sort(([a], [b]) => a.localeCompare(b))]] : []),
       ])
     )
     .digest("hex")

@@ -1,3 +1,4 @@
+import { codexPresentation, codexPrompt, codexPromptImages } from "@mako/sessions/codex-presentation"
 import {
   boundedText,
   isNumber,
@@ -262,12 +263,14 @@ function handleItem(
   switch (item.type) {
     case "userMessage":
       if (completed && replay) {
-        const text = item.content
+        const originalText = item.content
           .map((part) => (part.type === "text" ? (part.text ?? "") : ""))
           .join("\n")
         const attachments = item.content.flatMap((part) =>
           part.attachment ? [part.attachment] : []
         )
+        const text = codexPrompt(originalText) ?? ""
+        if (!attachments.length) attachments.push(...codexPromptImages(originalText))
         if (text || attachments.length)
           context.protocol.emitUpdate({ kind: "user", text, attachments })
       }
@@ -390,9 +393,10 @@ function finishTool(
 function emitFinalText(
   context: ProtocolContext,
   kind: "text" | "thinking",
-  final: string,
+  source: string,
   id: string
 ): void {
+  const final = codexPresentation(source)
   // A completed item is authoritative, including corrections and empty replacements.
   if (!final) {
     context.protocol.emitUpdate({ kind, id, text: "", replace: true })

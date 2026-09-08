@@ -23,13 +23,7 @@ export function liveEntries(blocks: LiveBlock[]): ThreadEntry[] {
     }
     if (block.type === "thinking") continue
     if (block.type === "plan") {
-      entries.push({
-        kind: "event",
-        label: "Plan",
-        detail: block.entries
-          .map((entry) => `${entry.status}: ${entry.content}`)
-          .join("\n"),
-      })
+      entries.push({kind: "assistant", blocks: [{type: "tool", name: "Plan", output: "", details: [{type: "plan", entries: block.entries}]}]})
       continue
     }
     const previous = entries.at(-1)
@@ -57,6 +51,7 @@ export function liveEntries(blocks: LiveBlock[]): ThreadEntry[] {
           error: block.status === "failed",
           canceled: /cancel/i.test(block.status),
           attachments: block.attachments,
+          details: block.details,
         })
         break
     }

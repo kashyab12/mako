@@ -1,15 +1,11 @@
+import type { SessionSettings } from "@mako/sessions/settings"
 import type { AttachmentContent } from "@mako/sessions"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import type { StringDecoder } from "node:string_decoder"
 import type { JsonObject, JsonRpcId, JsonValue } from "./codex-app-json.js"
 import type { LiveSessionState, LiveUpdate } from "./shared.js"
 
-export type Tuning = {
-  model?: string
-  effort?: string
-  fast?: boolean
-  options?: Record<string, string | boolean>
-}
+export type Tuning = SessionSettings
 
 type UserMessageContent = {
   type?: string

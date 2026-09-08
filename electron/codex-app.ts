@@ -1,3 +1,6 @@
+import { codexServiceTier } from "@mako/sessions/model-catalog"
+import type { SessionSettings } from "@mako/sessions/settings"
+import { codexWireSettings } from "./providers/codex/settings.js"
 import { resolveCodexExecutable } from "./providers/codex/executable.js"
 import type { ConversationTools } from "./providers/live-driver.js"
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
@@ -184,8 +187,12 @@ export async function codexAppStart(
     }
     if (replayUpdates.length > 0)
       emit({ type: "acp-updates", id: live.id, updates: replayUpdates })
+    const settings: SessionSettings = { model: response.model, options: {} }
+    if (response.reasoningEffort) settings.options!.effort = response.reasoningEffort
+    if (response.serviceTier !== undefined) settings.options!.serviceTier = codexServiceTier(response.serviceTier ?? "default")
     updateState(live, {
       nativeId: response.thread.id,
+      settings,
       status: "ready",
       connection: "connected",
       cwd: live.cwd,
@@ -208,7 +215,8 @@ export async function codexAppStart(
 export async function codexAppPrompt(
   id: string,
   text: string,
-  attachments: PromptAttachment[] = []
+  attachments: PromptAttachment[] = [],
+  tuning?: Tuning
 ): Promise<void> {
   const live = sessions.get(id)
   if (!live?.threadId || live.exited)
@@ -248,11 +256,19 @@ export async function codexAppPrompt(
       threadId: live.threadId,
       input,
       cwd: live.cwd,
-      ...turnTuning(live.tuning),
+      ...codexWireSettings(tuning),
     })
-    if (isRunning(live) && live.promptSequence === sequence) {
-      live.currentTurnId = result.turn.id
-      updateState(live, { nativeRunId: result.turn.id })
+    if (live.promptSequence === sequence) {
+      const settings: SessionSettings = {
+        ...live.state.settings,
+        options: { ...live.state.settings?.options, ...tuning?.options },
+      }
+      if (tuning?.model) settings.model = tuning.model
+      updateState(live, { settings })
+      if (isRunning(live)) {
+        live.currentTurnId = result.turn.id
+        updateState(live, { nativeRunId: result.turn.id })
+      }
     }
   } catch (error) {
     if (live.promptSequence !== sequence) return
@@ -332,35 +348,13 @@ function threadTuning(
   mcpConfig: JsonObject
 ): Omit<RpcParams["thread/start"], "cwd"> {
   const result: Omit<RpcParams["thread/start"], "cwd"> = {}
-  const serviceTier = tuningServiceTier(tuning)
-  const base = tuning?.effort
-    ? { model_reasoning_effort: tuning.effort }
-    : undefined
+  const selected = codexWireSettings(tuning)
+  const base = selected.effort ? { model_reasoning_effort: selected.effort } : undefined
   const config = mergeCodexConfig(base, mcpConfig)
-  if (tuning?.model) result.model = tuning.model
-  if (serviceTier) result.serviceTier = serviceTier
+  if (selected.model) result.model = selected.model
+  if (selected.serviceTier !== undefined) result.serviceTier = selected.serviceTier
   if (config) result.config = config
   return result
-}
-
-function turnTuning(
-  tuning?: Tuning
-): Partial<Pick<RpcParams["turn/start"], "model" | "effort" | "serviceTier">> {
-  const result: Partial<
-    Pick<RpcParams["turn/start"], "model" | "effort" | "serviceTier">
-  > = {}
-  const serviceTier = tuningServiceTier(tuning)
-  if (tuning?.model) result.model = tuning.model
-  if (tuning?.effort) result.effort = tuning.effort
-  if (serviceTier) result.serviceTier = serviceTier
-  return result
-}
-
-function tuningServiceTier(tuning?: Tuning): string | undefined {
-  const value = tuning?.options?.serviceTier ?? tuning?.options?.service_tier
-  if (Object.prototype.toString.call(value) === "[object String]" && value)
-    return String(value)
-  return tuning?.fast ? "fast" : undefined
 }
 
 function bindProcess(live: Live): void {

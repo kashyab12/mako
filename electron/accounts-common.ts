@@ -229,14 +229,23 @@ export async function writeKeychain(
 ): Promise<void> {
   if (process.platform !== "darwin") return
   const user = userInfo().username
-  await run("security", [
-    "add-generic-password",
-    "-U",
-    "-s",
-    service,
-    "-a",
-    user,
-    "-w",
-    contents,
-  ]).catch(() => {})
+  try {
+    await run("security", [
+      "add-generic-password", "-U", "-s", service, "-a", user, "-w", contents,
+    ])
+  } catch {
+    // execFile errors include the command arguments, including the credential.
+    throw new Error("Could not save the account to macOS Keychain. Unlock Keychain and try again.")
+  }
+}
+
+
+export async function deleteKeychain(service: string): Promise<void> {
+  if (process.platform !== "darwin") return
+  try {
+    await run("security", ["delete-generic-password", "-s", service, "-a", userInfo().username])
+  } catch (error) {
+    if (z.object({ code: z.literal(44) }).safeParse(error).success) return
+    throw new Error("Could not remove the account from macOS Keychain. Unlock Keychain and try again.", { cause: error })
+  }
 }

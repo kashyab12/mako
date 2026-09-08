@@ -1,3 +1,7 @@
+import {
+  SessionModelSchema,
+  SessionSettingsSchema,
+} from "@mako/sessions/settings"
 import { createHash } from "node:crypto"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
@@ -5,64 +9,29 @@ import { dirname, join } from "node:path"
 import { z } from "zod"
 import type { HarnessProfile } from "./shared.js"
 
-const scalarSchema = z.union([z.string(), z.boolean()])
-const selectValueSchema = z.object({ value: z.string(), label: z.string() })
-const optionSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("select"),
-    id: z.string(),
-    label: z.string(),
-    current: z.string().optional(),
-    values: z.array(selectValueSchema),
-    presentation: z.enum(["select", "toggle"]).optional(),
-  }),
-  z.object({
-    kind: z.literal("boolean"),
-    id: z.string(),
-    label: z.string(),
-    current: z.boolean(),
-  }),
-])
-const variantSchema = z.object({
-  id: z.string(),
-  label: z.string(),
-  values: z.record(z.string(), scalarSchema),
-  contextWindow: z.number().optional(),
-  maxOutputTokens: z.number().optional(),
-  description: z.string().optional(),
-})
-const modelSchema = z.object({
-  id: z.string(),
-  launchId: z.string().optional(),
-  label: z.string(),
-  description: z.string().optional(),
-  aliases: z.array(z.string()).optional(),
-  contextWindow: z.number().optional(),
-  maxOutputTokens: z.number().optional(),
-  options: z.array(optionSchema),
-  variants: z.array(variantSchema).optional(),
-})
 const profileSchema = z.object({
   id: z.string(),
   label: z.string(),
   available: z.boolean(),
   transport: z.enum(["acp", "app-server", "remote"]),
-  models: z.array(modelSchema),
+  models: z.array(SessionModelSchema),
   defaultModel: z.string().optional(),
   configuredModel: z.string().optional(),
+  settings: SessionSettingsSchema.optional(),
+  configurationError: z.string().optional(),
   capabilities: z.array(z.string()),
   error: z.string().optional(),
 })
 const entrySchema = z.object({ hash: z.string(), savedAt: z.number() })
 const fileSchema = z.object({
-  version: z.literal(2),
+  version: z.literal(3),
   entries: z.record(z.string(), entrySchema),
   snapshots: z.record(z.string(), profileSchema),
 })
 
 type CacheFile = z.infer<typeof fileSchema>
 
-const EMPTY: CacheFile = { version: 2, entries: {}, snapshots: {} }
+const EMPTY: CacheFile = { version: 3, entries: {}, snapshots: {} }
 const MAX_ENTRIES = 64
 
 function cachePath(): string {
@@ -126,7 +95,9 @@ export class ProviderProfileCache {
       ([, left], [, right]) => right.savedAt - left.savedAt
     )
     this.file.entries = Object.fromEntries(entries.slice(0, MAX_ENTRIES))
-    const retained = new Set(Object.values(this.file.entries).map((entry) => entry.hash))
+    const retained = new Set(
+      Object.values(this.file.entries).map((entry) => entry.hash)
+    )
     this.file.snapshots = Object.fromEntries(
       Object.entries(this.file.snapshots).filter(([hash]) => retained.has(hash))
     )
@@ -136,7 +107,10 @@ export class ProviderProfileCache {
     const dir = dirname(this.path)
     const temp = `${this.path}.${process.pid}.tmp`
     await mkdir(dir, { recursive: true, mode: 0o700 })
-    await writeFile(temp, JSON.stringify(this.file), { encoding: "utf8", mode: 0o600 })
+    await writeFile(temp, JSON.stringify(this.file), {
+      encoding: "utf8",
+      mode: 0o600,
+    })
     await rename(temp, this.path)
   }
 }

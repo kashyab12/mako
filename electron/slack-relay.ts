@@ -228,8 +228,7 @@ async function executePayload(
   const requestedModel =
     payload.selection.model ??
     source?.model ??
-    profile.configuredModel ??
-    profile.defaultModel
+    profile.settings?.model
   const selectedModel = requestedModel
     ? profile.models.find(
         (candidate) =>
@@ -276,11 +275,8 @@ async function executePayload(
       threadPath: failureThreadPath,
     }
   }
-  const serviceTier = speedOption?.values.find((value) =>
-    fast
-      ? /fast|priority/i.test(`${value.value} ${value.label}`)
-      : /flex|standard|default/i.test(`${value.value} ${value.label}`)
-  )?.value
+  const serviceTier = fast === undefined ? undefined
+    : fast ? speedOption?.booleanValues?.on : speedOption?.booleanValues?.off
   if (fast !== undefined && speedOption && !serviceTier) {
     return {
       effort,
@@ -290,11 +286,13 @@ async function executePayload(
       threadPath: failureThreadPath,
     }
   }
+  const selectedOptions: NonNullable<Parameters<typeof resolveHarnessTuning>[1]>["options"] = {}
+  if (effort) selectedOptions.effort = effort
+  if (serviceTier) selectedOptions.serviceTier = serviceTier
+  if (fast !== undefined && fastOption) selectedOptions.fast = fast
   const resolved = resolveHarnessTuning(profile, {
     model: selectedModel?.id,
-    effort,
-    fast,
-    options: serviceTier ? { serviceTier } : undefined,
+    options: selectedOptions,
   })
   const model = selectedModel?.id
   if (payload.kind === "configure") {
