@@ -103,6 +103,7 @@
   "devDependencies": {
     "@eslint/js": "^10",
     "@oxlint/plugins": "1.79.0",
+    "@types/chrome": "^0.2.9",
     "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -128,7 +129,7 @@
     "appId": "dev.mako.app",
     "productName": "Mako",
     "artifactName": "${productName}-${arch}.${ext}",
-    "copyright": "Copyright \u00a9 2026 Verbiflow",
+    "copyright": "Copyright © 2026 Verbiflow",
     "directories": {
       "output": "release",
       "buildResources": "build"

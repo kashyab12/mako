@@ -9,6 +9,7 @@ export const ExtensionCommandSchema = z.object({
   sessionId: z.string().max(200).optional(),
 })
 export const ExtensionHostMessageSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("ready") }),
   z.object({ kind: z.literal("request"), client: z.string(), command: ExtensionCommandSchema }),
   z.object({ kind: z.literal("disconnect"), client: z.string() }),
 ])

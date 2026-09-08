@@ -137,6 +137,7 @@ export async function startBrowserNativeHost(root: string, input: Readable, outp
     await writeFile(temporary, JSON.stringify({ version: 1, id, name: profile.label, endpoint, pid: process.pid }), { mode: 0o600, flag: "wx" })
     await rename(temporary, registration)
     if (stopping) throw new Error("Browser extension disconnected")
+    send({ kind: "ready" })
     return { close, registration }
   } catch (error) {
     await close()

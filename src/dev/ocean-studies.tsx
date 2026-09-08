@@ -21,7 +21,7 @@ const treatments: { tone: OceanTone; title: string; description: string }[] = [
   },
 ]
 
-function Studies() {
+export function Studies() {
   const motion = usePrefs((prefs) => prefs.oceanMotion)
   const selected = usePrefs((prefs) => prefs.oceanTone)
   return (
