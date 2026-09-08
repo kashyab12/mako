@@ -9,7 +9,11 @@ import { tokenize } from "@/lib/mentions"
  * to the textarea and this layer only supplies the glyphs. Any divergence
  * shows up immediately as text drifting away from the cursor.
  */
-export const ReferenceOverlay = memo(function ReferenceOverlay({ text }: { text: string }) {
+export const ReferenceOverlay = memo(function ReferenceOverlay({
+  text,
+}: {
+  text: string
+}) {
   const segments = tokenize(text)
 
   return (
@@ -25,7 +29,24 @@ export const ReferenceOverlay = memo(function ReferenceOverlay({ text }: { text:
       className="pointer-events-none absolute inset-x-0 top-0 px-3 pt-2.5 pb-1 font-sans text-ui leading-[1.55] break-words whitespace-pre-wrap text-foreground"
     >
       {segments.map((segment, index) => {
-        if (segment.kind === "text") return <span key={index}>{segment.text}</span>
+        if (segment.kind === "text")
+          return (
+            <span key={index}>
+              {segment.text.split(/(\[Attachment \d+\])/g).map((part, index) =>
+                /^\[Attachment \d+\]$/.test(part) ? (
+                  <span
+                    key={index}
+                    data-attachment-reference
+                    className="rounded bg-fill-selected text-foreground ring-1 ring-border ring-inset"
+                  >
+                    {part}
+                  </span>
+                ) : (
+                  <span key={index}>{part}</span>
+                )
+              )}
+            </span>
+          )
         if (segment.kind === "file" || segment.kind === "thread") {
           return (
             <span
@@ -33,7 +54,11 @@ export const ReferenceOverlay = memo(function ReferenceOverlay({ text }: { text:
               // Sized to the glyphs it replaces so wrapping stays identical:
               // the chip is a background, not a differently-shaped box.
               className="rounded-[3px] bg-raised text-foreground ring-1 ring-hairline ring-inset"
-              title={segment.kind === "file" ? segment.path : `${segment.harness} conversation`}
+              title={
+                segment.kind === "file"
+                  ? segment.path
+                  : `${segment.harness} conversation`
+              }
             >
               {segment.raw}
             </span>

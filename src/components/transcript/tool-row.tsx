@@ -253,7 +253,7 @@ function CopyableBlock({
   text: string
   children: React.ReactNode
 }) {
-  const { copied, copy } = useCopy()
+  const { copied, copy } = useCopy(text)
   return (
     <div className="group/copyblock relative">
       {children}
@@ -261,7 +261,7 @@ function CopyableBlock({
         type="button"
         aria-label={`Copy ${label}`}
         onClick={() => {
-          void copy(text)
+          void copy()
         }}
         className={cn(
           "pressable absolute top-1 right-1 rounded-md bg-raised p-1 ring-1 ring-hairline backdrop-blur-sm",

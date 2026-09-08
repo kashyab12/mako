@@ -543,8 +543,8 @@ function SystemNote({ message }: { message: ChatMessage }) {
 /* ------------------------------------------------------------------ */
 
 function Footer({ exchange }: { exchange: ExchangeData }) {
-  const { copied, copy } = useCopy()
   const text = responseText(exchange)
+  const { copied, copy } = useCopy(text)
   const last = exchange.response.at(-1)
   if (!text && !last?.timestamp) return null
 
@@ -559,7 +559,7 @@ function Footer({ exchange }: { exchange: ExchangeData }) {
           type="button"
           title="Copy the agent's whole answer to this question"
           onClick={() => {
-            void copy(text)
+            void copy()
           }}
           className="pressable flex items-center gap-1 rounded px-1 hover:text-foreground"
         >

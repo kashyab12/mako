@@ -149,8 +149,8 @@ function CitationLink({ href, children }: ComponentProps<"a">) {
  * header out in normal flow removes the specificity fight entirely.
  */
 function CodeBlock({ children }: { children?: ReactNode }) {
-  const { copied, copy } = useCopy()
   const source = extractText(children)
+  const { copied, copy } = useCopy(source)
   const language = extractLanguage(children)
 
   return (
@@ -163,7 +163,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
           type="button"
           aria-label="Copy code"
           onClick={() => {
-            void copy(source)
+            void copy()
           }}
           className={cn(
             "pressable ml-auto flex h-5 items-center gap-1 rounded px-1.5 text-label",

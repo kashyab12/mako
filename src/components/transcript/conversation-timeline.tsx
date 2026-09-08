@@ -1,3 +1,4 @@
+import { Slot } from "@/extend/slot"
 import {
   TranscriptSourceContext,
   type TranscriptSource,
@@ -264,6 +265,7 @@ export function ConversationTimeline({
         ref={pane}
         className="scroll-fade-scope relative flex min-h-0 flex-1 flex-col"
       >
+        <Slot name="transcript.overlay" conversationId={sourceValue.liveId} />
         <span ref={topFade} aria-hidden className="scroll-fade-top" />
         <div
           ref={viewport}
