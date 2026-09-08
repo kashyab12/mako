@@ -1,3 +1,6 @@
+import { Paragraph } from "./paragraph"
+import { ProseStreamingContext } from "./prose-layout-context"
+import { ChangingLabel } from "@/components/ui/changing-label"
 import { useCopy } from "@/components/ui/use-copy"
 import { remarkFileCitations } from "@/lib/citation-markdown"
 import {
@@ -53,6 +56,7 @@ export const Prose = memo(function Prose({
 
   return (
     <div className={cn("mako-prose", className)}>
+      <ProseStreamingContext value={Boolean(streaming)}>
       <Markdown
         remarkPlugins={[remarkGfm, remarkFileCitations]}
         components={components}
@@ -64,6 +68,7 @@ export const Prose = memo(function Prose({
       >
         {source}
       </Markdown>
+      </ProseStreamingContext>
     </div>
   )
 })
@@ -100,6 +105,7 @@ function useThrottled(text: string, active: boolean): string {
 }
 
 const components = {
+  p: Paragraph,
   pre: CodeBlock,
   a: CitationLink,
 } satisfies Parameters<typeof Markdown>[0]["components"]
@@ -170,7 +176,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
           ) : (
             <CopyIcon className="size-3" />
           )}
-          {copied ? "Copied" : "Copy"}
+          <span role="status" className="min-w-8"><ChangingLabel text={copied ? "Copied" : "Copy"} /></span>
         </button>
       </div>
       <pre>{children}</pre>

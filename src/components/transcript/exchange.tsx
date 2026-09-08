@@ -1,3 +1,4 @@
+import { ChangingLabel } from "@/components/ui/changing-label"
 import { useCopy } from "@/components/ui/use-copy"
 import { acp, useAcp, activeLiveAcp } from "@/state/acp"
 import { TranscriptAttachment } from "./attachment"
@@ -390,7 +391,7 @@ function WorkSummary({
           open && "rotate-90"
         )}
       />
-      <span className="truncate">{pieces.join(" · ")}</span>
+      <span className="truncate"><ChangingLabel text={pieces.join(" · ")} /></span>
     </button>
   )
 }
@@ -567,7 +568,7 @@ function Footer({ exchange }: { exchange: ExchangeData }) {
           ) : (
             <CopyIcon className="size-3" />
           )}
-          {copied ? "Copied answer" : "Copy answer"}
+          <span role="status" className="min-w-20"><ChangingLabel text={copied ? "Copied answer" : "Copy answer"} /></span>
         </button>
       ) : null}
       <ForkButton exchange={exchange} />
