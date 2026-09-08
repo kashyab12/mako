@@ -14,6 +14,7 @@ export default defineConfig([
     "**/.vercel/**",
     "dist",
     "dist-electron",
+    "dist-browser-extension",
     "ignore",
     "node_modules",
   ]),
@@ -28,6 +29,11 @@ export default defineConfig([
     languageOptions: {
       globals: { ...globals.browser, ...globals.node },
     },
+  },
+  {
+    files: ["browser-extension/**/*.ts"],
+    extends: [js.configs.recommended, tseslint.configs.recommended],
+    languageOptions: { globals: { ...globals.browser, chrome: "readonly" } },
   },
   {
     files: ["packages/backend/**/*.{ts,tsx}"],
