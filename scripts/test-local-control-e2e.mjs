@@ -132,6 +132,7 @@ try {
   )
   assert.ok(field, "Proof field must be found from live accessibility state")
   assert.ok(field.element_token)
+
   if (!process.argv.includes("--keys")) {
     const filled = await call("set_value", {
       ...target,

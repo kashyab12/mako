@@ -34,6 +34,7 @@ async function run() {
   ipcMain.handle("mako:control-preview", (_event, id, watching, watcher) => previews.read(id, watching, watcher))
   ipcMain.handle("mako:control-preview-hide", () => pip.hide())
   ipcMain.handle("mako:live-cancel", () => {})
+  ipcMain.handle("mako:control-preview-source", () => fixture.getMediaSourceId())
   const fixture = new BrowserWindow({ show: false, width: 640, height: 360 })
   await fixture.loadURL("data:text/html,<body style='background:Canvas;color:CanvasText;font:24px system-ui'><h1>Live preview proof</h1><p id='step'>Step 1</p></body>")
   const activity = { conversationId: "pip-test", kind: "browser", operation: "navigate", target: "fixture", status: "running" }
@@ -63,7 +64,18 @@ async function run() {
     await publish()
     await new Promise((resolve) => setTimeout(resolve, 400))
     assert.equal(BrowserWindow.getAllWindows().length, 1, "Dismissed task must not immediately reopen the overlay")
-    console.log(`PASS: native floating preview rendered two frames, preserved focus, and stayed dismissed. Evidence: ${root}`)
+    const nativeActivity = { ...activity, conversationId: "pip-native-test", kind: "computer", operation: "click" }
+    const nativeWindowId = Number(fixture.getMediaSourceId().split(":")[1])
+    previews.observe(nativeActivity)
+    previews.computerTarget("pip-native-test", { pid: process.pid, windowId: nativeWindowId }, () => {})
+    const nativeWindow = await wait(() => BrowserWindow.getAllWindows().find((entry) => entry !== fixture))
+    await wait(() => nativeWindow.webContents.executeJavaScript("Boolean(document.querySelector('video')?.videoWidth)").catch(() => false))
+    const time = await nativeWindow.webContents.executeJavaScript("document.querySelector('video').currentTime")
+    await fixture.webContents.executeJavaScript("document.getElementById('step').textContent='Native video Step 3'")
+    await wait(async () => (await nativeWindow.webContents.executeJavaScript("document.querySelector('video').currentTime")) > time + 0.5)
+    assert.equal(await frontmost(), before)
+    await writeFile(join(root, "native-preview.png"), (await nativeWindow.webContents.capturePage()).toPNG())
+    console.log(`PASS: native floating preview rendered two browser frames and live native video, preserved focus, and stayed dismissed. Evidence: ${root}`)
   } finally {
     pip.close(); previews.close(); browser.close(); fixture.destroy(); app.quit()
   }
