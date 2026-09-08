@@ -110,7 +110,67 @@ const threadViewingSource = readFileSync(
   new URL("../src/state/thread-viewing.ts", import.meta.url),
   "utf8"
 )
-assert.doesNotMatch(css, /\binfinite\b/)
+// Decorative motion is allowed only on the ocean layers, paused until the
+// visible scene opts in. Transcript and workspace chrome must never loop.
+const motionLayers = new Set([
+  ".ocean-light",
+  ".ocean-grain",
+  ".ocean-fin-glint",
+])
+const cssWithoutComments = css.replace(/\/\*[\s\S]*?\*\//g, "")
+const rules = [...cssWithoutComments.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+for (const [, selector, declarations] of rules) {
+  if (
+    !/\banimation(?:-iteration-count)?\s*:[^;]*\binfinite\b/.test(declarations!)
+  )
+    continue
+  assert.ok(
+    motionLayers.has(selector!.trim()),
+    `Unexpected looping animation: ${selector!.trim()}`
+  )
+  assert.match(declarations!, /animation-play-state:\s*paused\s*;/)
+}
+const reducedMotion = [
+  ...cssWithoutComments.matchAll(
+    /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/g
+  ),
+]
+for (const layer of motionLayers) {
+  assert.ok(
+    rules.some(
+      ([, selectors, declarations]) =>
+        selectors!
+          .split(",")
+          .map((value) => value.trim())
+          .includes(`.ocean-scene[data-water-moving] ${layer}`) &&
+        /animation-play-state:\s*running\s*;/.test(declarations!)
+    ),
+    `${layer} runs only through the scene's motion gate`
+  )
+  assert.ok(
+    rules.some(
+      ([, selectors, declarations]) =>
+        selectors!.includes(
+          `.agent-surface:has(.composer-input:focus) ${layer}`
+        ) && /animation-play-state:\s*paused\s*;/.test(declarations!)
+    ),
+    `${layer} pauses while composing`
+  )
+  assert.ok(
+    reducedMotion.some(
+      ([, body]) => body!.includes(layer) && /animation:\s*none\s*;/.test(body!)
+    ),
+    `${layer} respects reduced motion`
+  )
+}
+const oceanSource = readFileSync(
+  new URL("../src/components/ui/ocean-scene.tsx", import.meta.url),
+  "utf8"
+)
+assert.match(
+  oceanSource,
+  /motion && visible && !document\.hidden && !media\.matches/
+)
 assert.match(threadViewerSource, /Loading messages…/)
 assert.match(threadViewerSource, /Syncing messages…/)
 assert.doesNotMatch(threadViewerSource, /Opening \{opening/)
@@ -411,8 +471,17 @@ assert.equal(
 )
 assert.deepEqual(
   acpConversation.messages[1]?.blocks.map((block) => block.type),
-  ["thinking", "toolCall", "toolResult", "text"]
+  ["thinking", "toolCall", "toolResult", "text", "toolResult"]
 )
+assert.deepEqual(acpConversation.messages[1]?.blocks.at(-1), {
+  type: "toolResult",
+  id: "plan-4",
+  name: "Plan",
+  text: "",
+  details: [
+    { type: "plan", entries: [{ content: "Inspect", status: "completed" }] },
+  ],
+})
 assert.equal(acpConversation.messages[1]?.streaming, true)
 assert.deepEqual(acpConversation.plan, [
   { content: "Inspect", status: "completed" },

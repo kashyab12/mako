@@ -340,7 +340,7 @@ assert.deepEqual(
   providerHost.processProbes.list().map((probe) => probe.provider),
   ["claude", "codex", "cursor", "grok", "opencode"]
 )
-assert.equal(providerHost.nativeRunners.get("claude")?.fastMode, "unsupported")
+assert.equal(providerHost.nativeRunners.get("claude")?.fastMode, "supported")
 assert.deepEqual(
   providerHost.accountCapabilities
     .list()
@@ -360,7 +360,7 @@ const claude = providerHost.nativeRunners.get("claude")!
 assert.deepEqual(
   claude.resume("session", "continue", {
     model: "opus",
-    effort: "high",
+    options: { effort: "high" },
   }),
   {
     command: "claude",
@@ -382,8 +382,7 @@ const codex = providerHost.nativeRunners.get("codex")!
 assert.deepEqual(
   codex.resume("session", "continue", {
     model: "gpt-5",
-    effort: "high",
-    options: { serviceTier: "fast" },
+    options: { effort: "high", serviceTier: "fast" },
   }),
   {
     command: "codex",
@@ -397,7 +396,7 @@ assert.deepEqual(
       "-c",
       'model_reasoning_effort="high"',
       "-c",
-      'service_tier="fast"',
+      'service_tier="priority"',
       "resume",
       "session",
       "continue",
@@ -409,8 +408,7 @@ const cursor = providerHost.nativeRunners.get("cursor")!
 assert.deepEqual(
   cursor.fresh("start", {
     model: "sonnet",
-    effort: "high",
-    fast: true,
+    options: { effort: "high", fast: true },
   }),
   {
     command: "cursor-agent",
@@ -425,7 +423,7 @@ assert.deepEqual(
 )
 
 const grok = providerHost.nativeRunners.get("grok")!
-assert.deepEqual(grok.resume("session", "continue", { effort: "high" }), {
+assert.deepEqual(grok.resume("session", "continue", { options: { effort: "high" } }), {
   command: "grok",
   args: [
     "-p",
@@ -468,7 +466,7 @@ assert.deepEqual(
 const grokAcp = await providerHost.acpSources.get("grok")!.launch({
   appPath: process.cwd(),
   execPath: process.execPath,
-  tuning: { effort: "high" },
+  tuning: { options: { effort: "high" } },
 })
 assert.equal(providerHost.profiles.get("grok")?.label, "Grok")
 assert.equal(grokAcp?.command, "grok")

@@ -6,10 +6,7 @@ import {
 } from "../electron/accounts"
 import { classifyCodexWindows } from "../electron/providers/codex/accounts"
 import { parseOpenCodeAccounts } from "../electron/providers/opencode/accounts"
-import {
-  normalizeOpenCodeModels,
-  preferredOpenCodeDefault,
-} from "../electron/harness-models"
+import { normalizeOpenCodeModels } from "@mako/sessions/model-catalog"
 
 const fiveHour: UsageWindow = {
   usedPercent: 40,
@@ -99,10 +96,11 @@ const openCodeCatalog = normalizeOpenCodeModels([
     name: "Ox Alpha Free (Unlimited)",
   },
 ])
-assert.equal(
-  preferredOpenCodeDefault(openCodeCatalog.models),
-  "opencode/x-preview-f-free"
-)
+assert.equal(openCodeCatalog.defaultModel, undefined)
+assert.deepEqual(openCodeCatalog.models.map((model) => model.id), [
+  "openai/gpt-5.4",
+  "opencode/x-preview-f-free",
+])
 
 const childEnv = await accountEnv("opencode", {
   PATH: "/fixture/bin",

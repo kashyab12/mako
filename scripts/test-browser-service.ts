@@ -9,6 +9,20 @@ import { startControlService } from "../electron/control-service.js"
 import { browserControlClient } from "../electron/browser-control-client.js"
 import { browserFixture } from "./browser-control-fixture.js"
 
+const discovered = [{ id: "first", name: "First profile", endpoint: async () => "ws://127.0.0.1:1" }]
+const catalog = new BrowserService(discovered)
+let catalogUpdates = 0
+catalog.subscribe(() => { catalogUpdates++ })
+assert.equal(catalog.refresh().length, 1)
+assert.equal(catalogUpdates, 0)
+discovered[0] = { ...discovered[0], name: "Renamed profile" }
+assert.equal(catalog.refresh()[0].name, "Renamed profile")
+assert.equal(catalogUpdates, 1)
+discovered.splice(0)
+assert.deepEqual(catalog.refresh(), [])
+assert.equal(catalogUpdates, 2)
+catalog.close()
+
 const fixture = await browserFixture()
 const service = new BrowserService([fixture.definition])
 let authorized = true

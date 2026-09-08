@@ -19,6 +19,13 @@ try {
   const tools = (await client.listTools()).tools
   assert.ok(tools.some((tool) => tool.name === "mako_browser_cdp"))
   assert.ok(tools.some((tool) => tool.name === "mako_browser_upload"))
+  const invalid = await client.callTool({
+    name: "mako_browser_click",
+    arguments: { target: { browser: "fixture", tab: "tab", generation: "generation", lease: "lease" }, at: '{"ref":"not-an-object"}' },
+  })
+  assert.equal(invalid.isError, true)
+  assert.equal(invalid.structuredContent?.outcome, "not-dispatched")
+  assert.equal(fixture.calls.length, 0)
   assert.equal(fixture.connections(), 0)
   await client.callTool({
     name: "mako_browser_connect",

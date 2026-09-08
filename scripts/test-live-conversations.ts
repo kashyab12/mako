@@ -1,3 +1,4 @@
+import type { SessionSettings } from "@mako/sessions/settings"
 import assert from "node:assert/strict"
 import { mock } from "node:test"
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs"
@@ -38,6 +39,7 @@ function fixture() {
   }
   const started = deferred<LiveSessionState>()
   const sent: string[] = []
+  const settings: (SessionSettings | undefined)[] = []
   const prompts: ReturnType<typeof deferred<void>>[] = []
   const events: HostEvent[] = []
   let closed = 0
@@ -46,8 +48,9 @@ function fixture() {
     provider: "test-provider",
     available: () => true,
     start: () => started.promise,
-    prompt: async (_id, text) => {
+    prompt: async (_id, text, _attachments, tuning) => {
       sent.push(text)
+      settings.push(tuning)
       const pending = deferred<void>()
       prompts.push(pending)
       await pending.promise
@@ -73,6 +76,7 @@ function fixture() {
     state,
     started,
     sent,
+    settings,
     prompts,
     events,
     owner,
@@ -82,6 +86,53 @@ function fixture() {
       owner.stop()
       rmSync(root, { recursive: true, force: true })
     },
+  }
+}
+
+async function queuedSettings() {
+  const f = fixture()
+  try {
+    const first = {
+      model: "one",
+      options: { effort: "high", serviceTier: "fast" },
+    }
+    const second = {
+      model: "two",
+      options: { effort: "low", serviceTier: "default" },
+    }
+    const request = randomUUID()
+    await f.owner.start("test-provider", "/tmp", {
+      conversationId: f.id,
+      tuning: first,
+    })
+    f.started.resolve(f.state)
+    await tick()
+    f.owner.submit(f.id, request, "same prompt", [], first)
+    f.owner.observe({
+      type: "acp-session",
+      session: { ...f.state, status: "running" },
+    })
+    const next = randomUUID()
+    f.owner.submit(f.id, next, "next", [], second)
+    assert.throws(
+      () => f.owner.submit(f.id, request, "same prompt", [], second),
+      /different content/
+    )
+    assert.deepEqual(
+      f.owner.snapshot(f.id)?.requests.map((item) => item.tuning),
+      [first, second]
+    )
+    const journal = new LiveJournal(f.root, f.id)
+    const persisted = journal.read()
+    journal.close()
+    assert.deepEqual(
+      persisted?.requests.map((item) => item.tuning),
+      [first, second]
+    )
+    f.owner.observe({ type: "acp-session", session: f.state })
+    assert.deepEqual(f.settings, [first, second])
+  } finally {
+    f.cleanup()
   }
 }
 
@@ -198,7 +249,14 @@ async function durabilityAndBatching() {
         JSON.stringify(saved.blocks),
         JSON.stringify(
           snapshot.blocks.concat([
-            { type: "user", provider: "test-provider", requestId: saved.requests[0]?.id, contextFiles: [], text: "running", attachments: [] },
+            {
+              type: "user",
+              provider: "test-provider",
+              requestId: saved.requests[0]?.id,
+              contextFiles: [],
+              text: "running",
+              attachments: [],
+            },
           ])
         )
       )
@@ -342,6 +400,7 @@ async function failureIsolationAndAssets() {
 
 await failureIsolationAndAssets()
 
+await queuedSettings()
 await acceptanceAndRaces()
 await closeDuringStartup()
 await durabilityAndBatching()

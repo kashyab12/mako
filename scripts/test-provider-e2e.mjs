@@ -63,7 +63,10 @@ async function runElectron() {
   const { BrowserService } = await import("../dist-electron/browser-service.js")
   const { startControlService } =
     await import("../dist-electron/control-service.js")
-  const browser = new BrowserService()
+  const { extensionBrowsers } = await import("../dist-electron/browser-extension-registration.js")
+  const browser = new BrowserService(process.env.MAKO_E2E_BROWSER_REGISTRATION_ROOT
+    ? extensionBrowsers(process.env.MAKO_E2E_BROWSER_REGISTRATION_ROOT)
+    : undefined)
   const browserOperations = []
   const executeBrowser = browser.execute.bind(browser)
   browser.execute = async (conversationId, command, ...args) => {
