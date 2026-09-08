@@ -1,0 +1,68 @@
+[
+  {
+    "repository": "trycua/cua",
+    "url": "https://github.com/trycua/cua",
+    "stars": 22316,
+    "archived": false,
+    "branch": "main",
+    "latestCommit": "e686ee9ad32996bdfba9891852cf50a1269693ae",
+    "committedAt": "2026-09-08T00:17:21Z",
+    "commitUrl": "https://github.com/trycua/cua/commit/e686ee9ad32996bdfba9891852cf50a1269693ae",
+    "checkedAt": "2026-09-08T01:43:58.419Z"
+  },
+  {
+    "repository": "screenpipe/screenpipe",
+    "url": "https://github.com/screenpipe/screenpipe",
+    "stars": 21475,
+    "archived": false,
+    "branch": "main",
+    "latestCommit": "1494836d8f34d2a388ae3393ac0e2d802b1c9d7a",
+    "committedAt": "2026-09-08T00:32:16Z",
+    "commitUrl": "https://github.com/screenpipe/screenpipe/commit/1494836d8f34d2a388ae3393ac0e2d802b1c9d7a",
+    "checkedAt": "2026-09-08T01:44:00.099Z"
+  },
+  {
+    "repository": "openclaw/AXorcist",
+    "url": "https://github.com/openclaw/AXorcist",
+    "stars": 323,
+    "archived": false,
+    "branch": "main",
+    "latestCommit": "aa07d72fbb1861b56f5833b4cff8d9101c8dfbb3",
+    "committedAt": "2026-09-04T09:14:24Z",
+    "commitUrl": "https://github.com/openclaw/AXorcist/commit/aa07d72fbb1861b56f5833b4cff8d9101c8dfbb3",
+    "checkedAt": "2026-09-08T01:44:01.508Z"
+  },
+  {
+    "repository": "openclaw/Peekaboo",
+    "url": "https://github.com/openclaw/Peekaboo",
+    "stars": 5125,
+    "archived": false,
+    "branch": "main",
+    "latestCommit": "471841fe930c554407482770cbf5a30d0bd8c089",
+    "committedAt": "2026-09-07T16:40:07Z",
+    "commitUrl": "https://github.com/openclaw/Peekaboo/commit/471841fe930c554407482770cbf5a30d0bd8c089",
+    "checkedAt": "2026-09-08T01:44:02.503Z"
+  },
+  {
+    "repository": "mediar-ai/terminator",
+    "url": "https://github.com/mediar-ai/terminator",
+    "stars": 1632,
+    "archived": false,
+    "branch": "main",
+    "latestCommit": "73a381c0c1c33eda55f2c0ecb1d918bf5ec7561a",
+    "committedAt": "2026-06-02T01:03:10Z",
+    "commitUrl": "https://github.com/mediar-ai/terminator/commit/73a381c0c1c33eda55f2c0ecb1d918bf5ec7561a",
+    "checkedAt": "2026-09-08T01:44:03.628Z"
+  },
+  {
+    "repository": "hyprcat/mac-cua",
+    "url": "https://github.com/hyprcat/mac-cua",
+    "stars": 26,
+    "archived": false,
+    "branch": "release",
+    "latestCommit": "362393e312de500597146b13b6f5a428462f6ce2",
+    "committedAt": "2026-04-20T18:56:02Z",
+    "commitUrl": "https://github.com/hyprcat/mac-cua/commit/362393e312de500597146b13b6f5a428462f6ce2",
+    "checkedAt": "2026-09-08T01:44:04.686Z"
+  }
+]

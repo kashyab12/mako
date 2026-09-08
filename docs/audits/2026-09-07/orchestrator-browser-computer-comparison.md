@@ -94,3 +94,10 @@ Remaining work is concrete: richer ergonomic browser helpers, a persistent nativ
 The comparison remains pinned to PR #2829 revision `415ed0f73b97f1655b6282492f81d0b2bba3a9cc`, covered by the [source investigation](../2026-09-06/orchestrator-v2-deep-dive.md). Its current merge status was not rechecked in this pass.
 
 Mako has durable conversation identity, provider switches, receipts, scoped child delegation, portable context and attachment transfer, and tested native Codex restart/fork paths. Those are covered in [conversation-control.md](conversation-control.md). Coordinated filesystem/provider/history rewind, richer native steering/snapshot controls, and a fully normalized graph of provider-native background work remain differences from the reviewed v2. The rebuilt browser transport does not establish parity in those areas.
+
+
+## Appshot and preview follow-up
+
+The [accessibility and capture review](capture-performance-and-accessibility.md) records the current design, maintained open-source references with stars and commit dates, lifecycle fixes, real UI evidence and remaining performance limits. The preview is scoped to its conversation pane. Appshots attach one visible image with accompanying window text and remain in the owning draft. Continuous native preview is supported in the desktop app; the web desk retains the latest native observation.
+
+Account routing now rejects missing or invalid selected credentials instead of silently falling back. Capture uses exclusive private directories, respects custom Codex and Claude configuration homes, and preserves existing saved accounts. Account selection persists per provider. This does not add an OAuth wizard or live account switching to every provider: Claude and Codex have selectable saved accounts, OpenCode observes its native accounts, and the other providers use their CLI-owned authentication. OpenCode v2 completed the live file-tool fixture; the installed v1 could not complete the follow-up run due to authentication/database errors. These limits remain distinct from the shared browser/computer tools available to provider processes.
