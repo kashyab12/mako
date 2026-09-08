@@ -311,7 +311,10 @@ try {
     json({
       agent: "build",
       model: { id: "gpt-v2", providerID: "openai" },
-      content: [{ type: "text", text: "v2 answer" }],
+      content: [
+        { type: "text", text: "v2 answer" },
+        { type: "file", uri: "data:image/png;base64,cHJvb2Y=", mime: "image/png" },
+      ],
       finish: "stop",
       tokens: { input: 12, output: 4, reasoning: 1, cache: { read: 2, write: 0 } },
       time: { created: 6500, completed: 7000 },
@@ -516,7 +519,10 @@ try {
       at: "1970-01-01T01:48:20.000Z",
       model: "gpt-v2",
       usage: { input: 12, output: 4, cacheRead: 2, cacheWrite: 0 },
-      blocks: [{ type: "text", text: "v2 answer" }],
+      blocks: [
+        { type: "text", text: "v2 answer" },
+        { type: "attachment", name: "Attachment", mimeType: "image/png", source: { kind: "inline", data: "cHJvb2Y=" } },
+      ],
     },
   ])
 

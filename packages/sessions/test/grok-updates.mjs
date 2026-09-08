@@ -99,6 +99,7 @@ try {
     cwd: "/work",
     title: "Authoritative updates",
     model: "summary-model",
+    settings: { model: "summary-model", options: { effort: "high" } },
     startedAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:10:00.000Z",
     bytes: 0,
@@ -246,7 +247,7 @@ try {
   )
 
   const assistants = incremental.filter((entry) => entry.kind === "assistant")
-  assert.equal(assistants.length, 2)
+  assert.equal(assistants.length, 3)
   assert.deepEqual(assistants[0].blocks, [
     { type: "thinking", text: "think carefully" },
     { type: "text", text: "working" },
@@ -258,7 +259,8 @@ try {
       output: "fetched body",
     },
   ])
-  assert.deepEqual(assistants[1], {
+  assert.deepEqual(assistants[1].blocks, [{type: "tool", name: "Plan", output: "", details: [{type: "plan", entries: [{content: "Verify result", status: "completed"}]}]}])
+  assert.deepEqual(assistants[2], {
     kind: "assistant",
     at: "2026-01-01T00:00:08.000Z",
     usage: { input: 120, output: 30, cacheRead: 80, cacheWrite: 10, costUsd: 0.25 },
@@ -267,12 +269,6 @@ try {
   assert.deepEqual(
     incremental.filter((entry) => entry.kind === "event"),
     [
-      {
-        kind: "event",
-        at: "2026-01-01T00:00:07.000Z",
-        label: "Plan updated",
-        detail: "completed: Verify result",
-      },
       {
         kind: "event",
         at: "2026-01-01T00:00:10.000Z",

@@ -67,4 +67,22 @@ try {
  assert.equal(g.entries[0]?.attachments?.[0]?.source.data,content.data)
  console.log('PASS Devin and Grok native image-only prompts')
 
+ const toolUpdates=[
+  {sessionUpdate:'user_message_chunk',content:{type:'text',text:'Edit the file'}},
+  {sessionUpdate:'tool_call',toolCallId:'edit',title:'Edit',status:'in_progress'},
+  {sessionUpdate:'tool_call_update',toolCallId:'edit',status:'completed',content:[{type:'diff',path:'/fixture/app.ts',newText:'after'},{type:'terminal',terminalId:'terminal-proof'}]},
+  {sessionUpdate:'plan',entries:[{content:'Edit the file',status:'completed',priority:'medium'}]},
+ ]
+ for (const [name,path,provider,wrap] of [
+  ['devin',dpath,new DevinLocalProvider(devin),(update)=>({notification:update})],
+  ['grok',gpath,new GrokProvider(root),(update)=>({method:'session/update',params:{sessionId:'session',update}})],
+ ]) {
+  await writeFile(path,toolUpdates.map(update=>JSON.stringify(wrap(update))).join('\n')+'\n')
+  const loaded=await provider.read(path)
+  const tools=loaded.entries.filter(entry=>entry.kind==='assistant').flatMap(entry=>entry.blocks).filter(block=>block.type==='tool')
+  assert.deepEqual(tools.find(tool=>tool.details?.some(detail=>detail.type==='diff')).details,[{type:'diff',path:'/fixture/app.ts',oldText:null,newText:'after'},{type:'terminal',terminalId:'terminal-proof'}])
+  assert.ok(tools.some(tool=>tool.details?.some(detail=>detail.type==='plan'&&detail.entries[0].status==='completed')))
+  console.log(`PASS ${name} native ACP diff, terminal, and completed plan`)
+ }
+
 }finally{await rm(root,{recursive:true,force:true})}
