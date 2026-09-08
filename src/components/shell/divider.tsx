@@ -35,10 +35,11 @@ export function Divider({
 
   const onPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0) return
+      if (event.button !== 0 || !event.isPrimary) return
       cleanup.current?.()
       event.preventDefault()
       const handle = event.currentTarget
+      handle.focus()
       handle.setPointerCapture(event.pointerId)
       state.current = {
         start: horizontal ? event.clientY : event.clientX,

@@ -1,7 +1,8 @@
-import { useEffect } from "react"
+import { useEffect, useRef, useState } from "react"
 import { GlobeIcon, MonitorIcon, SquareIcon, XIcon } from "lucide-react"
 import {
   hideControlPreview,
+  controlPreviewStream,
   observeControlPreview,
   stopControlTask,
   useControlPreview,
@@ -23,19 +24,32 @@ export function ControlPreviewOverlay({
   useEffect(() => watchControlPreview(id), [id])
   const frame = preview?.frame
   const activity = preview?.activity
+  const nativeWindow = preview?.window
   return (
     <section
       aria-label="Live control preview"
       className="group flex h-screen flex-col overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground"
     >
       <div className="drag-region relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-background">
-        {frame && (
-          <img
-            src={`data:${frame.image.mimeType};base64,${frame.image.data}`}
-            alt="Live view of the window this task is using"
-            className="h-full w-full object-contain"
-            decoding="async"
+        {nativeWindow ? (
+          <NativePreview
+            key={`${id}:${nativeWindow.pid}:${nativeWindow.windowId}`}
+            id={id}
+            poster={
+              frame
+                ? `data:${frame.image.mimeType};base64,${frame.image.data}`
+                : undefined
+            }
           />
+        ) : (
+          frame && (
+            <img
+              src={`data:${frame.image.mimeType};base64,${frame.image.data}`}
+              alt="Live view of the window this task is using"
+              className="h-full w-full object-contain"
+              decoding="async"
+            />
+          )
         )}
         <button
           type="button"
@@ -77,5 +91,57 @@ export function ControlPreviewOverlay({
         </button>
       </div>
     </section>
+  )
+}
+
+function NativePreview({ id, poster }: { id: string; poster?: string }) {
+  const video = useRef<HTMLVideoElement>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    let closed = false
+    let stream: MediaStream | null = null
+    void controlPreviewStream(id)
+      .then(async (value) => {
+        if (closed) {
+          value?.getTracks().forEach((track) => track.stop())
+          return
+        }
+        stream = value
+        const element = video.current
+        if (!stream || !element) {
+          setFailed(true)
+          return
+        }
+        element.srcObject = stream
+        await element.play()
+      })
+      .catch(() => {
+        if (!closed) setFailed(true)
+      })
+    return () => {
+      closed = true
+      stream?.getTracks().forEach((track) => track.stop())
+    }
+  }, [id])
+  return (
+    <>
+      <video
+        ref={video}
+        muted
+        autoPlay
+        playsInline
+        poster={poster}
+        aria-label="Live application window"
+        className="h-full w-full object-contain"
+      />
+      {failed && (
+        <span
+          role="status"
+          className="absolute bottom-2 left-2 rounded bg-popover/90 px-2 py-1 text-label text-muted-foreground"
+        >
+          Live preview unavailable{poster ? " · Latest screenshot" : ""}
+        </span>
+      )}
+    </>
   )
 }

@@ -162,14 +162,14 @@ export function Stage() {
             ref={companionRef}
             style={covered ? undefined : { width }}
             className={cn(
-              "relative flex min-h-0 flex-col overflow-hidden bg-surface",
+              "companion-panel relative flex min-h-0 flex-col overflow-hidden bg-surface",
               covered && "min-w-0 flex-1"
             )}
           >
             {covered ? (
               <div className="flex h-8 shrink-0 items-center gap-2 border-b border-hairline px-2.5 text-label text-faint">
                 <span className="min-w-0 flex-1 truncate">
-                  {sideSurface.label} · workbench hidden at this width
+                  {sideSurface.label}
                 </span>
                 <button
                   type="button"
@@ -212,7 +212,7 @@ export function Stage() {
           <div
             ref={dockRef}
             style={{ height: dockHeight }}
-            className="relative flex shrink-0 flex-col overflow-hidden bg-surface"
+            className="terminal-panel relative flex shrink-0 flex-col overflow-hidden bg-surface"
           >
             <ErrorBoundary key={dockSurface.id} surface={dockSurface.label}>
               <CompanionBody render={dockSurface.render} />
