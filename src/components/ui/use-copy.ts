@@ -1,22 +1,26 @@
 import { useEffect, useRef, useState } from "react"
 import { actions } from "@/state/session"
 
-export function useCopy() {
-  const [copied, setCopied] = useState(false)
+export function useCopy(text: string) {
+  const [result, setResult] = useState({ text, copied: false })
+  if (result.text !== text) setResult({ text, copied: false })
   const generation = useRef(0)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
-  useEffect(() => () => {
-    generation.current++
-    clearTimeout(timer.current)
-  }, [])
-  const copy = async (text: string) => {
+  useEffect(
+    () => () => {
+      generation.current++
+      clearTimeout(timer.current)
+    },
+    [text]
+  )
+  const copy = async () => {
     const current = ++generation.current
     clearTimeout(timer.current)
-    setCopied(false)
+    setResult({ text, copied: false })
     const success = await actions.copy(text, { notify: false })
     if (current !== generation.current || !success) return
-    setCopied(true)
-    timer.current = setTimeout(() => setCopied(false), 1400)
+    setResult({ text, copied: true })
+    timer.current = setTimeout(() => setResult({ text, copied: false }), 1400)
   }
-  return { copied, copy }
+  return { copied: result.text === text && result.copied, copy }
 }

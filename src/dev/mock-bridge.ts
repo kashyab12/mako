@@ -362,8 +362,8 @@ export function installMockBridge() {
       accessibility: true,
       screenRecording: "granted" as const,
     }),
+    nativeWindowVideo: false,
     controlPreviewSource: async () => null,
-    hideControlPreview: async () => {},
     appshotWindows: async () => [],
     captureAppshot: async () => {
       throw new Error("Appshots require a native window")

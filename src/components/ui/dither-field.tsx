@@ -15,7 +15,11 @@ export function DitherField() {
     let settled = false
     let started = 0
     const draw = (progress: number) => {
-      const scale = Math.max(2, canvas.clientWidth / 480, canvas.clientHeight / 320)
+      const scale = Math.max(
+        2,
+        canvas.clientWidth / 480,
+        canvas.clientHeight / 320
+      )
       const width = Math.ceil(canvas.clientWidth / scale)
       const height = Math.ceil(canvas.clientHeight / scale)
       if (!width || !height) return
@@ -30,7 +34,7 @@ export function DitherField() {
         for (let y = 0; y < height; y++) {
           const v = y / height
           const density = Math.exp(-((v - ridge) ** 2) / 0.025) * strength
-          if (density * 16 > ((BAYER[(y % 4) * 4 + x % 4] ?? 0) + 0.5))
+          if (density * 16 > (BAYER[(y % 4) * 4 + (x % 4)] ?? 0) + 0.5)
             context.fillRect(x, y, 1, 1)
         }
       }
@@ -39,7 +43,8 @@ export function DitherField() {
       frame = 0
       if (!visible || document.hidden) return
       if (!started) started = now
-      const progress = media.matches || settled ? 1 : Math.min(1, (now - started) / 220)
+      const progress =
+        media.matches || settled ? 1 : Math.min(1, (now - started) / 220)
       draw(progress)
       settled = progress === 1
       if (!settled) frame = requestAnimationFrame(tick)
@@ -57,7 +62,10 @@ export function DitherField() {
     const theme = new MutationObserver(invalidate)
     intersection.observe(canvas)
     resize.observe(canvas)
-    theme.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] })
+    theme.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    })
     media.addEventListener("change", invalidate)
     document.addEventListener("visibilitychange", invalidate)
     return () => {

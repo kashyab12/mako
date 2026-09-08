@@ -1,3 +1,4 @@
+import { ControlPreviewOverlay } from "@/components/inspector/control-preview-overlay"
 import { AppshotButton } from "@/components/composer/appshot-button"
 import { ControlPreviewPanel } from "@/components/inspector/control-preview-panel"
 import {
@@ -98,6 +99,7 @@ export function installBuiltins(): () => void {
     // Identity, through the same slots a plugin would use.
     registerSlot("identity", "titlebar.trailing", IdentityBadge, -10),
     registerSlot("identity", "rail.footer", IdentityRow, -10),
+    registerSlot("control-preview", "transcript.overlay", ControlPreviewOverlay),
     registerSlot("appshot", "composer.controls", AppshotButton, -10),
     registerSlot("terminal-dock", "composer.trailing", TerminalDockToggle, -10),
 
