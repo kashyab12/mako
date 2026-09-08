@@ -179,7 +179,7 @@ async function listAccounts(
       accounts.push({
         harness: "claude",
         name,
-        email: await accountEmail(identityDir(dir)),
+        email: await accountEmail(dir),
         dir,
         active: selection === name,
       })
@@ -216,42 +216,47 @@ async function captureAccount(name: string): Promise<void> {
   const clean = cleanAccountName(name)
   const realHome = join(homedir(), HOME)
   const dir = accountDir("claude", clean)
-  await mkdir(dir, { recursive: true })
+  await mkdir(join(accountsRoot(), "claude"), { recursive: true, mode: 0o700 })
+  await mkdir(dir, { mode: 0o700 })
 
-  // Credentials are required — an account with no keys is nothing.
-  let captured = false
-  const source = join(realHome, ".credentials.json")
-  if (existsSync(source)) {
-    await copyFile(source, join(dir, ".credentials.json"))
-    await chmod(join(dir, ".credentials.json"), 0o600)
-    captured = true
-  }
+  try {
+    // Credentials are required — an account with no keys is nothing.
+    let captured = false
+    const source = join(realHome, ".credentials.json")
+    if (existsSync(source)) {
+      await copyFile(source, join(dir, ".credentials.json"))
+      await chmod(join(dir, ".credentials.json"), 0o600)
+      captured = true
+    }
 
-  // On macOS live credentials usually live in Keychain. Claude Code 2.1+
-  // reads an entry scoped to the config dir it wakes up in, so capture both.
-  const keychainJson = await readKeychain("Claude Code-credentials")
-  if (keychainJson) {
-    await writeFile(join(dir, ".credentials.json"), keychainJson, {
-      mode: 0o600,
-    })
-    await writeKeychain(scopedService(dir), keychainJson)
-    captured = true
-  }
+    // On macOS live credentials usually live in Keychain. Claude Code 2.1+
+    // reads an entry scoped to the config dir it wakes up in, so capture both.
+    const keychainJson = await readKeychain("Claude Code-credentials")
+    if (keychainJson) {
+      await writeFile(join(dir, ".credentials.json"), keychainJson, {
+        mode: 0o600,
+      })
+      await writeKeychain(scopedService(dir), keychainJson)
+      captured = true
+    }
 
-  // The CLI's onboarding/config state is copied, not linked: it embeds
-  // account state and prevents first-time setup from running again.
-  const config = join(homedir(), ".claude.json")
-  if (existsSync(config)) await copyFile(config, join(dir, ".claude.json"))
+    // The CLI's onboarding/config state is copied, not linked: it embeds
+    // account state and prevents first-time setup from running again.
+    const config = join(homedir(), ".claude.json")
+    if (existsSync(config)) await copyFile(config, join(dir, ".claude.json"))
 
-  if (!captured) {
+    if (!captured) {
+      throw new Error(
+        "No claude login found to capture — sign in with the CLI first"
+      )
+    }
+
+    // Sessions and skills remain in the one watched store for every account.
+    await ensureSharedLinks(realHome, dir, SHARED_LINKS)
+  } catch (error) {
     await rm(dir, { recursive: true, force: true })
-    throw new Error(
-      "No claude login found to capture — sign in with the CLI first"
-    )
+    throw error
   }
-
-  // Sessions and skills remain in the one watched store for every account.
-  await ensureSharedLinks(realHome, dir, SHARED_LINKS)
 }
 
 async function removeAccount(name: string): Promise<void> {
@@ -265,8 +270,8 @@ async function accountEnv(
   base: NodeJS.ProcessEnv
 ): Promise<NodeJS.ProcessEnv> {
   const env = { ...base }
-  for (const key of AUTH_ENV) delete env[key]
   if (!selection) return env
+  for (const key of AUTH_ENV) delete env[key]
 
   let dir = accountDir("claude", selection)
   if (!existsSync(dir)) {
@@ -276,10 +281,12 @@ async function accountEnv(
     )
     if (routed) dir = routed.dir
   }
-  if (existsSync(dir)) {
-    await ensureSharedLinks(join(homedir(), HOME), dir, SHARED_LINKS)
-    env.CLAUDE_CONFIG_DIR = dir
-  }
+  if (!existsSync(dir))
+    throw new Error(
+      "The selected Claude Code account no longer exists. Select another account or capture it again."
+    )
+  await ensureSharedLinks(join(homedir(), HOME), dir, SHARED_LINKS)
+  env.CLAUDE_CONFIG_DIR = dir
   return env
 }
 

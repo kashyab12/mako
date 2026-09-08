@@ -4,6 +4,7 @@ import { openCodeAcpSource } from "./acp.js"
 import { openCodeAccountCapability } from "./accounts.js"
 import { openCodeMcpSource } from "./mcp.js"
 import { openCodeNativeRunner } from "./native-runner.js"
+import { openCodeProcessProbe } from "./process-probe.js"
 import { openCodeProfileLoader } from "./profile.js"
 import { openCodeSkillSource } from "./skills.js"
 
@@ -13,6 +14,7 @@ export const installOpenCode: ProviderModule = (host) => {
   host.acpSources.register(openCodeAcpSource)
   host.liveDrivers.register(acpLiveDriver(openCodeAcpSource))
   host.profiles.register(openCodeProfileLoader)
+  host.processProbes.register(openCodeProcessProbe)
   host.mcpSources.register(openCodeMcpSource)
   host.skillSources.register(openCodeSkillSource)
 }

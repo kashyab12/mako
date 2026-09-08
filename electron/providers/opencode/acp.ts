@@ -17,8 +17,7 @@ export const openCodeAcpSource: ProviderAcpSource = {
     const generation = options.resume
       ? await openCodeSessionGeneration(options.resume)
       : openCodeInstallation()?.generation
-    const installation =
-      openCodeInstallation(generation) ?? openCodeInstallation()
+    const installation = openCodeInstallation(generation)
     if (!installation) return null
     return {
       command: installation.command,

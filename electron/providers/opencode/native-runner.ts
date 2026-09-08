@@ -29,9 +29,12 @@ export const openCodeNativeRunner: NativeRunner = {
       options?.nativePath?.includes("opencode-next.db#")
         ? "v2"
         : "v1"
-    const installation =
-      openCodeInstallation(preferred) ?? openCodeInstallation()
-    const generation = installation?.generation ?? preferred
+    const installation = openCodeInstallation(preferred)
+    if (!installation)
+      throw new Error(
+        `OpenCode ${preferred} is required to resume this session.`
+      )
+    const generation = installation.generation
     return {
       command: installation?.command ?? "opencode",
       args: [

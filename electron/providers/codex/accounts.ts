@@ -221,21 +221,26 @@ async function captureAccount(name: string): Promise<void> {
   const clean = cleanAccountName(name)
   const realHome = join(homedir(), HOME)
   const dir = accountDir("codex", clean)
-  await mkdir(dir, { recursive: true })
+  await mkdir(join(accountsRoot(), "codex"), { recursive: true, mode: 0o700 })
+  await mkdir(dir, { mode: 0o700 })
 
-  // Credentials are required — an account with no keys is nothing.
-  const source = join(realHome, "auth.json")
-  if (!existsSync(source)) {
+  try {
+    // Credentials are required — an account with no keys is nothing.
+    const source = join(realHome, "auth.json")
+    if (!existsSync(source)) {
+      throw new Error(
+        "No codex login found to capture — sign in with the CLI first"
+      )
+    }
+    await copyFile(source, join(dir, "auth.json"))
+    await chmod(join(dir, "auth.json"), 0o600)
+
+    // Sessions and skills remain in the one watched store for every account.
+    await ensureSharedLinks(realHome, dir, SHARED_LINKS)
+  } catch (error) {
     await rm(dir, { recursive: true, force: true })
-    throw new Error(
-      "No codex login found to capture — sign in with the CLI first"
-    )
+    throw error
   }
-  await copyFile(source, join(dir, "auth.json"))
-  await chmod(join(dir, "auth.json"), 0o600)
-
-  // Sessions and skills remain in the one watched store for every account.
-  await ensureSharedLinks(realHome, dir, SHARED_LINKS)
 }
 
 async function removeAccount(name: string): Promise<void> {
@@ -249,8 +254,8 @@ async function accountEnv(
   base: NodeJS.ProcessEnv
 ): Promise<NodeJS.ProcessEnv> {
   const env = { ...base }
-  for (const key of AUTH_ENV) delete env[key]
   if (!selection) return env
+  for (const key of AUTH_ENV) delete env[key]
 
   let dir = accountDir("codex", selection)
   if (!existsSync(dir)) {
@@ -264,19 +269,26 @@ async function accountEnv(
       if (!existsSync(join(dir, "auth.json"))) {
         try {
           const account = parseRouterAccount(await readFile(routed.dir, "utf8"))
-          await mkdir(dir, { recursive: true })
-          await writeFile(join(dir, "auth.json"), account.authJson, "utf8")
+          await mkdir(dir, { recursive: true, mode: 0o700 })
+          await writeFile(join(dir, "auth.json"), account.authJson, {
+            encoding: "utf8",
+            mode: 0o600,
+          })
           await chmod(join(dir, "auth.json"), 0o600)
         } catch {
-          // Unreadable router file: fall through to the default home.
+          throw new Error(
+            "The selected Codex account could not be loaded. Select another account or capture it again."
+          )
         }
       }
     }
   }
-  if (existsSync(dir)) {
-    await ensureSharedLinks(join(homedir(), HOME), dir, SHARED_LINKS)
-    env.CODEX_HOME = dir
-  }
+  if (!existsSync(join(dir, "auth.json")))
+    throw new Error(
+      "The selected Codex account has no credentials. Select another account or capture it again."
+    )
+  await ensureSharedLinks(join(homedir(), HOME), dir, SHARED_LINKS)
+  env.CODEX_HOME = dir
   return env
 }
 
