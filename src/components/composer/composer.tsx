@@ -124,11 +124,6 @@ export function Composer() {
   const rejectedDrafts = useDrafts((state) =>
     state.rejected.filter((item) => item.key === draftKey)
   )
-  const expanded =
-    focused ||
-    Boolean(draft.trim()) ||
-    attachments.items.length > 0 ||
-    mention !== null
 
   /**
    * Up-arrow prompt recall, the way every terminal taught your hands: with
@@ -247,7 +242,7 @@ export function Composer() {
     if (box && (node.selectionStart ?? 0) >= draft.length) {
       box.scrollTop = box.scrollHeight
     }
-  }, [draft, expanded])
+  }, [draft])
 
   useEffect(() => {
     const focus = () => textarea.current?.focus()
@@ -689,8 +684,7 @@ export function Composer() {
               className={cn(
                 // No max-height and no scrolling of its own — the wrapper owns
                 // both, so the painted layer behind it stays in register.
-                "composer-input relative block w-full resize-none overflow-hidden bg-transparent px-3 pb-1",
-                expanded ? "min-h-[84px] pt-2.5" : "min-h-10 pt-2",
+                "composer-input relative block min-h-10 w-full resize-none overflow-hidden bg-transparent px-3 pb-1 pt-2.5",
                 "font-sans text-ui leading-[1.55] placeholder:text-faint focus:outline-none",
                 // Transparent glyphs let the overlay show through; the caret
                 // and selection stay native and visible.

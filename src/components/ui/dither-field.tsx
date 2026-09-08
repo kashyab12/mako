@@ -29,11 +29,11 @@ export function DitherField() {
       context.fillStyle = getComputedStyle(canvas).color
       for (let x = 0; x < width; x++) {
         const u = x / width
-        const ridge = 0.55 + Math.sin(u * 5 + progress * 0.25) * 0.14
-        const strength = Math.sin(u * Math.PI) ** 2 * 0.52
+        const ridge = 0.92 + Math.sin(u * 19 + progress * 0.4) * 0.009
+        const strength = Math.sin(u * Math.PI) ** 2 * 0.42
         for (let y = 0; y < height; y++) {
           const v = y / height
-          const density = Math.exp(-((v - ridge) ** 2) / 0.025) * strength
+          const density = Math.exp(-((v - ridge) ** 2) / 0.00008) * strength
           if (density * 16 > (BAYER[(y % 4) * 4 + (x % 4)] ?? 0) + 0.5)
             context.fillRect(x, y, 1, 1)
         }
@@ -77,5 +77,17 @@ export function DitherField() {
       document.removeEventListener("visibilitychange", invalidate)
     }
   }, [])
-  return <canvas ref={ref} aria-hidden="true" className="dither-field" />
+  return (
+    <div className="ocean-scene" aria-hidden="true">
+      <img
+        className="ocean-engraving"
+        src="/artwork/mako-ocean-engraving.webp"
+        width={1536}
+        height={1024}
+        alt=""
+        decoding="async"
+      />
+      <canvas ref={ref} className="dither-field" />
+    </div>
+  )
 }

@@ -226,7 +226,7 @@ export function Stage() {
 
 const AgentSurface = memo(function AgentSurface() {
   return (
-    <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <main className="agent-surface relative isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <ConversationSurface />
       <Composer />
       <SearchView />

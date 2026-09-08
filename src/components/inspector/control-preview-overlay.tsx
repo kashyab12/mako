@@ -26,11 +26,18 @@ function TaskPreview({ id }: { id: string }) {
   useEffect(() => {
     const node = boundary.current
     if (!node) return
-    const observer = new IntersectionObserver(([entry]) =>
-      setVisible(entry?.isIntersecting ?? false)
-    )
+    let intersecting = false
+    const update = () => setVisible(intersecting && !document.hidden)
+    const observer = new IntersectionObserver(([entry]) => {
+      intersecting = entry?.isIntersecting ?? false
+      update()
+    })
     observer.observe(node)
-    return () => observer.disconnect()
+    document.addEventListener("visibilitychange", update)
+    return () => {
+      observer.disconnect()
+      document.removeEventListener("visibilitychange", update)
+    }
   }, [])
   return (
     <div
@@ -48,7 +55,8 @@ function TaskPreview({ id }: { id: string }) {
           Show preview
         </button>
       ) : (
-        visible && (
+        visible &&
+        activity && (
           <PreviewCard
             id={id}
             onClose={() => setCollapsed(true)}
@@ -173,6 +181,7 @@ function NativePreview({ id, poster }: { id: string; poster?: string }) {
         await element.play()
       })
       .catch(() => {
+        stream?.getTracks().forEach((track) => track.stop())
         if (!closed) setFailed(true)
       })
     return () => {
@@ -180,25 +189,28 @@ function NativePreview({ id, poster }: { id: string; poster?: string }) {
       stream?.getTracks().forEach((track) => track.stop())
     }
   }, [id])
-  return (
-    <>
-      <video
-        ref={video}
-        muted
-        autoPlay
-        playsInline
-        poster={poster}
-        aria-label="Live application window"
+  if (failed)
+    return poster ? (
+      <img
+        src={poster}
+        alt="Latest view of this task's application window"
         className="h-full w-full object-contain"
+        decoding="async"
       />
-      {failed && (
-        <span
-          role="status"
-          className="absolute bottom-2 left-2 rounded bg-popover/90 px-2 py-1 text-label text-muted-foreground"
-        >
-          {poster ? "Latest screenshot" : "Waiting for a screenshot"}
-        </span>
-      )}
-    </>
+    ) : (
+      <span role="status" className="text-label text-muted-foreground">
+        Waiting for a screenshot
+      </span>
+    )
+  return (
+    <video
+      ref={video}
+      muted
+      autoPlay
+      playsInline
+      poster={poster}
+      aria-label="Live application window"
+      className="h-full w-full object-contain"
+    />
   )
 }

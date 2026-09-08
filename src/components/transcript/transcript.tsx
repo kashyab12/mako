@@ -31,12 +31,21 @@ function SessionTranscript({ sessionId }: { sessionId: string | undefined }) {
   return (
     <>
       <Slot name="transcript.header" meta={undefined} />
-      <ConversationTimeline
-        identity={sessionId ?? "none"}
-        exchanges={exchanges}
-        streamingId={stream ? exchanges.at(-1)?.id : undefined}
-        empty={<EmptyTranscript />}
-      />
+      {exchanges.length === 0 ? (
+        <>
+          <DitherField />
+          <div className="min-h-0 flex-1 overflow-y-auto" data-empty-transcript>
+            <EmptyTranscript />
+          </div>
+        </>
+      ) : (
+        <ConversationTimeline
+          identity={sessionId ?? "none"}
+          exchanges={exchanges}
+          streamingId={stream ? exchanges.at(-1)?.id : undefined}
+          empty={null}
+        />
+      )}
     </>
   )
 }
@@ -55,15 +64,12 @@ function EmptyTranscript() {
   const model = useSession((state) => state.meta?.model?.name)
 
   return (
-    <div className="relative isolate flex min-h-full justify-center overflow-hidden px-6">
-      <DitherField />
-      <div className="relative my-auto w-full max-w-[460px] py-12">
+    <div className="relative flex min-h-full justify-center px-6">
+      <div className="relative mt-8 mb-auto w-full max-w-[460px] py-12">
         <div className="flex items-center gap-3.5">
           <MakoMark className="size-8 shrink-0 text-foreground/85" />
           <div className="min-w-0">
-            <p className="text-welcome font-medium">
-              What are we working on?
-            </p>
+            <p className="text-welcome font-medium">What are we working on?</p>
             <p className="mt-1 flex min-w-0 items-center gap-1.5 text-ui text-faint">
               <FolderIcon className="size-3 shrink-0" />
               <span className="truncate" title={cwd}>

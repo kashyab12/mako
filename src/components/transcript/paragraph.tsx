@@ -39,7 +39,7 @@ export function Paragraph({
             letterSpacing: Number.parseFloat(style.letterSpacing) || 0,
           })
           element.style.containIntrinsicBlockSize = `auto ${Math.ceil(height)}px`
-          element.style.contentVisibility = "auto"
+          element.setAttribute("data-estimated-paragraph", "")
         })
         observer.observe(element)
       })
@@ -50,7 +50,7 @@ export function Paragraph({
       disposed = true
       observer?.disconnect()
       element.style.removeProperty("contain-intrinsic-block-size")
-      element.style.removeProperty("content-visibility")
+      element.removeAttribute("data-estimated-paragraph")
     }
   }, [streaming, text])
   return (
