@@ -6,6 +6,7 @@ import { createHook, createStore } from "@/state/store"
  */
 
 export type Theme = "dark" | "light" | "system"
+export type OceanTone = "ink" | "sea" | "moon"
 
 /** What the left rail is showing: your conversations, or the project. */
 export type RailMode = "threads" | "agents" | "files"
@@ -24,6 +25,8 @@ interface SurfaceWidthMap {
 }
 
 export interface Prefs {
+  oceanTone: OceanTone
+  oceanMotion: boolean
   soundEnabled: boolean
   soundVolume: number
   theme: Theme
@@ -93,6 +96,8 @@ const KEY = "mako.prefs.v1"
 const LEGACY_KEY = "pi.prefs.v1"
 
 const defaults: Prefs = {
+  oceanTone: "sea",
+  oceanMotion: true,
   soundEnabled: false,
   soundVolume: 0.25,
   theme: "dark",
@@ -217,9 +222,7 @@ function readTuningOptions(
   return options
 }
 
-function readComposerTuning(
-  value: StoredValue
-): Prefs["composerTuning"] {
+function readComposerTuning(value: StoredValue): Prefs["composerTuning"] {
   if (!isJsonObject(value)) return {}
   const tuning: Prefs["composerTuning"] = {}
   for (const [harness, entry] of Object.entries(value)) {
@@ -253,15 +256,27 @@ function readLastCompanion(value: JsonObject): string | null {
 function parsePrefs(value: JsonValue): Prefs | null {
   if (!isJsonObject(value)) return null
   const prefs: Prefs = {
+    oceanTone: readChoice(
+      value.oceanTone,
+      ["ink", "sea", "moon"],
+      defaults.oceanTone
+    ),
+    oceanMotion: readBoolean(value.oceanMotion, defaults.oceanMotion),
     soundEnabled: readBoolean(value.soundEnabled, defaults.soundEnabled),
-    soundVolume: Math.max(0, Math.min(1, readNumber(value.soundVolume, defaults.soundVolume))),
+    soundVolume: Math.max(
+      0,
+      Math.min(1, readNumber(value.soundVolume, defaults.soundVolume))
+    ),
     theme: readChoice(value.theme, ["dark", "light", "system"], defaults.theme),
     railOpen: readBoolean(value.railOpen, defaults.railOpen),
     railWidth: readNumber(value.railWidth, defaults.railWidth),
     surfaceWidths: readSurfaceWidths(value),
     surfaceHeights: readNumberRecord(value.surfaceHeights),
     lastCompanion: readLastCompanion(value),
-    favoriteModels: readStringList(value.favoriteModels, defaults.favoriteModels),
+    favoriteModels: readStringList(
+      value.favoriteModels,
+      defaults.favoriteModels
+    ),
     recentModels: readStringList(value.recentModels, defaults.recentModels),
     showThinking: readBoolean(value.showThinking, defaults.showThinking),
     denseTools: readBoolean(value.denseTools, defaults.denseTools),
@@ -294,7 +309,10 @@ function parsePrefs(value: JsonValue): Prefs | null {
       defaults.onboardedSteps
     ),
     pinnedThreads: readStringList(value.pinnedThreads, defaults.pinnedThreads),
-    pinnedProjects: readStringList(value.pinnedProjects, defaults.pinnedProjects),
+    pinnedProjects: readStringList(
+      value.pinnedProjects,
+      defaults.pinnedProjects
+    ),
     agentHarnessFilter: readStringList(
       value.agentHarnessFilter,
       defaults.agentHarnessFilter

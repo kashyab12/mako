@@ -832,6 +832,8 @@
 /* An original marine engraving keeps its own detail at native image resolution.
  * Only the small moving wake is rasterized by the bounded canvas. */
 .ocean-scene {
+  --ocean-filter: sepia(0.3);
+  --ocean-ink: oklch(0.78 0.035 65);
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -840,6 +842,16 @@
   mix-blend-mode: screen;
   animation: ocean-arrive 220ms var(--ease-out) both;
   mask-image: linear-gradient(to bottom, transparent 20%, black 60%, black 89%, transparent);
+}
+
+.ocean-scene[data-ocean-tone="sea"] {
+  --ocean-filter: sepia(1) saturate(0.65) hue-rotate(105deg);
+  --ocean-ink: oklch(0.79 0.065 170);
+}
+
+.ocean-scene[data-ocean-tone="moon"] {
+  --ocean-filter: sepia(1) saturate(0.75) hue-rotate(165deg);
+  --ocean-ink: oklch(0.82 0.065 245);
 }
 
 /* The scene belongs to the whole agent pane, including the composer. Its
@@ -855,7 +867,7 @@
   height: 100%;
   object-fit: cover;
   object-position: center bottom;
-  filter: invert(1) sepia(0.3);
+  filter: invert(1) var(--ocean-filter);
   opacity: 0.3;
 }
 
@@ -864,7 +876,7 @@
 }
 
 .light .ocean-engraving {
-  filter: sepia(0.3);
+  filter: var(--ocean-filter);
   opacity: 0.25;
 }
 
@@ -879,13 +891,47 @@
 
 .dither-field {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  color: var(--foreground);
-  opacity: 0.12;
+  left: 25%;
+  bottom: 8%;
+  width: 65%;
+  height: 15%;
+  color: var(--ocean-ink);
+  opacity: 0.3;
   image-rendering: pixelated;
   pointer-events: none;
+  animation: ocean-water 7s ease-in-out infinite;
+  animation-play-state: paused;
+}
+
+.ocean-scene[data-water-moving] .dither-field {
+  animation-play-state: running;
+}
+
+.agent-surface:has(.composer-input:focus) .dither-field,
+.ocean-preview:has(textarea:focus) .dither-field {
+  animation-play-state: paused;
+}
+
+@keyframes ocean-water {
+  0%, 100% { transform: translateX(-12px); opacity: 0.18; }
+  50% { transform: translateX(12px); opacity: 0.65; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dither-field { animation: none; }
+}
+
+.ocean-preview {
+  position: relative;
+  isolation: isolate;
+  height: 440px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+}
+
+.ocean-preview .ocean-scene {
+  bottom: 0;
 }
 
 .usage-dither {

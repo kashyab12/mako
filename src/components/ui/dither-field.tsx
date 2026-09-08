@@ -38,7 +38,10 @@ export function DitherField({ tone }: { tone?: OceanTone }) {
         const strength = Math.sin(u * Math.PI) ** 2 * 0.85
         for (let y = 0; y < height; y++) {
           const v = y / height
-          const distance = Math.min(Math.abs(v - ridge), Math.abs(v - ridge - 0.24))
+          const distance = Math.min(
+            Math.abs(v - ridge),
+            Math.abs(v - ridge - 0.24)
+          )
           const density = Math.exp(-(distance ** 2) / 0.002) * strength
           if (density * 16 > (BAYER[(y % 4) * 4 + (x % 4)] ?? 0) + 0.5)
             context.fillRect(x, y, 1, 1)
@@ -58,7 +61,10 @@ export function DitherField({ tone }: { tone?: OceanTone }) {
     const invalidate = () => {
       cancelAnimationFrame(frame)
       frame = 0
-      scene.current?.toggleAttribute("data-water-moving", motion && visible && !document.hidden && !media.matches)
+      scene.current?.toggleAttribute(
+        "data-water-moving",
+        motion && visible && !document.hidden && !media.matches
+      )
       if (visible && !document.hidden) frame = requestAnimationFrame(tick)
     }
     const intersection = new IntersectionObserver(([entry]) => {
@@ -85,7 +91,12 @@ export function DitherField({ tone }: { tone?: OceanTone }) {
     }
   }, [color, motion])
   return (
-    <div ref={scene} className="ocean-scene" data-ocean-tone={color} aria-hidden="true">
+    <div
+      ref={scene}
+      className="ocean-scene"
+      data-ocean-tone={color}
+      aria-hidden="true"
+    >
       <img
         className="ocean-engraving"
         src="/artwork/mako-ocean-engraving.webp"

@@ -32,7 +32,10 @@ export function AppearanceSection() {
           onChange={(next) => setPref("theme", next)}
         />
       </SettingRow>
-      <SettingRow title="Ocean color" description="Only the opening illustration changes">
+      <SettingRow
+        title="Ocean color"
+        description="Only the opening illustration changes"
+      >
         <Segmented<OceanTone>
           value={oceanTone}
           options={[
@@ -43,8 +46,15 @@ export function AppearanceSection() {
           onChange={(next) => setPref("oceanTone", next)}
         />
       </SettingRow>
-      <SettingRow title="Moving water" description="Pauses while writing and respects reduced motion">
-        <Toggle label="Moving water" on={oceanMotion} onChange={() => setPref("oceanMotion", !oceanMotion)} />
+      <SettingRow
+        title="Moving water"
+        description="Pauses while writing and respects reduced motion"
+      >
+        <Toggle
+          label="Moving water"
+          on={oceanMotion}
+          onChange={() => setPref("oceanMotion", !oceanMotion)}
+        />
       </SettingRow>
       <SettingRow
         title="Interface sounds"

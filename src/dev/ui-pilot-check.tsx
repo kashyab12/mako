@@ -8,6 +8,8 @@ import { Divider } from "@/components/shell/divider"
 import { DitherField } from "@/components/ui/dither-field"
 import { Transcript } from "@/components/transcript/transcript"
 import { Composer } from "@/components/composer/composer"
+import { store as sessionStore } from "@/state/session"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
 import { installMockBridge } from "./mock-bridge"
 import "../index.css"
@@ -24,7 +26,8 @@ output.className = "my-4 whitespace-pre-wrap text-ui"
 output.textContent =
   "Tests use the production components and a fixture clipboard. No agent is started."
 const fixture = document.createElement("div")
-fixture.className = "relative isolate w-full max-w-content"
+// Keep visibility-sensitive components onscreen as the result log grows.
+fixture.className = "fixed bottom-0 right-0 isolate w-full max-w-content"
 page.append(button, output, fixture)
 const root = createRoot(fixture)
 
@@ -42,20 +45,29 @@ async function until(test: () => boolean) {
 }
 
 async function openingDraft() {
+  sessionStore.set({ messages: [], stream: null })
   flushSync(() =>
     root.render(
-      <main className="agent-surface relative isolate flex h-[640px] flex-col overflow-hidden">
-        <Transcript />
-        <Composer />
-      </main>
+      <TooltipProvider>
+        <main className="agent-surface relative isolate flex h-[640px] flex-col overflow-hidden">
+          <Transcript />
+          <Composer />
+        </main>
+      </TooltipProvider>
     )
   )
   await new Promise((resolve) => setTimeout(resolve, 300))
-  const scene = fixture.querySelector<HTMLElement>(".ocean-scene")!
-  const heading = fixture.querySelector<HTMLElement>(".text-welcome")!
-  const input = fixture.querySelector<HTMLTextAreaElement>(".composer-input")!
+  const scene = fixture.querySelector<HTMLElement>(".ocean-scene")
+  const heading = fixture.querySelector<HTMLElement>(".text-welcome")
+  const input = fixture.querySelector<HTMLTextAreaElement>(".composer-input")
+  check(scene !== null, "the empty transcript mounts its artwork")
+  check(heading !== null, "the empty transcript mounts its heading")
+  check(input !== null, "the empty transcript mounts its composer")
+  const pane = fixture.querySelector("main")!
+  const paneTop = () => pane.getBoundingClientRect().top
   const bounds = scene.getBoundingClientRect()
-  const headingTop = heading.getBoundingClientRect().top
+  const sceneTop = bounds.top - paneTop()
+  const headingTop = heading.getBoundingClientRect().top - paneTop()
   const inputHeight = input.getBoundingClientRect().height
   input.focus({ preventScroll: true })
   await new Promise((resolve) => requestAnimationFrame(resolve))
@@ -75,11 +87,11 @@ async function openingDraft() {
     await new Promise((resolve) => setTimeout(resolve, 60))
     const current = scene.getBoundingClientRect()
     check(
-      current.top === bounds.top && current.height === bounds.height,
+      current.top - paneTop() === sceneTop && current.height === bounds.height,
       `the ocean stays fixed with a ${lines}-line draft`
     )
     check(
-      heading.getBoundingClientRect().top === headingTop,
+      heading.getBoundingClientRect().top - paneTop() === headingTop,
       `the opening heading stays fixed with a ${lines}-line draft`
     )
   }
