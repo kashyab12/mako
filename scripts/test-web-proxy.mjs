@@ -26,6 +26,7 @@ const host = await startWebHost(
 )
 const vite = await createServer({
   configFile: false,
+  cacheDir: join(directory, "vite-cache"),
   plugins: [webHostProxy(socket)],
   server: { host: "127.0.0.1", port: 0 },
   logLevel: "silent",

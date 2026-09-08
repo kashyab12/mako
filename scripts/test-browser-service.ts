@@ -110,6 +110,15 @@ try {
     /outcome is unknown/
   )
   fixture.completeDelayed()
+  await service.preview("task-a", a, AbortSignal.timeout(1000), () => {})
+  await assert.rejects(
+    run("task-a", {
+      action: "type",
+      target: a,
+      text: "preview-is-not-observation",
+    }),
+    /outcome is unknown/
+  )
   await run("task-a", { action: "observe", target: a })
   await run("task-a", { action: "type", target: a, text: "after-observation" })
   assert.equal(

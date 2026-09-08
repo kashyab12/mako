@@ -338,7 +338,7 @@ assert.deepEqual(
 )
 assert.deepEqual(
   providerHost.processProbes.list().map((probe) => probe.provider),
-  ["claude", "codex", "cursor", "grok"]
+  ["claude", "codex", "cursor", "grok", "opencode"]
 )
 assert.equal(providerHost.nativeRunners.get("claude")?.fastMode, "unsupported")
 assert.deepEqual(

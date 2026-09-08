@@ -1,5 +1,7 @@
+import { Appshots } from "../dist-electron/appshots.js"
 import assert from "node:assert/strict"
-import { spawn } from "node:child_process"
+import { spawn, execFile } from "node:child_process"
+import { promisify } from "node:util"
 import { randomUUID } from "node:crypto"
 import { mkdtemp, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -12,6 +14,13 @@ import {
   stopCuaEmbedded,
 } from "../dist-electron/cua-embedded.js"
 
+const runCommand = promisify(execFile)
+async function frontmostPid() {
+  const { stdout } = await runCommand("osascript", ["-l", "JavaScript", "-e", 'ObjC.import("AppKit"); $.NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier'], { timeout: 3000 })
+  const pid = Number(stdout.trim())
+  assert.ok(Number.isInteger(pid) && pid > 0)
+  return pid
+}
 const root = await mkdtemp(join(tmpdir(), "mako-control-e2e-"))
 const proof = randomUUID()
 const statusFile = join(root, "status.json")
@@ -28,8 +37,10 @@ const fs = require('node:fs');
 app.setPath('userData', ${JSON.stringify(join(root, "user-data"))});
 app.whenReady().then(async () => {
  app.setAccessibilitySupportEnabled(true);
- const window = new BrowserWindow({width:650,height:420,title:'Mako control fixture',webPreferences:{contextIsolation:true}});
+ app.setActivationPolicy("prohibited");
+ const window = new BrowserWindow({show:false,width:650,height:420,title:'Mako control fixture',webPreferences:{contextIsolation:true}});
  await window.loadFile(${JSON.stringify(join(root, "fixture.html"))});
+ window.showInactive();
  setInterval(async () => { if (!window.isDestroyed()) fs.writeFileSync(${JSON.stringify(statusFile + ".next")}, JSON.stringify({pid:process.pid, input:await window.webContents.executeJavaScript('document.getElementById("proof").value'), value:await window.webContents.executeJavaScript('document.getElementById("result").textContent')})); fs.renameSync(${JSON.stringify(statusFile + ".next")}, ${JSON.stringify(statusFile)}); }, 100);
 });
 app.on('window-all-closed', () => app.quit());
@@ -43,6 +54,7 @@ const client = new Client({ name: "mako-control-e2e", version: "1" })
 let outcome = { status: "failed", error: "Test did not complete" }
 const events = []
 const session = `mako-fixture-${randomUUID()}`
+let appshots
 async function call(name, args) {
   const start = performance.now()
   const { session: _session, ...input } = args
@@ -105,6 +117,12 @@ try {
     window_id: window.window_id,
     session,
   }
+  await call("list_apps", {})
+  const frontmostBefore = await frontmostPid()
+  appshots = new Appshots(async () => ({ command: resolveExecutable("cua-driver"), args: ["mcp", "--embedded", "--socket", socket] }))
+  const shot = await appshots.capture({ pid: target.pid, windowId: target.window_id })
+  assert.ok(shot.image.data.length > 1000)
+  assert.ok(shot.text.includes("Proof"), "Appshot includes text from the selected window")
   const first = await call("get_window_state", target)
   const image = first.content.find((block) => block.type === "image")
   assert.ok(image, "Actual screenshot must be returned through MCP")
@@ -114,7 +132,7 @@ try {
   )
   assert.ok(field, "Proof field must be found from live accessibility state")
   assert.ok(field.element_token)
-  if (process.argv.includes("--fill")) {
+  if (!process.argv.includes("--keys")) {
     const filled = await call("set_value", {
       ...target,
       element_token: field.element_token,
@@ -135,25 +153,7 @@ try {
         "Only a proven zero-delivery action may be retried in full"
       )
       const observed = JSON.parse(await readFile(statusFile, "utf8"))
-      if (observed.input !== proof) {
-        assert.equal(observed.input, "")
-        const frame = first.structuredContent
-        assert.equal(frame.screenshot_frame_valid, true)
-        const x =
-          (field.frame.x - frame.window_bounds.x + field.frame.w / 2) *
-          frame.screenshot_scale
-        const y =
-          (field.frame.y - frame.window_bounds.y + field.frame.h / 2) *
-          frame.screenshot_scale
-        const retry = await call("type_text", {
-          ...target,
-          x,
-          y,
-          text: proof,
-          delivery_mode: "foreground",
-        })
-        assert.ok(!retry.isError, JSON.stringify(retry.structuredContent))
-      }
+      assert.equal(observed.input, proof, "Background typing did not reach the exact target. Do not fall back to global input.")
     }
   }
   await until(
@@ -181,7 +181,12 @@ try {
     true,
     "Superseded accessibility references must be refused"
   )
-  outcome = { status: "passed" }
+  await call("list_apps", {})
+  const frontmostAfter = await frontmostPid()
+  assert.ok(frontmostBefore, "Native app discovery identifies the frontmost application")
+  assert.equal(frontmostAfter, frontmostBefore, "Background actions must not change the user's frontmost application")
+  assert.notEqual(frontmostAfter, target.pid, "Fixture stays in the background")
+  outcome = { status: "passed", frontmostPreserved: true, appshot: { textCharacters: shot.text.length, imageBytes: Math.floor(shot.image.data.length * 3 / 4) } }
   console.log(
     "PASS: native screenshot, observed field entry, button action, independent renderer readback, stale-reference refusal"
   )
@@ -193,6 +198,7 @@ try {
   throw error
 } finally {
   await call("end_session", { session }).catch(() => {})
+  await appshots?.close()
   await client.close()
   stopCuaEmbedded()
   fixture.kill("SIGTERM")
