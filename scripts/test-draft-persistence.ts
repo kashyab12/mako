@@ -46,3 +46,14 @@ assert.ok(!saved.get("mako.session-drafts.v1")?.includes("blob:"))
 console.log(
   "Draft text, rejected sends, staged attachments, and incomplete staging persist without the old 64-session loss limit"
 )
+
+writeAttachmentDrafts({
+  "task-a": [{ ...attachment, name: "Appshot A.png", contextPath: "/retained/a.context.txt" }],
+  "task-b": [{ ...attachment, id: "file-b", name: "Appshot B.png", stagedPath: "/retained/b.png", contextPath: "/retained/b.context.txt" }],
+})
+const appshots = readAttachmentDrafts()
+assert.equal(appshots["task-a"]?.[0]?.contextPath, "/retained/a.context.txt")
+assert.equal(appshots["task-b"]?.[0]?.stagedPath, "/retained/b.png")
+assert.equal(appshots["task-a"]?.length, 1)
+assert.equal(appshots["task-b"]?.length, 1)
+console.log("Appshot image and context paths restore as one attachment independently for each task")

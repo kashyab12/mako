@@ -60,7 +60,18 @@ try {
   )
   await new Promise((resolve) => setTimeout(resolve, 260))
   assert.equal(events, 1, "Activity bursts publish one narrow event")
-  previews.read("task", false)
+  previews.read("task", true, "overlay")
+  previews.read("task", false, "panel")
+  await new Promise((resolve) => setTimeout(resolve, 400))
+  previews.read("task", true, "overlay")
+  await new Promise((resolve) => setTimeout(resolve, 25))
+  assert.equal(
+    fixture.calls.filter((call) => call.method === "Page.captureScreenshot")
+      .length,
+    2,
+    "Closing the inspector must not stop the visible chat overlay"
+  )
+  previews.read("task", false, "overlay")
   previews.observe({
     ...activity,
     kind: "computer",
@@ -71,6 +82,18 @@ try {
     null,
     "Target change clears the old image"
   )
+  let authorized = true
+  previews.computerTarget("task", { pid: 42, windowId: 70 }, () => {
+    if (!authorized) throw new Error("Binding closed")
+  })
+  assert.deepEqual(previews.nativeWindow("task"), { pid: 42, windowId: 70 })
+  assert.equal(
+    previews.nativeWindow("other"),
+    null,
+    "Native sources are task scoped"
+  )
+  authorized = false
+  assert.throws(() => previews.nativeWindow("task"), /Binding closed/)
   for (let index = 0; index < 65; index++)
     previews.observe({ ...activity, conversationId: `task-${index}` })
   assert.equal(previews.read("task", false), null, "Retention is bounded")
