@@ -362,6 +362,7 @@ export function installMockBridge() {
       accessibility: true,
       screenRecording: "granted" as const,
     }),
+    controlPreviewSource: async () => null,
     hideControlPreview: async () => {},
     appshotWindows: async () => [],
     captureAppshot: async () => {

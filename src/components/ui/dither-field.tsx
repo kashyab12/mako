@@ -15,19 +15,21 @@ export function DitherField() {
     let settled = false
     let started = 0
     const draw = (progress: number) => {
-      const width = Math.ceil(canvas.clientWidth / 2)
-      const height = Math.ceil(canvas.clientHeight / 2)
+      const scale = Math.max(2, canvas.clientWidth / 480, canvas.clientHeight / 320)
+      const width = Math.ceil(canvas.clientWidth / scale)
+      const height = Math.ceil(canvas.clientHeight / scale)
       if (!width || !height) return
-      canvas.width = width
-      canvas.height = height
+      if (canvas.width !== width) canvas.width = width
+      if (canvas.height !== height) canvas.height = height
+      context.clearRect(0, 0, width, height)
       context.fillStyle = getComputedStyle(canvas).color
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          const u = x / width
+      for (let x = 0; x < width; x++) {
+        const u = x / width
+        const ridge = 0.55 + Math.sin(u * 5 + progress * 0.25) * 0.14
+        const strength = Math.sin(u * Math.PI) ** 2 * 0.52
+        for (let y = 0; y < height; y++) {
           const v = y / height
-          const ridge = 0.55 + Math.sin(u * 5 + progress * 0.25) * 0.14
-          const density = Math.exp(-((v - ridge) ** 2) / 0.025) *
-            Math.sin(u * Math.PI) ** 2 * 0.52
+          const density = Math.exp(-((v - ridge) ** 2) / 0.025) * strength
           if (density * 16 > ((BAYER[(y % 4) * 4 + x % 4] ?? 0) + 0.5))
             context.fillRect(x, y, 1, 1)
         }
