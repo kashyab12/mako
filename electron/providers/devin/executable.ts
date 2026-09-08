@@ -18,7 +18,9 @@ export function devinExecutable(): string | null {
     "devin"
   )
   try {
-    for (const version of readdirSync(registry).sort().reverse()) {
+    for (const version of readdirSync(registry).sort((a, b) =>
+      b.localeCompare(a, undefined, { numeric: true })
+    )) {
       const executable = join(registry, version, "bin", "devin")
       if (existsSync(executable)) return executable
     }
