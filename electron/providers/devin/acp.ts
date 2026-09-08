@@ -1,5 +1,6 @@
 import type { ProviderAcpSource } from "../acp-source.js"
 import { devinExecutable } from "./executable.js"
+import { devinPermissionTitle } from "./permissions.js"
 
 export const devinAcpSource: ProviderAcpSource = {
   provider: "devin",
@@ -10,6 +11,7 @@ export const devinAcpSource: ProviderAcpSource = {
       command: devinExecutable() ?? "devin",
       args: ["acp"],
       configureEnvironment: () => {},
+      permissionTitle: devinPermissionTitle,
     }
   },
 }

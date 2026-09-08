@@ -25,3 +25,12 @@ export * from "./contracts/renderer-bridge.js"
 export * from "./contracts/control-preview.js"
 
 export * from "./contracts/appshots.js"
+
+export type {
+  AccountCatalog,
+  AccountProviderInfo,
+  AccountHarness,
+  AccountProvider,
+  AccountUsage,
+  HarnessAccount,
+} from "./account-types.js"

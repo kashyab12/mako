@@ -110,7 +110,7 @@ import { bindLineageDirect, chainOf } from "./lineage.js"
 import {
   accountUsage,
   captureAccount,
-  listAccounts,
+  accountCatalog,
   removeAccount,
   selectAccount,
   type AccountHarness,
@@ -587,7 +587,7 @@ function bindIpc() {
     }
   )
   /* Harness accounts: several logins per CLI, Orca-style isolated homes. */
-  handle("mako:accounts", () => listAccounts())
+  handle("mako:accounts", () => accountCatalog())
   handle("mako:account-capture", (_e, harness: AccountHarness, name: string) =>
     captureAccount(harness, name)
   )
@@ -641,8 +641,10 @@ function bindIpc() {
   )
   handle(
     "mako:control-preview",
-    (_event, conversationId: string, watching: boolean, watcher: string) =>
-      controlPreviews.read(conversationId, watching, watcher)
+    (_event, conversationId: string, watching: boolean, watcher: string) => {
+      const preview = controlPreviews.read(conversationId, watching, watcher)
+      return watching ? preview : null
+    }
   )
   handle("mako:browser-control-status", () => browserControl.status())
   handle("mako:browser-control-connect", async (_event, browser: string) => {

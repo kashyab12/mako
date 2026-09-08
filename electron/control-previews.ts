@@ -106,6 +106,12 @@ export class ControlPreviews {
   ): ControlPreview | null {
     const entry = this.entries.get(conversationId)
     if (!entry) return null
+    try {
+      entry.authorize?.()
+    } catch {
+      this.remove(conversationId)
+      return null
+    }
     for (const [id, until] of entry.watchers)
       if (until < Date.now()) entry.watchers.delete(id)
     if (watching) {
@@ -116,7 +122,11 @@ export class ControlPreviews {
       entry.watchers.delete(watcher)
       if (entry.watchers.size === 0) entry.capture?.abort()
     }
-    return entry.preview
+    // Retain the last screenshot, but release live native capture after the action settles.
+    return entry.preview.activity.status !== "running" &&
+      Date.now() - entry.preview.activity.updatedAt >= 5_000
+      ? { ...entry.preview, window: undefined }
+      : entry.preview
   }
 
   private frame(entry: PreviewEntry, image: ControlImage) {
@@ -143,7 +153,7 @@ export class ControlPreviews {
       entry.capture ||
       ![...entry.watchers.values()].some((until) => until >= Date.now()) ||
       (entry.preview.activity.status !== "running" &&
-        Date.now() - entry.preview.activity.updatedAt > 5_000) ||
+        Date.now() - entry.preview.activity.updatedAt >= 5_000) ||
       Date.now() - (entry.preview.frame?.capturedAt ?? 0) < 350
     )
       return

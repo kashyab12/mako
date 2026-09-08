@@ -256,7 +256,10 @@ export async function liveStart(
       const request: LivePermissionRequest = {
         id: requestId,
         sessionId: id,
-        title: params.toolCall?.title ?? "The agent wants to use a tool",
+        title:
+          params.toolCall?.title ??
+          spec.permissionTitle?.(params) ??
+          "The agent wants to use a tool",
         kind: params.toolCall?.kind ?? undefined,
         options: params.options.map((option) => ({
           optionId: option.optionId,

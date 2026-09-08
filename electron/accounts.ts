@@ -33,6 +33,7 @@
  */
 
 import type {
+  AccountCatalog,
   AccountHarness,
   AccountProvider,
   AccountUsage,
@@ -51,6 +52,8 @@ import type {
 import { providerHost } from "./providers/index.js"
 
 export type {
+  AccountCatalog,
+  AccountProviderInfo,
   AccountHarness,
   AccountProvider,
   AccountUsage,
@@ -86,6 +89,20 @@ export async function listAccounts(): Promise<HarnessAccount[]> {
     )
   }
   return accounts
+}
+
+export async function accountCatalog(): Promise<AccountCatalog> {
+  return {
+    providers: providerHost.accountCapabilities
+      .list()
+      .map(({ provider, label, mode, loginCommand }) => ({
+        provider,
+        label,
+        mode,
+        loginCommand,
+      })),
+    accounts: await listAccounts(),
+  }
 }
 
 /* ------------------------------------------------------------ capture */
@@ -237,5 +254,5 @@ export async function switchSuggestion(
   if (!best || best.name === active.name || best.usedPercent >= 70) return null
   const capability = selectableCapability(harness)
   suggestedAt.set(harness, Date.now())
-  return `${capability.suggestionLabel} account "${active.name}" is at ${Math.round(used)}% of its window — "${best.name}" is at ${Math.round(best.usedPercent)}%. Switch in Settings → Agents.`
+  return `${capability.label} account "${active.name}" is at ${Math.round(used)}% of its window — "${best.name}" is at ${Math.round(best.usedPercent)}%. Switch in Settings → Agents.`
 }

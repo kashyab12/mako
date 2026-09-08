@@ -359,17 +359,35 @@ export class BrowserService {
       fault("target-busy", "The target is executing an agent command")
     binding.running++
     try {
-      return await this.bound(
-        binding,
-        {
-          action: "screenshot",
-          target,
-          format: "jpeg",
-          quality: 55,
-          fullPage: false,
-        },
+      const geometry = await screenshotGeometry(
+        binding.connection,
+        binding.sessionId,
+        false,
         signal
       )
+      const result = z.object({ data: z.string().max(512 * 1024) }).parse(
+        await binding.connection.send(
+          "Page.captureScreenshot",
+          {
+            format: "jpeg",
+            quality: 55,
+            captureBeyondViewport: false,
+            clip: {
+              ...geometry.clip,
+              scale:
+                geometry.clip.scale *
+                Math.min(
+                  1,
+                  640 / geometry.clip.width,
+                  480 / geometry.clip.height
+                ),
+            },
+          },
+          signal,
+          binding.sessionId
+        )
+      )
+      return { mimeType: "image/jpeg", data: result.data }
     } finally {
       binding.running--
     }

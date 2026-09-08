@@ -42,3 +42,16 @@ export interface SelectedAccount {
   name: string
   dir?: string
 }
+
+/** Public account controls contributed by the provider, without credential data. */
+export interface AccountProviderInfo {
+  provider: string
+  label: string
+  mode: "selectable" | "observed"
+  loginCommand: string
+}
+
+export interface AccountCatalog {
+  providers: AccountProviderInfo[]
+  accounts: HarnessAccount[]
+}
