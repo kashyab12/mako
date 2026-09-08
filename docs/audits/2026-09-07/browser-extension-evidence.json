@@ -1,0 +1,471 @@
+{
+  "recordedAt": "2026-09-08T07:27:23.292729+00:00",
+  "gitHead": "74861b3f482205124db3b2b509e71f642ebef2d8",
+  "scope": "Controlled browser workflows through the development extension; not a statistical reliability or full feature parity benchmark. OpenCode v1 failures retained.",
+  "chromeVersion": "151.0.7922.34",
+  "restartEvidence": [
+    "mako-extension-e2e-3wJAVK",
+    "mako-extension-e2e-AjFt9E",
+    "mako-extension-e2e-tolCFP",
+    "mako-extension-e2e-ZLtwoD"
+  ],
+  "runs": [
+    {
+      "label": "Devin extension",
+      "sourceDirectory": "/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-provider-e2e-CUzB8N",
+      "proof": "77faf06f-9bc5-4c55-badc-8fa704aa2f0a",
+      "submissions": [
+        {
+          "path": "/devin",
+          "proof": "77faf06f-9bc5-4c55-badc-8fa704aa2f0a",
+          "red": "4",
+          "blue": "2",
+          "trusted": [
+            "blue",
+            "proof",
+            "red"
+          ],
+          "clicked": true
+        }
+      ],
+      "results": [
+        {
+          "flow": "model-browser-mcp",
+          "provider": "devin",
+          "status": "passed",
+          "operations": [
+            "status",
+            "connect",
+            "navigate",
+            "open",
+            "screenshot",
+            "observe",
+            "cdp",
+            "cdp",
+            "cdp",
+            "cdp",
+            "cdp",
+            "cdp",
+            "cdp",
+            "cdp",
+            "cdp",
+            "cdp",
+            "cdp",
+            "cdp",
+            "cdp",
+            "cdp",
+            "cdp",
+            "cdp",
+            "cdp",
+            "cdp",
+            "observe",
+            "close"
+          ],
+          "nativeId": "blend-triangle",
+          "toolCalls": [
+            "Listed MCP tools for mako-browser-use",
+            "Called mako_browser_status from mako-browser-use",
+            "Called mako_browser_connect from mako-browser-use",
+            "Called mako_browser_open from mako-browser-use",
+            "Called mako_browser_screenshot from mako-browser-use",
+            "Called mako_browser_observe from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_observe from mako-browser-use",
+            "Called mako_browser_cdp from mako-browser-use",
+            "Called mako_browser_close from mako-browser-use"
+          ],
+          "submission": {
+            "path": "/devin",
+            "proof": "77faf06f-9bc5-4c55-badc-8fa704aa2f0a",
+            "red": "4",
+            "blue": "2",
+            "trusted": [
+              "blue",
+              "proof",
+              "red"
+            ],
+            "clicked": true
+          },
+          "observedModel": "swe-1-7-medium"
+        }
+      ]
+    },
+    {
+      "label": "Grok and OpenCode v2 extension",
+      "sourceDirectory": "/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-provider-e2e-N993O8",
+      "proof": "7b2a0e9b-5f82-4a39-9345-30f5d7a23dae",
+      "submissions": [
+        {
+          "path": "/grok",
+          "proof": "7b2a0e9b-5f82-4a39-9345-30f5d7a23dae",
+          "red": "4",
+          "blue": "2",
+          "trusted": [
+            "blue",
+            "proof",
+            "red"
+          ],
+          "clicked": true
+        },
+        {
+          "path": "/opencode",
+          "proof": "7b2a0e9b-5f82-4a39-9345-30f5d7a23dae",
+          "red": "4",
+          "blue": "2",
+          "trusted": [
+            "blue",
+            "proof",
+            "red"
+          ],
+          "clicked": true
+        }
+      ],
+      "results": [
+        {
+          "flow": "model-browser-mcp",
+          "provider": "grok",
+          "status": "passed",
+          "operations": [
+            "status",
+            "connect",
+            "navigate",
+            "open",
+            "screenshot",
+            "observe",
+            "type",
+            "type",
+            "type",
+            "click",
+            "observe",
+            "screenshot",
+            "close"
+          ],
+          "nativeId": "01a07fd3-8e9e-7070-8528-1840d32968f2",
+          "toolCalls": [
+            "Search tools: \"mako browser\"",
+            "mako-browser-use__mako_browser_status",
+            "mako-browser-use__mako_browser_connect",
+            "mako-browser-use__mako_browser_open",
+            "mako-browser-use__mako_browser_screenshot",
+            "mako-browser-use__mako_browser_observe",
+            "mako-browser-use__mako_browser_type",
+            "mako-browser-use__mako_browser_type",
+            "mako-browser-use__mako_browser_type",
+            "mako-browser-use__mako_browser_click",
+            "mako-browser-use__mako_browser_observe",
+            "mako-browser-use__mako_browser_screenshot",
+            "mako-browser-use__mako_browser_close"
+          ],
+          "submission": {
+            "path": "/grok",
+            "proof": "7b2a0e9b-5f82-4a39-9345-30f5d7a23dae",
+            "red": "4",
+            "blue": "2",
+            "trusted": [
+              "blue",
+              "proof",
+              "red"
+            ],
+            "clicked": true
+          },
+          "observedModel": null
+        },
+        {
+          "flow": "model-browser-mcp",
+          "provider": "opencode",
+          "status": "passed",
+          "operations": [
+            "status",
+            "navigate",
+            "open",
+            "screenshot",
+            "observe",
+            "type",
+            "type",
+            "type",
+            "click",
+            "observe",
+            "close"
+          ],
+          "nativeId": "ses_f802b26f7ffeEOOVAr2IGgoI21",
+          "toolCalls": [
+            "execute",
+            "execute",
+            "execute",
+            "execute",
+            "execute",
+            "execute",
+            "execute"
+          ],
+          "submission": {
+            "path": "/opencode",
+            "proof": "7b2a0e9b-5f82-4a39-9345-30f5d7a23dae",
+            "red": "4",
+            "blue": "2",
+            "trusted": [
+              "blue",
+              "proof",
+              "red"
+            ],
+            "clicked": true
+          },
+          "observedModel": "openai/gpt-6-astra"
+        }
+      ]
+    },
+    {
+      "label": "Claude Codex Cursor extension",
+      "sourceDirectory": "/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-provider-e2e-u5xmn7",
+      "proof": "9007addb-76f9-450e-8869-cf7841b645e7",
+      "submissions": [
+        {
+          "path": "/claude",
+          "proof": "9007addb-76f9-450e-8869-cf7841b645e7",
+          "red": "4",
+          "blue": "2",
+          "trusted": [
+            "blue",
+            "proof",
+            "red"
+          ],
+          "clicked": true
+        },
+        {
+          "path": "/codex",
+          "proof": "9007addb-76f9-450e-8869-cf7841b645e7",
+          "red": "4",
+          "blue": "2",
+          "trusted": [
+            "blue",
+            "proof",
+            "red"
+          ],
+          "clicked": true
+        },
+        {
+          "path": "/cursor",
+          "proof": "9007addb-76f9-450e-8869-cf7841b645e7",
+          "red": "4",
+          "blue": "2",
+          "trusted": [
+            "blue",
+            "proof",
+            "red"
+          ],
+          "clicked": true
+        }
+      ],
+      "results": [
+        {
+          "flow": "model-browser-mcp",
+          "provider": "claude",
+          "status": "passed",
+          "operations": [
+            "status",
+            "connect",
+            "navigate",
+            "open",
+            "screenshot",
+            "observe",
+            "type",
+            "type",
+            "type",
+            "click",
+            "screenshot",
+            "observe",
+            "close"
+          ],
+          "nativeId": "5abaa405-852d-44e0-96d6-74687f5d747f",
+          "toolCalls": [
+            "ToolSearch",
+            "mcp__mako-browser-use__mako_browser_status",
+            "mcp__mako-browser-use__mako_browser_connect",
+            "mcp__mako-browser-use__mako_browser_open",
+            "mcp__mako-browser-use__mako_browser_screenshot",
+            "mcp__mako-browser-use__mako_browser_observe",
+            "mcp__mako-browser-use__mako_browser_type",
+            "mcp__mako-browser-use__mako_browser_type",
+            "mcp__mako-browser-use__mako_browser_type",
+            "mcp__mako-browser-use__mako_browser_click",
+            "mcp__mako-browser-use__mako_browser_screenshot",
+            "mcp__mako-browser-use__mako_browser_observe",
+            "mcp__mako-browser-use__mako_browser_close"
+          ],
+          "submission": {
+            "path": "/claude",
+            "proof": "9007addb-76f9-450e-8869-cf7841b645e7",
+            "red": "4",
+            "blue": "2",
+            "trusted": [
+              "blue",
+              "proof",
+              "red"
+            ],
+            "clicked": true
+          },
+          "observedModel": null
+        },
+        {
+          "flow": "model-browser-mcp",
+          "provider": "codex",
+          "status": "passed",
+          "operations": [
+            "status",
+            "navigate",
+            "open",
+            "screenshot",
+            "observe",
+            "type",
+            "type",
+            "type",
+            "click",
+            "observe",
+            "close"
+          ],
+          "nativeId": "01a07fdf-4ff0-7042-80e5-015afde76f3f",
+          "toolCalls": [
+            "mako-browser-use: mako_browser_status",
+            "mako-browser-use: mako_browser_open",
+            "mako-browser-use: mako_browser_screenshot",
+            "mako-browser-use: mako_browser_observe",
+            "mako-browser-use: mako_browser_type",
+            "mako-browser-use: mako_browser_type",
+            "mako-browser-use: mako_browser_type",
+            "mako-browser-use: mako_browser_click",
+            "mako-browser-use: mako_browser_observe",
+            "mako-browser-use: mako_browser_close"
+          ],
+          "submission": {
+            "path": "/codex",
+            "proof": "9007addb-76f9-450e-8869-cf7841b645e7",
+            "red": "4",
+            "blue": "2",
+            "trusted": [
+              "blue",
+              "proof",
+              "red"
+            ],
+            "clicked": true
+          },
+          "observedModel": null
+        },
+        {
+          "flow": "model-browser-mcp",
+          "provider": "cursor",
+          "status": "passed",
+          "operations": [
+            "status",
+            "navigate",
+            "open",
+            "screenshot",
+            "observe",
+            "type",
+            "type",
+            "type",
+            "click",
+            "screenshot",
+            "close"
+          ],
+          "nativeId": "a93ef3f8-c9b5-4ee9-b6f2-201b6a232132",
+          "toolCalls": [
+            "MCP: tool",
+            "MCP: tool",
+            "MCP: tool",
+            "MCP: tool",
+            "MCP: tool",
+            "MCP: tool",
+            "MCP: tool",
+            "MCP: tool",
+            "MCP: tool",
+            "MCP: tool"
+          ],
+          "submission": {
+            "path": "/cursor",
+            "proof": "9007addb-76f9-450e-8869-cf7841b645e7",
+            "red": "4",
+            "blue": "2",
+            "trusted": [
+              "blue",
+              "proof",
+              "red"
+            ],
+            "clicked": true
+          },
+          "observedModel": "claude-opus-5[thinking=true,context=300k,effort=high,fast=false]"
+        }
+      ]
+    },
+    {
+      "label": "OpenCode v1 default model",
+      "sourceDirectory": "/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-provider-e2e-q6sFX3",
+      "proof": "6809edb4-894d-44d1-a4f4-85b88001a6b3",
+      "submissions": [
+        {
+          "path": "/opencode",
+          "proof": "6809edb4-894d-44d1-a4f4-85b88001a6b3",
+          "red": "4",
+          "blue": "2",
+          "trusted": [
+            "blue",
+            "proof",
+            "red"
+          ],
+          "clicked": false
+        },
+        {
+          "path": "/opencode",
+          "proof": "6809edb4-894d-44d1-a4f4-85b88001a6b3",
+          "red": "4",
+          "blue": "2",
+          "trusted": [
+            "blue",
+            "proof",
+            "red"
+          ],
+          "clicked": true
+        }
+      ],
+      "results": [
+        {
+          "flow": "model-browser-mcp",
+          "provider": "opencode",
+          "status": "failed",
+          "error": "Real browser form was not submitted exactly once with trusted input and correct values: [{\"path\":\"/opencode\",\"proof\":\"6809edb4-894d-44d1-a4f4-85b88001a6b3\",\"red\":\"4\",\"blue\":\"2\",\"trusted\":[\"blue\",\"proof\",\"red\"],\"clicked\":false},{\"path\":\"/opencode\",\"proof\":\"6809edb4-894d-44d1-a4f4-85b88001a6b3\",\"red\":\"4\",\"blue\":\"2\",\"trusted\":[\"blue\",\"proof\",\"red\"],\"clicked\":true}]",
+          "observedModel": "opencode/big-pickle"
+        }
+      ]
+    },
+    {
+      "label": "OpenCode v1 OpenAI model",
+      "sourceDirectory": "/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-provider-e2e-jh6eOM",
+      "proof": "78f2a406-62f1-4f78-a0de-ea85064c9402",
+      "submissions": [],
+      "results": [
+        {
+          "flow": "model-browser-mcp",
+          "provider": "opencode",
+          "status": "failed",
+          "error": "Internal error: Encountered invalidated oauth token for user, failing request",
+          "observedModel": "openai/gpt-5.5"
+        }
+      ]
+    }
+  ]
+}

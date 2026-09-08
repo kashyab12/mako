@@ -1,0 +1,100 @@
+[
+  {
+    "provider": "claude",
+    "nativeId": "5abaa405-852d-44e0-96d6-74687f5d747f",
+    "loaded": true,
+    "entries": 27,
+    "tools": 13,
+    "attachments": [
+      {
+        "mimeType": "image/png",
+        "source": "inline"
+      },
+      {
+        "mimeType": "image/png",
+        "source": "inline"
+      }
+    ],
+    "toolNames": [
+      "ToolSearch",
+      "mcp__mako-browser-use__mako_browser_status",
+      "mcp__mako-browser-use__mako_browser_connect",
+      "mcp__mako-browser-use__mako_browser_open",
+      "mcp__mako-browser-use__mako_browser_screenshot",
+      "mcp__mako-browser-use__mako_browser_observe",
+      "mcp__mako-browser-use__mako_browser_type",
+      "mcp__mako-browser-use__mako_browser_click",
+      "mcp__mako-browser-use__mako_browser_close"
+    ]
+  },
+  {
+    "provider": "codex",
+    "nativeId": "01a07fdf-4ff0-7042-80e5-015afde76f3f",
+    "loaded": true,
+    "entries": 3,
+    "tools": 6,
+    "attachments": [
+      {
+        "mimeType": "image/png",
+        "source": "inline"
+      }
+    ],
+    "toolNames": [
+      "exec"
+    ]
+  },
+  {
+    "provider": "cursor",
+    "nativeId": "a93ef3f8-c9b5-4ee9-b6f2-201b6a232132",
+    "loaded": true,
+    "entries": 2,
+    "tools": 10,
+    "attachments": [
+      {
+        "mimeType": "image/png",
+        "source": "inline"
+      },
+      {
+        "mimeType": "image/png",
+        "source": "inline"
+      }
+    ],
+    "toolNames": [
+      "mako-browser-use-mako_browser_status",
+      "mako-browser-use-mako_browser_open",
+      "mako-browser-use-mako_browser_screenshot",
+      "mako-browser-use-mako_browser_observe",
+      "mako-browser-use-mako_browser_type",
+      "mako-browser-use-mako_browser_click",
+      "mako-browser-use-mako_browser_close"
+    ]
+  },
+  {
+    "provider": "devin",
+    "nativeId": "blend-triangle",
+    "loaded": true,
+    "entries": 30,
+    "tools": 30,
+    "attachments": [],
+    "toolNames": [
+      "mcp_list_tools",
+      "mcp_call_tool"
+    ]
+  },
+  {
+    "provider": "opencode",
+    "nativeId": "ses_f802b26f7ffeEOOVAr2IGgoI21",
+    "loaded": true,
+    "entries": 9,
+    "tools": 7,
+    "attachments": [
+      {
+        "mimeType": "image/png",
+        "source": "inline"
+      }
+    ],
+    "toolNames": [
+      "execute"
+    ]
+  }
+]

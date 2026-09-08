@@ -1,0 +1,81 @@
+[
+  {
+    "provider": "claude",
+    "nativeId": "b816361c-bd06-4c6c-87cd-b694f1100e28",
+    "loaded": true,
+    "entries": 71,
+    "tools": 40,
+    "attachments": [
+      {
+        "mimeType": "image/jpeg",
+        "source": "inline"
+      }
+    ],
+    "toolNames": [
+      "Bash",
+      "ToolSearch",
+      "TaskStop",
+      "Write",
+      "Read"
+    ]
+  },
+  {
+    "provider": "claude",
+    "nativeId": "483e35de-f175-4bd4-a2d1-705aa63357f8",
+    "loaded": true,
+    "entries": 134,
+    "tools": 61,
+    "attachments": [],
+    "toolNames": [
+      "ToolSearch",
+      "mcp__arca__context",
+      "Bash",
+      "Read",
+      "SendFeedback",
+      "Write",
+      "Edit"
+    ]
+  },
+  {
+    "provider": "claude",
+    "nativeId": "04f45cae-6758-4de4-ba62-a493a8c40bd8",
+    "loaded": true,
+    "entries": 55,
+    "tools": 29,
+    "attachments": [],
+    "toolNames": [
+      "Bash"
+    ]
+  },
+  {
+    "provider": "claude",
+    "nativeId": "f3be688d-8ec8-4fdc-b059-191fbd2f22e4",
+    "loaded": true,
+    "entries": 23,
+    "tools": 7,
+    "attachments": [],
+    "toolNames": [
+      "Bash"
+    ]
+  },
+  {
+    "provider": "claude",
+    "nativeId": "a8df1d3e-8175-493f-bda0-2497d05d6525",
+    "loaded": true,
+    "entries": 263,
+    "tools": 116,
+    "attachments": [
+      {
+        "mimeType": "image/jpeg",
+        "source": "inline"
+      }
+    ],
+    "toolNames": [
+      "Bash",
+      "ToolSearch",
+      "TaskStop",
+      "Read",
+      "Skill"
+    ]
+  }
+]

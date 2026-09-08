@@ -1,0 +1,65 @@
+{
+  "absolute-file-link": {
+    "html": "<div class=\"mako-prose\"><p><button type=\"button\" title=\"/work/source.ts\" class=\"font-medium text-foreground underline decoration-border underline-offset-2 hover:decoration-foreground\">source</button></p></div>",
+    "buttons": 1,
+    "images": 0,
+    "audio": 0,
+    "rawDirective": false
+  },
+  "local-markdown-image": {
+    "html": "<link rel=\"preload\" as=\"image\" href=\"/work/proof.png\"/><div class=\"mako-prose\"><p><img src=\"/work/proof.png\" alt=\"proof\"/></p></div>",
+    "buttons": 0,
+    "images": 1,
+    "audio": 0,
+    "rawDirective": false
+  },
+  "audio-markdown-embed": {
+    "html": "<link rel=\"preload\" as=\"image\" href=\"/work/proof.mp3\"/><div class=\"mako-prose\"><p><img src=\"/work/proof.mp3\" alt=\"audio\"/></p></div>",
+    "buttons": 0,
+    "images": 1,
+    "audio": 0,
+    "rawDirective": false
+  },
+  "local-image-attachment": {
+    "html": "<button class=\"pressable rounded border border-hairline px-2 py-1 text-ui text-foreground\">proof.png</button>",
+    "buttons": 1,
+    "images": 0,
+    "audio": 0,
+    "rawDirective": false
+  },
+  "inline-image-attachment": {
+    "html": "<img src=\"data:image/png;base64,aW1hZ2U=\" alt=\"proof.png\" loading=\"lazy\" class=\"max-h-96 max-w-full rounded object-contain\"/>",
+    "buttons": 0,
+    "images": 1,
+    "audio": 0,
+    "rawDirective": false
+  },
+  "cursor-code-citation": {
+    "html": "<div class=\"mako-prose\"><p><button type=\"button\" title=\"src/example.ts\" class=\"font-medium text-foreground underline decoration-border underline-offset-2 hover:decoration-foreground\">src/example.ts:12–18</button></p>\n<div class=\"mako-code group\"><div class=\"mako-code-head\"><span class=\"font-mono text-label tracking-wide text-faint select-none\">ts</span><button type=\"button\" aria-label=\"Copy code\" class=\"pressable ml-auto flex h-5 items-center gap-1 rounded px-1.5 text-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-copy size-3\" aria-hidden=\"true\"><rect width=\"14\" height=\"14\" x=\"8\" y=\"8\" rx=\"2\" ry=\"2\"></rect><path d=\"M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2\"></path></svg><span role=\"status\" class=\"min-w-8\"><span class=\"changing-label\">Copy</span></span></button></div><pre><code class=\"language-ts\">const proof = 1\n</code></pre></div></div>",
+    "buttons": 2,
+    "images": 0,
+    "audio": 0,
+    "rawDirective": false
+  },
+  "mermaid": {
+    "html": "<div class=\"mako-prose\"><div class=\"mako-code group\"><div class=\"mako-code-head\"><span class=\"font-mono text-label tracking-wide text-faint select-none\">mermaid</span><button type=\"button\" aria-label=\"Copy code\" class=\"pressable ml-auto flex h-5 items-center gap-1 rounded px-1.5 text-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-copy size-3\" aria-hidden=\"true\"><rect width=\"14\" height=\"14\" x=\"8\" y=\"8\" rx=\"2\" ry=\"2\"></rect><path d=\"M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2\"></path></svg><span role=\"status\" class=\"min-w-8\"><span class=\"changing-label\">Copy</span></span></button></div><pre><code class=\"language-mermaid\">graph LR\nA--&gt;B\n</code></pre></div></div>",
+    "buttons": 1,
+    "images": 0,
+    "audio": 0,
+    "rawDirective": false
+  },
+  "codex-review-directive": {
+    "html": "<div class=\"mako-prose\"><p>::code-comment{title=&quot;Finding&quot; body=&quot;Details&quot; file=&quot;/work/a.ts&quot; start=12}</p></div>",
+    "buttons": 0,
+    "images": 0,
+    "audio": 0,
+    "rawDirective": true
+  },
+  "codex-review-link": {
+    "html": "<div class=\"mako-prose\"><p><a href=\"\" target=\"_blank\" rel=\"noreferrer noopener\">review</a></p></div>",
+    "buttons": 0,
+    "images": 0,
+    "audio": 0,
+    "rawDirective": false
+  }
+}

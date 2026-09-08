@@ -1,0 +1,65 @@
+{
+  "absolute-file-link": {
+    "html": "<div class=\"mako-prose\"><p><button type=\"button\" title=\"/work/source.ts\" class=\"pressable font-medium text-foreground underline decoration-border underline-offset-2 hover:decoration-foreground\">source</button></p></div>",
+    "buttons": 1,
+    "images": 0,
+    "audio": 0,
+    "rawDirective": false
+  },
+  "local-markdown-image": {
+    "html": "<div class=\"mako-prose\"><p><span class=\"transcript-media\"><span class=\"text-ui text-faint\">Loading proof…</span></span></p></div>",
+    "buttons": 0,
+    "images": 0,
+    "audio": 0,
+    "rawDirective": false
+  },
+  "audio-markdown-embed": {
+    "html": "<div class=\"mako-prose\"><p><span class=\"transcript-media\"><span class=\"text-ui text-faint\">Loading audio…</span></span></p></div>",
+    "buttons": 0,
+    "images": 0,
+    "audio": 0,
+    "rawDirective": false
+  },
+  "local-image-attachment": {
+    "html": "<span class=\"transcript-media\"><span class=\"text-ui text-faint\">Loading proof.png…</span></span>",
+    "buttons": 0,
+    "images": 0,
+    "audio": 0,
+    "rawDirective": false
+  },
+  "inline-image-attachment": {
+    "html": "<span class=\"transcript-media\"><button type=\"button\" class=\"pressable group/media relative block max-w-full rounded border border-hairline\" aria-label=\"Expand proof.png\" aria-haspopup=\"dialog\" aria-expanded=\"false\" data-state=\"closed\" data-slot=\"dialog-trigger\"><img src=\"data:image/png;base64,aW1hZ2U=\" alt=\"proof.png\" loading=\"lazy\" decoding=\"async\" class=\"max-h-96 max-w-full object-contain\"/><span class=\"absolute right-2 bottom-2 rounded bg-raised p-1 text-faint opacity-0 group-hover/media:opacity-100 group-focus-visible/media:opacity-100\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-expand size-4\" aria-hidden=\"true\"><path d=\"m15 15 6 6\"></path><path d=\"m15 9 6-6\"></path><path d=\"M21 16v5h-5\"></path><path d=\"M21 8V3h-5\"></path><path d=\"M3 16v5h5\"></path><path d=\"m3 21 6-6\"></path><path d=\"M3 8V3h5\"></path><path d=\"M9 9 3 3\"></path></svg></span></button></span>",
+    "buttons": 1,
+    "images": 1,
+    "audio": 0,
+    "rawDirective": false
+  },
+  "cursor-code-citation": {
+    "html": "<div class=\"mako-prose\"><p><button type=\"button\" title=\"src/example.ts\" class=\"pressable font-medium text-foreground underline decoration-border underline-offset-2 hover:decoration-foreground\">src/example.ts:12–18</button></p>\n<div class=\"mako-code group\"><div class=\"mako-code-head\"><span class=\"font-mono text-label tracking-wide text-faint select-none\">ts</span><button type=\"button\" aria-label=\"Copy code\" class=\"pressable ml-auto flex h-5 items-center gap-1 rounded px-1.5 text-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-copy size-3\" aria-hidden=\"true\"><rect width=\"14\" height=\"14\" x=\"8\" y=\"8\" rx=\"2\" ry=\"2\"></rect><path d=\"M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2\"></path></svg><span role=\"status\" class=\"min-w-8\"><span class=\"changing-label\">Copy</span></span></button></div><div><pre><code>const proof = 1\n</code></pre></div></div></div>",
+    "buttons": 2,
+    "images": 0,
+    "audio": 0,
+    "rawDirective": false
+  },
+  "mermaid": {
+    "html": "<div class=\"mako-prose\"><div class=\"mako-code group\"><div class=\"mako-code-head\"><span class=\"font-mono text-label tracking-wide text-faint select-none\">mermaid</span><button type=\"button\" class=\"pressable ml-2 rounded px-1 text-label text-faint\">Source</button><button type=\"button\" aria-label=\"Copy code\" class=\"pressable ml-auto flex h-5 items-center gap-1 rounded px-1.5 text-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-copy size-3\" aria-hidden=\"true\"><rect width=\"14\" height=\"14\" x=\"8\" y=\"8\" rx=\"2\" ry=\"2\"></rect><path d=\"M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2\"></path></svg><span role=\"status\" class=\"min-w-8\"><span class=\"changing-label\">Copy</span></span></button></div><div class=\"min-h-12 p-3\"><p class=\"text-ui text-faint\">Rendering diagram…</p></div></div></div>",
+    "buttons": 2,
+    "images": 0,
+    "audio": 0,
+    "rawDirective": false
+  },
+  "codex-review-directive": {
+    "html": "<div class=\"mako-prose\"><blockquote>\n<p><strong>Finding</strong></p>\n<p>Details</p>\n<p><button type=\"button\" title=\"/work/a.ts\" class=\"pressable font-medium text-foreground underline decoration-border underline-offset-2 hover:decoration-foreground\">/work/a.ts:12</button></p>\n</blockquote></div>",
+    "buttons": 1,
+    "images": 0,
+    "audio": 0,
+    "rawDirective": false
+  },
+  "codex-review-link": {
+    "html": "<div class=\"mako-prose\"><p><a href=\"https://github.com/example/repo/pull/1\" target=\"_blank\" rel=\"noreferrer noopener\">review</a></p></div>",
+    "buttons": 0,
+    "images": 0,
+    "audio": 0,
+    "rawDirective": false
+  }
+}

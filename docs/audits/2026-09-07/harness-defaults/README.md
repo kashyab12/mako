@@ -1,6 +1,12 @@
 # Harness defaults and composer settings audit
 
-Investigated the local source on 2026-09-07. This is an investigation, with executable reproductions, not a runtime fix. Reference repositories were read without modifications. No provider prompt was sent and no user config was changed. The reference called “omniagent” in the request is present locally as `ignore/omnigent`.
+Implemented on 2026-09-08. The seven findings below describe the pre-fix behavior and preserve the audit evidence. Reference repositories remain unchanged.
+
+The implementation puts settings schemas, provenance, option aliases, precedence, variant resolution, and provider catalog normalization in `@mako/sessions/settings` and `@mako/sessions/model-catalog`. Host modules discover configuration and translate wire requests. Renderer state resolves the same selection for controls and dispatch, scopes edits to a draft or thread, and reconciles provider acknowledgements without erasing newer edits.
+
+New drafts follow workspace configuration unless the user saves a choice. Existing threads use their own latest reported settings. Legacy preferences remain labelled as legacy and can be reset explicitly. Missing observations stay unknown. Every queued request persists its own settings; duplicate receipt IDs reject different settings as different content.
+
+Codex discovery reads paginated models plus workspace config, preserves runtime acknowledgements, and sends `default` for explicit Standard. Its legacy `fast` speed name canonicalizes to `priority`, avoiding duplicate Fast choices. Claude reads declared settings layers without inventing absent effort or speed, and marks launch-only controls as unavailable for live changes. Devin preserves declared default variants; Cursor preserves model parameters; OpenCode no longer substitutes a guessed model or reasoning default. Profile caches preserve option metadata and refresh per workspace and selected account.
 
 ## Main finding
 
@@ -47,8 +53,12 @@ Migration must preserve intentional user choices. Existing imported preferences 
 
 ## Verification
 
-Run `node --import tsx docs/audits/2026-09-07/harness-defaults/reproduce.mjs` from the repository root. It imports production functions and demonstrates four existing failures: missing speed metadata, identical native commands for Fast on/off, wrong Devin default variant, and cache metadata loss. It uses synthetic inputs and a disposable cache, with no provider credentials or live prompts. Its assertions intentionally describe broken behavior; convert them into desired-behavior regressions when implementing the fix.
+`npm run test:tuning` runs production-code regressions for the original findings, preference migration, display/dispatch parity, live acknowledgements, account/workspace invalidation, ACP application/rejection, Codex speed aliases and reset, Claude precedence, Cursor parameters, and Devin variants. The original `reproduce.mjs` now asserts corrected behavior.
 
-`npm run test:tuning` and `npm run test:codex-protocol` passed during the audit. Neither proves that displayed defaults match effective provider settings. No live UI reproduction was performed. Follow-up implementation must exercise new drafts, thread switching, resume acknowledgements, model/effort/speed edits, inherited Fast reset, workspace overrides, and restart against the real host.
+`npm test --workspace @mako/sessions` covers shared settings plus latest native observations, bounded reads, native-store integrity, content fidelity, streaming, and continuation. `npm run test:live` covers persisted per-request settings, duplicate receipts, queued dispatch, recovery, and provider lifecycle. `npm run test:web` validates the regenerated IPC argument contract and both web/preload bridges.
 
-`npm run lint` reached the anti-slop check and failed in unrelated, already-present browser-extension work: `browser-extension/background.ts`, `browser-extension/router.ts`, and `electron/browser-native-host.ts`. ESLint also reported two existing virtualizer compatibility warnings. No runtime source was edited by this audit.
+Real-host UI checks use an isolated Electron user-data directory with the normal native catalog, provider discovery, workspace, and git state; no fixture mode or agent prompt is needed. Claude showed configured High reasoning with unknown speed unselected; selecting Standard and resetting restored the unknown state. Codex showed GPT-6-Astra, Medium reasoning, and checked Standard from workspace configuration. The final UI showed one Fast choice despite both catalog formats. Selecting a different model in one native thread survived switching away and back, did not leak into another thread, and reset correctly. Unobserved existing settings are labelled unknown.
+
+Provider settings that a transport does not report remain unknown; an unsupported live change is disabled or rejected before prompt dispatch. These tests do not claim a live billable turn on every installed provider.
+
+Final checks passed: `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test:web`, `npm run test:tuning`, `npm run test:live`, `npm run test:providers`, `npm run test:codex-protocol`, and the full sessions-library suite. ESLint retains two existing TanStack virtualizer compatibility warnings; anti-slop reports zero errors and zero warnings.

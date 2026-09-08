@@ -2,12 +2,28 @@
 
 The earlier faint procedural wave did not meet the requested visual ambition. After inspecting capy.ai's illustrated scenery and panel composition, the opening now uses an original generated marine engraving, with the existing warm palette applied through CSS. No Capy artwork was copied.
 
-The source PNG is retained here. The application serves `public/artwork/mako-ocean-engraving.webp`, encoded at quality 85, approximately 266KB. The illustration is decorative and hidden from accessibility. The small canvas wake retains its bounded dimensions and scheduling. CSS entrance motion lasts 220ms and is disabled for reduced motion. Detailed water is below the opening controls.
+The source PNG is retained here. The application serves `public/artwork/mako-ocean-engraving.webp`, encoded at quality 85, approximately 266KB. The illustration is decorative and hidden from accessibility. Detailed water is below the opening controls.
 
-Actual screenshots are in `../screenshots/ocean-opening.png` and `../screenshots/ocean-sidebar.png`. The production-component browser regression page passes, including canvas disposal, document visibility, reduced motion and bounded dimensions. Full lint passes with zero Oxlint diagnostics and the two existing TanStack Virtual ESLint warnings.
+Earlier screenshots are in `../screenshots/ocean-opening.png` and `../screenshots/ocean-sidebar.png`. The latest motion is recorded in `../screenshots/reflected-light.mp4`.
 
 ## Composer layout correction
 
 The original plate was attached to the shrinking transcript viewport. Growing a draft changed the image crop, scale and horizon position; the empty transcript also inherited bottom-follow scrolling. The scene now belongs to the full agent pane with a fixed bottom inset, and the empty screen uses ordinary scrolling. Composer focus no longer changes its padding or minimum height. The text overlay and textarea retain identical padding.
 
-The browser fixture exercises the actual Transcript and Composer together at 1, 12 and 30 lines, checking unchanged scene and heading coordinates relative to the pane and no focus-height change. Real-host checks measured identical scene bounds and heading position before and after a 12-line draft. Screenshots `composer-stable-empty.png` and `composer-stable-draft.png` show the result. No new continuous animation or palette change was added.
+The browser fixture exercises the actual Transcript and Composer together at 1, 12 and 30 lines, checking unchanged scene and heading coordinates relative to the pane and no focus-height change. Real-host checks measured identical scene bounds and heading position before and after a 12-line draft. Screenshots `composer-stable-empty.png` and `composer-stable-draft.png` show the result.
+
+## Reflected light revision
+
+### Final selection
+
+Warm ink is the chosen treatment. The preview now presents one full-width composition, with no alternative gallery. A generated stochastic dither mask adds fine atmospheric grain above the water; its slow CSS drift accompanies the six-second foreground reflection. Rebuild the mask with `node scripts/generate-ocean-grain.mjs`. The coastline, fin, heading and composer stay fixed. Controls respond immediately, with 120ms border and hover transitions.
+
+The water now alternates smoothly for a twelve-second round trip rather than resetting at the end of each sweep. The fin has a separate nine-second dither shimmer. Its SVG shares the original image's 1536 × 1024 coordinates and bottom-aligned cover crop, with a clip inset inside the engraved fin. Only the reveal mask moves; the stipple and silhouette stay fixed. Unique SVG IDs keep multiple mounted scenes independent. Browser checks verify both fin turnarounds, independent timing, shared image geometry and hidden-view pause. Full lint passes with zero Oxlint diagnostics.
+
+Both layers pause on composer focus, hidden documents and offscreen views. Browser checks passed for independent grain movement, unchanged engraving geometry, pause/resume, reduced motion and zero JavaScript animation frames. The final `npm run lint` passes, including zero Oxlint diagnostics; ESLint retains the two existing TanStack Virtual warnings. The earlier blocking provider lint errors below have since been resolved by concurrent work.
+
+The user rejected the green wash and the animated checkerboard strips. Both are removed. `OceanScene` renders the original engraving with warm ink by default and an optional neutral silver treatment. The first replacement was too faint, and the comparison opened on the still version. The animated version now appears first. A moving mask reveals brighter copies of the actual wave lines over a six-second cycle. The base engraving has lower opacity to give the reflection a visible luminance range. The mask confines the effect to the foreground water, and both copies retain identical geometry. There is no canvas or JavaScript animation loop. `../screenshots/visible-water.mp4` records the corrected animation; the older `reflected-light.mp4` records the rejected faint version.
+
+Motion pauses while the composer is focused, when the scene leaves view, and when the document is hidden. The preference can disable it; reduced motion always disables it. The shoreline, fin and image geometry remain stationary.
+
+Browser checks passed for all motion lifecycle cases, zero requested JavaScript animation frames, and zero relative image geometry delta. Earlier combined checks also passed composer focus and 1/12/30-line geometry, paragraph layout, clipboard behavior and divider controls. The final motion-only run used the same test function isolated from the unrelated composer module migration, which currently prevents rebuilding the combined fixture (`setComposerTuning` missing exports). Scoped ESLint and Oxlint pass. The latest full lint run is blocked by six diagnostics in concurrently edited Codex host/profile/settings files; no rules were bypassed.
