@@ -17,7 +17,9 @@ export function bindFeedback() {
     volume = prefs.soundVolume
     audio.configure(enabled, volume)
   }
-  const hide = () => { if (document.hidden) audio.stop() }
+  const hide = () => {
+    if (document.hidden) audio.stop()
+  }
   update()
   const off = prefsStore.subscribe(update)
   document.addEventListener("visibilitychange", hide)

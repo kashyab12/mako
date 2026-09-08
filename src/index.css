@@ -846,12 +846,6 @@
   .composer-input { field-sizing: content; min-height: 1lh; }
 }
 
-html[data-control-preview="true"],
-html[data-control-preview="true"] body,
-html[data-control-preview="true"] #root {
-  background: transparent;
-}
-
 [data-sonner-toaster] [data-sonner-toast] {
   font-family: var(--font-sans);
   transition-duration: 180ms;
@@ -870,10 +864,6 @@ html[data-control-preview="true"] #root {
   from { opacity: 0; transform: translateY(3px); }
   to { opacity: 1; transform: translateY(0); }
 }
-@media (prefers-reduced-motion: reduce) {
-  .changing-label { animation: none; }
-  [data-sonner-toaster] [data-sonner-toast] { transition: none; }
-}
 
 .companion-panel { animation: companion-arrive 180ms var(--ease-out); }
 .terminal-panel { animation: terminal-arrive 180ms var(--ease-out); }
@@ -886,5 +876,6 @@ html[data-control-preview="true"] #root {
   to { opacity: 1; transform: translateY(0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .companion-panel, .terminal-panel { animation: none; }
+  .changing-label, .companion-panel, .terminal-panel { animation: none; }
+  [data-sonner-toaster] [data-sonner-toast] { transition: none; }
 }

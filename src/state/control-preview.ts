@@ -3,25 +3,26 @@ import type { ControlActivity, ControlPreview } from "@/lib/types"
 import { createHook, createStore } from "@/state/store"
 
 interface PreviewState {
-  conversationId: string | null
-  preview: ControlPreview | null
-  latestActivity: ControlActivity | null
-  error: string | null
+  previews: Record<string, ControlPreview | null>
+  activities: Record<string, ControlActivity>
+  errors: Record<string, string | null>
 }
 export const controlPreviewStore = createStore<PreviewState>({
-  conversationId: null,
-  preview: null,
-  latestActivity: null,
-  error: null,
+  previews: {},
+  activities: {},
+  errors: {},
 })
 export const useControlPreview = createHook(controlPreviewStore)
 
+const consumers = new Map<string, number>()
+
 export function watchControlPreview(conversationId: string): () => void {
+  consumers.set(conversationId, (consumers.get(conversationId) ?? 0) + 1)
   const watcher = crypto.randomUUID()
   let closed = false
   let pending = false
   let timer: ReturnType<typeof setTimeout> | undefined
-  controlPreviewStore.set({ conversationId, preview: null, error: null })
+
   const poll = async () => {
     timer = undefined
     if (closed || pending || document.hidden) return
@@ -32,29 +33,32 @@ export function watchControlPreview(conversationId: string): () => void {
         true,
         watcher
       )
-      if (
-        !closed &&
-        controlPreviewStore.get().conversationId === conversationId
-      ) {
-        const previous = controlPreviewStore.get().preview
+      if (!closed) {
+        const previous = controlPreviewStore.get().previews[conversationId]
         if (
           previous?.frame?.id !== preview?.frame?.id ||
-          previous?.activity.updatedAt !== preview?.activity.updatedAt
+          previous?.activity.updatedAt !== preview?.activity.updatedAt ||
+          previous?.window?.windowId !== preview?.window?.windowId ||
+          previous?.window?.pid !== preview?.window?.pid ||
+          controlPreviewStore.get().errors[conversationId]
         )
-          controlPreviewStore.set({ preview, error: null })
+          controlPreviewStore.set((state) => ({
+            previews: { ...state.previews, [conversationId]: preview },
+            errors: { ...state.errors, [conversationId]: null },
+          }))
       }
     } catch {
-      if (
-        !closed &&
-        controlPreviewStore.get().conversationId === conversationId
-      )
-        controlPreviewStore.set({
-          error: "The control preview is unavailable.",
-        })
+      if (!closed)
+        controlPreviewStore.set((state) => ({
+          errors: {
+            ...state.errors,
+            [conversationId]: "The control preview is unavailable.",
+          },
+        }))
     } finally {
       pending = false
-      if (!closed && !document.hidden)
-        timer = setTimeout(() => void poll(), 500)
+      if (closed || document.hidden) release()
+      else timer = setTimeout(() => void poll(), 500)
     }
   }
   const release = () => {
@@ -70,37 +74,58 @@ export function watchControlPreview(conversationId: string): () => void {
   document.addEventListener("visibilitychange", visibility)
   void poll()
   return () => {
+    if (closed) return
     closed = true
     if (timer) clearTimeout(timer)
     document.removeEventListener("visibilitychange", visibility)
     release()
-    if (controlPreviewStore.get().conversationId === conversationId)
-      controlPreviewStore.set({
-        conversationId: null,
-        preview: null,
-        error: null,
-      })
+    const remaining = (consumers.get(conversationId) ?? 1) - 1
+    if (remaining > 0) consumers.set(conversationId, remaining)
+    else {
+      consumers.delete(conversationId)
+      controlPreviewStore.set((state) => ({
+        previews: Object.fromEntries(
+          Object.entries(state.previews).filter(([id]) => id !== conversationId)
+        ),
+        errors: Object.fromEntries(
+          Object.entries(state.errors).filter(([id]) => id !== conversationId)
+        ),
+      }))
+    }
   }
 }
 
-export function observeControlPreview(): () => void {
-  return getMako().onEvent((event) => {
-    if (event.type === "control-activity")
-      controlPreviewStore.set({ latestActivity: event.activity })
+export function receiveControlActivity(activity: ControlActivity) {
+  controlPreviewStore.set((state) => {
+    const entries = Object.entries(state.activities)
+      .filter(([id]) => id !== activity.conversationId)
+      .slice(-63)
+    return {
+      activities: Object.fromEntries([
+        ...entries,
+        [activity.conversationId, activity],
+      ]),
+    }
   })
 }
-export function hideControlPreview(): Promise<void> {
-  return getMako().hideControlPreview()
-}
 export async function stopControlTask(id: string): Promise<void> {
-  await getMako().liveCancel(id)
-  await hideControlPreview()
+  try {
+    await getMako().liveCancel(id)
+  } catch {
+    controlPreviewStore.set((state) => ({
+      errors: {
+        ...state.errors,
+        [id]: "The task could not be stopped. Try Stop again.",
+      },
+    }))
+  }
 }
 
 /** Electron captures only the already-authorized native window. No AX query or input is involved. */
 export async function controlPreviewStream(
   id: string
 ): Promise<MediaStream | null> {
+  if (!getMako().nativeWindowVideo) return null
   const source = await getMako().controlPreviewSource(id)
   if (!source) return null
   const video: MediaTrackConstraints & {

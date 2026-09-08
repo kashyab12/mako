@@ -97,6 +97,7 @@ export const accounts = {
         // failure must not blank two surfaces. Re-arm the staleness guard.
         accountsStore.set({ loadedAt: undefined })
         toast.error("Accounts could not be loaded", {
+          duration: Infinity,
           description: error instanceof Error ? error.message : String(error),
           action: { label: "Retry", onClick: () => accounts.load(true) },
         })
@@ -112,6 +113,7 @@ export const accounts = {
       accounts.load(true)
     } catch (error) {
       toast.error("Account was not switched", {
+          duration: Infinity,
         description: error instanceof Error ? error.message : String(error),
         action: {
           label: "Retry",
@@ -137,6 +139,7 @@ export const accounts = {
       accounts.load(true)
     } catch (error) {
       toast.error("Account was not removed", {
+          duration: Infinity,
         description: error instanceof Error ? error.message : String(error),
         action: {
           label: "Retry",

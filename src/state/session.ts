@@ -1,5 +1,5 @@
 import { playFeedback } from "@/state/feedback"
-import { controlPreviewStore } from "@/state/control-preview"
+import { receiveControlActivity } from "@/state/control-preview"
 import { hostConnectionStore } from "@/state/host-connection"
 import { applyLiveBatch, hydrateLiveSummaries } from "@/state/live-recovery"
 import { createHook, createStore, shallowEqual } from "@/state/store"
@@ -120,7 +120,7 @@ function apply(event: HostEvent) {
     return
   }
   if (event.type === "control-activity") {
-    controlPreviewStore.set({ latestActivity: event.activity })
+    receiveControlActivity(event.activity)
     return
   }
   if (event.type === "browser-control") {
@@ -287,6 +287,7 @@ function applyToActive(event: HostEvent) {
         })
       } else if (event.run.status === "failed") {
         toast.error(`${event.run.name} failed`, {
+          duration: Infinity,
           description: event.run.error,
           action: {
             label: "Run again",
@@ -309,6 +310,7 @@ function applyToActive(event: HostEvent) {
 
 function report(message: string) {
   toast.error(message, {
+          duration: Infinity,
     action: {
       label: "Troubleshoot",
       onClick: () =>
@@ -754,14 +756,20 @@ export const actions = {
     if (git && store.get().meta?.cwd === workspace) store.set({ git })
   },
 
-  async copy(text: string, { notify = true }: { notify?: boolean } = {}) {
+  async copy(text: string, { notify = true }: { notify?: boolean } = {}): Promise<boolean> {
     try {
       await getMako().copy(text)
-      if (notify) toast.success("Copied", { id: "clipboard" })
+      toast.dismiss("clipboard-error")
+      if (notify) toast.success("Copied", { id: "clipboard-success", duration: 1600 })
       playFeedback("copy")
       return true
     } catch {
-      toast.error("Could not copy. Try again.", { id: "clipboard" })
+      toast.dismiss("clipboard-success")
+      toast.error("Could not copy", {
+        id: "clipboard-error",
+        duration: Infinity,
+        action: { label: "Retry", onClick: () => void actions.copy(text) },
+      })
       return false
     }
   },
