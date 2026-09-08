@@ -63,6 +63,7 @@ import type {
 } from "../accounts.js"
 
 export interface BridgeTransport {
+  nativeWindowVideo?: boolean
   invoke<Result>(channel: string, ...args: unknown[]): Promise<Result>
   onEvent(listener: (event: HostEvent) => void): () => void
   onTerminalEvent(listener: (event: TerminalEvent) => void): () => void
@@ -89,6 +90,7 @@ export function createMakoBridge(transport: BridgeTransport) {
   }
 
   const api = {
+    nativeWindowVideo: transport.nativeWindowVideo === true,
     boot: () => invokeTrustedHost<BootPayload>("mako:boot"),
 
     /* Cross-harness threads: every coding agent's sessions on this machine. */
@@ -247,8 +249,6 @@ export function createMakoBridge(transport: BridgeTransport) {
         "mako:control-preview-source",
         conversationId
       ),
-    hideControlPreview: () =>
-      invokeTrustedHost<void>("mako:control-preview-hide"),
     appshotWindows: () =>
       invokeTrustedHost<import("../shared.js").AppshotWindow[]>(
         "mako:appshot-windows"
