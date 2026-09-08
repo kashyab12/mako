@@ -51,7 +51,7 @@ export class ControlPreviewWindow {
       return
     }
     // Show actual work, never an empty floating box during discovery.
-    if (!preview.frame || this.window) return
+    if ((!preview.frame && !preview.window) || this.window) return
     const work = screen.getPrimaryDisplay().workArea
     const window = new BrowserWindow({
       title: "Mako control preview",

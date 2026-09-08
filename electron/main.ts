@@ -237,8 +237,7 @@ const controlPreviews = new ControlPreviews(
   (activity) => {
     emit({ type: "control-activity", activity })
     controlPreviewWindow.observe(activity)
-  },
-  (target, signal) => appshots.preview(target, signal)
+  }
 )
 const controlPreviewWindow = new ControlPreviewWindow(
   controlPreviews,
@@ -631,6 +630,18 @@ function bindIpc() {
   )
 
   handle("mako:computer-permissions", () => computerPermissions())
+  handle(
+    "mako:control-preview-source",
+    async (_event, conversationId: string) => {
+      const target = controlPreviews.nativeWindow(conversationId)
+      if (!target) return null
+      const source = await appshots.source(target)
+      const current = controlPreviews.nativeWindow(conversationId)
+      return current?.pid === target.pid && current.windowId === target.windowId
+        ? source
+        : null
+    }
+  )
   handle("mako:control-preview-hide", () => controlPreviewWindow.hide())
   handle("mako:appshot-windows", () => appshots.windows(true))
   handle(

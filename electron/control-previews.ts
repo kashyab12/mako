@@ -23,26 +23,15 @@ export class ControlPreviews {
   private readonly entries = new Map<string, PreviewEntry>()
   private readonly browser: BrowserService
   private readonly thumbnail: (image: ControlImage) => ControlImage | null
-  private readonly computerPreview:
-    | ((
-        target: AppshotTarget,
-        signal: AbortSignal
-      ) => Promise<ControlImage | null>)
-    | undefined
   private readonly changed: (activity: ControlActivity) => void
   constructor(
     browser: BrowserService,
     thumbnail: (image: ControlImage) => ControlImage | null,
-    changed: (activity: ControlActivity) => void,
-    computerPreview?: (
-      target: AppshotTarget,
-      signal: AbortSignal
-    ) => Promise<ControlImage | null>
+    changed: (activity: ControlActivity) => void
   ) {
     this.browser = browser
     this.thumbnail = thumbnail
     this.changed = changed
-    this.computerPreview = computerPreview
   }
 
   observe(activity: Omit<ControlActivity, "updatedAt">, image?: ControlImage) {
@@ -64,6 +53,7 @@ export class ControlPreviews {
       entry.captureFrame = undefined
       entry.authorize = undefined
       entry.preview.frame = null
+      entry.preview.window = undefined
     }
     entry.preview.activity = next
     if (image) this.frame(entry, image)
@@ -97,11 +87,16 @@ export class ControlPreviews {
     authorize: () => void
   ) {
     const entry = this.entries.get(conversationId)
-    const capture = this.computerPreview
-    if (!entry || !capture || entry.preview.activity.kind !== "computer") return
-    entry.captureFrame = (signal) => capture(target, signal)
+    if (!entry || entry.preview.activity.kind !== "computer") return
+    entry.preview.window = target
     entry.authorize = authorize
-    this.capture(entry)
+  }
+
+  nativeWindow(conversationId: string): AppshotTarget | null {
+    const entry = this.entries.get(conversationId)
+    if (!entry?.preview.window || !entry.authorize) return null
+    entry.authorize()
+    return entry.preview.window
   }
 
   read(

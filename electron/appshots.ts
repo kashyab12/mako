@@ -189,25 +189,26 @@ export class Appshots {
     }
   }
 
-  async preview(
-    target: AppshotTarget,
-    signal: AbortSignal
-  ): Promise<ControlImage | null> {
-    const result = await this.call(
-      "get_window_state",
-      {
-        pid: target.pid,
-        window_id: target.windowId,
-        include_screenshot: true,
-        max_elements: 1,
-        max_depth: 1,
-      },
-      signal
+  /** Resolve a live window for Electron's video capture without walking AX or invalidating agent tokens. */
+  async source(target: AppshotTarget): Promise<string | null> {
+    const windows = await this.windows()
+    if (
+      !windows.some(
+        (window) =>
+          window.pid === target.pid && window.windowId === target.windowId
+      )
     )
+      return null
+    const { desktopCapturer } = await import("electron")
+    const sources = await desktopCapturer.getSources({
+      types: ["window"],
+      thumbnailSize: { width: 0, height: 0 },
+      fetchWindowIcons: false,
+    })
     return (
-      result.content
-        .map((value) => ControlImageSchema.safeParse(value))
-        .find((value) => value.success)?.data ?? null
+      sources.find(
+        (source) => Number(source.id.split(":")[1]) === target.windowId
+      )?.id ?? null
     )
   }
 
