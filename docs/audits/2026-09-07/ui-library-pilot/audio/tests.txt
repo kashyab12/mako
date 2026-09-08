@@ -1,0 +1,26 @@
+
+> cuelume@0.2.2 test
+> npm run build && node --test
+
+
+> cuelume@0.2.2 build
+> npm run clean && tsc
+
+
+> cuelume@0.2.2 clean
+> node -e "require('node:fs').rmSync('dist', { recursive: true, force: true })"
+
+✔ expanded palette exposes sci-fi interaction and arrival cues (3.438584ms)
+✔ play waits for user activation before creating AudioContext (0.901792ms)
+✔ invalid names and AudioContext failures are silent (4.504958ms)
+✔ volume is clamped and one boosted output bus is reused (1.529834ms)
+✔ binding is delegated, dynamic, idempotent, and globally throttled (1.417042ms)
+✔ finished shimmer graphs disconnect after their audible tail (0.930583ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 77.359916

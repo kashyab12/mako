@@ -1,0 +1,1008 @@
+{
+  "dither-kit": [
+    {
+      "name": "core",
+      "dependencies": [
+        "motion",
+        "d3-scale",
+        "d3-shape",
+        "clsx",
+        "tailwind-merge"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/dither-kit/lib.ts",
+          "imports": [
+            "clsx",
+            "tailwind-merge"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/palette.ts",
+          "imports": []
+        },
+        {
+          "path": "registry/dither-kit/scales.ts",
+          "imports": [
+            "d3-scale",
+            "d3-shape"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/polar.ts",
+          "imports": []
+        },
+        {
+          "path": "registry/dither-kit/dither-paint.ts",
+          "imports": [
+            "./chart-context",
+            "./palette"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/use-chart-dimensions.ts",
+          "imports": [
+            "react"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/chart-context.tsx",
+          "imports": [
+            "d3-scale",
+            "react",
+            "./common-context",
+            "./dither-paint",
+            "./palette",
+            "./palette",
+            "./scales",
+            "./use-chart-dimensions"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/common-context.tsx",
+          "imports": [
+            "react",
+            "./palette"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/series-context.tsx",
+          "imports": [
+            "react",
+            "./palette"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/polar-context.tsx",
+          "imports": [
+            "react",
+            "./chart-context",
+            "./common-context",
+            "./dither-paint",
+            "./palette",
+            "./palette",
+            "./polar",
+            "./use-chart-dimensions"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/cartesian-root.tsx",
+          "imports": [
+            "react",
+            "./chart-context",
+            "./common-context",
+            "./dither-paint",
+            "./lib",
+            "./scales",
+            "./use-chart-dimensions"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/polar-root.tsx",
+          "imports": [
+            "react",
+            "./chart-context",
+            "./common-context",
+            "./dither-paint",
+            "./lib",
+            "./polar",
+            "./polar-context",
+            "./use-chart-dimensions"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/grid.tsx",
+          "imports": [
+            "./chart-context"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/reference-line.tsx",
+          "imports": [
+            "./chart-context"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/x-axis.tsx",
+          "imports": [
+            "./chart-context"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/y-axis.tsx",
+          "imports": [
+            "./chart-context"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/dot.tsx",
+          "imports": [
+            "./chart-context",
+            "./palette",
+            "./series-context"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/legend.tsx",
+          "imports": [
+            "./common-context",
+            "./lib",
+            "./palette"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/block-legend.tsx",
+          "imports": [
+            "./chart-context",
+            "./lib",
+            "./palette"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/tooltip.tsx",
+          "imports": [
+            "motion/react",
+            "react",
+            "./common-context",
+            "./lib",
+            "./palette"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "area-chart",
+      "dependencies": [],
+      "registryDependencies": [
+        "Boring-Software-Inc/dither-kit/core"
+      ],
+      "files": [
+        {
+          "path": "registry/dither-kit/area-chart.tsx",
+          "imports": [
+            "./cartesian-canvas",
+            "./cartesian-root"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/cartesian-canvas.tsx",
+          "imports": [
+            "react",
+            "./chart-context",
+            "./dither-paint",
+            "./palette"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/area.tsx",
+          "imports": [
+            "react",
+            "./chart-context",
+            "./series-context"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/sparkline.tsx",
+          "imports": [
+            "react",
+            "./area",
+            "./area-chart",
+            "./chart-context",
+            "./dither-paint",
+            "./palette"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "bar-chart",
+      "dependencies": [],
+      "registryDependencies": [
+        "Boring-Software-Inc/dither-kit/core"
+      ],
+      "files": [
+        {
+          "path": "registry/dither-kit/bar-chart.tsx",
+          "imports": [
+            "./bar-canvas",
+            "./cartesian-root"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/bar-canvas.tsx",
+          "imports": [
+            "react",
+            "./chart-context",
+            "./dither-paint"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/bar.tsx",
+          "imports": [
+            "react",
+            "./chart-context",
+            "./series-context"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pie-chart",
+      "dependencies": [],
+      "registryDependencies": [
+        "Boring-Software-Inc/dither-kit/core"
+      ],
+      "files": [
+        {
+          "path": "registry/dither-kit/pie-chart.tsx",
+          "imports": [
+            "react",
+            "./chart-context",
+            "./dither-paint",
+            "./pie-canvas",
+            "./polar-root"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/pie-canvas.tsx",
+          "imports": [
+            "react",
+            "./dither-paint",
+            "./palette",
+            "./polar",
+            "./polar-context"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/pie.tsx",
+          "imports": [
+            "react",
+            "./chart-context",
+            "./polar-context"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "radar-chart",
+      "dependencies": [],
+      "registryDependencies": [
+        "Boring-Software-Inc/dither-kit/core"
+      ],
+      "files": [
+        {
+          "path": "registry/dither-kit/radar-chart.tsx",
+          "imports": [
+            "react",
+            "./chart-context",
+            "./dither-paint",
+            "./polar-root",
+            "./radar-canvas",
+            "./radar-frame"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/radar-canvas.tsx",
+          "imports": [
+            "react",
+            "./dither-paint",
+            "./palette",
+            "./polar",
+            "./polar-context"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/radar.tsx",
+          "imports": [
+            "react",
+            "./chart-context",
+            "./polar-context"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/radar-frame.tsx",
+          "imports": [
+            "./polar",
+            "./polar-context"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "avatar",
+      "dependencies": [
+        "clsx",
+        "tailwind-merge"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/dither-kit/avatar.tsx",
+          "imports": [
+            "react",
+            "./lib",
+            "./palette",
+            "./pixel"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/pixel.ts",
+          "imports": [
+            "./palette"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/palette.ts",
+          "imports": []
+        },
+        {
+          "path": "registry/dither-kit/lib.ts",
+          "imports": [
+            "clsx",
+            "tailwind-merge"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "button",
+      "dependencies": [
+        "clsx",
+        "tailwind-merge"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/dither-kit/button.tsx",
+          "imports": [
+            "react",
+            "./lib",
+            "./palette",
+            "./pixel"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/pixel.ts",
+          "imports": [
+            "./palette"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/palette.ts",
+          "imports": []
+        },
+        {
+          "path": "registry/dither-kit/lib.ts",
+          "imports": [
+            "clsx",
+            "tailwind-merge"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "gradient",
+      "dependencies": [
+        "clsx",
+        "tailwind-merge"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/dither-kit/gradient.tsx",
+          "imports": [
+            "react",
+            "./lib",
+            "./palette",
+            "./pixel"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/pixel.ts",
+          "imports": [
+            "./palette"
+          ]
+        },
+        {
+          "path": "registry/dither-kit/palette.ts",
+          "imports": []
+        },
+        {
+          "path": "registry/dither-kit/lib.ts",
+          "imports": [
+            "clsx",
+            "tailwind-merge"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dither-kit",
+      "dependencies": [],
+      "registryDependencies": [
+        "Boring-Software-Inc/dither-kit/area-chart",
+        "Boring-Software-Inc/dither-kit/bar-chart",
+        "Boring-Software-Inc/dither-kit/pie-chart",
+        "Boring-Software-Inc/dither-kit/radar-chart",
+        "Boring-Software-Inc/dither-kit/avatar",
+        "Boring-Software-Inc/dither-kit/button",
+        "Boring-Software-Inc/dither-kit/gradient"
+      ],
+      "files": [
+        {
+          "path": "registry/dither-kit/index.ts",
+          "imports": [
+            "./area",
+            "./area-chart",
+            "./avatar",
+            "./bar",
+            "./bar-chart",
+            "./block-legend",
+            "./button",
+            "./cartesian-root",
+            "./chart-context",
+            "./dither-paint",
+            "./dot",
+            "./gradient",
+            "./grid",
+            "./legend",
+            "./palette",
+            "./pixel",
+            "./pie",
+            "./pie-chart",
+            "./radar",
+            "./radar-chart",
+            "./reference-line",
+            "./scales",
+            "./sparkline",
+            "./tooltip",
+            "./x-axis",
+            "./y-axis"
+          ]
+        }
+      ]
+    }
+  ],
+  "spell-ui": [
+    {
+      "name": "chart",
+      "dependencies": [],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/chart.tsx",
+          "imports": [
+            "react",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "blur-reveal",
+      "dependencies": [
+        "motion"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/blur-reveal.tsx",
+          "imports": [
+            "motion/react",
+            "react"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "perspective-book",
+      "dependencies": [],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/perspective-book.tsx",
+          "imports": [
+            "react",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "badge",
+      "dependencies": [
+        "@radix-ui/react-slot",
+        "class-variance-authority"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/badge.tsx",
+          "imports": [
+            "react",
+            "@radix-ui/react-slot",
+            "class-variance-authority",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "color-selector",
+      "dependencies": [],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/color-selector.tsx",
+          "imports": [
+            "react",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "special-text",
+      "dependencies": [],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/special-text.tsx",
+          "imports": [
+            "react",
+            "motion/react"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "shimmer-text",
+      "dependencies": [
+        "motion"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/shimmer-text.tsx",
+          "imports": [
+            "motion/react",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "highlighted-text",
+      "dependencies": [
+        "motion"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/highlighted-text.tsx",
+          "imports": [
+            "motion/react",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "rich-button",
+      "dependencies": [
+        "@radix-ui/react-slot"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/rich-button.tsx",
+          "imports": [
+            "react",
+            "@radix-ui/react-slot",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "kbd",
+      "dependencies": [
+        "react-hotkeys-hook"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/kbd.tsx",
+          "imports": [
+            "@/lib/utils",
+            "react",
+            "react-hotkeys-hook"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "label-input",
+      "dependencies": [
+        "lucide-react"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/label-input.tsx",
+          "imports": [
+            "react",
+            "@/lib/utils",
+            "lucide-react"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "spinner",
+      "dependencies": [],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/spinner.tsx",
+          "imports": [
+            "react",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "bars-spinner",
+      "dependencies": [],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/bars-spinner.tsx",
+          "imports": [
+            "react",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "flow-button",
+      "dependencies": [],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/flow-button.tsx",
+          "imports": [
+            "react",
+            "@radix-ui/react-slot",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "slide-up-text",
+      "dependencies": [
+        "motion"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/slide-up-text.tsx",
+          "imports": [
+            "motion/react",
+            "react",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "copy-button",
+      "dependencies": [
+        "lucide-react"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/copy-button.tsx",
+          "imports": [
+            "react",
+            "lucide-react",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "text-marquee",
+      "dependencies": [],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/text-marquee.tsx",
+          "imports": [
+            "react",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "words-stagger",
+      "dependencies": [
+        "motion"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/words-stagger.tsx",
+          "imports": [
+            "react",
+            "motion/react",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tilt-card",
+      "dependencies": [],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/tilt-card.tsx",
+          "imports": [
+            "react",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "marquee",
+      "dependencies": [
+        "motion"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/marquee.tsx",
+          "imports": [
+            "react",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "signature",
+      "dependencies": [
+        "motion",
+        "opentype.js",
+        "@types/opentype.js"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/signature.tsx",
+          "imports": [
+            "react",
+            "motion/react",
+            "opentype.js"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "randomized-text",
+      "dependencies": [
+        "motion"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/randomized-text.tsx",
+          "imports": [
+            "motion/react",
+            "react"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pop-button",
+      "dependencies": [],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/pop-button.tsx",
+          "imports": [
+            "react",
+            "@radix-ui/react-slot",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tweet",
+      "dependencies": [
+        "react-tweet",
+        "@icons-pack/react-simple-icons"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/tweet.tsx",
+          "imports": [
+            "react",
+            "react-tweet",
+            "@/lib/utils",
+            "lucide-react",
+            "@icons-pack/react-simple-icons"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "spotify-card",
+      "dependencies": [
+        "@icons-pack/react-simple-icons",
+        "spotify-url-info"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/spotify-card.tsx",
+          "imports": [
+            "react",
+            "@icons-pack/react-simple-icons",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "light-rays",
+      "dependencies": [
+        "three"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/light-rays.tsx",
+          "imports": [
+            "react",
+            "three"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "animated-gradient",
+      "dependencies": [],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/animated-gradient.tsx",
+          "imports": [
+            "next-themes",
+            "react"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "animated-checkbox",
+      "dependencies": [
+        "motion"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/animated-checkbox.tsx",
+          "imports": [
+            "motion/react",
+            "react",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "exploding-input",
+      "dependencies": [],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/exploding-input.tsx",
+          "imports": [
+            "react"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "gradient-wave-text",
+      "dependencies": [],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/gradient-wave-text.tsx",
+          "imports": [
+            "react",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "logos-carousel",
+      "dependencies": [],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/logos-carousel.tsx",
+          "imports": [
+            "react",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "qr-code",
+      "dependencies": [
+        "qrcode"
+      ],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/qr-code.tsx",
+          "imports": [
+            "react",
+            "qrcode",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fallback-avatar",
+      "dependencies": [],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/spell-ui/fallback-avatar.tsx",
+          "imports": [
+            "react",
+            "@/lib/utils"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -171,3 +171,8 @@ This API returns functions which cannot be memoized without leading to stale UI.
 > oxlint --config oxlint.config.ts src electron packages/sessions/src packages/relay/src packages/relay/test packages/backend/app packages/backend/agent packages/backend/scripts packages/backend/src packages/backend/test scripts
 
 
+
+=== terminal dependency cache regression ===
+Web cache isolation: all four live terminal dependencies remain HTTP 200 after the independent gateway test starts and stops
+
+Real Chrome UI: Terminal loaded; printf produced MAKO_TERMINAL_CACHE_OK. Disposable terminal closed. Cached module error was confined to Terminal while composer and rail remained mounted.

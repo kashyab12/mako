@@ -24,6 +24,7 @@ Additional fixes from the live UI investigation:
 - Codex discovery resolves resumed rollout aliases through the provider's canonical SQLite path and physical file metadata. Historical explicit paths remain readable.
 - Loading and failed thread opens retain the exact provider and draft owner. Superseded responses cannot replace a later selection. A successful retry follows once; a missing cached page becomes a readable failure instead of permanent loading.
 - Host loss shows a persistent notice and Last known activity. Sending is disabled before drafts or attachments are cleared. The workbench remains mounted.
+- Terminal loading exposed shared Vite cache corruption: the gateway regression server invalidated the running desk's optimized xterm files, returning HTTP 504. Development servers and tests now own separate caches. A new regression checks the four exact dependency URLs before and after the gateway test. Panel error boundaries also keep a failed companion from unmounting the conversation. The real terminal then loaded and printed `MAKO_TERMINAL_CACHE_OK` through actual keyboard input.
 - Settings switches require accessible labels in the shared component. File browsing distinguishes loading, empty results, and failed reads with Retry.
 
 ## Current control architecture
@@ -51,7 +52,7 @@ Chrome connection approval, macOS Accessibility/Screen Recording, and provider t
 | Real model browser workflow | Claude and Codex each read a random page value, inspect four red/two blue squares, fill three fields with trusted input and submit once. Server readback validates values and trusted event flags. The prompt names the tool family, so this is not a tool-discovery benchmark from an uncoached user prompt |
 | Computer proxy fault suite | First backend initialization fails; second succeeds on the same outer MCP connection. Native schema, task identity, annotations, images and metadata pass |
 | Real computer control | Disposable Electron window, exact PID/window/token, screenshot, field entry, button activation, independent renderer readback and stale-token rejection pass |
-| Real UI | Agents, MCP, Skills, Integrations, Editor, Conversation, Appearance, Keyboard shortcuts, Commit messages, Automations, UI extensions, Updates, Crash reports and About inspected. File filter and actual conversation selection exercised. Account/configuration writes were not needed |
+| Real UI | Agents, MCP, Skills, Integrations, Editor, Conversation, Appearance, Keyboard shortcuts, Commit messages, Automations, UI extensions, Updates, Crash reports and About inspected. File filter and actual conversation selection exercised. Long palette queries, dismissal, the terminal dock and real terminal input/output were also checked. Account/configuration writes were not needed |
 | Repository checks | Session package, live/conversation control, provider, stage/thread-opening, host, web, MCP, typecheck and production build pass. Oxlint reports zero warnings/errors. ESLint retains two existing TanStack Virtual compiler warnings; no rules were disabled |
 
 Latest real browser evidence: `/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-browser-e2e-gAQhgf`.
@@ -61,6 +62,14 @@ Latest real computer evidence: `/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T
 Rebuilt paid browser evidence: `/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-provider-e2e-kC1tY6`.
 
 The computer fixture used the development host and installed CUA driver. It does not certify OS permission attribution for a separately signed or packaged release. The desktop and web app share renderer and host contracts; the real web/preload tests verify both boundaries, but this is not a full packaged-release test.
+
+The live cache regression can be rerun while the web desk is running:
+
+```sh
+node scripts/test-web-cache.mjs http://127.0.0.1:5174/
+```
+
+The normal web test owns its temporary cache and does not depend on a running desk. The manual browser observation also reproduced the cached import error inside the terminal boundary while the composer and rail remained mounted.
 
 ## Comparison with the available Codex tools
 

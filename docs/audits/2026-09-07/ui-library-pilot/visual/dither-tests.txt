@@ -1,0 +1,73 @@
+
+> dither-kit@0.1.0 test
+> vitest run && npm run test:cli
+
+
+ RUN  v2.1.9 /private/tmp/mako-ui-pilot-visual/audit-lKCiR5IO/dither-kit
+
+ ✓ tests/palette.test.ts (4 tests) 7ms
+ ✓ tests/scales.test.ts (16 tests) 5ms
+ ✓ tests/chart-mount.test.tsx (8 tests) 35ms
+
+ Test Files  3 passed (3)
+      Tests  28 passed (28)
+   Start at  17:41:25
+   Duration  1.02s (transform 217ms, setup 0ms, collect 577ms, tests 46ms, environment 842ms, prepare 285ms)
+
+
+> dither-kit@0.1.0 test:cli
+> node --import tsx --test packages/cli/test/*.test.ts
+
+▶ colour resolution
+  ✔ disabled when --no-color (0.508583ms)
+  ✔ disabled in --json mode (0.149958ms)
+  ✔ disabled when NO_COLOR is set (0.096125ms)
+  ✔ disabled when TERM=dumb (0.114417ms)
+  ✔ FORCE_COLOR overrides the TTY check (0.131334ms)
+✔ colour resolution (1.739875ms)
+▶ global options → context
+  ✔ maps flags and --no-input/--no-color booleans (0.225833ms)
+✔ global options → context (0.290875ms)
+▶ registry base URL (dev override is fail-closed)
+  ✔ defaults to tripwire.sh when no override (0.135417ms)
+  ✔ ignores the override outside development (0.098667ms)
+  ✔ honours the override in development, trimming trailing slash (0.11225ms)
+  ✔ item URL is <base>/r/<name>.json (0.093416ms)
+✔ registry base URL (dev override is fail-closed) (0.610375ms)
+▶ commander wiring
+  ✔ --help is a clean, intentional exit (2.565167ms)
+  ✔ an unknown command is a usage error, not a silent no-op (0.714042ms)
+  ✔ global flags parse after the subcommand (order-independent) (0.499084ms)
+✔ commander wiring (3.851ms)
+▶ add --dry-run
+  ✔ writes nothing: no components/, no lockfile (28.934083ms)
+✔ add --dry-run (29.469875ms)
+▶ add under --no-input
+  ✔ fails with a useful message + flag when no names are given (2.766291ms)
+  ✔ a typo is reported (not silently corrected) with a suggestion (2.792958ms)
+✔ add under --no-input (5.742333ms)
+▶ lockfile
+  ✔ hashContent is deterministic and content-sensitive (0.561417ms)
+  ✔ lockComponentFor records version, aggregate hash, and per-file hashes (8.203583ms)
+  ✔ write → read round-trips through the shared schema (1.760708ms)
+  ✔ readLockfile returns null when there is no lockfile (0.497917ms)
+✔ lockfile (11.752833ms)
+▶ getRegistry: fetch + cache + offline fallback
+  ✔ network fetch parses the registry and writes the cache (3.078666ms)
+  ✔ a fresh cache is served without hitting the network (1.479834ms)
+  ✔ a stale cache is used when the registry is unreachable, and flagged (1.239125ms)
+  ✔ no cache + offline is a network error (0.851375ms)
+✔ getRegistry: fetch + cache + offline fallback (7.340792ms)
+▶ telemetry
+  ✔ commandFromArgv picks the first non-flag arg (0.373208ms)
+  ✔ disabled under NODE_ENV=test (test runner sets this) (0.082916ms)
+  ✔ DO_NOT_TRACK opts out (0.062875ms)
+✔ telemetry (1.037375ms)
+ℹ tests 27
+ℹ suites 9
+ℹ pass 27
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 845.745875

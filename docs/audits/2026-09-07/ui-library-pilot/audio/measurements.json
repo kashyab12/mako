@@ -1,0 +1,144 @@
+{
+  "count": 813,
+  "licenses": {
+    "CC0": 813
+  },
+  "authors": {
+    "Kenney": 813
+  },
+  "unique_payloads": 805,
+  "binary_bytes": {
+    "total": 6943190,
+    "min": 669,
+    "median": 5685,
+    "p95": 38286,
+    "max": 72349
+  },
+  "base64_bytes": {
+    "total": 9258784,
+    "min": 892,
+    "median": 7580,
+    "p95": 51048,
+    "max": 96468
+  },
+  "ts_bytes": {
+    "total": 9460774,
+    "min": 1123,
+    "median": 7822,
+    "p95": 51281,
+    "max": 96725
+  },
+  "duration": {
+    "total": 811.127,
+    "min": 0.007,
+    "median": 0.635,
+    "p95": 4.71,
+    "max": 8.966
+  },
+  "selected": [
+    {
+      "name": "click-soft",
+      "path": "registry/soundcn/sounds/click-soft/click-soft.ts",
+      "binary_bytes": 669,
+      "base64_bytes": 892,
+      "ts_bytes": 1127,
+      "duration": 0.007,
+      "license": "CC0",
+      "author": "Kenney",
+      "sha256": "f48d32b27fc23a4702db92d1bc2a0b6e0150bc4e6c0688a170a7cd0bb9192541",
+      "stream": {
+        "sample_rate": "44100",
+        "channels": 1,
+        "bit_rate": "64000",
+        "duration": "0.007120"
+      },
+      "decoded_frames": 314,
+      "decoded_peak_dbfs": -1.7924779730160725,
+      "decoded_rms_dbfs": -15.004490444131118
+    },
+    {
+      "name": "click-001",
+      "path": "registry/soundcn/sounds/click-001/click-001.ts",
+      "binary_bytes": 1296,
+      "base64_bytes": 1728,
+      "ts_bytes": 1961,
+      "duration": 0.097,
+      "license": "CC0",
+      "author": "Kenney",
+      "sha256": "234a17e20a6dd841192b6c29b5d87237d69792521d895e2511621ee7a51fdf65",
+      "stream": {
+        "sample_rate": "44100",
+        "channels": 1,
+        "bit_rate": "64000",
+        "duration": "0.097120"
+      },
+      "decoded_frames": 4283,
+      "decoded_peak_dbfs": -1.859485951714841,
+      "decoded_rms_dbfs": -26.881845148945448
+    },
+    {
+      "name": "confirmation-001",
+      "path": "registry/soundcn/sounds/confirmation-001/confirmation-001.ts",
+      "binary_bytes": 2968,
+      "base64_bytes": 3960,
+      "ts_bytes": 4207,
+      "duration": 0.29,
+      "license": "CC0",
+      "author": "Kenney",
+      "sha256": "a6a552b24ca217350948b62275352f69ea67dbe803b20fb010b8250f8c423ccb",
+      "stream": {
+        "sample_rate": "44100",
+        "channels": 1,
+        "bit_rate": "64000",
+        "duration": "0.289841"
+      },
+      "decoded_frames": 12782,
+      "decoded_peak_dbfs": -1.4279825646951423,
+      "decoded_rms_dbfs": -11.763280068968614
+    },
+    {
+      "name": "error-001",
+      "path": "registry/soundcn/sounds/error-001/error-001.ts",
+      "binary_bytes": 1923,
+      "base64_bytes": 2564,
+      "ts_bytes": 2797,
+      "duration": 0.162,
+      "license": "CC0",
+      "author": "Kenney",
+      "sha256": "bf7bae89201763954dcfe53e9707a51e1d7fd91b26b1bc94b6ce26c956f4c749",
+      "stream": {
+        "sample_rate": "44100",
+        "channels": 1,
+        "bit_rate": "64000",
+        "duration": "0.161655"
+      },
+      "decoded_frames": 7129,
+      "decoded_peak_dbfs": 0.9844880702899523,
+      "decoded_rms_dbfs": -16.605130974366762
+    },
+    {
+      "name": "switch-001",
+      "path": "registry/soundcn/sounds/switch-001/switch-001.ts",
+      "binary_bytes": 5476,
+      "base64_bytes": 7304,
+      "ts_bytes": 7539,
+      "duration": 0.615,
+      "license": "CC0",
+      "author": "Kenney",
+      "sha256": "3ce0ff430edb048771c96390ae81fd47bf40a6fd2a14b49afc30afaacab6ed41",
+      "stream": {
+        "sample_rate": "44100",
+        "channels": 1,
+        "bit_rate": "64000",
+        "duration": "0.614762"
+      },
+      "decoded_frames": 27111,
+      "decoded_peak_dbfs": 1.3197990488508702,
+      "decoded_rms_dbfs": -25.87723890301818
+    }
+  ],
+  "registry_items": 816,
+  "source_audio": {
+    ".ogg": 806
+  }
+}

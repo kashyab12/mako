@@ -1,0 +1,72 @@
+<!doctype html><meta charset="utf-8"><title>Mako label motion comparison</title>
+<style>.slot-text {
+  display: inline-flex;
+  white-space: pre;
+  align-items: baseline;
+}
+
+.char-slot {
+  position: relative;
+  display: inline-flex;
+  /* Cells must never flex-shrink. When a cell's overflow stops being visible
+     (e.g. .is-resizing), its automatic minimum size drops to 0, and a
+     width-constrained line would crush those cells into overlapping slivers
+     instead of letting the row overflow like it does at rest. */
+  flex: none;
+  justify-content: center;
+  align-items: baseline;
+  /* Clip only vertically: the roll needs a top/bottom mask, but glyph side
+     bearings, kerning overhang and the settle tilt must stay visible so
+     letters never look cropped. (overflow: hidden is the legacy fallback.) */
+  overflow: hidden;
+  overflow-x: visible;
+  overflow-y: clip;
+  line-height: 1.3;
+}
+
+/* Cells appearing from or collapsing to empty change width drastically, so
+   clip them on both axes while they resize — otherwise their glyphs spill
+   out of the shrinking cell and stack up over the neighbours. */
+.char-slot.is-resizing {
+  overflow-x: clip;
+}
+
+.char-sizer {
+  visibility: hidden;
+  white-space: pre;
+}
+
+.char-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: pre;
+  will-change: transform;
+}
+</style>
+<script>"use strict";var SlotTextPilot=(()=>{var I=Object.defineProperty;var ot=Object.getOwnPropertyDescriptor;var lt=Object.getOwnPropertyNames;var st=Object.prototype.hasOwnProperty;var ct=(t,e)=>{for(var n in e)I(t,n,{get:e[n],enumerable:!0})},ut=(t,e,n,r)=>{if(e&&typeof e=="object"||typeof e=="function")for(let i of lt(e))!st.call(t,i)&&i!==n&&I(t,i,{get:()=>e[i],enumerable:!(r=ot(e,i))||r.enumerable});return t};var dt=t=>ut(I({},"__esModule",{value:!0}),t);var pt={};ct(pt,{animateSlotText:()=>w,buildSlotText:()=>it,chromatic:()=>nt,clearSlotText:()=>z,slotText:()=>gt});var y={animation:{direction:"down",rollBy:"character",stagger:45,duration:300,exitOffset:50,easing:"cubic-bezier(0.34, 1.56, 0.64, 1)",bounce:.6,colorFade:280,skipUnchanged:!0,interrupt:!0},variation:{indexFrequency:12.9898,channelFrequency:78.233,seedScale:43758.5453,durationChannel:1,staggerChannel:2,tiltChannel:3},glyph:{tailDurationMultiplier:.75,durationVariationStrength:.45,tailStaggerStartMultiplier:.5,tailStaggerStepMultiplier:.25,staggerVariationStrength:.25,maximumTiltDegrees:5,tiltDecimalPlaces:2},width:{tailCollapseDelayMultiplier:.55,tailCollapseDurationMultiplier:.6,newSlotExpansionDurationMultiplier:.45,minimumTransitionMs:140,resizeEasing:"cubic-bezier(0.2, 0, 0, 1)",minimumVisibleChangePx:.5},layout:{probeOffscreenPositionPx:-9999,fallbackLineHeightMultiplier:1.3,fallbackCharacterHeightPx:18,characterTransformOrigin:"50% 50%",characterRestTransform:"translateY(0) rotate(0deg)"},chromatic:{hueStartDegrees:0,hueSpreadDegrees:320,saturationPercent:92,lightnessPercent:60,fullHueRotationDegrees:360},lifecycle:{completionBufferMs:80,flashRevertDelayMs:1400}};var V=Intl.Segmenter?{character:new Intl.Segmenter(void 0,{granularity:"grapheme"}),word:new Intl.Segmenter(void 0,{granularity:"word"})}:void 0;function P(t,e){return V?Array.from(V[e].segment(t),({segment:n})=>n):e==="word"?t.match(/\s+|\S+/g)??[]:Array.from(t)}function E(t){return t===" "?"\xA0":t}var{animation:g,glyph:x,variation:T,width:N}=y;function G(t){return{direction:t.direction??g.direction,rollBy:t.rollBy??g.rollBy,stagger:t.stagger??g.stagger,duration:t.duration??g.duration,exitOffset:t.exitOffset??g.exitOffset,easing:t.easing??g.easing,bounce:t.bounce??g.bounce,color:t.color,colorFade:t.colorFade??g.colorFade,skipUnchanged:t.skipUnchanged??g.skipUnchanged,interrupt:t.interrupt??g.interrupt}}function H(t,e){let n=t+1,r=Math.sin(n*T.indexFrequency+e*T.channelFrequency)*T.seedScale;return(r-Math.floor(r))*2-1}function Y(t,e,n,r){let{duration:i,stagger:a,bounce:l}=r,o=(m,p)=>1+l*m*H(t,p),s=Math.round(i*(n?x.tailDurationMultiplier:1)*o(x.durationVariationStrength,T.durationChannel)),c=n?e*x.tailStaggerStartMultiplier+(t-e)*x.tailStaggerStepMultiplier:t,u=Number((l*x.maximumTiltDegrees*H(t,T.tiltChannel)).toFixed(x.tiltDecimalPlaces));return{durationMs:s,startDelayMs:Math.round(c*a*o(x.staggerVariationStrength,T.staggerChannel)),startingTiltDegrees:u}}function _(t,e,n){let r=i=>Math.max(N.minimumTransitionMs,Math.round(n.durationMs*i));return e===""?{startDelayMs:n.startDelayMs+Math.round(n.durationMs*N.tailCollapseDelayMultiplier),durationMs:r(N.tailCollapseDurationMultiplier)}:t===""?{startDelayMs:n.startDelayMs,durationMs:r(N.newSlotExpansionDurationMultiplier)}:{startDelayMs:n.startDelayMs,durationMs:n.durationMs}}var mt="x",{layout:D,width:j}=y,L=!1;function X(t){let e=document.createElement("span");return e.className="char-face",e.textContent=E(t),e}function J(t){let e=document.createElement("span");e.className="char-slot",e.dataset.char=t;let n=document.createElement("span");return n.className="char-sizer",n.textContent=E(t),e.append(n,X(t)),e}function M(t,e,n="character"){t.classList.add("slot-text"),t.replaceChildren(...P(e,n).map(J))}function B(t,e){t.classList.remove("slot-text"),t.textContent=e}function A(t){return Array.from(t.querySelectorAll(".char-slot"))}function k(t){if(!t)return!1;let e=t.querySelector(".char-face");if(!e)return!1;let n=getComputedStyle(t),r=getComputedStyle(e),i=n.display==="inline-flex"||n.display==="flex";return n.position==="relative"&&i&&r.position==="absolute"}function q(){if(L)return!0;if(!document.body)return!1;let t=document.createElement("span");t.setAttribute("aria-hidden","true"),t.style.cssText=`position:absolute;left:${D.probeOffscreenPositionPx}px;top:${D.probeOffscreenPositionPx}px;visibility:hidden;pointer-events:none;`,M(t,mt),document.body.appendChild(t);let e=A(t)[0];return L=k(e),t.remove(),L}function K(t,e,n){for(let r=e.length;r<n;r++){let i=J("");t.appendChild(i),e.push(i)}}function Q(t,e,n){let r=e[0],i=e.find(a=>(a.dataset.char??"")!=="")??r;return Math.ceil(i?.getBoundingClientRect().height||i?.offsetHeight||t.getBoundingClientRect().height||parseFloat(n.lineHeight)||0)||Math.ceil(parseFloat(n.fontSize)*D.fallbackLineHeightMultiplier)||D.fallbackCharacterHeightPx}function Z(t,e,n,r){let i=[];for(let a=0;a<t.length;a++){let l=e[a]??"",o=n[a]??"";if(l===o&&(r||l===""))continue;let s=t[a],c=s.querySelector(".char-sizer");i.push({index:a,slot:s,sizer:c,previousFace:s.querySelector(".char-face"),currentSegment:l,targetSegment:o,currentWidth:s.getBoundingClientRect().width})}return i.forEach(({sizer:a,targetSegment:l})=>{a.textContent=E(l)}),i.map(a=>{let l=a.sizer.getBoundingClientRect().width;return{...a,targetWidth:l,widthWillChange:Math.abs(l-a.currentWidth)>j.minimumVisibleChangePx}})}function tt(t,e,n,r){let{index:i,slot:a,currentSegment:l,targetSegment:o}=t,{currentWidth:s,widthWillChange:c}=t,u=Y(i,e,o==="",r),m=_(l,o,u),p=r.direction==="down"?-n:n,S=typeof r.color=="function"?r.color(i,e):r.color;c&&(a.style.width=`${s}px`),(l===""||o==="")&&a.classList.add("is-resizing");let f=X(o);f.style.transformOrigin=D.characterTransformOrigin,f.style.transform=`translateY(${p}px) rotate(${u.startingTiltDegrees}deg)`,S&&(f.style.color=S),a.appendChild(f);let C=c?m.startDelayMs+m.durationMs:0,h=u.startDelayMs+r.exitOffset+u.durationMs+(r.color?r.colorFade:0);return{measurement:t,timing:u,widthTiming:m,incomingFace:f,completionTimeMs:Math.max(C,h)}}function et(t,e,n,r,i){let{measurement:a,timing:l,widthTiming:o,incomingFace:s}=t,{slot:c,previousFace:u,targetWidth:m,widthWillChange:p}=a,S=r.direction==="down"?e:-e,f=`transform ${l.durationMs}ms ${r.easing}`,C=r.color?`${f}, color ${r.colorFade}ms linear ${l.durationMs}ms`:f;p&&i(()=>{c.style.transition=`width ${o.durationMs}ms ${j.resizeEasing}`,c.style.width=`${m}px`},o.startDelayMs),u&&i(()=>{u.style.transition=f,u.style.transform=`translateY(${S}px) rotate(${-l.startingTiltDegrees}deg)`},l.startDelayMs),i(()=>{s.style.transition=C,s.style.transform=D.characterRestTransform,r.color&&(s.style.color=n);let h=R=>{R.propertyName==="transform"&&(s.removeEventListener("transitionend",h),c.dataset.char=a.targetSegment,c.style.removeProperty("transition"),c.style.removeProperty("width"),c.classList.remove("is-resizing"),c.querySelectorAll(".char-face").forEach($=>{$!==s&&$.remove()}))};s.addEventListener("transitionend",h)},l.startDelayMs+r.exitOffset)}var{chromatic:F,lifecycle:ft}=y;function nt({from:t=F.hueStartDegrees,spread:e=F.hueSpreadDegrees,saturation:n=F.saturationPercent,lightness:r=F.lightnessPercent}={}){return(i,a)=>{let l=a-1,o=a<=1?0:i/l;return`hsl(${(t+o*e)%F.fullHueRotationDegrees} ${n}% ${r}%)`}}var b=new WeakMap,W=new WeakSet;function U(t){let e=b.get(t);if(e)return e.timerIds.forEach(n=>window.clearTimeout(n)),b.delete(t),e}function O(t,e,n="character"){W.add(t),q()?M(t,e,n):B(t,e)}function ht(t){let e=U(t);e&&O(t,e.targetText,e.rollBy)}function it(t,e,{rollBy:n="character"}={}){U(t),W.add(t),M(t,e,n)}function rt(t,e,n){let r=window.setTimeout(e,n);t.timerIds.push(r)}function w(t,e,n={}){let r=G(n),i=b.get(t);if(i&&!r.interrupt){i.pendingAnimation=e===i.targetText?void 0:{text:e,options:n};return}ht(t);let a=A(t);if(a.length===0){if(!W.has(t)){O(t,e,r.rollBy);return}if(!q()){B(t,e);return}M(t,t.textContent??"",r.rollBy),a=A(t)}let l=a[0];if(l&&!k(l)){B(t,e);return}let o=a.map(d=>d.dataset.char??""),s=o.join(""),c=P(s,r.rollBy);(o.length!==c.length||o.some((d,v)=>d!==c[v]))&&(M(t,s,r.rollBy),a=A(t),o=c);let u=P(e,r.rollBy);if(!r.interrupt&&o.length===u.length&&o.every((d,v)=>d===u[v]))return;let m=Math.max(o.length,u.length);K(t,a,m);let p=getComputedStyle(t),S=Q(t,a,p),f=r.color?p.color:"",C=Z(a,o,u,r.skipUnchanged);if(C.length===0){M(t,e,r.rollBy);return}let h={timerIds:[],targetText:e,rollBy:r.rollBy};b.set(t,h);let R=C.map(d=>tt(d,u.length,S,r));t.offsetWidth,R.forEach(d=>et(d,S,f,r,(v,at)=>rt(h,v,at)));let $=Math.max(...R.map(({completionTimeMs:d})=>d))+ft.completionBufferMs;rt(h,()=>{if(b.get(t)!==h)return;let d=h.pendingAnimation;b.delete(t),O(t,e,r.rollBy),d&&w(t,d.text,d.options)},$)}function z(t,e=""){U(t),W.delete(t),B(t,e)}function gt(t,e,n={}){let r=e,i,a;O(t,e,n.rollBy??"character");let l=(o,s)=>w(t,o,{...n,interrupt:!1,...s});return{element:t,get value(){return r},set(o,s={}){clearTimeout(i),a=void 0,r=o,w(t,o,{...n,...s})},flash(o,{revertAfter:s=y.lifecycle.flashRevertDelayMs,enter:c,exit:u}={}){a===void 0&&(a=r),r=o,l(o,c),clearTimeout(i),i=window.setTimeout(()=>{let m=a;a=void 0,i=void 0,r=m,l(m,u)},s)},destroy(){clearTimeout(i),z(t,r)}}}return dt(pt);})();
+</script>
+<style>
+:root{--surface:#181515;--text:#eee9e5;--border:#403a38;--ease-out:cubic-bezier(.22,1,.36,1);--ease-swift:cubic-bezier(.2,0,0,1)}
+body{background:var(--surface);color:var(--text);font:13px system-ui;margin:48px;max-width:680px}button{font:inherit;color:inherit;background:transparent;border:1px solid var(--border);padding:12px;margin:8px;cursor:pointer}h1{font-size:15px}p{line-height:1.6}.whole{display:inline-grid;overflow:hidden;width:9em;vertical-align:middle}.whole span{grid-area:1/1;transition:transform 180ms var(--ease-out),opacity 180ms var(--ease-out)}.whole .yes{transform:translateY(100%);opacity:0}.whole[data-copied] .no{transform:translateY(-100%);opacity:0;transition-duration:120ms;transition-timing-function:var(--ease-swift)}.whole[data-copied] .yes{transform:translateY(0);opacity:1}.whole:not([data-copied]) .yes{transition-duration:120ms;transition-timing-function:var(--ease-swift)}
+@media(prefers-reduced-motion:reduce){.whole span{transform:none!important;transition:opacity 120ms!important}}
+</style>
+<h1>Copy answer feedback</h1><p>Both buttons trigger both samples. Repeat clicks during entry, then try the burst. Library uses word mode, 180ms duration, no stagger or bounce. Custom reserves the longer label's space and transitions complete text. Neither writes to the clipboard.</p>
+<button id="library" aria-label="Copy answer"><span id="slot" aria-hidden="true"></span></button>
+<button id="custom" aria-label="Copy answer"><span class="whole" id="whole" aria-hidden="true"><span class="no">Copy answer</span><span class="yes">Copied answer</span></span></button>
+<button id="burst">Burst 10 updates</button><p id="result" role="status">Ready</p>
+<script type="module">
+const {slotText}=SlotTextPilot;
+const el=document.querySelector('#slot'), whole=document.querySelector('#whole');
+const reduce=matchMedia('(prefers-reduced-motion:reduce)');
+let label, revert, burstTimers=[];
+function reset(){label?.destroy();label=undefined;if(reduce.matches)el.textContent='Copy answer';else label=slotText(el,'Copy answer',{rollBy:'word',duration:180,stagger:0,bounce:0,exitOffset:0,easing:'var(--ease-out)'});}
+function set(copied){const text=copied?'Copied answer':'Copy answer';if(label)label.set(text);else el.textContent=text;whole.toggleAttribute('data-copied',copied);document.querySelectorAll('#library,#custom').forEach(b=>b.setAttribute('aria-label',text));document.querySelector('#result').textContent=text;}
+function flash(){clearTimeout(revert);set(true);revert=setTimeout(()=>set(false),1400);}
+reset();reduce.addEventListener('change',()=>{clearTimeout(revert);reset();set(false)});
+document.querySelector('#library').onclick=flash;document.querySelector('#custom').onclick=flash;
+document.querySelector('#burst').onclick=()=>{clearTimeout(revert);burstTimers.forEach(clearTimeout);burstTimers=Array.from({length:10},(_,i)=>setTimeout(()=>set(i%2===0),i*60));};
+window.addEventListener('pagehide',()=>{clearTimeout(revert);burstTimers.forEach(clearTimeout);label?.destroy()},{once:true});
+</script>

@@ -1,0 +1,35 @@
+{
+  "method": "esbuild browser ESM minified, gzip; React/ReactDOM external; includes per-entry transitive imports, not incremental app delta; no CSS; dependencies locked in probe/package-lock.json",
+  "sizes": [
+    {
+      "name": "dither-area",
+      "minifiedBytes": 63962,
+      "gzipBytes": 23536
+    },
+    {
+      "name": "dither-gradient",
+      "minifiedBytes": 30280,
+      "gzipBytes": 10031
+    },
+    {
+      "name": "dither-sparkline",
+      "minifiedBytes": 65822,
+      "gzipBytes": 24196
+    },
+    {
+      "name": "spell-chart",
+      "minifiedBytes": 32771,
+      "gzipBytes": 10976
+    },
+    {
+      "name": "spell-rays",
+      "minifiedBytes": 502744,
+      "gzipBytes": 130808
+    },
+    {
+      "name": "spell-gradient",
+      "minifiedBytes": 11438,
+      "gzipBytes": 4443
+    }
+  ]
+}

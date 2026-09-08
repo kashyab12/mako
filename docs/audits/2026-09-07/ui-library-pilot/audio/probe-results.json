@@ -1,0 +1,6 @@
+{
+  "concurrent_same_asset_decodes": 2,
+  "overlap_sources_left_after_unmount": 1,
+  "closed_context_reused": true,
+  "cuelume_pending_play_gain_after_setVolumeZero": 0.5
+}
