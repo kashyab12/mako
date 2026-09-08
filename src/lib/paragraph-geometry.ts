@@ -1,4 +1,9 @@
-import { clearCache, layout, prepare, type PreparedText } from "@chenglou/pretext"
+import {
+  clearCache,
+  layout,
+  prepare,
+  type PreparedText,
+} from "@chenglou/pretext"
 
 const cache = new Map<string, PreparedText>()
 let retainedCharacters = 0
@@ -6,7 +11,11 @@ const CHARACTER_BUDGET = 128_000
 
 /** Estimates only. Native paragraph layout and remembered sizes remain authoritative. */
 export function paragraphHeight({
-  text, font, letterSpacing, width, lineHeight,
+  text,
+  font,
+  letterSpacing,
+  width,
+  lineHeight,
 }: {
   text: string
   font: string

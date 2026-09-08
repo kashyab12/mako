@@ -27,11 +27,11 @@ export class AudioFeedback {
   }
 
   async play(cue: FeedbackCue) {
-    if (!this.enabled || document.hidden) return
+    if (!this.enabled || this.volume === 0 || document.hidden) return
     this.stop()
     const generation = this.generation
     try {
-      const context = this.context ??= new AudioContext()
+      const context = (this.context ??= new AudioContext())
       if (!this.master) {
         this.master = context.createGain()
         this.master.gain.value = this.volume
@@ -40,7 +40,9 @@ export class AudioFeedback {
       await context.resume()
       if (generation !== this.generation || document.hidden) return
       if (cue === "complete") {
-        this.decode ??= fetch(new URL("../assets/sounds/confirmation.ogg", import.meta.url))
+        this.decode ??= fetch(
+          new URL("../assets/sounds/confirmation.ogg", import.meta.url)
+        )
           .then((response) => {
             if (!response.ok) throw new Error("Sound unavailable")
             return response.arrayBuffer()
@@ -63,10 +65,16 @@ export class AudioFeedback {
       const envelope = context.createGain()
       voice.type = "sine"
       voice.frequency.setValueAtTime(880, context.currentTime)
-      voice.frequency.exponentialRampToValueAtTime(1320, context.currentTime + 0.055)
+      voice.frequency.exponentialRampToValueAtTime(
+        1320,
+        context.currentTime + 0.055
+      )
       envelope.gain.setValueAtTime(0, context.currentTime)
       envelope.gain.linearRampToValueAtTime(0.12, context.currentTime + 0.008)
-      envelope.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.09)
+      envelope.gain.exponentialRampToValueAtTime(
+        0.001,
+        context.currentTime + 0.09
+      )
       voice.connect(envelope)
       envelope.connect(this.master)
       this.own(voice, () => envelope.disconnect())

@@ -52,6 +52,7 @@ export interface SlotMap {
   "rail.header": NoProps
   "rail.footer": NoProps
   "rail.session.trailing": RailSessionSlotProps
+  "transcript.overlay": { conversationId?: string }
   "transcript.header": SessionMetaSlotProps
   "transcript.empty": SessionMetaSlotProps
   "transcript.turn.trailing": TranscriptTurnSlotProps

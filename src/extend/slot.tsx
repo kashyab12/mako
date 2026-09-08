@@ -75,6 +75,10 @@ export function Slot(props: SlotInvocation): ReactNode {
         session: props.session,
         active: props.active,
       })
+    case "transcript.overlay":
+      return renderSlot(entries, props.name, {
+        conversationId: props.conversationId,
+      })
     case "transcript.header":
     case "transcript.empty":
     case "composer.above":

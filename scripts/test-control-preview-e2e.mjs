@@ -24,7 +24,7 @@ async function run() {
   const frontmost = async () => Number((await execute("osascript", ["-l", "JavaScript", "-e", 'ObjC.import("AppKit"); $.NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier'])).stdout.trim())
   const before = await frontmost()
   const fixture = new BrowserWindow({ show: false, width: 640, height: 360 })
-  const viewer = new BrowserWindow({ show: false, width: 1000, height: 600 })
+  const viewer = new BrowserWindow({ show: false, width: 1000, height: 600, webPreferences: { backgroundThrottling: false } })
   try {
     await fixture.loadURL("data:text/html,<h1>Native preview fixture</h1><p id='step'>Frame</p><script>setInterval(()=>document.getElementById('step').textContent=Date.now(),200)</script>")
     fixture.showInactive()
@@ -40,6 +40,11 @@ async function run() {
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
     console.log(outcome?.text)
+    if (outcome?.status !== "passed") {
+      console.log(await viewer.webContents.executeJavaScript("document.body.innerHTML"))
+      await writeFile(join(root, "failure.png"), (await viewer.webContents.capturePage()).toPNG())
+      console.log(root)
+    }
     assert.equal(outcome?.status, "passed")
     assert.equal(await frontmost(), before, "Preview must preserve the user's frontmost application")
     assert.equal(BrowserWindow.getAllWindows().length, 2, "The production preview must not create a system window")
