@@ -17,37 +17,18 @@ import { toast } from "sonner"
  * providers' usage endpoints.
  */
 
-export type AccountHarness = string
-export type AccountProvider = string
-
-export interface ProviderAccount {
-  harness: AccountProvider
-  name: string
-  email?: string
-  accountId?: string
-  providerId?: string
-  authType?: "oauth" | "api" | "wellknown"
-  active: boolean
-  source?: "mako" | "subrouter" | "opencode"
-}
-
-export interface AccountUsage {
-  status: "ok" | "stale-token" | "missing-credentials" | "unavailable" | "error"
-  plan?: string
-  detail?: string
-  session?: {
-    usedPercent: number
-    windowMinutes: number
-    resetsAt: number | null
-  } | null
-  weekly?: {
-    usedPercent: number
-    windowMinutes: number
-    resetsAt: number | null
-  } | null
-}
+import type {
+  AccountHarness,
+  AccountProvider,
+  AccountUsage,
+  AccountProviderInfo,
+  HarnessAccount,
+} from "@/lib/types"
+export type { AccountHarness, AccountProvider, AccountUsage } from "@/lib/types"
+export type ProviderAccount = Omit<HarnessAccount, "dir">
 
 interface AccountsState {
+  providers: AccountProviderInfo[]
   accounts: ProviderAccount[]
   usage: Record<string, AccountUsage>
   /** `harness:name` of the account a switch/capture/remove is acting on. */
@@ -58,6 +39,7 @@ interface AccountsState {
 const STALE_MS = 60_000
 
 export const accountsStore = createStore<AccountsState>({
+  providers: [],
   accounts: [],
   usage: {},
 })
@@ -76,9 +58,9 @@ export const accounts = {
     accountsStore.set({ loadedAt: Date.now() })
     void getMako()
       .accounts()
-      .then((list) => {
-        accountsStore.set({ accounts: list })
-        for (const account of list) {
+      .then((catalog) => {
+        accountsStore.set(catalog)
+        for (const account of catalog.accounts) {
           void getMako()
             .accountUsage(account.harness, account.name)
             .then((value) =>
@@ -113,7 +95,7 @@ export const accounts = {
       accounts.load(true)
     } catch (error) {
       toast.error("Account was not switched", {
-          duration: Infinity,
+        duration: Infinity,
         description: error instanceof Error ? error.message : String(error),
         action: {
           label: "Retry",
@@ -139,7 +121,7 @@ export const accounts = {
       accounts.load(true)
     } catch (error) {
       toast.error("Account was not removed", {
-          duration: Infinity,
+        duration: Infinity,
         description: error instanceof Error ? error.message : String(error),
         action: {
           label: "Retry",

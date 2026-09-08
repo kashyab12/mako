@@ -4,6 +4,11 @@ import type {
 } from "../../electron/shared.ts"
 
 export type {
+  AccountHarness,
+  AccountProvider,
+  AccountUsage,
+  AccountProviderInfo,
+  HarnessAccount,
   TransferInput,
   LiveCapability,
   LivePermissionRequest,

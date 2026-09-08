@@ -14,10 +14,29 @@ export const controlPreviewStore = createStore<PreviewState>({
 })
 export const useControlPreview = createHook(controlPreviewStore)
 
-const consumers = new Map<string, number>()
+const watches = new Map<string, { users: number; stop: () => void }>()
 
 export function watchControlPreview(conversationId: string): () => void {
-  consumers.set(conversationId, (consumers.get(conversationId) ?? 0) + 1)
+  let watch = watches.get(conversationId)
+  if (watch) watch.users++
+  else {
+    watch = { users: 1, stop: startWatchingControlPreview(conversationId) }
+    watches.set(conversationId, watch)
+  }
+  let released = false
+  const subscription = watch
+  return () => {
+    if (released) return
+    released = true
+    subscription.users--
+    if (subscription.users === 0) {
+      watches.delete(conversationId)
+      subscription.stop()
+    }
+  }
+}
+
+function startWatchingControlPreview(conversationId: string): () => void {
   const watcher = crypto.randomUUID()
   let closed = false
   let pending = false
@@ -58,7 +77,17 @@ export function watchControlPreview(conversationId: string): () => void {
     } finally {
       pending = false
       if (closed || document.hidden) release()
-      else timer = setTimeout(() => void poll(), 500)
+      else {
+        const activity =
+          controlPreviewStore.get().previews[conversationId]?.activity
+        if (
+          activity &&
+          (activity.status === "running" ||
+            Date.now() - activity.updatedAt < 5_000)
+        )
+          timer = setTimeout(() => void poll(), 500)
+        else release()
+      }
     }
   }
   const release = () => {
@@ -71,6 +100,14 @@ export function watchControlPreview(conversationId: string): () => void {
     if (document.hidden) release()
     else void poll()
   }
+  let lastActivity = controlPreviewStore.get().activities[conversationId]
+  const unsubscribe = controlPreviewStore.subscribe(() => {
+    const activity = controlPreviewStore.get().activities[conversationId]
+    if (activity === lastActivity) return
+    lastActivity = activity
+    if (timer) clearTimeout(timer)
+    void poll()
+  })
   document.addEventListener("visibilitychange", visibility)
   void poll()
   return () => {
@@ -78,20 +115,16 @@ export function watchControlPreview(conversationId: string): () => void {
     closed = true
     if (timer) clearTimeout(timer)
     document.removeEventListener("visibilitychange", visibility)
+    unsubscribe()
     release()
-    const remaining = (consumers.get(conversationId) ?? 1) - 1
-    if (remaining > 0) consumers.set(conversationId, remaining)
-    else {
-      consumers.delete(conversationId)
-      controlPreviewStore.set((state) => ({
-        previews: Object.fromEntries(
-          Object.entries(state.previews).filter(([id]) => id !== conversationId)
-        ),
-        errors: Object.fromEntries(
-          Object.entries(state.errors).filter(([id]) => id !== conversationId)
-        ),
-      }))
-    }
+    controlPreviewStore.set((state) => ({
+      previews: Object.fromEntries(
+        Object.entries(state.previews).filter(([id]) => id !== conversationId)
+      ),
+      errors: Object.fromEntries(
+        Object.entries(state.errors).filter(([id]) => id !== conversationId)
+      ),
+    }))
   }
 }
 
@@ -140,9 +173,9 @@ export async function controlPreviewStream(
     mandatory: {
       chromeMediaSource: "desktop",
       chromeMediaSourceId: source,
-      maxWidth: 960,
-      maxHeight: 720,
-      maxFrameRate: 4,
+      maxWidth: 640,
+      maxHeight: 480,
+      maxFrameRate: 2,
     },
   }
   return navigator.mediaDevices.getUserMedia({ audio: false, video })

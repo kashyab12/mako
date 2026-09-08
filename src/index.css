@@ -586,8 +586,14 @@
   overflow-anchor: none;
 }
 
+[data-estimated-paragraph] {
+  content-visibility: auto;
+}
+
 .scroll-fade-scroller[data-preserve-scroll] .contain-turn,
-.contain-turn[data-preserve-height] {
+.scroll-fade-scroller[data-preserve-scroll] [data-estimated-paragraph],
+.contain-turn[data-preserve-height],
+.contain-turn[data-preserve-height] [data-estimated-paragraph] {
   content-visibility: visible;
 }
 
@@ -823,17 +829,63 @@
   }
 }
 
-/* Decorative ink uses the existing warm foreground ramp. */
+/* An original marine engraving keeps its own detail at native image resolution.
+ * Only the small moving wake is rasterized by the bounded canvas. */
+.ocean-scene {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  overflow: hidden;
+  mix-blend-mode: screen;
+  animation: ocean-arrive 220ms var(--ease-out) both;
+  mask-image: linear-gradient(to bottom, transparent 20%, black 60%, black 89%, transparent);
+}
+
+/* The scene belongs to the whole agent pane, including the composer. Its
+ * geometry must never depend on how many lines the user has drafted. */
+.agent-surface > .ocean-scene {
+  bottom: 84px;
+}
+
+.ocean-engraving {
+  position: absolute;
+  bottom: -16%;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center bottom;
+  filter: invert(1) sepia(0.3);
+  opacity: 0.3;
+}
+
+.light .ocean-scene {
+  mix-blend-mode: multiply;
+}
+
+.light .ocean-engraving {
+  filter: sepia(0.3);
+  opacity: 0.25;
+}
+
+@keyframes ocean-arrive {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ocean-scene { animation: none; }
+}
+
 .dither-field {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   color: var(--foreground);
-  opacity: 0.045;
+  opacity: 0.12;
   image-rendering: pixelated;
   pointer-events: none;
-  z-index: -1;
 }
 
 .usage-dither {
@@ -843,7 +895,7 @@
 }
 
 @supports (field-sizing: content) {
-  .composer-input { field-sizing: content; min-height: 1lh; }
+  .composer-input { field-sizing: content; }
 }
 
 [data-sonner-toaster] [data-sonner-toast] {

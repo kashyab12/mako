@@ -2,7 +2,7 @@
 import { createRoot } from "react-dom/client"
 import { flushSync } from "react-dom"
 import { ControlPreviewOverlay } from "@/components/inspector/control-preview-overlay"
-import type { ControlImage } from "@/lib/types"
+import type { ControlPreview } from "@/lib/types"
 import { getMako } from "@/lib/bridge"
 import {
   controlPreviewStore,
@@ -19,7 +19,10 @@ canvas.width = 640
 canvas.height = 360
 const painter = canvas.getContext("2d")!
 painter.fillRect(0, 0, 640, 360)
-const image: ControlImage = { mimeType: "image/png", data: canvas.toDataURL().split(",")[1]! }
+const image: NonNullable<ControlPreview["frame"]>["image"] = {
+  mimeType: "image/png",
+  data: canvas.toDataURL().split(",")[1]!,
+}
 const bridge = getMako()
 let frame = 0
 bridge.nativeWindowVideo = Boolean(source)
@@ -60,7 +63,7 @@ function render(second: boolean) {
           <div
             data-pane="two"
             style={{ height: 384, width: 384 }}
-          className="relative overflow-hidden border border-border"
+            className="relative overflow-hidden border border-border"
           >
             <ControlPreviewOverlay conversationId="two" />
           </div>
@@ -87,6 +90,14 @@ async function run() {
     operation: "observe",
     status: "running",
     target: "one",
+    updatedAt: 1,
+  })
+  receiveControlActivity({
+    conversationId: "two",
+    kind: "browser",
+    operation: "observe",
+    status: "running",
+    target: "two",
     updatedAt: 1,
   })
   render(true)

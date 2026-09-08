@@ -1,3 +1,5 @@
+import { ConversationTimeline } from "@/components/transcript/conversation-timeline"
+import type { Exchange as ExchangeData } from "@/lib/exchanges"
 // Explicit fixture page: /scripts/ui-pilot-browser.html. Never imported by Mako.
 import { createRoot } from "react-dom/client"
 import { flushSync } from "react-dom"
@@ -73,7 +75,7 @@ async function paragraphs() {
     )
   }
   flushSync(() => root.render(<Prose text={text} streaming />))
-  await until(() => fixture.querySelector("p")?.style.contentVisibility === "")
+  await until(() => !fixture.querySelector("p")?.hasAttribute("data-estimated-paragraph"))
   check(
     fixture.querySelector("p")?.style.containIntrinsicBlockSize === "",
     "streaming disables preparation and estimates"
@@ -101,6 +103,72 @@ function deferred() {
     resolve = done
   })
   return { promise, resolve: () => resolve() }
+}
+
+async function transcriptAnchor() {
+  const exchanges: ExchangeData[] = Array.from({ length: 60 }, (_, index) => ({
+    id: `exchange-${index}`,
+    system: [],
+    response: [
+      {
+        id: `answer-${index}`,
+        role: "assistant",
+        blocks: [
+          {
+            type: "text",
+            text: "The browser keeps the actual paragraph layout while earlier turns are inserted above the reading position. ".repeat(
+              12
+            ),
+          },
+        ],
+      },
+    ],
+  }))
+  flushSync(() =>
+    root.render(
+      <div className="flex h-96 flex-col" style={{ width: 640 }}>
+        <ConversationTimeline
+          identity="geometry-check"
+          exchanges={exchanges}
+          empty={null}
+        />
+      </div>
+    )
+  )
+  const scroller = fixture.querySelector<HTMLDivElement>(
+    ".scroll-fade-scroller"
+  )!
+  // Open the thread fully before measuring a user's established reading position.
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  scroller.dispatchEvent(
+    new WheelEvent("wheel", { deltaY: -100, bubbles: true })
+  )
+  scroller.scrollTop = 0
+  scroller.dispatchEvent(new Event("scroll", { bubbles: true }))
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+  const anchor = fixture.querySelector<HTMLElement>(
+    '[data-exchange="exchange-30"]'
+  )!
+  const offset = () =>
+    anchor.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+  const before = offset()
+  const earlier = [...fixture.querySelectorAll("button")].find((candidate) =>
+    candidate.textContent?.includes("Show 30 earlier turns")
+  )!
+  earlier.click()
+  await until(
+    () => fixture.querySelector('[data-exchange="exchange-0"]') !== null
+  )
+  await new Promise((resolve) => setTimeout(resolve, 160))
+  check(
+    Math.abs(offset() - before) <= 2,
+    `prepending thirty real exchanges preserves the reading anchor within 2px (${Math.abs(offset() - before).toFixed(2)}px)`
+  )
+  const paragraph = fixture.querySelector("[data-preserve-height] p")!
+  check(
+    getComputedStyle(paragraph).contentVisibility === "visible",
+    "paragraph estimates yield to the transcript's scroll-preservation guard"
+  )
 }
 
 async function clipboard() {
@@ -337,6 +405,7 @@ button.onclick = async () => {
   output.textContent = "Running production UI checks…"
   try {
     await paragraphs()
+    await transcriptAnchor()
     await clipboard()
     await divider()
     await dither()
