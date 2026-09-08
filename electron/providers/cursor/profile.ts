@@ -1,10 +1,6 @@
 import { homedir } from "node:os"
 import { join } from "node:path"
-import {
-  normalizeCursorModels,
-  type CursorConfig,
-  type CursorModelListResponse,
-} from "../../harness-models.js"
+import { normalizeCursorModels, type CursorConfig, type CursorModelListResponse } from "@mako/sessions/model-catalog"
 import {
   availableProviderProfile,
   type ProviderProfileLoader,
@@ -27,13 +23,15 @@ export const cursorProfileLoader: ProviderProfileLoader = {
     "models",
   ],
   cacheKey: () => "",
-  async load(env) {
+  async load(env, cwd) {
     const result = await rpcRequest<CursorModelListResponse>(
       "cursor-agent",
       ["acp"],
       "cursor/list_available_models",
       env,
-      true
+      true,
+      {},
+      cwd
     )
     const configured = await readJson<CursorConfig>(
       join(homedir(), ".cursor", "cli-config.json")

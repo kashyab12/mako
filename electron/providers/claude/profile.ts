@@ -1,7 +1,5 @@
-import {
-  normalizeClaudeModels,
-  type ClaudeModelRow,
-} from "../../harness-models.js"
+import { claudeConfiguredSettings } from "./settings.js"
+import { normalizeClaudeModels, type ClaudeModelRow } from "@mako/sessions/model-catalog"
 import {
   availableProviderProfile,
   type ProviderProfileLoader,
@@ -34,12 +32,12 @@ export const claudeProfileLoader: ProviderProfileLoader = {
     "agent-teams",
   ],
   cacheKey: (env) => env.CLAUDE_CONFIG_DIR ?? "",
-  async load(env) {
+  async load(env, cwd) {
     const response = await streamRequest<
       ClaudeControlMessage,
       ClaudeModelRow[]
     >(
-      "claude",
+      env.CLAUDE_CODE_EXECUTABLE ?? "claude",
       [
         "-p",
         "--input-format",
@@ -58,11 +56,19 @@ export const claudeProfileLoader: ProviderProfileLoader = {
         message.type === "control_response" &&
         message.response?.subtype === "success"
           ? message.response.response?.models
-          : undefined
+          : undefined,
+      cwd
     )
-    return availableProviderProfile(
-      claudeProfileLoader,
-      normalizeClaudeModels(response)
-    )
+    const catalog = normalizeClaudeModels(response)
+    for (const model of catalog.models) {
+      for (const option of model.options) option.change = "launch"
+    }
+    try {
+      catalog.settings = { ...await claudeConfiguredSettings(env, cwd), model: catalog.defaultModel }
+    } catch {
+      catalog.settings = { model: catalog.defaultModel }
+      catalog.configurationError = "Claude Code settings could not be read. Unreported values remain unknown."
+    }
+    return availableProviderProfile(claudeProfileLoader, catalog)
   },
 }

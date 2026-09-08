@@ -1,14 +1,14 @@
+import { codexWireSettings } from "./settings.js"
 import {
-  commandTuning,
   type NativeRunner,
 } from "../native-runner.js"
 
 function tuningArgs(options: Parameters<NativeRunner["fresh"]>[1]): string[] {
-  const tuning = commandTuning(options)
+  const tuning = codexWireSettings(options)
   return [
     ...(tuning.model ? ["-m", tuning.model] : []),
-    ...(tuning.cliEffort !== undefined
-      ? ["-c", `model_reasoning_effort="${tuning.cliEffort}"`]
+    ...(tuning.effort !== undefined
+      ? ["-c", `model_reasoning_effort="${tuning.effort}"`]
       : []),
     ...(tuning.serviceTier !== undefined
       ? ["-c", `service_tier="${tuning.serviceTier}"`]

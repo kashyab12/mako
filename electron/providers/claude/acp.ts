@@ -2,6 +2,16 @@ import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { resolveExecutable } from "../../executable.js"
 import type { ProviderAcpSource } from "../acp-source.js"
+import { z } from "zod"
+
+interface ClaudeSdkExtraArgs {
+  effort?: string
+  settings?: string
+}
+interface ClaudeSdkOptions {
+  model?: string
+  extraArgs: ClaudeSdkExtraArgs
+}
 
 function adapterPath(appPath: string): string {
   return join(
@@ -17,6 +27,18 @@ function adapterPath(appPath: string): string {
 export const claudeAcpSource: ProviderAcpSource = {
   provider: "claude",
   canResume: true,
+  launchOptionIds: ["effort", "fast", "agentTeams"],
+  sessionMetadata(tuning) {
+    const effort = z.string().optional().parse(tuning.options?.effort)
+    const fast = z.boolean().optional().parse(tuning.options?.fast)
+    const extraArgs: ClaudeSdkExtraArgs = {}
+    if (effort) extraArgs.effort = effort
+    if (fast !== undefined)
+      extraArgs.settings = JSON.stringify({ fastMode: fast })
+    const options: ClaudeSdkOptions = { extraArgs }
+    if (tuning.model) options.model = tuning.model
+    return { claudeCode: { options } }
+  },
   available: (appPath) =>
     existsSync(adapterPath(appPath)) &&
     resolveExecutable(process.env.CLAUDE_CODE_EXECUTABLE ?? "claude") !== null,

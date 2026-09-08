@@ -20,6 +20,7 @@ import {
   accountDir,
   accountsRoot,
   cleanAccountName,
+  deleteKeychain,
   ensureSharedLinks,
   jsonFields,
   numberValue,
@@ -229,6 +230,7 @@ async function captureAccount(name: string): Promise<void> {
   const dir = accountDir("claude", clean)
   await mkdir(join(accountsRoot(), "claude"), { recursive: true, mode: 0o700 })
   await mkdir(dir, { mode: 0o700 })
+  let scopedLoginSaved = false
 
   try {
     // Credentials are required — an account with no keys is nothing.
@@ -263,6 +265,7 @@ async function captureAccount(name: string): Promise<void> {
         mode: 0o600,
       })
       await writeKeychain(scopedService(dir), keychainJson)
+      scopedLoginSaved = true
       captured = true
     }
 
@@ -282,6 +285,7 @@ async function captureAccount(name: string): Promise<void> {
     // Sessions and skills remain in the one watched store for every account.
     await ensureSharedLinks(realHome, dir, SHARED_LINKS)
   } catch (error) {
+    if (scopedLoginSaved) await deleteKeychain(scopedService(dir))
     await rm(dir, { recursive: true, force: true })
     throw error
   }
@@ -290,7 +294,9 @@ async function captureAccount(name: string): Promise<void> {
 async function removeAccount(name: string): Promise<void> {
   if (name === "default")
     throw new Error("The default account is the CLI's own login")
-  await rm(accountDir("claude", name), { recursive: true, force: true })
+  const dir = accountDir("claude", name)
+  await deleteKeychain(scopedService(dir))
+  await rm(dir, { recursive: true, force: true })
 }
 
 async function accountEnv(

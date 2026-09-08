@@ -1,3 +1,4 @@
+import { cursorCanvasPreview } from "./canvas-preview.js"
 import { acpLiveDriver } from "../acp-live-driver.js"
 import { emitCursorSession } from "@mako/sessions"
 import type { ProviderModule } from "../host.js"
@@ -9,6 +10,7 @@ import { cursorProfileLoader } from "./profile.js"
 import { cursorSkillSource } from "./skills.js"
 
 export const installCursor: ProviderModule = (host) => {
+  host.artifactPreviews.register(cursorCanvasPreview)
   host.nativeRunners.register(cursorNativeRunner)
   host.acpSources.register(cursorAcpSource)
   host.liveDrivers.register(acpLiveDriver(cursorAcpSource))

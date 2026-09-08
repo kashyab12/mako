@@ -5,7 +5,7 @@ import {
 
 export const claudeNativeRunner: NativeRunner = {
   provider: "claude",
-  fastMode: "unsupported",
+  fastMode: "supported",
   resume(id, prompt, options) {
     const tuning = commandTuning(options)
     return {
@@ -18,6 +18,7 @@ export const claudeNativeRunner: NativeRunner = {
         "--dangerously-skip-permissions",
         ...(tuning.model ? ["--model", tuning.model] : []),
         ...(tuning.effort ? ["--effort", tuning.effort] : []),
+        ...(tuning.fast !== undefined ? ["--settings", JSON.stringify({ fastMode: tuning.fast })] : []),
       ],
     }
   },
@@ -31,6 +32,7 @@ export const claudeNativeRunner: NativeRunner = {
         "--dangerously-skip-permissions",
         ...(tuning.model ? ["--model", tuning.model] : []),
         ...(tuning.effort ? ["--effort", tuning.effort] : []),
+        ...(tuning.fast !== undefined ? ["--settings", JSON.stringify({ fastMode: tuning.fast })] : []),
       ],
     }
   },
