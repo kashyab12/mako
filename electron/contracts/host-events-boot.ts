@@ -1,3 +1,4 @@
+import type { ControlActivity } from "./control-preview.js"
 import type { NativeRequest } from "./native-requests.js"
 import type { BrowserControlStatus } from "./browser-control.js"
 import type { LiveBatch, LiveSummary } from "./live-conversations.js"
@@ -78,6 +79,7 @@ export type HostEventBody =
   | { type: "thread-run"; run: ThreadRunState }
   | { type: "native-requests"; requests: NativeRequest[] }
   | { type: "browser-control"; browsers: BrowserControlStatus[] }
+  | { type: "control-activity"; activity: ControlActivity }
 
 /**
  * Every event says which tab it came from.

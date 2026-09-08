@@ -242,6 +242,28 @@ export function createMakoBridge(transport: BridgeTransport) {
     setDaemonLogin: (enabled: boolean) =>
       invokeTrustedHost<void>("mako:daemon-login-set", enabled),
 
+    hideControlPreview: () =>
+      invokeTrustedHost<void>("mako:control-preview-hide"),
+    appshotWindows: () =>
+      invokeTrustedHost<import("../shared.js").AppshotWindow[]>(
+        "mako:appshot-windows"
+      ),
+    captureAppshot: (target: import("../shared.js").AppshotTarget) =>
+      invokeTrustedHost<import("../shared.js").Appshot>(
+        "mako:appshot-capture",
+        target
+      ),
+    controlPreview: (
+      conversationId: string,
+      watching: boolean,
+      watcher = "panel"
+    ) =>
+      invokeTrustedHost<import("../shared.js").ControlPreview | null>(
+        "mako:control-preview",
+        conversationId,
+        watching,
+        watcher
+      ),
     computerPermissions: () =>
       invokeTrustedHost<MakoComputerPermissions>("mako:computer-permissions"),
     browserControlStatus: () =>
