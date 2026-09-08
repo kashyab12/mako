@@ -6,6 +6,8 @@ import { flushSync } from "react-dom"
 import { Prose } from "@/components/transcript/markdown"
 import { Divider } from "@/components/shell/divider"
 import { DitherField } from "@/components/ui/dither-field"
+import { Transcript } from "@/components/transcript/transcript"
+import { Composer } from "@/components/composer/composer"
 import { Toaster } from "@/components/ui/sonner"
 import { installMockBridge } from "./mock-bridge"
 import "../index.css"
@@ -37,6 +39,53 @@ async function until(test: () => boolean) {
     if (performance.now() > deadline) throw new Error("UI condition timed out")
     await new Promise((resolve) => setTimeout(resolve, 20))
   }
+}
+
+async function openingDraft() {
+  flushSync(() =>
+    root.render(
+      <main className="agent-surface relative isolate flex h-[640px] flex-col overflow-hidden">
+        <Transcript />
+        <Composer />
+      </main>
+    )
+  )
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  const scene = fixture.querySelector<HTMLElement>(".ocean-scene")!
+  const heading = fixture.querySelector<HTMLElement>(".text-welcome")!
+  const input = fixture.querySelector<HTMLTextAreaElement>(".composer-input")!
+  const bounds = scene.getBoundingClientRect()
+  const headingTop = heading.getBoundingClientRect().top
+  const inputHeight = input.getBoundingClientRect().height
+  input.focus({ preventScroll: true })
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+  check(
+    input.getBoundingClientRect().height === inputHeight,
+    "focusing an empty composer does not change its height"
+  )
+  for (const lines of [1, 12, 30]) {
+    window.dispatchEvent(
+      new CustomEvent("mako:compose", {
+        detail: Array.from(
+          { length: lines },
+          (_, i) => `Layout check ${i + 1}`
+        ).join("\n"),
+      })
+    )
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    const current = scene.getBoundingClientRect()
+    check(
+      current.top === bounds.top && current.height === bounds.height,
+      `the ocean stays fixed with a ${lines}-line draft`
+    )
+    check(
+      heading.getBoundingClientRect().top === headingTop,
+      `the opening heading stays fixed with a ${lines}-line draft`
+    )
+  }
+  window.dispatchEvent(new CustomEvent("mako:compose", { detail: "" }))
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+  flushSync(() => root.render(null))
 }
 
 async function paragraphs() {
@@ -75,7 +124,9 @@ async function paragraphs() {
     )
   }
   flushSync(() => root.render(<Prose text={text} streaming />))
-  await until(() => !fixture.querySelector("p")?.hasAttribute("data-estimated-paragraph"))
+  await until(
+    () => !fixture.querySelector("p")?.hasAttribute("data-estimated-paragraph")
+  )
   check(
     fixture.querySelector("p")?.style.containIntrinsicBlockSize === "",
     "streaming disables preparation and estimates"
@@ -404,6 +455,7 @@ button.onclick = async () => {
   button.disabled = true
   output.textContent = "Running production UI checks…"
   try {
+    await openingDraft()
     await paragraphs()
     await transcriptAnchor()
     await clipboard()

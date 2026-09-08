@@ -27,11 +27,11 @@
     "typecheck": "npm run -s build --workspace @mako/sessions && npm run -s build --workspace @mako/relay && tsc -b --force",
     "typecheck:all": "npm run typecheck && npm run backend:typecheck",
     "test:accounts": "tsx scripts/test-account-usage.ts && tsx scripts/test-account-routing.ts",
-    "test:acp-registry": "tsx scripts/test-acp-registry.ts",
+    "test:acp-registry": "tsx scripts/test-acp-registry.ts && tsx scripts/test-devin-permissions.ts",
     "test:automations": "tsx scripts/test-automations.ts",
     "test:codex-protocol": "tsx scripts/test-codex-protocol.ts",
     "test:host": "tsx scripts/test-host-domains.ts",
-    "test:mcp": "tsx scripts/test-mcp.ts && tsx scripts/test-browser-service.ts && tsx scripts/test-browser-tools.ts && tsx scripts/test-browser-runtime.ts && tsx scripts/test-computer-tools.ts && tsx scripts/test-mcp-entry.ts && tsx scripts/test-control-previews.ts && tsx scripts/test-computer-input-target.ts",
+    "test:mcp": "tsx scripts/test-mcp.ts && tsx scripts/test-browser-service.ts && tsx scripts/test-browser-tools.ts && tsx scripts/test-browser-runtime.ts && tsx scripts/test-computer-tools.ts && tsx scripts/test-mcp-entry.ts && tsx scripts/test-control-previews.ts && tsx scripts/test-control-preview-state.ts && tsx scripts/test-computer-input-target.ts",
     "test:performance": "tsx scripts/test-performance.ts",
     "verify:mac-release": "tsx scripts/verify-macos-release.ts",
     "test:plugins": "tsx scripts/test-plugins.ts",
@@ -128,7 +128,7 @@
     "appId": "dev.mako.app",
     "productName": "Mako",
     "artifactName": "${productName}-${arch}.${ext}",
-    "copyright": "Copyright © 2026 Verbiflow",
+    "copyright": "Copyright \u00a9 2026 Verbiflow",
     "directories": {
       "output": "release",
       "buildResources": "build"
