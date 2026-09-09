@@ -1,0 +1,805 @@
+{
+  "checkedAt": "2026-09-08T22:34:33.151Z",
+  "revisions": {
+    "main": "7fbc545ae8c7866ac2b39648120cb2a17250d8b4",
+    "v2": "91b193653ec82f40a2dd742a88237b1f7bdcc6f9"
+  },
+  "registry": [
+    {
+      "provider": "claude",
+      "nativeResume": true,
+      "nativeForkAtRun": false,
+      "steer": true,
+      "compact": true
+    },
+    {
+      "provider": "codex",
+      "nativeResume": true,
+      "nativeForkAtRun": true,
+      "steer": true,
+      "compact": false
+    },
+    {
+      "provider": "cursor",
+      "nativeResume": false,
+      "nativeForkAtRun": false,
+      "steer": false,
+      "compact": false
+    },
+    {
+      "provider": "grok",
+      "nativeResume": true,
+      "nativeForkAtRun": false,
+      "steer": false,
+      "compact": false
+    },
+    {
+      "provider": "devin",
+      "nativeResume": false,
+      "nativeForkAtRun": false,
+      "steer": false,
+      "compact": false
+    },
+    {
+      "provider": "opencode",
+      "nativeResume": true,
+      "nativeForkAtRun": false,
+      "steer": false,
+      "compact": false
+    }
+  ],
+  "evidence": [
+    {
+      "row": "claude",
+      "repo": "v2",
+      "path": "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts",
+      "anchor": "forkThread: Effect.fn",
+      "line": 5975,
+      "sha256": "84a8dd8630fd71c087d962312d46d7d8932a49f701ffd929ac3a20c52851d2f5"
+    },
+    {
+      "row": "claude",
+      "repo": "mako",
+      "path": "electron/providers/claude/sdk-driver.ts",
+      "anchor": "async steer",
+      "line": 304,
+      "sha256": "ea8774ef27d54e536933741d804cf8ac49b0341055067d1c010f7c2cbc6f6c5f"
+    },
+    {
+      "row": "claude",
+      "repo": "mako",
+      "path": "docs/audits/2026-09-08/sdk-controls/claude-result.json",
+      "anchor": "\"compaction\": true",
+      "line": 13,
+      "sha256": "9b6f0aaf97215562643e1ae062affce2d2d57d4f36b727f5b0597326cec5cc0a"
+    },
+    {
+      "row": "codex",
+      "repo": "v2",
+      "path": "apps/server/src/orchestration-v2/ProviderAdapter.ts",
+      "anchor": "readonly compactThread?",
+      "line": 511,
+      "sha256": "6f16ab0f858ebd93b6740c73fce846ead30be8c4a925b895b888b9e7ebb1f0ea"
+    },
+    {
+      "row": "codex",
+      "repo": "mako",
+      "path": "electron/providers/codex/live-driver.ts",
+      "anchor": "Native compaction failed",
+      "line": 10,
+      "sha256": "a700b6e4e8fb021091245e978f8fe07074c5da9b2b54be8c43edff1cbc883bea"
+    },
+    {
+      "row": "codex",
+      "repo": "mako",
+      "path": "docs/audits/2026-09-08/sdk-controls/codex-compaction-failure.json",
+      "anchor": "{",
+      "line": 1,
+      "sha256": "d1cc62e40741d0e34a205040dd61bcb2c5785a6fb65a16d81d14a43c3a770867"
+    },
+    {
+      "row": "cursor",
+      "repo": "v2",
+      "path": "apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.ts",
+      "anchor": "Cursor Agent SDK does not expose interactive approval requests.",
+      "line": 2408,
+      "sha256": "eb873e972cf250259c8e0d49d5244181c61fe5ea3e5025cb48e817b642689895"
+    },
+    {
+      "row": "cursor",
+      "repo": "mako",
+      "path": "electron/providers/cursor/acp.ts",
+      "anchor": "canResume: false",
+      "line": 6,
+      "sha256": "ff4cdd4ba67c223c7776db2837a57a7cc4023ce2b95411a20699856095f302f2"
+    },
+    {
+      "row": "other-providers",
+      "repo": "main",
+      "path": "apps/server/src/provider/Layers/OpenCodeAdapter.ts",
+      "anchor": "@opencode-ai/sdk",
+      "line": 32,
+      "sha256": "376211ac04f66c283695d04869a5ce5dc11c2446f6ffb675bbbe8b8201c4daec"
+    },
+    {
+      "row": "other-providers",
+      "repo": "mako",
+      "path": "electron/providers/index.ts",
+      "anchor": "const modules",
+      "line": 9,
+      "sha256": "136e14051526e48a1f4d649f8a10d17e6fa1b9e21e002b4e10f7112a3ee7e99d"
+    },
+    {
+      "row": "other-providers",
+      "repo": "mako",
+      "path": "docs/audits/2026-09-07/browser-extension-evidence.json",
+      "anchor": "{",
+      "line": 1,
+      "sha256": "4f153d45c2f8250a913f8366856bea069c46679858e5cf7d48c4028e811952f0"
+    },
+    {
+      "row": "steer-durability",
+      "repo": "v2",
+      "path": "apps/server/src/orchestration-v2/CommandReceiptStore.ts",
+      "anchor": "CommandReceiptStore",
+      "line": 18,
+      "sha256": "b41fa23977ae7b7f622c3e1d83b2a3aeb1d452b46864436a6771dc3ee28bfb86"
+    },
+    {
+      "row": "steer-durability",
+      "repo": "mako",
+      "path": "electron/live-actions.ts",
+      "anchor": "class LiveActions",
+      "line": 10,
+      "sha256": "46254bf036c9d91d00014cf6cfeb96ccde1258b58aa68389c96f4cddaa457f8e"
+    },
+    {
+      "row": "steer-durability",
+      "repo": "mako",
+      "path": "scripts/test-live-actions.ts",
+      "anchor": "uncertain",
+      "line": 154,
+      "sha256": "270852684733cd8878dca6fe427d2a359db5164f4678177e0311d96d9d2172b5"
+    },
+    {
+      "row": "handoff",
+      "repo": "v2",
+      "path": "apps/server/src/orchestration-v2/ContextHandoffService.ts",
+      "anchor": "ContextHandoffService",
+      "line": 32,
+      "sha256": "7fbc82cf35ca81343a5bf016cee8937787570ab1f2dccfd5ff925f67c17cb496"
+    },
+    {
+      "row": "handoff",
+      "repo": "mako",
+      "path": "electron/live-transfers.ts",
+      "anchor": "class LiveTransfers",
+      "line": 19,
+      "sha256": "48005b638280e7ae6a00e8a711e3a2201584d5ebc8d134a6ce9ed305f0a7ab40"
+    },
+    {
+      "row": "handoff",
+      "repo": "mako",
+      "path": "scripts/test-conversation-transfers.ts",
+      "anchor": "assert",
+      "line": 4,
+      "sha256": "c5cd086c6376f9b889023db66fc558b1ca9630c6ba28e467cdbefeaf2507b749"
+    },
+    {
+      "row": "restart",
+      "repo": "v2",
+      "path": "apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts",
+      "anchor": "ProviderRuntimeRecoveryService",
+      "line": 51,
+      "sha256": "f724d448f95027f6a916fe595e878073ef098fd2005d7b0142920f29528a6c94"
+    },
+    {
+      "row": "restart",
+      "repo": "mako",
+      "path": "electron/live-journal.ts",
+      "anchor": "LiveRequestSchema",
+      "line": 38,
+      "sha256": "2e0947e25bef4ba5a1df9bb5619556fd0a2c253cbc013149e8137aeae3213a51"
+    },
+    {
+      "row": "restart",
+      "repo": "mako",
+      "path": "scripts/test-live-conversations.ts",
+      "anchor": "assert",
+      "line": 2,
+      "sha256": "65bd26cf465036daa2ea036de304022e51fc1a033a6cfb13f2b399270b14f0cb"
+    },
+    {
+      "row": "approvals",
+      "repo": "main",
+      "path": "apps/web/src/components/chat/ComposerPendingApprovalPanel.tsx",
+      "anchor": "ComposerPendingApprovalPanel",
+      "line": 5,
+      "sha256": "840d9ab6b51f200353f682ac9cf8faddcb99f04a0330ad37120a520c06be8f36"
+    },
+    {
+      "row": "approvals",
+      "repo": "mako",
+      "path": "electron/providers/claude/sdk-permissions.ts",
+      "anchor": "readonly tool: CanUseTool",
+      "line": 81,
+      "sha256": "9a76697ae74baa77b8dcfd32217c4681855b69227d0b21c5614448e2d75bb49f"
+    },
+    {
+      "row": "approvals",
+      "repo": "mako",
+      "path": "src/components/viewer/acp-panel.tsx",
+      "anchor": "function Permission",
+      "line": 110,
+      "sha256": "6fc8d9063952507c512755c85c3e9a90377199fbdda00299f3a0a2ad7833cc15"
+    },
+    {
+      "row": "models-accounts",
+      "repo": "main",
+      "path": "apps/web/src/components/settings/AddProviderInstanceDialog.tsx",
+      "anchor": "AddProviderInstanceDialog",
+      "line": 30,
+      "sha256": "4312fdc49f60b76947b3d2b4e611e3ce6544fdd84fbe2b34795700eb64be53a9"
+    },
+    {
+      "row": "models-accounts",
+      "repo": "mako",
+      "path": "electron/accounts.ts",
+      "anchor": "export",
+      "line": 54,
+      "sha256": "09fb9f9f21ca36b4ff3291d83ba6c285c559702b8f0bb9defb8aa9212b1f1aca"
+    },
+    {
+      "row": "models-accounts",
+      "repo": "mako",
+      "path": "src/components/composer/foreign-effort.tsx",
+      "anchor": "ForeignEffortPicker",
+      "line": 19,
+      "sha256": "f1fe6923bb19ec422152dce9e351de4f2846cd0ded730b3bf27e375a2c2673d7"
+    },
+    {
+      "row": "native-agents",
+      "repo": "main",
+      "path": "apps/web/src/components/AgentsPanel.tsx",
+      "anchor": "function AgentElapsed",
+      "line": 87,
+      "sha256": "b44fd64d348648832430d0f67b06675e0f555764ebfc9d22a9ccf4f1ff7238b7"
+    },
+    {
+      "row": "native-agents",
+      "repo": "mako",
+      "path": "src/components/viewer/conversation-relations.tsx",
+      "anchor": "children.map",
+      "line": 102,
+      "sha256": "9872c5ff4c0de2d266380fe36d3cc545047d0a110203fa23f8dd402294ecd35f"
+    },
+    {
+      "row": "native-agents",
+      "repo": "mako",
+      "path": "src/lib/tools.ts",
+      "anchor": "subagentResultId",
+      "line": 424,
+      "sha256": "f9631005866c70ff7cde593258cbd2c5100cd8a6961f972db328e6703086c303"
+    },
+    {
+      "row": "delegation",
+      "repo": "v2",
+      "path": "apps/server/src/orchestration-v2/SubagentProjection.ts",
+      "anchor": "export",
+      "line": 26,
+      "sha256": "e361c3f68bd9cb956fadbf5ba856150f0758781881c21face4620d0468d9d961"
+    },
+    {
+      "row": "delegation",
+      "repo": "mako",
+      "path": "scripts/test-child-workspace.ts",
+      "anchor": "assert",
+      "line": 1,
+      "sha256": "11e277df64c9e11a71149fa147a14bed4aebb69aed0d44a369d9e69c6152b2f4"
+    },
+    {
+      "row": "delegation",
+      "repo": "mako",
+      "path": "src/components/viewer/conversation-relations.tsx",
+      "anchor": "Delegate task",
+      "line": 175,
+      "sha256": "9872c5ff4c0de2d266380fe36d3cc545047d0a110203fa23f8dd402294ecd35f"
+    },
+    {
+      "row": "plans",
+      "repo": "main",
+      "path": "apps/web/src/components/chat/ProposedPlanCard.tsx",
+      "anchor": "downloadPlanAsTextFile",
+      "line": 10,
+      "sha256": "deed8d256cceaf5330c801a784395f2fbf9f671e9d9607f97d5c77dd7e8d63e0"
+    },
+    {
+      "row": "plans",
+      "repo": "main",
+      "path": "apps/web/src/components/chat/ComposerTasksBadge.tsx",
+      "anchor": "MAX_TASK_SEGMENTS",
+      "line": 20,
+      "sha256": "ad57d17d88133fdd2af892746551291dac03b2181171a5aaa2c9cd8de180ffa5"
+    },
+    {
+      "row": "plans",
+      "repo": "mako",
+      "path": "src/lib/acp-blocks.ts",
+      "anchor": "case \"plan\"",
+      "line": 108,
+      "sha256": "8464b321d2c04b1246feae711df0c68f98abf4ccd5b0551155273502dae71bf3"
+    },
+    {
+      "row": "rewind",
+      "repo": "main",
+      "path": "apps/server/src/orchestration/Layers/CheckpointReactor.ts",
+      "anchor": "rollbackConversation",
+      "line": 777,
+      "sha256": "b5d2295fbb58dd5b34fe87717ed421ca8474b7ce6546f6ff012bc68a51e10c28"
+    },
+    {
+      "row": "rewind",
+      "repo": "v2",
+      "path": "apps/server/src/orchestration-v2/CheckpointRollbackService.ts",
+      "anchor": "CheckpointRollbackService",
+      "line": 53,
+      "sha256": "b15c8af4e8766cfdc7de477479bf01740176268b8fe1399eae89dcd8894cfab5"
+    },
+    {
+      "row": "rewind",
+      "repo": "mako",
+      "path": "scripts/test-workspace-snapshots.ts",
+      "anchor": "assert",
+      "line": 1,
+      "sha256": "805ff96b310795d86d43f04bb0cd537f4f4307c94948dda6c6232f3a310dcf2d"
+    },
+    {
+      "row": "retention",
+      "repo": "main",
+      "path": "apps/server/src/orchestration/Layers/CheckpointReactor.ts",
+      "anchor": "staleCheckpointRefs",
+      "line": 783,
+      "sha256": "b5d2295fbb58dd5b34fe87717ed421ca8474b7ce6546f6ff012bc68a51e10c28"
+    },
+    {
+      "row": "retention",
+      "repo": "mako",
+      "path": "electron/workspace-snapshots.ts",
+      "anchor": "private async captureLocked",
+      "line": 403,
+      "sha256": "4df9a92a561e536ce33a49c3dda1aebc262f92b084d6ec21f26fbc4305cff3f2"
+    },
+    {
+      "row": "transcript",
+      "repo": "main",
+      "path": "apps/web/src/components/chat/MessagesTimeline.tsx",
+      "anchor": "MessagesTimeline",
+      "line": 136,
+      "sha256": "be7aeba3118bfa87c35ae7f52a8bc69aef7b382ae80845cb0951c8041bf86606"
+    },
+    {
+      "row": "transcript",
+      "repo": "mako",
+      "path": "src/lib/reconcile.ts",
+      "anchor": "export",
+      "line": 17,
+      "sha256": "63a7314b08c64ed66b21144797aef797067f4cca1b081674d9920a99b3ed0102"
+    },
+    {
+      "row": "transcript",
+      "repo": "mako",
+      "path": "scripts/test-transcript-tools.ts",
+      "anchor": "assert",
+      "line": 1,
+      "sha256": "35f67976450845121fe9880d9cdf2945ddca7f7741686971f137dfda10c79f08"
+    },
+    {
+      "row": "composer-ux",
+      "repo": "main",
+      "path": "apps/web/src/components/chat/ChatComposer.tsx",
+      "anchor": "ChatComposer",
+      "line": 1184,
+      "sha256": "bc5cb4ebaa6333623a42822a0196b888f5a2dadb3f3214db1800194c28af2911"
+    },
+    {
+      "row": "composer-ux",
+      "repo": "mako",
+      "path": "src/components/composer/live-controls.tsx",
+      "anchor": "LiveComposerControls",
+      "line": 15,
+      "sha256": "1445cc4611427eeae2ecaf14292d94884f2506ebae1f2a52303aab3c3400df3f"
+    },
+    {
+      "row": "composer-ux",
+      "repo": "mako",
+      "path": "src/components/viewer/acp-panel.tsx",
+      "anchor": "<Blocks />",
+      "line": 47,
+      "sha256": "6fc8d9063952507c512755c85c3e9a90377199fbdda00299f3a0a2ad7833cc15"
+    },
+    {
+      "row": "browser-core",
+      "repo": "main",
+      "path": "apps/desktop/src/preview/PlaywrightInjectedRuntime.ts",
+      "anchor": "PLAYWRIGHT_PACKAGE_SPECIFIER",
+      "line": 12,
+      "sha256": "0bd63f974ffed40991f969696fc344ed902040baeaf0d72547e7c4bd5a1ee739"
+    },
+    {
+      "row": "browser-core",
+      "repo": "mako",
+      "path": "electron/browser-observation.ts",
+      "anchor": "export",
+      "line": 17,
+      "sha256": "9db9f4627a162029a21437ed3c4b1506bef6928fccabbe5251e007363e5e0f10"
+    },
+    {
+      "row": "browser-core",
+      "repo": "mako",
+      "path": "scripts/test-browser-service.ts",
+      "anchor": "assert",
+      "line": 1,
+      "sha256": "4a53fc831046e381e9f6a18695c764d86ff24faf865d672183a18f8f2c732c91"
+    },
+    {
+      "row": "browser-ergonomics",
+      "repo": "main",
+      "path": "apps/desktop/src/preview/PlaywrightInjectedRuntime.ts",
+      "anchor": "PLAYWRIGHT_PACKAGE_SPECIFIER",
+      "line": 12,
+      "sha256": "0bd63f974ffed40991f969696fc344ed902040baeaf0d72547e7c4bd5a1ee739"
+    },
+    {
+      "row": "browser-ergonomics",
+      "repo": "mako",
+      "path": "electron/browser-tools-main.ts",
+      "anchor": "iframe",
+      "line": 26,
+      "sha256": "0c975c9b98299ddef1df71c9d90fb3eba3c0a9dc0133306515a8f877bcaf5dc5"
+    },
+    {
+      "row": "browser-ergonomics",
+      "repo": "mako",
+      "path": "electron/browser-script-worker.ts",
+      "anchor": "upload",
+      "line": 38,
+      "sha256": "ddff215ccc4e0bc8c40739c2729360ac75eb1f446698eeccb4c1824bb2f5d963"
+    },
+    {
+      "row": "browser-product",
+      "repo": "main",
+      "path": "apps/web/src/browser/browserRecording.ts",
+      "anchor": "export",
+      "line": 13,
+      "sha256": "0e36495f728b57418770506bd52af9438ec57439c0b70a99d44bdef1cd141a9b"
+    },
+    {
+      "row": "browser-product",
+      "repo": "main",
+      "path": "apps/web/src/browser/browserDeviceToolbarState.ts",
+      "anchor": "export",
+      "line": 3,
+      "sha256": "431330dc828504138b9d05005166adc720665295c5449299298d1149ad4f8b3c"
+    },
+    {
+      "row": "browser-product",
+      "repo": "mako",
+      "path": "electron/browser-extension-setup.ts",
+      "anchor": "export",
+      "line": 8,
+      "sha256": "351e2bc7e98da2e578aab91bc86afb23ef35d07202528fbd42aa379e2081f576"
+    },
+    {
+      "row": "browser-product",
+      "repo": "mako",
+      "path": "src/components/inspector/control-preview-panel.tsx",
+      "anchor": "export",
+      "line": 6,
+      "sha256": "6cd0bde4c5777c2fa2de24485818a0b6b8f5091e03fcd0bbb49dce48a117e5f2"
+    },
+    {
+      "row": "computer",
+      "repo": "mako",
+      "path": "electron/computer-tools-main.ts",
+      "anchor": "export",
+      "line": 31,
+      "sha256": "45805a05bfcafcb008e361ac5f2ca857f0d2a637d06bb578ca3c62eb7968b86d"
+    },
+    {
+      "row": "computer",
+      "repo": "mako",
+      "path": "docs/audits/2026-09-07/computer-control-evidence.json",
+      "anchor": "{",
+      "line": 1,
+      "sha256": "21e55b8b25152f131ff245b67bb4ae501bd7054274e3f68beed462ed6da5e221"
+    },
+    {
+      "row": "git",
+      "repo": "main",
+      "path": "apps/server/src/git/GitWorkflowService.ts",
+      "anchor": "GitWorkflowService",
+      "line": 35,
+      "sha256": "03d90fd7d68437247f3a9aabf8d1154a4d0a0c040cab46a4696ef967fba6d914"
+    },
+    {
+      "row": "git",
+      "repo": "main",
+      "path": "apps/server/src/review/ReviewService.ts",
+      "anchor": "ReviewService",
+      "line": 22,
+      "sha256": "b4cad2bb19d053aaf2e7376571906809982ef7ba83e01709c79a265b132b7c6f"
+    },
+    {
+      "row": "git",
+      "repo": "mako",
+      "path": "src/components/inspector/changes-panel.tsx",
+      "anchor": "ChangesPanel",
+      "line": 66,
+      "sha256": "ab6ccf2a8875b2a3b9c9b279fae6f1bd5a6fab9ca28171a6609cfac07713b877"
+    },
+    {
+      "row": "hosting",
+      "repo": "main",
+      "path": "apps/server/src/sourceControl/SourceControlProviderRegistry.ts",
+      "anchor": "SourceControlProviderRegistry",
+      "line": 42,
+      "sha256": "89a8b94649e23ece133c780bf82426eee312c798a14619fe549e1a29dd26626f"
+    },
+    {
+      "row": "hosting",
+      "repo": "main",
+      "path": "apps/server/src/sourceControl/GitLabSourceControlProvider.ts",
+      "anchor": "GitLab",
+      "line": 5,
+      "sha256": "20a02b31d1b634b4d5dbe1cd4d6cf67e7201694a5f5d21a95fd1b21ac3df66d8"
+    },
+    {
+      "row": "hosting",
+      "repo": "mako",
+      "path": "electron/github.ts",
+      "anchor": "export",
+      "line": 97,
+      "sha256": "866b64734077119a965e728dff030ef46717b31a9d82a7d289c42f8b89aca991"
+    },
+    {
+      "row": "worktrees",
+      "repo": "main",
+      "path": "apps/server/src/vcs/VcsProvisioningService.ts",
+      "anchor": "VcsProvisioningService",
+      "line": 13,
+      "sha256": "3466673197a1e2b915888869474c4a09e0275159bb64df6f822f15fc34a39f75"
+    },
+    {
+      "row": "worktrees",
+      "repo": "mako",
+      "path": "AGENTS.md",
+      "anchor": "No worktree manager",
+      "line": 260,
+      "sha256": "e78ac5373ea9b33a10ec3820a39157ac6e34548ecb2a4e53d9dcad0bfe7faa6b"
+    },
+    {
+      "row": "remote",
+      "repo": "main",
+      "path": "apps/server/src/auth/PairingGrantStore.ts",
+      "anchor": "PairingGrantStore",
+      "line": 194,
+      "sha256": "e96653e1d39da2272715d8f07d9ec971c351f2670c74061d0c38d0b088fad533"
+    },
+    {
+      "row": "remote",
+      "repo": "mako",
+      "path": "packages/relay/src/index.ts",
+      "anchor": "export",
+      "line": 1,
+      "sha256": "4fb0d94c3da1ec1ee82ffefdc774ff3104a793382fc9eca238d82d96aa442b4c"
+    },
+    {
+      "row": "remote",
+      "repo": "mako",
+      "path": "electron/relay-conversations.ts",
+      "anchor": "export",
+      "line": 18,
+      "sha256": "ea494980e21934b26388f5e89944cc5eb527737e20cb4e0ba109d87470efa516"
+    },
+    {
+      "row": "scheduling",
+      "repo": "v2",
+      "path": "apps/server/src/scheduledTasks/ScheduledTaskService.ts",
+      "anchor": "ScheduledTaskService",
+      "line": 69,
+      "sha256": "14fe6e4d0f6934b0dc5fd6797a926bcfb193df1944c93751b65828d47a394efe"
+    },
+    {
+      "row": "scheduling",
+      "repo": "mako",
+      "path": "electron/automations.ts",
+      "anchor": "export",
+      "line": 75,
+      "sha256": "78554ced6397d6487194fa4faa32eb5e28d16311ebfc696cc25c1887cc8e923f"
+    },
+    {
+      "row": "scheduling",
+      "repo": "mako",
+      "path": "scripts/test-automations.ts",
+      "anchor": "assert",
+      "line": 1,
+      "sha256": "3e0738c98b9765c21f4555dfd5fee5e7fd429a2447a374eff812c2c4dfbde065"
+    },
+    {
+      "row": "terminal",
+      "repo": "main",
+      "path": "apps/server/src/terminal/Manager.ts",
+      "anchor": "export",
+      "line": 77,
+      "sha256": "2123e19c94595da87cef8b4965d651d32c1c6f09415fb63d72171025affa511e"
+    },
+    {
+      "row": "terminal",
+      "repo": "mako",
+      "path": "electron/terminal-daemon.ts",
+      "anchor": "TERMINAL_MAX_SESSIONS",
+      "line": 19,
+      "sha256": "4ce4a22d45c8a4b17fd0c0b890d0335ecc63bc191b1ede90bbd030c73d2986c8"
+    },
+    {
+      "row": "terminal",
+      "repo": "mako",
+      "path": "scripts/test-terminal-daemon.ts",
+      "anchor": "assert",
+      "line": 1,
+      "sha256": "3ce494312847ef1302921fe5f8d178ef766adf7337710c49c4372dc2b0c4c2e0"
+    },
+    {
+      "row": "mcp-skills",
+      "repo": "main",
+      "path": "apps/server/src/mcp/McpProviderSession.ts",
+      "anchor": "McpProviderSession",
+      "line": 3,
+      "sha256": "774cc9589b3d804f98272d62bebccac4920cd374a3823c084961cace222862d8"
+    },
+    {
+      "row": "mcp-skills",
+      "repo": "mako",
+      "path": "electron/skill-registry.ts",
+      "anchor": "export",
+      "line": 44,
+      "sha256": "0ea6bb03513c6920ffa310c68c1cbb67cef134e09e89274ec9f311cf3359e430"
+    },
+    {
+      "row": "mcp-skills",
+      "repo": "mako",
+      "path": "scripts/test-mcp.ts",
+      "anchor": "assert",
+      "line": 1,
+      "sha256": "4910ce3fb078bc4f71112dc80d7b8a75fce3a9778a55e87bb6f242382d122b4b"
+    },
+    {
+      "row": "onboarding",
+      "repo": "main",
+      "path": "apps/web/src/components/onboarding/WelcomeWizard.tsx",
+      "anchor": "WelcomeWizard",
+      "line": 96,
+      "sha256": "834469afa4b546a7a757ccd5ef1f651ddfab83386fd4265150caca23b6d2f6c2"
+    },
+    {
+      "row": "onboarding",
+      "repo": "mako",
+      "path": "src/components/settings/about-section.tsx",
+      "anchor": "export",
+      "line": 10,
+      "sha256": "c5456f5bd096493fa8a287b5b36fd8c29aa25dc0a0c134f39e84dc535e3f5d8b"
+    },
+    {
+      "row": "accessibility",
+      "repo": "main",
+      "path": "apps/web/src/components/chat/ComposerPendingApprovalPanel.test.tsx",
+      "anchor": "describe",
+      "line": 3,
+      "sha256": "1b4317589f4e02809a4e933b3b35f5416c6e902b6e23da4a9b519faeb189adc2"
+    },
+    {
+      "row": "accessibility",
+      "repo": "mako",
+      "path": "src/components/ui/dialog.tsx",
+      "anchor": "DialogPrimitive",
+      "line": 2,
+      "sha256": "358740208dd2373d9349fe026551fd43bc99bec1925900f41e117980080a7840"
+    },
+    {
+      "row": "accessibility",
+      "repo": "mako",
+      "path": "src/desk/use-desk-commands.ts",
+      "anchor": "DESK_COMMANDS",
+      "line": 66,
+      "sha256": "c88fceab18de7a38e3af3a644a6cffa56e957928882d94ebaa1d0eb348558644"
+    },
+    {
+      "row": "release",
+      "repo": "main",
+      "path": "apps/desktop/src/electron/ElectronUpdater.ts",
+      "anchor": "export",
+      "line": 11,
+      "sha256": "2f40f114910f2efa5451c2d56a15af9d8ac71c73e9d705660d647c140ebaf7ee"
+    },
+    {
+      "row": "release",
+      "repo": "mako",
+      "path": "electron/updates.ts",
+      "anchor": "export",
+      "line": 50,
+      "sha256": "0124ed81406caae9447e070ac3342d4bed0e688ae4ca6afb53e436dc56b519b8"
+    },
+    {
+      "row": "release",
+      "repo": "mako",
+      "path": "electron/providers/claude/sdk-process.ts",
+      "anchor": "asar",
+      "line": 9,
+      "sha256": "4eb298ef9400ec355fd756a3c53726fd2a5e375012fc92c0cebc78550687de2d"
+    },
+    {
+      "row": "performance",
+      "repo": "v2",
+      "path": "apps/server/src/orchestration-v2/ThreadLiveEventCoalescer.ts",
+      "anchor": "ThreadLiveEventCoalescer",
+      "line": 88,
+      "sha256": "5df624f53e3c652ec7c852c6d162f7a269b956aa4d321878ac096cb5d970b1b5"
+    },
+    {
+      "row": "performance",
+      "repo": "mako",
+      "path": "scripts/test-performance.ts",
+      "anchor": "assert",
+      "line": 1,
+      "sha256": "27af06c598b13c798b5fc899f90dee869994b1cebf12b1a6a03dd5744cdcfb16"
+    },
+    {
+      "row": "performance",
+      "repo": "mako",
+      "path": "src/lib/reconcile.ts",
+      "anchor": "export",
+      "line": 17,
+      "sha256": "63a7314b08c64ed66b21144797aef797067f4cca1b081674d9920a99b3ed0102"
+    },
+    {
+      "row": "security",
+      "repo": "main",
+      "path": "apps/server/src/auth/RpcAuthorization.ts",
+      "anchor": "export",
+      "line": 23,
+      "sha256": "61cc3cecb825451977b80395ff0547ed53c0becca8139e24c06dd0d1c614a59c"
+    },
+    {
+      "row": "security",
+      "repo": "mako",
+      "path": "scripts/test-host-inputs.ts",
+      "anchor": "assert",
+      "line": 1,
+      "sha256": "1559c8937e438d2834979834490e936270f6be4154d20a1127381998c97bdd2d"
+    },
+    {
+      "row": "security",
+      "repo": "mako",
+      "path": "scripts/test-browser-extension.mjs",
+      "anchor": "assert",
+      "line": 1,
+      "sha256": "f31caf5751a7ddb18ec67ca6a74914141f1f03c9139702a058262d55f8430134"
+    },
+    {
+      "row": "outcomes",
+      "repo": "mako",
+      "path": "scripts/test-provider-e2e.mjs",
+      "anchor": "provider",
+      "line": 1,
+      "sha256": "4d7fdc8ac3ea9c684846dce33f722d0e34a64bcadfa75195381f678af31b7319"
+    },
+    {
+      "row": "outcomes",
+      "repo": "mako",
+      "path": "scripts/test-rewind-e2e.mjs",
+      "anchor": "controls",
+      "line": 144,
+      "sha256": "76a366ef04bb6e8e50c0d67321a263cdfe309606a59c37bd85f43c0577f53c13"
+    }
+  ]
+}

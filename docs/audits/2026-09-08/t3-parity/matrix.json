@@ -1,0 +1,811 @@
+{
+  "checkedAt": "2026-09-08",
+  "revisions": {
+    "main": "7fbc545ae8c7866ac2b39648120cb2a17250d8b4",
+    "v2": "91b193653ec82f40a2dd742a88237b1f7bdcc6f9"
+  },
+  "v2State": "OPEN, unmerged",
+  "scope": "Product and runtime parity audit. Source support is not matched runtime proof. No row certifies overall equality.",
+  "rows": [
+    {
+      "id": "claude",
+      "area": "Claude live controls",
+      "status": "partial",
+      "t3": "Main and V2 use the Agent SDK; V2 supports exact native forks as well as steering and compaction.",
+      "mako": "Direct SDK steering, compaction and native resume passed real provider checks. Exact native fork-at-turn is not advertised.",
+      "required": "Implement and verify exact native forks without changing the source session; rerun packaged lifecycle and approval checks.",
+      "evidence": [
+        {
+          "repo": "v2",
+          "path": "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts",
+          "anchor": "forkThread: Effect.fn"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/providers/claude/sdk-driver.ts",
+          "anchor": "async steer"
+        },
+        {
+          "repo": "mako",
+          "path": "docs/audits/2026-09-08/sdk-controls/claude-result.json",
+          "anchor": "\"compaction\": true"
+        }
+      ]
+    },
+    {
+      "id": "codex",
+      "area": "Codex live controls",
+      "status": "partial",
+      "t3": "Main and V2 use app-server; V2 exposes optional compaction.",
+      "mako": "Steering and same-native-session resume/recall passed. Manual compaction is withheld after a real context-loss test.",
+      "required": "Resolve compaction history loss and prove post-compaction recall before enabling it.",
+      "evidence": [
+        {
+          "repo": "v2",
+          "path": "apps/server/src/orchestration-v2/ProviderAdapter.ts",
+          "anchor": "readonly compactThread?"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/providers/codex/live-driver.ts",
+          "anchor": "Native compaction failed"
+        },
+        {
+          "repo": "mako",
+          "path": "docs/audits/2026-09-08/sdk-controls/codex-compaction-failure.json",
+          "anchor": "{"
+        }
+      ]
+    },
+    {
+      "id": "cursor",
+      "area": "Cursor lifecycle and policy",
+      "status": "gap",
+      "t3": "V2 uses Cursor SDK create/resume and /compress, but explicitly rejects steering and interactive approval callbacks.",
+      "mako": "ACP driver advertises no native resume, no steering and no manual compaction. Portable continuation is a different guarantee.",
+      "required": "Prove SDK/native resume and compaction while retaining explicit policy behavior; never silently remove approval handling.",
+      "evidence": [
+        {
+          "repo": "v2",
+          "path": "apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.ts",
+          "anchor": "Cursor Agent SDK does not expose interactive approval requests."
+        },
+        {
+          "repo": "mako",
+          "path": "electron/providers/cursor/acp.ts",
+          "anchor": "canResume: false"
+        }
+      ]
+    },
+    {
+      "id": "other-providers",
+      "area": "Other providers",
+      "status": "partial",
+      "t3": "Main uses OpenCode SDK and ACP for Grok; Antigravity is present. Devin is not among the inspected adapters.",
+      "mako": "OpenCode/Grok/Devin use provider-owned transports. Earlier six-provider browser runs passed, but native controls differ. Antigravity is not registered.",
+      "required": "Compare native controls and fresh lifecycle behavior per provider; do not infer parity from a shared interface.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/server/src/provider/Layers/OpenCodeAdapter.ts",
+          "anchor": "@opencode-ai/sdk"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/providers/index.ts",
+          "anchor": "const modules"
+        },
+        {
+          "repo": "mako",
+          "path": "docs/audits/2026-09-07/browser-extension-evidence.json",
+          "anchor": "{"
+        }
+      ]
+    },
+    {
+      "id": "steer-durability",
+      "area": "Control delivery and retries",
+      "status": "partial",
+      "t3": "V2 has command receipts and active-turn checks. Runtime failure equivalence has not been exercised against T3.",
+      "mako": "Steering intents persist before dispatch; uncertain delivery is never replayed; exact request/run checks and duplicate IDs are tested.",
+      "required": "Run the same dropped-acknowledgement, stale-turn and restart cases against both implementations.",
+      "evidence": [
+        {
+          "repo": "v2",
+          "path": "apps/server/src/orchestration-v2/CommandReceiptStore.ts",
+          "anchor": "CommandReceiptStore"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/live-actions.ts",
+          "anchor": "class LiveActions"
+        },
+        {
+          "repo": "mako",
+          "path": "scripts/test-live-actions.ts",
+          "anchor": "uncertain"
+        }
+      ]
+    },
+    {
+      "id": "handoff",
+      "area": "Provider switching and context",
+      "status": "partial",
+      "t3": "V2 has context handoff and provider-switch services.",
+      "mako": "Durable full/delta handoff, attachments and source-history retention exist and have focused tests.",
+      "required": "Matched long-history switch-and-return tasks must retain instructions, media and tool meaning.",
+      "evidence": [
+        {
+          "repo": "v2",
+          "path": "apps/server/src/orchestration-v2/ContextHandoffService.ts",
+          "anchor": "ContextHandoffService"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/live-transfers.ts",
+          "anchor": "class LiveTransfers"
+        },
+        {
+          "repo": "mako",
+          "path": "scripts/test-conversation-transfers.ts",
+          "anchor": "assert"
+        }
+      ]
+    },
+    {
+      "id": "restart",
+      "area": "Restart and queued work",
+      "status": "partial",
+      "t3": "V2 has runtime recovery and restart-continuation policies.",
+      "mako": "Mako journals requests and controls; interrupted/uncertain delivery is retained instead of replayed.",
+      "required": "Kill each host at dispatch, permission and completion boundaries and compare outcomes and user recovery steps.",
+      "evidence": [
+        {
+          "repo": "v2",
+          "path": "apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts",
+          "anchor": "ProviderRuntimeRecoveryService"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/live-journal.ts",
+          "anchor": "LiveRequestSchema"
+        },
+        {
+          "repo": "mako",
+          "path": "scripts/test-live-conversations.ts",
+          "anchor": "assert"
+        }
+      ]
+    },
+    {
+      "id": "approvals",
+      "area": "Permissions and structured questions",
+      "status": "partial",
+      "t3": "T3 has dedicated approval and structured-input composer panels; support is provider-specific.",
+      "mako": "Shared permission UI and provider-owned responses exist; new Claude SDK maps interactive questions and session grants.",
+      "required": "Keyboard, denial, session grants, child-originated requests and pending-request restart need a matched matrix.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/web/src/components/chat/ComposerPendingApprovalPanel.tsx",
+          "anchor": "ComposerPendingApprovalPanel"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/providers/claude/sdk-permissions.ts",
+          "anchor": "readonly tool: CanUseTool"
+        },
+        {
+          "repo": "mako",
+          "path": "src/components/viewer/acp-panel.tsx",
+          "anchor": "function Permission"
+        }
+      ]
+    },
+    {
+      "id": "models-accounts",
+      "area": "Models, options and accounts",
+      "status": "partial",
+      "t3": "T3 has provider instances, auth setup and model-option controls.",
+      "mako": "Typed provider settings, model discovery and scoped saved accounts exist; onboarding and native OAuth coverage are not equivalent.",
+      "required": "Compare login, expiry, account switching, unsupported settings and model changes during an active turn.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/web/src/components/settings/AddProviderInstanceDialog.tsx",
+          "anchor": "AddProviderInstanceDialog"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/accounts.ts",
+          "anchor": "export"
+        },
+        {
+          "repo": "mako",
+          "path": "src/components/composer/foreign-effort.tsx",
+          "anchor": "ForeignEffortPicker"
+        }
+      ]
+    },
+    {
+      "id": "native-agents",
+      "area": "Native agent monitoring",
+      "status": "gap",
+      "t3": "AgentsPanel displays native subagent lifecycle, stable rows, activity, models, tokens and workflow groups.",
+      "mako": "The new Tasks dialog lists Mako-delegated conversations; transcript tool rendering is not an equivalent native agent monitor.",
+      "required": "Project provider-native subagent identity/lifecycle and build a registered companion with live and completed states.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/web/src/components/AgentsPanel.tsx",
+          "anchor": "function AgentElapsed"
+        },
+        {
+          "repo": "mako",
+          "path": "src/components/viewer/conversation-relations.tsx",
+          "anchor": "children.map"
+        },
+        {
+          "repo": "mako",
+          "path": "src/lib/tools.ts",
+          "anchor": "subagentResultId"
+        }
+      ]
+    },
+    {
+      "id": "delegation",
+      "area": "Delegation and result return",
+      "status": "partial",
+      "t3": "V2 has native subagent projection and execution-node relationships. These are distinct from user-created independent jobs.",
+      "mako": "Mako can delegate into isolated workspaces, cancel children and return findings; the redesigned entry dialog is not visually verified.",
+      "required": "Exercise two providers concurrently, cancellation, restart, result delivery and failed returns without draft loss.",
+      "evidence": [
+        {
+          "repo": "v2",
+          "path": "apps/server/src/orchestration-v2/SubagentProjection.ts",
+          "anchor": "export"
+        },
+        {
+          "repo": "mako",
+          "path": "scripts/test-child-workspace.ts",
+          "anchor": "assert"
+        },
+        {
+          "repo": "mako",
+          "path": "src/components/viewer/conversation-relations.tsx",
+          "anchor": "Delegate task"
+        }
+      ]
+    },
+    {
+      "id": "plans",
+      "area": "Plans and task progress",
+      "status": "gap",
+      "t3": "T3 has proposed-plan cards with export/save and compact task progress.",
+      "mako": "Mako retains plan entries and renders plan tools, but this does not provide the same proposed-plan workflow.",
+      "required": "Compare plan approval/revision, saved plan artifacts and live task progress; retain provider ownership.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/web/src/components/chat/ProposedPlanCard.tsx",
+          "anchor": "downloadPlanAsTextFile"
+        },
+        {
+          "repo": "main",
+          "path": "apps/web/src/components/chat/ComposerTasksBadge.tsx",
+          "anchor": "MAX_TASK_SEGMENTS"
+        },
+        {
+          "repo": "mako",
+          "path": "src/lib/acp-blocks.ts",
+          "anchor": "case \"plan\""
+        }
+      ]
+    },
+    {
+      "id": "rewind",
+      "area": "Filesystem and conversation rewind",
+      "status": "partial",
+      "t3": "T3 uses Git checkpoints; inspected main restores then rolls back the provider. V2 validates matching identities.",
+      "mako": "Real Claude/Codex rewind passed. Mako preserves staging, retains the source conversation and has crash-compensated restore tests.",
+      "required": "Run identical external-edit, crash and staging cases against T3 before describing this as a comparative win.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/server/src/orchestration/Layers/CheckpointReactor.ts",
+          "anchor": "rollbackConversation"
+        },
+        {
+          "repo": "v2",
+          "path": "apps/server/src/orchestration-v2/CheckpointRollbackService.ts",
+          "anchor": "CheckpointRollbackService"
+        },
+        {
+          "repo": "mako",
+          "path": "scripts/test-workspace-snapshots.ts",
+          "anchor": "assert"
+        }
+      ]
+    },
+    {
+      "id": "retention",
+      "area": "Checkpoint storage and large repositories",
+      "status": "gap",
+      "t3": "Main deletes stale checkpoint refs after revert. A total bounded retention guarantee has not been established for T3.",
+      "mako": "Mako caps individual captures but has no total snapshot retention/GC policy and no matched repository-latency evidence.",
+      "required": "Set and test retention that preserves live/recoverable references; measure cold/warm capture, disk growth and restore latency.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/server/src/orchestration/Layers/CheckpointReactor.ts",
+          "anchor": "staleCheckpointRefs"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/workspace-snapshots.ts",
+          "anchor": "private async captureLocked"
+        }
+      ]
+    },
+    {
+      "id": "transcript",
+      "area": "Transcript fidelity and history",
+      "status": "partial",
+      "t3": "T3 has message timelines, bounded earlier-history loading and rich media display.",
+      "mako": "Mako reconciles message identity and renders shared exchanges. Earlier media/steering tests pass; provider-native histories still require matched coverage.",
+      "required": "Compare long streamed answers, reasoning, screenshots, attachments, tools, copy, reload and fork history on all providers.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/web/src/components/chat/MessagesTimeline.tsx",
+          "anchor": "MessagesTimeline"
+        },
+        {
+          "repo": "mako",
+          "path": "src/lib/reconcile.ts",
+          "anchor": "export"
+        },
+        {
+          "repo": "mako",
+          "path": "scripts/test-transcript-tools.ts",
+          "anchor": "assert"
+        }
+      ]
+    },
+    {
+      "id": "composer-ux",
+      "area": "Composer and conversation UX",
+      "status": "unverified",
+      "t3": "T3 puts controls in composer, agents in a companion; latest main explicitly stabilizes footer layout during loading.",
+      "mako": "Duplicate header and permanent success rows removed; delegation is on demand. Latest layout has not been visually verified after the memory incident.",
+      "required": "Verify real idle/working/permission/failed states at narrow and wide widths, keyboard focus, draft preservation and layout stability.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/web/src/components/chat/ChatComposer.tsx",
+          "anchor": "ChatComposer"
+        },
+        {
+          "repo": "mako",
+          "path": "src/components/composer/live-controls.tsx",
+          "anchor": "LiveComposerControls"
+        },
+        {
+          "repo": "mako",
+          "path": "src/components/viewer/acp-panel.tsx",
+          "anchor": "<Blocks />"
+        }
+      ]
+    },
+    {
+      "id": "browser-core",
+      "area": "Browser execution and ownership",
+      "status": "partial",
+      "t3": "T3 owns preview automation and an injected Playwright runtime. Source presence is not a matched reliability result.",
+      "mako": "Earlier six-provider extension workflows passed trusted input, image interpretation and exact-target ownership; observations are bounded to 60 KB.",
+      "required": "Repeat the same navigation/input/image/timeout cases under equal model settings and count retries and wrong-target actions.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/desktop/src/preview/PlaywrightInjectedRuntime.ts",
+          "anchor": "PLAYWRIGHT_PACKAGE_SPECIFIER"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/browser-observation.ts",
+          "anchor": "export"
+        },
+        {
+          "repo": "mako",
+          "path": "scripts/test-browser-service.ts",
+          "anchor": "assert"
+        }
+      ]
+    },
+    {
+      "id": "browser-ergonomics",
+      "area": "Browser helpers and frames",
+      "status": "unverified",
+      "t3": "Injected runtime and preview automation need a method-by-method comparison; previous frame findings concerned Orca, not proof of T3 behavior.",
+      "mako": "Mako has explicit iframe targets, refs, raw CDP, events and an exec worker. Automatic combined-frame observation and high-level helper parity remain unproven.",
+      "required": "Inventory and run nested/cross-origin frames, locator ambiguity, shadow DOM, dialogs, downloads and network waits against both.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/desktop/src/preview/PlaywrightInjectedRuntime.ts",
+          "anchor": "PLAYWRIGHT_PACKAGE_SPECIFIER"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/browser-tools-main.ts",
+          "anchor": "iframe"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/browser-script-worker.ts",
+          "anchor": "upload"
+        }
+      ]
+    },
+    {
+      "id": "browser-product",
+      "area": "Embedded browser product",
+      "status": "gap",
+      "t3": "T3 has integrated preview, device toolbar, browser recording, import and annotation paths.",
+      "mako": "Mako has control previews and browser-extension setup; equivalent device/recording/import workflows were not found in the reviewed components.",
+      "required": "Compare the actual user workflows and decide which fit Mako; test packaged extension installation and reconnect.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/web/src/browser/browserRecording.ts",
+          "anchor": "export"
+        },
+        {
+          "repo": "main",
+          "path": "apps/web/src/browser/browserDeviceToolbarState.ts",
+          "anchor": "export"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/browser-extension-setup.ts",
+          "anchor": "export"
+        },
+        {
+          "repo": "mako",
+          "path": "src/components/inspector/control-preview-panel.tsx",
+          "anchor": "export"
+        }
+      ]
+    },
+    {
+      "id": "computer",
+      "area": "Native computer automation",
+      "status": "unverified",
+      "t3": "Packaged native-computer scripting/permission ergonomics have not been matched in this audit.",
+      "mako": "Earlier disposable-app click/type/readback passed. Native CUA forwarding is not universal platform or background-input certification.",
+      "required": "Run exact-window, background input, dialogs, clipboard, permission denial and reconnect workflows in packaged builds.",
+      "evidence": [
+        {
+          "repo": "mako",
+          "path": "electron/computer-tools-main.ts",
+          "anchor": "export"
+        },
+        {
+          "repo": "mako",
+          "path": "docs/audits/2026-09-07/computer-control-evidence.json",
+          "anchor": "{"
+        }
+      ]
+    },
+    {
+      "id": "git",
+      "area": "Git, diffs and review",
+      "status": "partial",
+      "t3": "T3 has Git workflow and review services with integrated controls.",
+      "mako": "Mako stages, commits, pushes, annotates diffs and manages GitHub PRs. No matched workflow timing/error coverage.",
+      "required": "Compare large diffs, conflicts, unborn HEAD, partial staging, branch changes, review comments and failed push recovery.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/server/src/git/GitWorkflowService.ts",
+          "anchor": "GitWorkflowService"
+        },
+        {
+          "repo": "main",
+          "path": "apps/server/src/review/ReviewService.ts",
+          "anchor": "ReviewService"
+        },
+        {
+          "repo": "mako",
+          "path": "src/components/inspector/changes-panel.tsx",
+          "anchor": "ChangesPanel"
+        }
+      ]
+    },
+    {
+      "id": "hosting",
+      "area": "Git hosting coverage",
+      "status": "gap",
+      "t3": "T3 has GitHub, GitLab, Bitbucket and Azure DevOps provider implementations.",
+      "mako": "Reviewed Mako PR integration is GitHub-specific.",
+      "required": "Add provider-neutral hosting capabilities if in scope, with real read/review/create workflows for each supported host.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/server/src/sourceControl/SourceControlProviderRegistry.ts",
+          "anchor": "SourceControlProviderRegistry"
+        },
+        {
+          "repo": "main",
+          "path": "apps/server/src/sourceControl/GitLabSourceControlProvider.ts",
+          "anchor": "GitLab"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/github.ts",
+          "anchor": "export"
+        }
+      ]
+    },
+    {
+      "id": "worktrees",
+      "area": "Worktree management",
+      "status": "scope-difference",
+      "t3": "T3 exposes provisioning and branch/environment controls.",
+      "mako": "Mako deliberately excludes a worktree manager under AGENTS.md. Internal isolated task workspaces are supported.",
+      "required": "An all-features claim conflicts with the current product contract; do not silently add a worktree manager.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/server/src/vcs/VcsProvisioningService.ts",
+          "anchor": "VcsProvisioningService"
+        },
+        {
+          "repo": "mako",
+          "path": "AGENTS.md",
+          "anchor": "No worktree manager"
+        }
+      ]
+    },
+    {
+      "id": "remote",
+      "area": "Remote and mobile workflows",
+      "status": "partial",
+      "t3": "T3 has environment authentication, pairing and remote UI flows.",
+      "mako": "Mako has a provider-neutral relay, tenant/device tokens and Slack/backend adapters; same-product remote UI behavior is not established.",
+      "required": "Compare pairing, reconnect, lease loss, attachment transfer, cancellation and native/remote consistency.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/server/src/auth/PairingGrantStore.ts",
+          "anchor": "PairingGrantStore"
+        },
+        {
+          "repo": "mako",
+          "path": "packages/relay/src/index.ts",
+          "anchor": "export"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/relay-conversations.ts",
+          "anchor": "export"
+        }
+      ]
+    },
+    {
+      "id": "scheduling",
+      "area": "Scheduled tasks",
+      "status": "partial",
+      "t3": "The inspected V2 branch has a scheduled-task service; main parity is not inferred from that branch.",
+      "mako": "Mako has persisted automations and settings UI; scheduler semantics are not matched.",
+      "required": "Test sleep/wake, missed runs, duplicate execution, active-session overlap and delivery under restart.",
+      "evidence": [
+        {
+          "repo": "v2",
+          "path": "apps/server/src/scheduledTasks/ScheduledTaskService.ts",
+          "anchor": "ScheduledTaskService"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/automations.ts",
+          "anchor": "export"
+        },
+        {
+          "repo": "mako",
+          "path": "scripts/test-automations.ts",
+          "anchor": "assert"
+        }
+      ]
+    },
+    {
+      "id": "terminal",
+      "area": "Terminal lifecycle and memory",
+      "status": "partial",
+      "t3": "T3 has PTY manager/adapters and persistent UI contexts.",
+      "mako": "Mako has a bounded terminal daemon and restart tests. The reported memory spike has not been attributed; current daemon footprint was small.",
+      "required": "Run bounded output, backpressure, client disconnect and long-session soak with process-tree physical footprint accounting.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/server/src/terminal/Manager.ts",
+          "anchor": "export"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/terminal-daemon.ts",
+          "anchor": "TERMINAL_MAX_SESSIONS"
+        },
+        {
+          "repo": "mako",
+          "path": "scripts/test-terminal-daemon.ts",
+          "anchor": "assert"
+        }
+      ]
+    },
+    {
+      "id": "mcp-skills",
+      "area": "MCP, skills and extensions",
+      "status": "partial",
+      "t3": "T3 has session-scoped MCP integration and provider configuration.",
+      "mako": "Mako has a redacted neutral MCP registry, provider-owned skill roots and trusted local UI extensions.",
+      "required": "Compare OAuth expiry, MCP replacement during sessions, secret redaction, tool errors and skill discovery across providers.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/server/src/mcp/McpProviderSession.ts",
+          "anchor": "McpProviderSession"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/skill-registry.ts",
+          "anchor": "export"
+        },
+        {
+          "repo": "mako",
+          "path": "scripts/test-mcp.ts",
+          "anchor": "assert"
+        }
+      ]
+    },
+    {
+      "id": "onboarding",
+      "area": "Onboarding and recovery UX",
+      "status": "gap",
+      "t3": "T3 has first-run/welcome flows and provider-instance setup.",
+      "mako": "Mako has provider/browser settings, but equivalent end-to-end first-run installation and recovery were not verified.",
+      "required": "Fresh-user setup: missing CLI, expired login, denied permission, no repository and first successful task, without developer intervention.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/web/src/components/onboarding/WelcomeWizard.tsx",
+          "anchor": "WelcomeWizard"
+        },
+        {
+          "repo": "mako",
+          "path": "src/components/settings/about-section.tsx",
+          "anchor": "export"
+        }
+      ]
+    },
+    {
+      "id": "accessibility",
+      "area": "Accessibility and keyboard",
+      "status": "unverified",
+      "t3": "T3 uses accessible controls and dedicated UI tests; this is not an audited conformance claim.",
+      "mako": "Mako uses Radix dialogs and a command registry. Latest task dialog has no completed keyboard/screen-reader run.",
+      "required": "Audit focus order/restoration, nested overlays, announcements, zoom, reduced motion and keyboard-only operation.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/web/src/components/chat/ComposerPendingApprovalPanel.test.tsx",
+          "anchor": "describe"
+        },
+        {
+          "repo": "mako",
+          "path": "src/components/ui/dialog.tsx",
+          "anchor": "DialogPrimitive"
+        },
+        {
+          "repo": "mako",
+          "path": "src/desk/use-desk-commands.ts",
+          "anchor": "DESK_COMMANDS"
+        }
+      ]
+    },
+    {
+      "id": "release",
+      "area": "Packaged app and platforms",
+      "status": "unverified",
+      "t3": "T3 has updater and platform-specific desktop implementations.",
+      "mako": "Mako build configuration exists; this pass neither installed a release nor verified packaged SDK/permissions. Windows/Linux behavior is not established.",
+      "required": "Build and test an isolated package on each advertised platform, including SDK executable paths, signing/update and native permissions.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/desktop/src/electron/ElectronUpdater.ts",
+          "anchor": "export"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/updates.ts",
+          "anchor": "export"
+        },
+        {
+          "repo": "mako",
+          "path": "electron/providers/claude/sdk-process.ts",
+          "anchor": "asar"
+        }
+      ]
+    },
+    {
+      "id": "performance",
+      "area": "Performance and memory stability",
+      "status": "unverified",
+      "t3": "T3 has coalescing and stable UI techniques. No equal-workload benchmark was executed.",
+      "mako": "Mako has bounded readers, coalescing and performance tests. The application-memory incident invalidates any broad stability claim.",
+      "required": "Matched cold start, 10k threads, long transcript streaming, large repository and multi-hour soak; report RSS plus physical footprint/swap and p50/p95.",
+      "evidence": [
+        {
+          "repo": "v2",
+          "path": "apps/server/src/orchestration-v2/ThreadLiveEventCoalescer.ts",
+          "anchor": "ThreadLiveEventCoalescer"
+        },
+        {
+          "repo": "mako",
+          "path": "scripts/test-performance.ts",
+          "anchor": "assert"
+        },
+        {
+          "repo": "mako",
+          "path": "src/lib/reconcile.ts",
+          "anchor": "export"
+        }
+      ]
+    },
+    {
+      "id": "security",
+      "area": "Security boundaries",
+      "status": "unverified",
+      "t3": "T3 has authorization and pairing policies. These have not been comparatively penetration-tested.",
+      "mako": "Mako tests host input, tenant/lease ownership and target isolation. Passing selected tests is not a broad security audit.",
+      "required": "Threat-model native/remote/extension boundaries and test unauthorized target use, secret leakage, replay and hostile tool output.",
+      "evidence": [
+        {
+          "repo": "main",
+          "path": "apps/server/src/auth/RpcAuthorization.ts",
+          "anchor": "export"
+        },
+        {
+          "repo": "mako",
+          "path": "scripts/test-host-inputs.ts",
+          "anchor": "assert"
+        },
+        {
+          "repo": "mako",
+          "path": "scripts/test-browser-extension.mjs",
+          "anchor": "assert"
+        }
+      ]
+    },
+    {
+      "id": "outcomes",
+      "area": "Matched model and budget outcomes",
+      "status": "unverified",
+      "t3": "No matched T3 task suite was run in this pass.",
+      "mako": "Mako has individual successful real-provider fixtures, not a comparative quality or cost result.",
+      "required": "Same model/version, effort, prompts, repository, tools and budget; measure completion, regressions, retries, tokens, latency and user interventions.",
+      "evidence": [
+        {
+          "repo": "mako",
+          "path": "scripts/test-provider-e2e.mjs",
+          "anchor": "provider"
+        },
+        {
+          "repo": "mako",
+          "path": "scripts/test-rewind-e2e.mjs",
+          "anchor": "controls"
+        }
+      ]
+    }
+  ]
+}

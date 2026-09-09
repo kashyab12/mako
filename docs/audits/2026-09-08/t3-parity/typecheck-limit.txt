@@ -1,0 +1,5 @@
+Full application check: NODE_OPTIONS=--max-old-space-size=512 tsc -b
+Exit: 134
+V8 reached roughly 512 MB heap and stopped: Allocation failed - JavaScript heap out of memory.
+No retry with a higher limit. This is a test-process heap-cap failure, not attribution of the earlier system-wide incident.
+Focused test files: tsc --project node_modules/.tmp/parity-types.json passed under the same 512 MB cap.
