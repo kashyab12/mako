@@ -1,3 +1,4 @@
+import { reduceLiveUpdates } from "../electron/contracts/live-content.ts"
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { StringDecoder } from "node:string_decoder"
@@ -16,6 +17,7 @@ import {
   parseJsonRpcEnvelope,
   parseNotification,
   parseThreadResponse,
+  parseSteerResponse,
 } from "../electron/codex-app-parse.ts"
 import {
   consumeStdout,
@@ -51,6 +53,12 @@ assert.deepEqual(
   ),
   { kind: "response", id: "7", result: { ok: true }, error: null }
 )
+assert.deepEqual(parseSteerResponse({ turnId: "active-turn" }), {
+  valid: true,
+  value: { turnId: "active-turn" },
+})
+assert.equal(parseSteerResponse({}).valid, false)
+assert.equal(parseSteerResponse({ turnId: "" }).valid, false)
 assert.equal(numberValue(Number.NaN), undefined)
 assert.equal(boundedText("short", 20), "short")
 assert.ok(boundedText("x".repeat(100), 64).includes("output truncated"))
@@ -179,6 +187,7 @@ const context: ProtocolContext = {
   decoder: new StringDecoder("utf8"),
   exited: false,
   protocol: {
+    observeAgents: () => {},
     handleFatal(message) {
       throw new Error(message)
     },
@@ -293,3 +302,45 @@ assert.equal(state.nativeRunId, "turn-1")
 
 child.kill("SIGTERM")
 console.log("Codex JSON-RPC parsing, framing, and streaming checks passed")
+
+for (const notification of [
+  {
+    method: "item/started",
+    params: {
+      threadId: "thread-1",
+      turnId: "plan-turn",
+      item: { type: "plan", id: "proposal", text: "" },
+    },
+  },
+  {
+    method: "item/plan/delta",
+    params: {
+      threadId: "thread-1",
+      turnId: "plan-turn",
+      itemId: "proposal",
+      delta: "# Initial plan",
+    },
+  },
+  {
+    method: "item/completed",
+    params: {
+      threadId: "thread-1",
+      turnId: "plan-turn",
+      item: {
+        type: "plan",
+        id: "proposal",
+        text: "# Revised plan\n\nKeep the public API.",
+      },
+    },
+  },
+])
+  consumeStdout(context, Buffer.from(`${JSON.stringify(notification)}\n`))
+const proposals = reduceLiveUpdates([], updates).filter(
+  (block) => block.type === "proposed-plan"
+)
+assert.equal(proposals.length, 1)
+assert.equal(proposals[0]?.text, "# Revised plan\n\nKeep the public API.")
+assert.equal(proposals[0]?.status, "proposed")
+console.log(
+  "PASS: Codex proposed-plan deltas and final replacements preserve one plan artifact"
+)

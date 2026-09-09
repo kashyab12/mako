@@ -4,7 +4,6 @@ import assert from "node:assert/strict"
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
 import { applyAcpSettings } from "../electron/acp-config.ts"
 import { codexWireSettings } from "../electron/providers/codex/settings.ts"
-import { claudeSettingsFromLayers } from "../electron/providers/claude/settings.ts"
 import { cursorNativeRunner } from "../electron/providers/cursor/native-runner.ts"
 
 const model: SessionConfigOption = {
@@ -51,6 +50,36 @@ const applied = await applyAcpSettings({
 })
 assert.deepEqual(order, ["model:b", "reasoning_effort:high"])
 assert.deepEqual(applied.settings, { model: "b", options: { effort: "high" } })
+
+// Devin folds effort into the model id and exposes no effort option. A
+// resolved launch therefore carries only the variant id, and applying it
+// must touch the model option alone rather than refusing the session.
+const variantModel: SessionConfigOption = {
+  id: "model",
+  name: "Model",
+  category: "model",
+  type: "select",
+  currentValue: "swe-1-7-medium",
+  options: [
+    { value: "swe-1-7-medium", name: "SWE-1.7 Medium" },
+    { value: "swe-1-7-high", name: "SWE-1.7 High" },
+  ],
+}
+const variantOrder: string[] = []
+const variantApplied = await applyAcpSettings({
+  settings: { model: "swe-1-7-high" },
+  observed: { model: "swe-1-7-medium", options: {} },
+  options: [variantModel],
+  async setOption(option, value) {
+    variantOrder.push(`${option.id}:${value}`)
+    return [{ ...variantModel, currentValue: String(value) }]
+  },
+  async setModel() {
+    assert.fail("model must use its reported config option")
+  },
+})
+assert.deepEqual(variantOrder, ["model:swe-1-7-high"])
+assert.deepEqual(variantApplied.settings, { model: "swe-1-7-high", options: {} })
 await assert.rejects(
   applyAcpSettings({
     settings: { options: { fast: false } },
@@ -84,27 +113,6 @@ assert.deepEqual(
   { model: undefined, effort: "high", serviceTier: "default" }
 )
 assert.equal(codexWireSettings().serviceTier, undefined)
-assert.deepEqual(claudeSettingsFromLayers([], {}), { options: {} })
-assert.deepEqual(
-  claudeSettingsFromLayers(
-    [{ effortLevel: "low", fastMode: true }, { effortLevel: "high" }],
-    {}
-  ),
-  { options: { effort: "high", fast: true } }
-)
-assert.equal(
-  claudeSettingsFromLayers(
-    [{ fastMode: true, fastModePerSessionOptIn: true }],
-    {}
-  ).options?.fast,
-  false
-)
-assert.equal(
-  claudeSettingsFromLayers([{ effortLevel: "low" }], {
-    CLAUDE_CODE_EFFORT_LEVEL: "high",
-  }).options?.effort,
-  "high"
-)
 assert.equal(
   cursorNativeRunner
     .resume("id", "continue", {
@@ -115,7 +123,7 @@ assert.equal(
   "opus[effort=low,fast=false]"
 )
 console.log(
-  "Session settings transports: sequential ACP acknowledgement and rejection, Codex reset, Claude precedence, and Cursor parameters passed"
+  "Session settings transports: sequential ACP acknowledgement and rejection, Codex reset, Cursor parameters passed"
 )
 
 const dualCatalog = normalizeCodexModels({
@@ -163,3 +171,13 @@ forward(
   { model: "a", options: { effort: "low" } }
 )
 assert.deepEqual(observedChanges, [{ model: "a", options: { effort: "high" } }])
+
+const { cursorAcpSource } = await import("../electron/providers/cursor/acp.ts")
+assert.deepEqual(cursorAcpSource.clientCapabilities, {_meta:{parameterizedModelPicker:true}})
+
+const { ClaudeSettingsResponseSchema } = await import("../electron/providers/claude/settings.ts")
+const settingsResponse = (effective: Record<string, string | boolean>) => ({type:"control_response",response:{subtype:"success",response:{applied:{effort:"high",model:"fable"},effective,sources:[{secret:"fixture-secret"}]}}})
+assert.deepEqual(ClaudeSettingsResponseSchema.parse(settingsResponse({fastMode:true,apiKey:"fixture-secret"})),{effort:"high",fast:true})
+assert.deepEqual(ClaudeSettingsResponseSchema.parse(settingsResponse({fastMode:true,fastModePerSessionOptIn:true})),{effort:"high",fast:false})
+assert.deepEqual(ClaudeSettingsResponseSchema.parse(settingsResponse({})),{effort:"high",fast:false})
+assert.equal(ClaudeSettingsResponseSchema.safeParse({type:"control_response",response:{subtype:"error"}}).success,false)

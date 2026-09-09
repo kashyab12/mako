@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { z } from "zod"
 import { BrowserService } from "../electron/browser-service.js"
 import {
   BrowserCommandSchema,
@@ -9,10 +10,18 @@ import { startControlService } from "../electron/control-service.js"
 import { browserControlClient } from "../electron/browser-control-client.js"
 import { browserFixture } from "./browser-control-fixture.js"
 
-const discovered = [{ id: "first", name: "First profile", endpoint: async () => "ws://127.0.0.1:1" }]
+const discovered = [
+  {
+    id: "first",
+    name: "First profile",
+    endpoint: async () => "ws://127.0.0.1:1",
+  },
+]
 const catalog = new BrowserService(discovered)
 let catalogUpdates = 0
-catalog.subscribe(() => { catalogUpdates++ })
+catalog.subscribe(() => {
+  catalogUpdates++
+})
 assert.equal(catalog.refresh().length, 1)
 assert.equal(catalogUpdates, 0)
 discovered[0] = { ...discovered[0], name: "Renamed profile" }
@@ -135,6 +144,55 @@ try {
   )
   await run("task-a", { action: "observe", target: a })
   await run("task-a", { action: "type", target: a, text: "after-observation" })
+  const originalNodes = fixture.axNodes.splice(0)
+  fixture.axNodes.push(
+    ...Array.from({ length: 100 }, (_, index) => ({
+      nodeId: String(index + 1),
+      ignored: false,
+      backendDOMNodeId: index + 1,
+      role: { value: "textbox" },
+      name: { value: "🔥".repeat(10_000) },
+      value: { value: "long value ".repeat(2_000) },
+    }))
+  )
+  const bounded = await run("task-a", {
+    action: "observe",
+    target: a,
+    maxNodes: 1000,
+  })
+  const observation = z
+    .object({
+      nodes: z.array(
+        z.object({ ref: z.string(), name: z.string(), value: z.string() })
+      ),
+      omitted: z.number(),
+      truncatedTextFields: z.number(),
+    })
+    .parse(bounded)
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(bounded)) <= 60_000,
+    "actual UTF-8 result fits the tool text budget"
+  )
+  assert.ok(observation.omitted > 0)
+  assert.ok(observation.truncatedTextFields > 0)
+  assert.ok(observation.nodes[0].name.length < 510)
+  await run("task-a", {
+    action: "type",
+    target: a,
+    ref: observation.nodes[0].ref,
+    text: "bounded ref remains usable",
+  })
+  fixture.axNodes.splice(0, fixture.axNodes.length, ...originalNodes)
+  await run("task-a", { action: "observe", target: a })
+  await assert.rejects(
+    run("task-a", {
+      action: "type",
+      target: a,
+      ref: observation.nodes[0].ref,
+      text: "stale",
+    }),
+    /reference|ref|observation/i
+  )
   assert.equal(
     fixture.calls.filter((call) => call.params.text === "delay").length,
     1

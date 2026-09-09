@@ -4,6 +4,14 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { usageSummary } from "../electron/usage.js"
+import { estimateUsageCost } from "../electron/usage-pricing.js"
+
+// Fable 5.1 and Fable 5 share list prices but not cache reads, and the
+// per-turn cache read is the token class an agent session is made of.
+const cacheRead = { input: 0, output: 0, cacheRead: 1_000_000, cacheWrite: 0 }
+assert.equal(estimateUsageCost("claude-fable-5-1[1m]", cacheRead), 0.25)
+assert.equal(estimateUsageCost("claude-fable-5", cacheRead), 1)
+assert.equal(estimateUsageCost("claude-5-fable-low", cacheRead), 1)
 
 const root = await mkdtemp(join(tmpdir(), "mako-usage-"))
 const sessionsRoot = join(root, "built-in")

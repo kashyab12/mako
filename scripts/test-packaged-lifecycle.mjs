@@ -1,0 +1,323 @@
+import assert from "node:assert/strict"
+import { spawn, execFileSync } from "node:child_process"
+import { randomUUID } from "node:crypto"
+import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
+import { setTimeout as delay } from "node:timers/promises"
+import WebSocket from "ws"
+import { assertPackagedImports } from "./test-packaged-imports.mjs"
+
+const app = resolve(
+  process.argv[2] ?? "/tmp/mako-parity-package/mac-arm64/Mako.app"
+)
+const provider = process.argv[3] ?? "claude"
+const root = await mkdtemp(join(tmpdir(), "mako-packaged-lifecycle-"))
+const workspace = join(root, "workspace")
+await mkdir(workspace)
+await writeFile(
+  join(workspace, "README.md"),
+  "Disposable package verification workspace.\n"
+)
+const executable = join(app, "Contents/MacOS/Mako")
+const conversationId = randomUUID()
+const marker = `PACKAGE_${randomUUID().replaceAll("-", "")}`
+const report = { app, provider, root, phases: [] }
+const soakMs = Number(process.env.MAKO_PACKAGE_SOAK_MS ?? 0)
+assert.ok(Number.isFinite(soakMs) && soakMs >= 0 && soakMs <= 900_000)
+let child
+let socket
+let counter = 0
+const callbacks = new Map()
+let launchError
+
+function command(method, params = {}) {
+  return new Promise((resolve, reject) => {
+    const id = ++counter
+    const timer = setTimeout(() => {
+      callbacks.delete(id)
+      reject(new Error(`Timed out: ${method}`))
+    }, 120_000)
+    callbacks.set(id, (message) => {
+      clearTimeout(timer)
+      if (message.error) reject(new Error(JSON.stringify(message.error)))
+      else resolve(message.result)
+    })
+    socket.send(JSON.stringify({ id, method, params }))
+  })
+}
+async function evaluate(expression) {
+  const response = await command("Runtime.evaluate", {
+    expression,
+    awaitPromise: true,
+    returnByValue: true,
+  })
+  if (response.exceptionDetails)
+    throw new Error(JSON.stringify(response.exceptionDetails))
+  return response.result.value
+}
+async function waitFor(read, predicate, label, timeout = 90_000) {
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    if (launchError) throw launchError
+    if (child?.exitCode !== null || child?.signalCode)
+      throw new Error(
+        `Package exited during ${label}: code=${child?.exitCode}, signal=${child?.signalCode}`
+      )
+    const value = await read()
+    if (predicate(value)) return value
+    await delay(250)
+  }
+  throw new Error(`Timed out waiting for ${label}`)
+}
+async function startPackage() {
+  await rm(join(root, "profile/DevToolsActivePort"), { force: true })
+  launchError = undefined
+  const env = {
+    ...process.env,
+    MAKO_BACKEND_URL: "http://127.0.0.1:9/api/mcp",
+    MAKO_BACKEND_TOKEN: "",
+  }
+  delete env.ELECTRON_RUN_AS_NODE
+  delete env.VITE_DEV_SERVER_URL
+  delete env.MAKO_WEB_SOCKET
+  child = spawn(
+    executable,
+    [
+      `--user-data-dir=${join(root, "profile")}`,
+      "--remote-debugging-port=0",
+      "--remote-debugging-address=127.0.0.1",
+    ],
+    { cwd: workspace, env, detached: true, stdio: ["ignore", "pipe", "pipe"] }
+  )
+  for (const stream of [child.stdout, child.stderr]) stream.resume()
+  child.once("error", (error) => {
+    launchError = error
+  })
+  const port = await waitFor(
+    async () => {
+      try {
+        return Number(
+          (
+            await readFile(join(root, "profile/DevToolsActivePort"), "utf8")
+          ).split("\n")[0]
+        )
+      } catch {
+        return 0
+      }
+    },
+    Boolean,
+    "debugger"
+  )
+  const target = await waitFor(
+    async () => {
+      try {
+        return (
+          await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()
+        ).find((item) => item.type === "page" && item.url.startsWith("file:"))
+      } catch {
+        return null
+      }
+    },
+    Boolean,
+    "packaged renderer"
+  )
+  socket = new WebSocket(target.webSocketDebuggerUrl)
+  await new Promise((resolve, reject) => {
+    socket.once("open", resolve)
+    socket.once("error", reject)
+  })
+  socket.on("message", (data) => {
+    const message = JSON.parse(data.toString())
+    if (message.id) {
+      const callback = callbacks.get(message.id)
+      callbacks.delete(message.id)
+      callback?.(message)
+    }
+  })
+  await waitFor(
+    () =>
+      evaluate("Boolean(window.mako && document.querySelector('textarea'))"),
+    Boolean,
+    "preload and composer"
+  )
+  return { url: target.url, pid: child.pid }
+}
+async function stopPackage() {
+  socket?.close()
+  socket = undefined
+  if (child && child.exitCode === null) {
+    process.kill(-child.pid, "SIGTERM")
+    await Promise.race([
+      new Promise((resolve) => child.once("exit", resolve)),
+      delay(5000),
+    ])
+    try {
+      process.kill(-child.pid, "SIGKILL")
+    } catch {
+      /* The owned process group has exited. */
+    }
+  }
+  child = undefined
+}
+const bridge = (name, args) =>
+  evaluate(`window.mako[${JSON.stringify(name)}](...${JSON.stringify(args)})`)
+async function memorySample() {
+  const processes = execFileSync("ps", ["-axo", "pid=,ppid=,rss="], {
+    encoding: "utf8",
+  })
+    .trim()
+    .split("\n")
+    .map((line) => line.trim().split(/\s+/).map(Number))
+  const owned = new Set([child.pid])
+  for (let previous = 0; previous !== owned.size;) {
+    previous = owned.size
+    for (const [pid, parent] of processes) if (owned.has(parent)) owned.add(pid)
+  }
+  return {
+    at: Date.now(),
+    rssBytes: processes
+      .filter(([pid]) => owned.has(pid))
+      .reduce((sum, [, , rss]) => sum + rss * 1024, 0),
+    processCount: owned.size,
+    renderer: await command("Runtime.getHeapUsage"),
+  }
+}
+async function soak() {
+  if (!soakMs) return
+  const draft = `Package reload draft ${randomUUID()}`
+  await evaluate("document.querySelector('textarea').focus()")
+  await command("Input.insertText", { text: draft })
+  const samples = []
+  const started = Date.now()
+  let reloads = 0
+  while (Date.now() - started < soakMs) {
+    const beforeReload = await evaluate("performance.timeOrigin")
+    await command("Page.reload")
+    await waitFor(
+      () =>
+        evaluate(
+          `performance.timeOrigin !== ${beforeReload} && document.querySelector('textarea')?.value === ${JSON.stringify(draft)}`
+        ).catch(() => false),
+      Boolean,
+      "draft recovery after packaged renderer reload"
+    )
+    reloads++
+    samples.push(await memorySample())
+    if (reloads % 6 === 0)
+      console.log(`Packaged soak: ${reloads} reloads with draft preserved`)
+    await delay(10_000)
+  }
+  report.phases.push({
+    phase: "renderer-reload-soak",
+    elapsedMs: Date.now() - started,
+    reloads,
+    samples,
+  })
+}
+async function completed(requestId) {
+  return waitFor(
+    () => bridge("liveSnapshot", [conversationId]),
+    (snapshot) => {
+      const request = snapshot?.requests.find((item) => item.id === requestId)
+      if (
+        request &&
+        ["failed", "uncertain", "interrupted"].includes(request.status)
+      )
+        throw new Error(request.error ?? request.status)
+      if (snapshot?.permissions.length)
+        throw new Error("Unexpected permission in a no-tools fixture")
+      return request?.status === "completed"
+    },
+    "provider completion",
+    120_000
+  )
+}
+function answer(snapshot, requestId) {
+  const index = snapshot.blocks.findIndex(
+    (block) => block.type === "user" && block.requestId === requestId
+  )
+  assert.ok(index >= 0)
+  return snapshot.blocks
+    .slice(index + 1)
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("\n")
+}
+try {
+  report.phases.push({
+    phase: "packaged-imports",
+    checked: assertPackagedImports(app),
+  })
+  execFileSync("codesign", ["--verify", "--deep", "--strict", app], {
+    stdio: "pipe",
+  })
+  const launch = await startPackage()
+  report.phases.push({ phase: "packaged-launch", ...launch })
+  console.log("Packaged renderer and preload ready in an isolated profile")
+  const requestId = randomUUID()
+  const sentAt = Date.now()
+  await bridge("liveStart", [
+    provider,
+    workspace,
+    {
+      conversationId,
+      title: "Mako package verification",
+      initialRequest: {
+        id: requestId,
+        text: `Remember this marker for the next turn: ${marker}. Reply with just the marker. Do not use tools or modify files.`,
+        attachments: [],
+      },
+    },
+  ])
+  const acceptedMs = Date.now() - sentAt
+  const first = await completed(requestId)
+  assert.ok(answer(first, requestId).includes(marker))
+  const nativeId = first.session.nativeId
+  report.phases.push({
+    phase: "provider-completion",
+    elapsedMs: Date.now() - sentAt,
+    acceptedMs,
+    nativeIdPresent: Boolean(nativeId),
+  })
+  console.log("Packaged provider completed a real no-tools turn")
+  await waitFor(
+    () => bridge("liveSnapshot", [conversationId]),
+    (snapshot) =>
+      Boolean(
+        snapshot?.control.bindings.find(
+          (binding) => binding.nativeId === nativeId
+        )?.checkpoint
+      ),
+    "native session discovery and durable checkpoint"
+  )
+  await stopPackage()
+  // The same profile must recover its journal; the second prompt does not include the marker.
+  await startPackage()
+  const loaded = await bridge("liveSnapshot", [conversationId])
+  assert.ok(loaded)
+  assert.equal(loaded.session.nativeId, nativeId)
+  const nextId = randomUUID()
+  await bridge("livePrompt", [
+    conversationId,
+    nextId,
+    "Reply only with the marker from my previous turn. Do not use tools or modify files.",
+    [],
+  ])
+  const resumed = await completed(nextId)
+  assert.equal(resumed.session.nativeId, nativeId)
+  assert.ok(
+    answer(resumed, nextId).includes(marker),
+    "Resumed provider must recall the original marker"
+  )
+  report.phases.push({ phase: "restart-native-resume-recall", passed: true })
+  await bridge("liveClose", [conversationId])
+  await soak()
+  console.log(
+    "Packaged restart retained the journal and resumed the same native session with marker recall"
+  )
+} finally {
+  await stopPackage()
+  await writeFile(join(root, "result.json"), JSON.stringify(report, null, 2))
+  console.log(`Verification report: ${join(root, "result.json")}`)
+}

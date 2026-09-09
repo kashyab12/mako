@@ -114,6 +114,7 @@ const threadViewingSource = readFileSync(
 // visible scene opts in. Transcript and workspace chrome must never loop.
 const motionLayers = new Set([
   ".ocean-light",
+  ".ocean-light .ocean-engraving",
   ".ocean-grain",
   ".ocean-fin-glint",
 ])

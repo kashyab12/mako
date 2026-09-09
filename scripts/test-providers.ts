@@ -330,7 +330,7 @@ assert.deepEqual(
 )
 assert.deepEqual(
   providerHost.acpSources.list().map((source) => source.provider),
-  ["claude", "cursor", "grok", "devin", "opencode"]
+  ["cursor", "grok", "devin", "opencode"]
 )
 assert.deepEqual(
   providerHost.sessionEmitters.list().map((emitter) => emitter.provider),
@@ -341,6 +341,10 @@ assert.deepEqual(
   ["claude", "codex", "cursor", "grok", "opencode"]
 )
 assert.equal(providerHost.nativeRunners.get("claude")?.fastMode, "supported")
+assert.equal(providerHost.profiles.get("claude")?.transport, "sdk")
+assert.ok(providerHost.liveDrivers.get("claude")?.steer)
+assert.ok(providerHost.liveDrivers.get("claude")?.compact)
+assert.equal(providerHost.liveDrivers.get("codex")?.compact, undefined, "Do not expose compaction until native history retention passes")
 assert.deepEqual(
   providerHost.accountCapabilities
     .list()
@@ -481,19 +485,7 @@ const grokEnv: NodeJS.ProcessEnv = {}
 grokAcp?.configureEnvironment(grokEnv)
 assert.equal(grokEnv.GROK_DISABLE_AUTOUPDATER, "1")
 
-const claudeSource = providerHost.acpSources.get("claude")!
-if (claudeSource.available(process.cwd())) {
-  const claudeAcp = await claudeSource.launch({
-    appPath: process.cwd(),
-    execPath: "/fixture/electron",
-    tuning: { options: { agentTeams: true } },
-  })
-  assert.equal(claudeAcp?.command, "/fixture/electron")
-  const claudeEnv: NodeJS.ProcessEnv = {}
-  claudeAcp?.configureEnvironment(claudeEnv)
-  assert.equal(claudeEnv.ELECTRON_RUN_AS_NODE, "1")
-  assert.equal(claudeEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS, "1")
-}
+assert.equal(providerHost.acpSources.get("claude"), undefined)
 
 const openCodeSource = providerHost.acpSources.get("opencode")!
 if (openCodeSource.available(process.cwd())) {

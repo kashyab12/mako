@@ -48,12 +48,43 @@ console.log(
 )
 
 writeAttachmentDrafts({
-  "task-a": [{ ...attachment, name: "Appshot A.png", contextPath: "/retained/a.context.txt" }],
-  "task-b": [{ ...attachment, id: "file-b", name: "Appshot B.png", stagedPath: "/retained/b.png", contextPath: "/retained/b.context.txt" }],
+  "task-a": [
+    {
+      ...attachment,
+      name: "Appshot A.png",
+      contextPath: "/retained/a.context.txt",
+    },
+  ],
+  "task-b": [
+    {
+      ...attachment,
+      id: "file-b",
+      name: "Appshot B.png",
+      stagedPath: "/retained/b.png",
+      contextPath: "/retained/b.context.txt",
+    },
+  ],
 })
 const appshots = readAttachmentDrafts()
 assert.equal(appshots["task-a"]?.[0]?.contextPath, "/retained/a.context.txt")
 assert.equal(appshots["task-b"]?.[0]?.stagedPath, "/retained/b.png")
 assert.equal(appshots["task-a"]?.length, 1)
 assert.equal(appshots["task-b"]?.length, 1)
-console.log("Appshot image and context paths restore as one attachment independently for each task")
+console.log(
+  "Appshot image and context paths restore as one attachment independently for each task"
+)
+
+const { clearSubmittedDraft } = await import("../src/state/drafts.ts")
+rememberDraft("delegation:one", "original task")
+rememberDraft("delegation:two", "other conversation")
+rememberDraft("delegation:one", "new task typed before acceptance")
+clearSubmittedDraft("delegation:one", "original task")
+assert.equal(draftText("delegation:one"), "new task typed before acceptance")
+assert.equal(draftText("delegation:two"), "other conversation")
+clearSubmittedDraft("delegation:one", "new task typed before acceptance")
+assert.equal(draftText("delegation:one"), "")
+assert.equal(draftText("delegation:two"), "other conversation")
+assert.ok(saved.get("mako.session-drafts.v1")?.includes("other conversation"))
+console.log(
+  "Delegation drafts persist per conversation; late acceptance preserves newer text"
+)

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { pairTools, foldTools } from "../src/lib/tools.ts"
 import { threadToMessages } from "../src/lib/foreign-thread.ts"
+import { toExchanges } from "../src/lib/exchanges.ts"
 import { acpBlocksToMessages } from "../src/lib/acp-blocks.ts"
 import type { AttachmentContent } from "@mako/sessions"
 
@@ -73,47 +74,194 @@ console.log(
   "Tool results retain media ownership and distinguish empty completion from pending output"
 )
 
-
-const {claudeCommandPrompt, claudeInterrupted} = await import("../packages/sessions/src/providers/claude-presentation.ts")
-assert.equal(claudeCommandPrompt("<command-message>graphify</command-message>\n<command-name>/graphify</command-name>\n<command-args>billing accounting?</command-args>"), "/graphify billing accounting?")
-assert.equal(claudeCommandPrompt("Explain <command-name>/foo</command-name>"), "Explain <command-name>/foo</command-name>")
-assert.equal(claudeInterrupted("[Request interrupted by user for tool use]"), true)
-const {devinReferences, devinPromptImages, devinMcpCall} = await import("../packages/sessions/src/providers/devin-presentation.ts")
+const { claudeCommandPrompt, claudeInterrupted } =
+  await import("../packages/sessions/src/providers/claude-presentation.ts")
+assert.equal(
+  claudeCommandPrompt(
+    "<command-message>graphify</command-message>\n<command-name>/graphify</command-name>\n<command-args>billing accounting?</command-args>"
+  ),
+  "/graphify billing accounting?"
+)
+assert.equal(
+  claudeCommandPrompt("Explain <command-name>/foo</command-name>"),
+  "Explain <command-name>/foo</command-name>"
+)
+assert.equal(
+  claudeInterrupted("[Request interrupted by user for tool use]"),
+  true
+)
+const { devinReferences, devinPromptImages, devinMcpCall } =
+  await import("../packages/sessions/src/providers/devin-presentation.ts")
 const reference = '<ref_snippet file="/work/src/app.ts" lines="12-18" />'
 assert.ok(devinReferences(reference).includes("/work/src/app.ts#L12-L18"))
-assert.equal(devinReferences("```xml\n" + reference + "\n```"), "```xml\n" + reference + "\n```")
-assert.equal(devinPromptImages("Check this [Image 1: /work/proof.png]").attachments[0]?.source.kind, "file")
-assert.equal(devinMcpCall(JSON.stringify({server_name: "files", tool_name: "read", arguments: {path: "proof.txt"}}))?.name, "files.read")
+assert.equal(
+  devinReferences("```xml\n" + reference + "\n```"),
+  "```xml\n" + reference + "\n```"
+)
+assert.equal(
+  devinPromptImages("Check this [Image 1: /work/proof.png]").attachments[0]
+    ?.source.kind,
+  "file"
+)
+assert.equal(
+  devinMcpCall(
+    JSON.stringify({
+      server_name: "files",
+      tool_name: "read",
+      arguments: { path: "proof.txt" },
+    })
+  )?.name,
+  "files.read"
+)
 assert.equal(devinMcpCall('{"command":"read"}'), undefined)
-const {todoDetails} = await import("../packages/sessions/src/tool-plan.ts")
-assert.deepEqual(todoDetails('{"todos":[{"content":"Verify image","status":"completed"}]}'), [{type: "plan", entries: [{content: "Verify image", status: "completed"}]}])
-const {inlineFileTarget} = await import("../src/lib/file-citations.ts")
+const { todoDetails } = await import("../packages/sessions/src/tool-plan.ts")
+assert.deepEqual(
+  todoDetails('{"todos":[{"content":"Verify image","status":"completed"}]}'),
+  [
+    {
+      type: "plan",
+      entries: [{ content: "Verify image", status: "completed" }],
+    },
+  ]
+)
+const { inlineFileTarget } = await import("../src/lib/file-citations.ts")
 assert.equal(inlineFileTarget("src/app.ts:12-18")?.endLine, 18)
-for (const literal of ["process.env", "npm run build", "https://example.com/app.ts", "x/y", "foo.bar"]) assert.equal(inlineFileTarget(literal), null, literal)
-const {markdownMedia} = await import("../src/lib/transcript-media.ts")
+for (const literal of [
+  "process.env",
+  "npm run build",
+  "https://example.com/app.ts",
+  "x/y",
+  "foo.bar",
+])
+  assert.equal(inlineFileTarget(literal), null, literal)
+const { markdownMedia } = await import("../src/lib/transcript-media.ts")
 assert.equal(markdownMedia("/work/proof.mp3").mimeType, "audio/mpeg")
 assert.equal(markdownMedia("file:///work/proof.png").source.kind, "file")
-console.log("Provider commands, native references, plans, file links, and media types preserve their contracts")
+console.log(
+  "Provider commands, native references, plans, file links, and media types preserve their contracts"
+)
 
-const {codexPrompt, codexPromptImages, codexPresentation} = await import("../packages/sessions/src/providers/codex-presentation.ts")
+const { codexPrompt, codexPromptImages, codexPresentation } =
+  await import("../packages/sessions/src/providers/codex-presentation.ts")
 const appendix = '<image name=[Image #1] path="/work/proof.png"></image>'
 assert.equal(codexPrompt(`Look here\n${appendix}`), "Look here")
-assert.equal(codexPromptImages(`Look here\n${appendix}`)[0]?.source.kind, "file")
-assert.equal(codexPrompt('# AGENTS.md instructions for /work\n\n<INSTRUCTIONS>Context only</INSTRUCTIONS>\n<environment_context>cwd</environment_context>'), undefined)
-assert.equal(codexPrompt('# AGENTS.md instructions for /work\n<INSTRUCTIONS>Context only</INSTRUCTIONS>\nKeep this request'), "Keep this request")
-assert.equal(codexPrompt('<send_user_message_question_reply>\n[{"question":"Which profile?","answer":"Existing"}]\n</send_user_message_question_reply>'), "Which profile?\n\nExisting")
-assert.equal(codexPrompt('<send_user_message_question_reply>broken</send_user_message_question_reply>'), '<send_user_message_question_reply>broken</send_user_message_question_reply>')
-assert.equal(codexPrompt('Explain <custom>this user XML</custom>'), 'Explain <custom>this user XML</custom>')
-const directive = '::code-comment{title="[P2] Read failure" body="The read of the file fails." file="/work/app.ts" start=12}'
-assert.match(codexPresentation(directive), /\[\/work\/app.ts:12\]\(<\/work\/app.ts#L12>\)/)
-assert.equal(codexPresentation('```text\n' + directive + '\n```'), '```text\n' + directive + '\n```')
-assert.equal(codexPresentation('[Review](codex://review?pr=https%3A%2F%2Fgithub.com%2Fa%2Fb%2Fpull%2F1&path=app.ts&line=12)'), '[Review](https://github.com/a/b/pull/1)')
-console.log("Codex normalization retains user text, source examples, and actionable review targets")
-assert.match(codexPresentation('::code-comment{title="Review" body="The `reader` fails." file="src/app.ts" start=7}'), /\[src\/app.ts:7\]/)
-const {cursorTaskNotification, cursorPrompt} = await import("../packages/sessions/src/providers/cursor-presentation.ts")
-const notification = '<timestamp>Today</timestamp>\n<system_notification><task>kind: subagent\nstatus: success\ntitle: Inspect module\n<response>**Verified** result</response></task></system_notification>\n<user_query>Follow up</user_query>'
+assert.equal(
+  codexPromptImages(`Look here\n${appendix}`)[0]?.source.kind,
+  "file"
+)
+assert.equal(
+  codexPrompt(
+    "# AGENTS.md instructions for /work\n\n<INSTRUCTIONS>Context only</INSTRUCTIONS>\n<environment_context>cwd</environment_context>"
+  ),
+  undefined
+)
+assert.equal(
+  codexPrompt(
+    "# AGENTS.md instructions for /work\n<INSTRUCTIONS>Context only</INSTRUCTIONS>\nKeep this request"
+  ),
+  "Keep this request"
+)
+assert.equal(
+  codexPrompt(
+    '<send_user_message_question_reply>\n[{"question":"Which profile?","answer":"Existing"}]\n</send_user_message_question_reply>'
+  ),
+  "Which profile?\n\nExisting"
+)
+assert.equal(
+  codexPrompt(
+    "<send_user_message_question_reply>broken</send_user_message_question_reply>"
+  ),
+  "<send_user_message_question_reply>broken</send_user_message_question_reply>"
+)
+assert.equal(
+  codexPrompt("Explain <custom>this user XML</custom>"),
+  "Explain <custom>this user XML</custom>"
+)
+const directive =
+  '::code-comment{title="[P2] Read failure" body="The read of the file fails." file="/work/app.ts" start=12}'
+assert.match(
+  codexPresentation(directive),
+  /\[\/work\/app.ts:12\]\(<\/work\/app.ts#L12>\)/
+)
+assert.equal(
+  codexPresentation("```text\n" + directive + "\n```"),
+  "```text\n" + directive + "\n```"
+)
+assert.equal(
+  codexPresentation(
+    "[Review](codex://review?pr=https%3A%2F%2Fgithub.com%2Fa%2Fb%2Fpull%2F1&path=app.ts&line=12)"
+  ),
+  "[Review](https://github.com/a/b/pull/1)"
+)
+console.log(
+  "Codex normalization retains user text, source examples, and actionable review targets"
+)
+assert.match(
+  codexPresentation(
+    '::code-comment{title="Review" body="The `reader` fails." file="src/app.ts" start=7}'
+  ),
+  /\[src\/app.ts:7\]/
+)
+const { cursorTaskNotification, cursorPrompt } =
+  await import("../packages/sessions/src/providers/cursor-presentation.ts")
+const notification =
+  "<timestamp>Today</timestamp>\n<system_notification><task>kind: subagent\nstatus: success\ntitle: Inspect module\n<response>**Verified** result</response></task></system_notification>\n<user_query>Follow up</user_query>"
 const taskResult = cursorTaskNotification(notification, "native-bubble")
 assert.equal(taskResult?.kind, "assistant")
-assert.ok(taskResult?.kind === "assistant" && taskResult.blocks[0]?.type === "tool" && taskResult.blocks[0].output === "**Verified** result")
-assert.equal(cursorTaskNotification("Explain " + notification, "example"), undefined)
-assert.equal(cursorPrompt("<user_query>Keep my request</user_query>"), "Keep my request")
+assert.ok(
+  taskResult?.kind === "assistant" &&
+    taskResult.blocks[0]?.type === "tool" &&
+    taskResult.blocks[0].output === "**Verified** result"
+)
+assert.equal(
+  cursorTaskNotification("Explain " + notification, "example"),
+  undefined
+)
+assert.equal(
+  cursorPrompt("<user_query>Keep my request</user_query>"),
+  "Keep my request"
+)
+
+const steered = acpBlocksToMessages(
+  [
+    { type: "user", requestId: "original", text: "Original task" },
+    { type: "text", id: "answer", text: "Answer before confirmation" },
+    {
+      type: "user",
+      requestId: "steer",
+      steeringFor: "original",
+      text: "Additional instruction",
+      attachments: [image],
+    },
+    { type: "text", id: "continued", text: "Answer continues" },
+  ],
+  false
+)
+const exchanges = toExchanges(steered.messages)
+assert.equal(
+  exchanges.length,
+  1,
+  "Late steering confirmation must not create an empty exchange"
+)
+assert.equal(exchanges[0]?.response.length, 2)
+assert.equal(exchanges[0]?.steering?.[0]?.blocks[0]?.type, "text")
+assert.deepEqual(exchanges[0]?.steering?.[0]?.blocks[1], image)
+console.log(
+  "Steering stays with its original exchange, whole-answer copy and retained attachments"
+)
+
+const portableSteering = toExchanges(
+  threadToMessages([
+    { kind: "user", id: "original", text: "Original task" },
+    { kind: "assistant", blocks: [{ type: "text", text: "Whole answer" }] },
+    {
+      kind: "user",
+      id: "steer",
+      steeringFor: "original",
+      text: "Additional instruction",
+      attachments: [image],
+    },
+  ])
+)
+assert.equal(portableSteering.length, 1)
+assert.equal(portableSteering[0]?.steering?.length, 1)

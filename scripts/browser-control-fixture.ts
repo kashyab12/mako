@@ -18,6 +18,15 @@ export async function browserFixture() {
   const sessions = new Map<string, string>()
   const calls: z.infer<typeof commandSchema>[] = []
   const sockets = new Set<WebSocket>()
+  const axNodes: JsonObject[] = [
+    {
+      nodeId: "1",
+      ignored: false,
+      backendDOMNodeId: 1,
+      role: { value: "textbox" },
+      name: { value: "Proof" },
+    },
+  ]
   let delayed: (() => void) | undefined
   server.on("connection", (socket) => {
     connections++
@@ -87,17 +96,7 @@ export async function browserFixture() {
           })
           break
         case "Accessibility.getFullAXTree":
-          reply({
-            nodes: [
-              {
-                nodeId: "1",
-                ignored: false,
-                backendDOMNodeId: 1,
-                role: { value: "textbox" },
-                name: { value: "Proof" },
-              },
-            ],
-          })
+          reply({ nodes: axNodes })
           break
         case "Page.getLayoutMetrics":
           reply({
@@ -142,6 +141,7 @@ export async function browserFixture() {
     },
     connections: () => connections,
     calls,
+    axNodes,
     targets,
     completeDelayed: () => {
       delayed?.()

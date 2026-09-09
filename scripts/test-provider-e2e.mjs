@@ -51,6 +51,8 @@ async function runElectron() {
   const { LiveConversations } =
     await import("../dist-electron/live-conversations.js")
   const { providerHost } = await import("../dist-electron/providers/index.js")
+  const { discoverMcpRegistry } =
+    await import("../dist-electron/mcp-registry.js")
   const { bindAcp, stopAcp } = await import("../dist-electron/acp.js")
   const { bindCodexApp, stopCodexApps } =
     await import("../dist-electron/codex-app.js")
@@ -63,10 +65,13 @@ async function runElectron() {
   const { BrowserService } = await import("../dist-electron/browser-service.js")
   const { startControlService } =
     await import("../dist-electron/control-service.js")
-  const { extensionBrowsers } = await import("../dist-electron/browser-extension-registration.js")
-  const browser = new BrowserService(process.env.MAKO_E2E_BROWSER_REGISTRATION_ROOT
-    ? extensionBrowsers(process.env.MAKO_E2E_BROWSER_REGISTRATION_ROOT)
-    : undefined)
+  const { extensionBrowsers } =
+    await import("../dist-electron/browser-extension-registration.js")
+  const browser = new BrowserService(
+    process.env.MAKO_E2E_BROWSER_REGISTRATION_ROOT
+      ? extensionBrowsers(process.env.MAKO_E2E_BROWSER_REGISTRATION_ROOT)
+      : undefined
+  )
   const browserOperations = []
   const executeBrowser = browser.execute.bind(browser)
   browser.execute = async (conversationId, command, ...args) => {
@@ -77,6 +82,7 @@ async function runElectron() {
   let control
   let mcp
   const dependencies = {
+    mcpSnapshot: (cwd) => discoverMcpRegistry(cwd, root),
     root: join(root, "journals"),
     appPath: root,
     driver: (provider) => providerHost.liveDrivers.get(provider),
@@ -104,6 +110,9 @@ async function runElectron() {
   control = await startControlService(browser, (id, binding) =>
     owner.authorizeAgent(id, binding)
   )
+  const { harnessProfile } = await import("../dist-electron/harnesses.js")
+  const { resolveSessionSettings, modelByIdentity } =
+    await import("@mako/sessions/settings")
   const models = JSON.parse(process.env.MAKO_E2E_MODELS ?? "{}")
   const results = []
   const delegationParents = new Set()
@@ -182,7 +191,8 @@ async function runElectron() {
     throw new Error("Provider did not complete within the test deadline")
   }
   try {
-    for (const driver of process.argv.includes("--browser-only")
+    for (const driver of process.argv.includes("--browser-only") ||
+    process.argv.includes("--fork-only")
       ? []
       : drivers) {
       const result = {
@@ -206,26 +216,56 @@ async function runElectron() {
       )
       console.log(`Testing installed ${driver.provider} through Mako`)
       try {
+        const profile = process.argv.includes("--settings")
+          ? await harnessProfile(driver.provider, true, cwd)
+          : undefined
+        const selectedModel =
+          process.env.MAKO_E2E_MODEL ?? models[driver.provider]
+        const tuning = profile
+          ? resolveSessionSettings({
+              models: profile.models,
+              context: "new",
+              defaults: profile.settings,
+              overrides: selectedModel ? { model: selectedModel } : undefined,
+            }).settings
+          : selectedModel
+            ? { model: selectedModel }
+            : undefined
+        if (profile) {
+          result.discovery = {
+            count: profile.models.length,
+            settings: profile.settings,
+            error: profile.configurationError,
+          }
+          if (!profile.models.length)
+            throw new Error(
+              "Installed provider returned an empty model catalog"
+            )
+        }
         await owner.start(driver.provider, cwd, {
           conversationId: id,
           title: "Mako disposable E2E fixture",
-          tuning:
-            (process.env.MAKO_E2E_MODEL ?? models[driver.provider])
-              ? { model: process.env.MAKO_E2E_MODEL ?? models[driver.provider] }
-              : undefined,
+          tuning,
         })
         await waitFor(
           id,
           (snapshot) => snapshot?.session.status === "ready",
           60_000
         )
+        if (profile) {
+          const session = owner.snapshot(id).session
+          result.startedSettings = session.settings
+          const ids = session.configOptions.map((option) => option.id)
+          if (new Set(ids).size !== ids.length)
+            throw new Error("Duplicate setting IDs in live provider options")
+        }
         const requestId = randomUUID()
         owner.submit(
           id,
           requestId,
           "Read proof.txt in this workspace using your file tool. Reply with only the fixture value. This is an authorized disposable integration test. Do not modify files."
         )
-        const completed = await waitFor(id, (snapshot) =>
+        let completed = await waitFor(id, (snapshot) =>
           snapshot?.requests.some(
             (request) =>
               request.id === requestId && request.status === "completed"
@@ -239,8 +279,67 @@ async function runElectron() {
           throw new Error(
             "The real response did not contain the value from the fixture file"
           )
+        if (profile) {
+          const controls =
+            profile.transport === "sdk"
+              ? modelByIdentity(
+                  profile.models,
+                  completed.session.settings?.model
+                )?.options
+              : completed.session.configOptions
+          const effort = controls?.find(
+            (option) =>
+              option.id === "effort" &&
+              option.kind === "select" &&
+              option.change !== "launch"
+          )
+          const originalEffort = completed.session.settings?.options?.effort
+          const next = effort?.values?.find(
+            (choice) => choice.value !== originalEffort
+          )
+          if (next && originalEffort !== undefined) {
+            const changeId = randomUUID()
+            owner.submit(
+              id,
+              changeId,
+              "Repeat the fixture value from your previous answer. Do not use any tools.",
+              [],
+              { options: { effort: next.value } }
+            )
+            completed = await waitFor(id, (snapshot) =>
+              snapshot?.requests.some(
+                (request) =>
+                  request.id === changeId && request.status === "completed"
+              )
+            )
+            if (completed.session.settings?.options?.effort !== next.value)
+              throw new Error("Provider did not retain the changed effort")
+            result.changedEffort = next.value
+            result.changedSettings = completed.session.settings
+            const restoreId = randomUUID()
+            owner.submit(
+              id,
+              restoreId,
+              "Repeat the fixture value once more. Do not use any tools.",
+              [],
+              { options: { effort: originalEffort } }
+            )
+            completed = await waitFor(id, (snapshot) =>
+              snapshot?.requests.some(
+                (request) =>
+                  request.id === restoreId && request.status === "completed"
+              )
+            )
+            if (completed.session.settings?.options?.effort !== originalEffort)
+              throw new Error(
+                "Provider did not restore the original effort after the test"
+              )
+            result.restoredEffort = originalEffort
+          }
+        }
         result.status = "passed"
         result.nativeId = completed.session.nativeId
+        if (profile) result.completedSettings = completed.session.settings
         result.toolCalls = completed.blocks
           .filter((block) => block.type === "tool")
           .map((block) => block.title)
@@ -259,9 +358,29 @@ async function runElectron() {
             JSON.stringify(snapshot, null, 2)
           )
       } finally {
-        if (owner.snapshot(id)) owner.close(id)
+        if (owner.snapshot(id)) await owner.close(id)
       }
       console.log(JSON.stringify(result))
+      await writeFile(
+        join(root, "results.json"),
+        JSON.stringify(results, null, 2)
+      )
+    }
+    if (process.argv.includes("--settings")) {
+      const refs = await catalog.scan()
+      for (const result of results) {
+        const ref = refs.find(
+          (ref) =>
+            ref.harness === result.provider && ref.nativeId === result.nativeId
+        )
+        result.nativeSettings = ref?.settings
+        console.log(
+          JSON.stringify({
+            provider: result.provider,
+            nativeSettings: result.nativeSettings,
+          })
+        )
+      }
       await writeFile(
         join(root, "results.json"),
         JSON.stringify(results, null, 2)
@@ -619,12 +738,16 @@ async function runElectron() {
       )
       owner.close(id)
     }
-    if (process.argv.includes("--fork")) {
+    if (
+      process.argv.includes("--fork") ||
+      process.argv.includes("--fork-only")
+    ) {
+      const forkProvider = requested[0] ?? "codex"
       const cwd = join(root, "fork-fixture")
       await mkdir(cwd)
       const id = randomUUID()
       const proof = randomUUID()
-      await owner.start("codex", cwd, {
+      await owner.start(forkProvider, cwd, {
         conversationId: id,
         title: "Mako native fork fixture",
       })
@@ -661,10 +784,17 @@ async function runElectron() {
         throw new Error(
           "Distinct source turns did not retain distinct native run IDs"
         )
+      await owner.close(id)
       const forkId = randomUUID()
+      const sourcePath = owner.snapshot(id).threadPath
+      if (!sourcePath)
+        throw new Error("The host did not retain the native transcript path")
+      const sourceCheckpoint = await nativeCheckpoint(sourcePath)
+      if (!sourceCheckpoint)
+        throw new Error("The native source must be stable before forking")
       const fork = owner.fork(id, {
         id: forkId,
-        provider: "codex",
+        provider: forkProvider,
         point: { kind: "run", requestId },
       })
       if (!fork.control.ancestry.nativeFork)
@@ -693,6 +823,8 @@ async function runElectron() {
         )
       if (completed.session.nativeId === source.session.nativeId)
         throw new Error("Fork reused source native ID")
+      if ((await nativeCheckpoint(sourcePath)) !== sourceCheckpoint)
+        throw new Error("Native fork modified its source transcript")
       if (
         completed.requests[0].context.some((manifest) => manifest.includesBase)
       )
@@ -701,7 +833,7 @@ async function runElectron() {
         )
       results.push({
         flow: "native-fork",
-        provider: "codex",
+        provider: forkProvider,
         status: "passed",
         source: source.session.nativeId,
         fork: completed.session.nativeId,

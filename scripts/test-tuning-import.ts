@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { resolveSessionSettings } from "@mako/sessions/settings"
 
 const storage = new Map<string, string>()
 globalThis.localStorage = {
@@ -24,6 +25,7 @@ const { providerStore, providerProfileKey } =
   await import("../src/state/providers.ts")
 const { threadsStore } = await import("../src/state/thread-store.ts")
 const {
+  observedSessionSettings,
   resolveComposerSettings,
   settingsForSend,
   chooseComposerModel,
@@ -165,7 +167,100 @@ assert.equal(
   resolveComposerSettings(target).settings.options?.serviceTier,
   "default"
 )
+const restored = {
+  ...observed,
+  threadPath: undefined,
+  session: {
+    ...observed.session,
+    nativeId: "one",
+    settings: { model: "a", options: {} },
+  },
+}
+replaceAcpConversation("live", restored)
+threadsStore.set({ viewing: null, opening: null })
+const restoredTarget = {
+  kind: "live" as const,
+  id: "live",
+  harness: "codex",
+  cwd: "/workspace",
+}
+assert.equal(
+  resolveComposerSettings(restoredTarget).settings.options?.effort,
+  "low"
+)
+assert.deepEqual(
+  await settingsForSend(restoredTarget),
+  resolveComposerSettings(restoredTarget).settings
+)
 acpStore.set({ conversations: {}, activeKey: null })
 console.log(
   "Settings migration, live provenance, scoped edits, acknowledgements, and display/dispatch parity passed"
+)
+
+assert.deepEqual(
+  observedSessionSettings(
+    { settings: { model: "fable", options: { effort: "high", fast: false } } },
+    { model: "fable", options: {} }
+  ),
+  { model: "fable", options: { effort: "high", fast: false } }
+)
+assert.deepEqual(
+  observedSessionSettings(
+    { settings: { model: "fable", options: { effort: "high" } } },
+    { model: "opus", options: {} }
+  ),
+  { model: "opus", options: {} }
+)
+assert.equal(
+  observedSessionSettings(
+    { settings: { model: "fable", options: { effort: "high" } } },
+    { model: "fable", options: { effort: "low" } }
+  ).options?.effort,
+  "low"
+)
+const claudeAliases = [
+  {
+    id: "claude-fable-5-1",
+    label: "Fable",
+    aliases: ["claude-fable-5-1[1m]"],
+    options: [],
+  },
+]
+assert.deepEqual(
+  observedSessionSettings(
+    { settings: { model: "claude-fable-5-1", options: { effort: "high" } } },
+    { model: "claude-fable-5-1[1m]", options: {} },
+    claudeAliases
+  ),
+  { model: "claude-fable-5-1[1m]", options: { effort: "high" } }
+)
+
+const { normalizeClaudeModels, claudeVersionedLabel } = await import(
+  "@mako/sessions/model-catalog"
+)
+// Claude Code names the Fable row by family alone; the id knows the version.
+assert.equal(claudeVersionedLabel("claude-fable-5-1", "Fable"), "Fable 5.1")
+assert.equal(claudeVersionedLabel("claude-opus-5[1m]", "Opus (1M context)"), "Opus 5 (1M context)")
+assert.equal(claudeVersionedLabel("claude-haiku-4-5-20251001", "Haiku"), "Haiku 4.5")
+assert.equal(claudeVersionedLabel("claude-sonnet-4-6[1m]", "Sonnet 4.6 (1M context)"), "Sonnet 4.6 (1M context)")
+assert.equal(claudeVersionedLabel("fable", "Fable"), "Fable")
+assert.equal(claudeVersionedLabel("claude-fable-5-1", undefined), "claude-fable-5-1")
+const fixedSpeed = normalizeClaudeModels([
+  {
+    value: "fable",
+    resolvedModel: "fable",
+    displayName: "Fable",
+    supportsFastMode: false,
+  },
+])
+const fixedSpeedView = resolveSessionSettings({
+  models: fixedSpeed.models,
+  context: "new",
+  overrides: { model: "fable" },
+})
+assert.deepEqual(fixedSpeedView.issues, [])
+assert.equal(
+  fixedSpeedView.options.fast?.kind === "known" &&
+    fixedSpeedView.options.fast.value,
+  false
 )

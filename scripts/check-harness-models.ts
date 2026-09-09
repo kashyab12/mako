@@ -184,9 +184,9 @@ function assertFixtureProfiles(): void {
       {
         id: "claude-opus-5[1m]",
         launchId: "opus[1m]",
-        label: "Opus (1M context)",
+        label: "Opus 5 (1M context)",
       },
-      { id: "claude-sonnet-5", launchId: "sonnet", label: "Sonnet" },
+      { id: "claude-sonnet-5", launchId: "sonnet", label: "Sonnet 5" },
     ]
   )
   const claudeProfile = availableProviderProfile(claudeProfileLoader, claude)
