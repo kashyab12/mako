@@ -24,8 +24,16 @@ try {
   const claudePath = join(home, "claude.jsonl")
   await writeFile(claudePath, line({ type: "user", sessionId: "claude", message: { content: "hello" } }) +
     line({ type: "assistant", message: { model: "old" } }) +
-    line({ type: "assistant", message: { model: "new" } }) +
+    line({ type: "assistant", effort: "high", message: { model: "new", usage: { speed: "standard" } } }) +
     line({ type: "assistant", isSidechain: true, message: { model: "subagent" } }))
-  assert.deepEqual((await peek(claude, claudePath)).settings, { model: "new" })
+  assert.deepEqual((await peek(claude, claudePath)).settings, { model: "new", options: { effort: "high", fast: false } })
+  await writeFile(claudePath, line({type:"attachment", padding:"x".repeat(300_000)}) +
+    line({type:"user", sessionId:"late-header", cwd:home, message:{content:"A prompt after large attachments"}}) +
+    line({type:"assistant", effort:"high", message:{model:"fable",usage:{speed:"standard"}}}))
+  const late = await peek(claude, claudePath)
+  assert.equal(late.cwd, home)
+  assert.equal(late.title, "A prompt after large attachments")
+  assert.deepEqual(late.settings, {model:"fable", options:{effort:"high",fast:false}})
+
   console.log("Native settings: latest turn wins, subagents are excluded, stale heads stay unknown, and speed aliases normalize")
 } finally { await rm(home, { recursive: true, force: true }) }

@@ -55,5 +55,24 @@ const family = [{ id: "family", label: "Family", launchId: "high-fast", options:
 assert.equal(resolveModelLaunch(family, { model: "family" }).model, "high-fast")
 assert.equal(resolveModelLaunch(family, { model: "low-standard" }).model, "low-standard")
 assert.throws(() => resolveModelLaunch(family, { model: "family", options: { fast: false } }), /not available together/)
+// A variant id carries its own values; the transport must not receive them again.
+assert.deepEqual(resolveModelLaunch(family, { model: "family", options: { effort: "low", fast: false } }), { model: "low-standard" })
+assert.deepEqual(resolveModelLaunch(family, { model: "family", options: { effort: "high", agentTeams: true } }), { model: "high-fast", options: { agentTeams: true } })
 assert.deepEqual(SessionModelSchema.parse(models[0]), models[0])
 console.log("Shared session settings: provenance, inheritance, explicit reset, model changes, and variants passed")
+
+const { normalizeAcpOptions, normalizeCursorModels, normalizeGrokModels } = await import("../dist/model-catalog.js")
+const cursorOptions = [
+  { id: "thinking", name: "Thinking", category: "thought_level", type: "select", currentValue: "true", options: [{ value: "true", name: "On" }, { value: "false", name: "Off" }] },
+  { id: "effort", name: "Effort", category: "thought_level", type: "select", currentValue: "high", options: [{ value: "high", name: "High" }] },
+  { id: "fast", name: "Fast", category: "other", type: "select", currentValue: "false", options: [{ value: "true", name: "On" }, { value: "false", name: "Off" }] },
+]
+const normalized = normalizeAcpOptions(cursorOptions)
+assert.deepEqual(normalized.map(o => [o.id, o.role]), [["thinking", undefined], ["effort", "reasoning"], ["fast", "speed"]])
+assert.deepEqual(normalizeCursorModels({ models: [{ value: "opus", name: "Opus", configOptions: cursorOptions }] }, "opus").settings, { model: "opus", options: { thinking: "true", effort: "high", fast: "false" } })
+assert.deepEqual(normalizeGrokModels("* grok (default)", { models: { grok: { info: { reasoning_effort: "high", reasoning_efforts: [{ value: "high", default: true }] } } } }).settings, { model: "grok", options: { effort: "high" } })
+console.log("Installed-provider regressions: distinct Cursor controls and preserved Cursor/Grok defaults")
+const { normalizeClaudeModels, cursorModelSettings } = await import("../dist/model-catalog.js")
+const claudeCatalog = normalizeClaudeModels([{value:"fable",resolvedModel:"claude-fable-5-1",displayName:"Fable",supportsEffort:true,supportedEffortLevels:["high"]}])
+assert.equal(resolveModelLaunch(claudeCatalog.models,{model:"claude-fable-5-1[1m]",options:{effort:"high"}}).model,"claude-fable-5-1[1m]")
+assert.deepEqual(cursorModelSettings("opus[thinking=true,reasoning=high,fast=false]"),{model:"opus",options:{thinking:"true",effort:"high",fast:"false"}})

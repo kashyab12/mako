@@ -287,7 +287,7 @@ try {
     null,
     "/projects/v2-root",
     "OpenCode 2 session",
-    json({ id: "gpt-v2", providerID: "openai" }),
+    json({ id: "gpt-v2", providerID: "openai", variant: "low" }),
     6000,
     7000,
     null
@@ -510,6 +510,7 @@ try {
   assert.equal(v2Ref.title, "OpenCode 2 session")
   assert.equal(v2Ref.model, "openai/gpt-v2")
   assert.equal(v2Ref.modelProvider, "openai")
+  assert.deepEqual(v2Ref.settings, {model:"openai/gpt-v2",options:{effort:"low"}})
 
   const v2Thread = await provider.read(v2File.path)
   assert.deepEqual(v2Thread?.entries, [
