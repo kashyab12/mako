@@ -3,7 +3,10 @@ import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { z } from "zod"
-import { normalizeOpenCodeModels, type OpenCodeModelRow } from "@mako/sessions/model-catalog"
+import {
+  normalizeOpenCodeModels,
+  type OpenCodeModelRow,
+} from "@mako/sessions/model-catalog"
 import {
   availableProviderProfile,
   type ProviderProfileLoader,
@@ -71,7 +74,15 @@ const CacheSchema = z.record(z.string(), z.unknown())
 const ConfigSchema = z.object({
   model: z.string().optional(),
   default_agent: z.string().optional(),
-  agent: z.record(z.string(), z.object({ model: z.string().optional(), variant: z.string().optional() })).optional(),
+  agent: z
+    .record(
+      z.string(),
+      z.object({ model: z.string().optional(), variant: z.string().optional() })
+    )
+    .optional(),
+})
+const DefaultModelSchema = z.object({
+  data: z.object({ id: z.string(), providerID: z.string() }),
 })
 
 export const openCodeProfileLoader: ProviderProfileLoader = {
@@ -105,32 +116,77 @@ export const openCodeProfileLoader: ProviderProfileLoader = {
   async load(env, cwd) {
     const installation = openCodeInstallation()
     if (!installation) throw new Error("OpenCode is not installed")
-    const output = await runDiscovery(
+    let output = await runDiscovery(
       installation.command,
-      installation.generation === "v2"
-        ? ["models"]
-        : ["models", "--verbose"],
+      installation.generation === "v2" ? ["models"] : ["models", "--verbose"],
       env,
       undefined,
       cwd
     )
+    // OpenCode v2 registers a cold workspace on its first request and can
+    // return an empty successful response. Read again after that completes.
+    if (installation.generation === "v2" && !output.trim()) {
+      output = await runDiscovery(
+        installation.command,
+        ["models"],
+        env,
+        undefined,
+        cwd
+      )
+    }
     const rows =
       installation.generation === "v2"
         ? await v2Models(output)
         : parseModels(output)
     const catalog = normalizeOpenCodeModels(rows)
+    if (!catalog.models.length)
+      throw new Error(
+        "OpenCode did not report any models after workspace initialization"
+      )
     try {
-      const config = ConfigSchema.parse(JSON.parse(await runDiscovery(
-        installation.command, ["debug", "config"], env, undefined, cwd
-      )))
+      if (installation.generation === "v2") {
+        const query = cwd
+          ? `?location[directory]=${encodeURIComponent(cwd)}`
+          : ""
+        const response = DefaultModelSchema.parse(
+          JSON.parse(
+            await runDiscovery(
+              installation.command,
+              ["api", "GET", `/api/model/default${query}`],
+              env,
+              undefined,
+              cwd
+            )
+          )
+        )
+        const identity = `${response.data.providerID}/${response.data.id}`
+        catalog.defaultModel = identity
+        catalog.settings = { model: identity }
+        return availableProviderProfile(openCodeProfileLoader, catalog)
+      }
+      const config = ConfigSchema.parse(
+        JSON.parse(
+          await runDiscovery(
+            installation.command,
+            ["debug", "config"],
+            env,
+            undefined,
+            cwd
+          )
+        )
+      )
       const agent = config.agent?.[config.default_agent ?? "build"]
       const configured = agent?.model ?? config.model
       if (configured) {
         catalog.configuredModel = configured
-        catalog.settings = { model: configured, options: agent?.variant ? { effort: agent.variant } : {} }
+        catalog.settings = {
+          model: configured,
+          options: agent?.variant ? { effort: agent.variant } : {},
+        }
       }
     } catch {
-      catalog.configurationError = "OpenCode did not report its resolved configuration. Its defaults will be confirmed when the session opens."
+      catalog.configurationError =
+        "OpenCode did not report its resolved configuration. Its defaults will be confirmed when the session opens."
     }
     return availableProviderProfile(openCodeProfileLoader, catalog)
   },

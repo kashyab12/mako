@@ -1,10 +1,15 @@
-import { normalizeDevinModels, type DevinModelListResponse } from "@mako/sessions/model-catalog"
+import {
+  normalizeDevinModels,
+  type DevinModelListResponse,
+} from "@mako/sessions/model-catalog"
 import {
   availableProviderProfile,
   type ProviderProfileLoader,
 } from "../profile-loader.js"
 import { runDiscovery } from "../profile-transport.js"
 import { devinExecutable } from "./executable.js"
+import { devinDefaultModel } from "./settings.js"
+import { homedir } from "node:os"
 
 export const devinProfileLoader: ProviderProfileLoader = {
   provider: "devin",
@@ -26,7 +31,18 @@ export const devinProfileLoader: ProviderProfileLoader = {
     const executable = devinExecutable()
     if (!executable) throw new Error("Devin CLI is not installed")
     const parsed: DevinModelListResponse = JSON.parse(
-      await runDiscovery(executable, ["models", "list", "--format", "json"], env, undefined, cwd)
+      await runDiscovery(
+        executable,
+        ["models", "list", "--format", "json"],
+        env,
+        undefined,
+        cwd
+      )
+    )
+    parsed.default_model = await devinDefaultModel(
+      executable,
+      env,
+      cwd ?? homedir()
     )
     return availableProviderProfile(
       devinProfileLoader,
