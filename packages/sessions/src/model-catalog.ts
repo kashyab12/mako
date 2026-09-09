@@ -131,6 +131,7 @@ export interface OpenCodeModelRow {
   family?: string
   status?: string
   variants?: Record<string, { reasoningEffort?: string }>
+  defaultVariant?: string
   limit?: {
     context?: number
     output?: number
@@ -195,7 +196,7 @@ export function claudeVersionedLabel(
   displayName: string | undefined
 ): string {
   if (!displayName) return id
-  const match = /^claude-([a-z]+)-(\d+)(?:-(\d+))?(?=$|\[|-20\d{6})/.exec(id)
+  const match = /^claude-([a-z]+)-(\d+)(?:[.-](\d{1,2}))?(?=$|\[|-20\d{6})/.exec(id)
   if (!match) return displayName
   const [, family, major, minor] = match
   const version = minor ? `${major}.${minor}` : major
@@ -469,6 +470,7 @@ export function normalizeOpenCodeModels(
         id: "effort",
         label: "Reasoning",
         role: "reasoning",
+        current: row.defaultVariant && variants.includes(row.defaultVariant) ? row.defaultVariant : undefined,
         values: variants.map((value) => ({
           value,
           label: effortLabel(value),

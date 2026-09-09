@@ -538,7 +538,7 @@ function parseDiscoveryRow(fields: SqliteFields): DiscoveryRow | null {
 function parseSessionRow(fields: SqliteFields): SessionRow {
   return {
     workingDirectory: sqliteText(fields.working_directory),
-    model: sqliteText(fields.model),
+    model: sqliteText(fields.model) || undefined,
     title: sqliteText(fields.title),
     createdAt: sqliteNumber(fields.created_at),
     lastActivityAt: sqliteNumber(fields.last_activity_at),

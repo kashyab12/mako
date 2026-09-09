@@ -226,6 +226,24 @@ try {
   const [cachedRef] = await cached.scan()
   assert.equal(cachedRef.locked, true)
   await cached.stop()
+  const unknownModel = new DatabaseSync(join(dir, "sessions.db"))
+  unknownModel.prepare("UPDATE sessions SET model = '' WHERE id = ?").run("session-1")
+  unknownModel.close()
+  const unconfigured = await provider.read(file.path)
+  assert.ok(unconfigured)
+  assert.equal(unconfigured.ref.model, undefined, "an empty native model is unknown")
+  assert.equal(unconfigured.ref.settings.model, undefined, "an empty native model is not a selection")
+  const archived = new SessionCatalog([provider], { archivePath: join(home, "archive") })
+  await archived.scan()
+  await archived.stop()
+  const restarted = new SessionCatalog([], { archivePath: join(home, "archive") })
+  try {
+    assert.equal((await restarted.scan()).length, 1)
+    assert.deepEqual((await restarted.open(file.path)).entries, unconfigured.entries)
+    assert.equal((await restarted.open(file.path)).ref.settings.model, undefined)
+  } finally {
+    await restarted.stop()
+  }
   provider.close()
   console.log("Devin CLI tests clean: streamed rows, tools, thinking, locks, and incremental follow verified.")
 } finally {

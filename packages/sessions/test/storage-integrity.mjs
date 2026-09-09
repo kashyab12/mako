@@ -31,6 +31,47 @@ try {
   await archive.flush()
   assert.equal(await archive.read(ref.path), null, "queued writes cannot resurrect forgotten history")
 
+  const legacyRoot = join(home, "legacy-model-archive")
+  const legacy = new SessionArchive(legacyRoot)
+  const knownRef = { ...ref, settings: { model: "known", options: { fast: false } } }
+  const unknownRef = { ...ref, nativeId: "unknown-model", path: join(home, "unknown-model"), settings: { options: { effort: "high" } } }
+  try {
+    legacy.note(knownRef, async () => ({ ref: knownRef, entries }))
+    legacy.note(unknownRef, async () => ({ ref: unknownRef, entries }))
+    await legacy.flush()
+  } finally {
+    await legacy.stop()
+  }
+  const legacyDb = new DatabaseSync(join(legacyRoot, "archive.sqlite"))
+  const legacyRef = { ...unknownRef, model: "", settings: { ...unknownRef.settings, model: "" } }
+  try {
+    legacyDb.prepare("UPDATE sessions SET ref = ? WHERE path = ?").run(JSON.stringify(legacyRef), unknownRef.path)
+  } finally {
+    legacyDb.close()
+  }
+  const recovered = new SessionCatalog([], { archivePath: legacyRoot })
+  try {
+    assert.equal((await recovered.scan()).length, 2, "an archived empty model must not block catalog startup")
+    assert.deepEqual((await recovered.open(ref.path)).ref.settings, knownRef.settings)
+    const thread = await recovered.open(unknownRef.path)
+    assert.equal(thread.ref.settings.model, undefined)
+    assert.deepEqual(thread.ref.settings.options, unknownRef.settings.options)
+    assert.deepEqual(thread.entries, entries, "model migration preserves the transcript")
+  } finally {
+    await recovered.stop()
+  }
+  const guarded = new SessionArchive(legacyRoot)
+  const invalidRef = { ...knownRef, bytes: 2, settings: { model: "" } }
+  try {
+    guarded.note(invalidRef, async () => ({ ref: invalidRef, entries: [] }))
+    await assert.rejects(guarded.flush(), /settings/, "new invalid metadata cannot poison the archive")
+    const retained = await guarded.read(ref.path)
+    assert.deepEqual(retained.ref.settings, knownRef.settings)
+    assert.deepEqual(retained.entries, entries, "failed validation cannot replace previously committed history")
+  } finally {
+    await guarded.stop().catch(() => {})
+  }
+
   const dir = join(home, ".claude", "projects", "p")
   await mkdir(dir, { recursive: true })
   const path = join(dir, "session.jsonl")

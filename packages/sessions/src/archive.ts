@@ -6,10 +6,16 @@ import { join } from "node:path"
 import { z } from "zod"
 import { DatabaseSync } from "node:sqlite"
 import { ThreadEntrySchema, ThreadRefSchema } from "./thread-schema.js"
+import { SessionSettingsSchema } from "./settings.js"
 import type { Thread, ThreadRef } from "./format.js"
 
 const ArchiveIndexRow = z.object({ ref: z.string(), revision: z.string() })
 const ArchiveContentRow = z.object({ ref: z.string(), entries: z.string() })
+const ArchivedThreadRefSchema = ThreadRefSchema.extend({
+  settings: SessionSettingsSchema.extend({
+    model: z.string().transform((model) => model || undefined).optional(),
+  }).optional(),
+})
 
 const THROTTLE_MS = 15_000
 const SETTLE_MS = 3_000
@@ -60,7 +66,7 @@ export class SessionArchive {
       .prepare("SELECT ref, revision FROM sessions")
       .all()) {
       const row = ArchiveIndexRow.parse(value)
-      const ref = ThreadRefSchema.parse(JSON.parse(row.ref))
+      const ref = ArchivedThreadRefSchema.parse(JSON.parse(row.ref))
       this.index.set(ref.path, { ...ref, locked: false, archived: true })
       this.revisions.set(ref.path, row.revision)
     }
@@ -69,7 +75,7 @@ export class SessionArchive {
     for (const dir of dirs) {
       if (!dir.isDirectory()) continue
       try {
-        const ref = ThreadRefSchema.parse(
+        const ref = ArchivedThreadRefSchema.parse(
           JSON.parse(
             await readFile(join(this.root, dir.name, "ref.json"), "utf8")
           )
@@ -128,7 +134,7 @@ export class SessionArchive {
       .get(path)
     if (value) {
       const row = ArchiveContentRow.parse(value)
-      const ref = ThreadRefSchema.parse(JSON.parse(row.ref))
+      const ref = ArchivedThreadRefSchema.parse(JSON.parse(row.ref))
       const entries = z.array(ThreadEntrySchema).parse(JSON.parse(row.entries))
       return { ref: { ...ref, locked: false, archived: true }, entries }
     }
@@ -187,7 +193,7 @@ export class SessionArchive {
     const native = await read()
     if (!native || this.deleted.has(ref.path)) return
     const thread = await persistThreadAttachments(
-      native,
+      { ...native, ref: ThreadRefSchema.parse(native.ref) },
       join(this.root, "assets"),
       await this.read(ref.path)
     )
