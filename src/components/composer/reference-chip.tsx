@@ -28,12 +28,20 @@ const KIND_ICON = {
  * the transcript, which is what makes `@` feel like it produced an object
  * rather than decorated some text.
  */
-export function FileChip({ path, interactive }: { path: string; interactive?: boolean }) {
+export function FileChip({
+  path,
+  name,
+  interactive,
+}: {
+  path: string
+  name?: string
+  interactive?: boolean
+}) {
   const Icon = KIND_ICON[fileKind(path)]
   const body = (
     <>
       <Icon className="size-3 shrink-0 text-faint" />
-      <span className="truncate">{fileName(path)}</span>
+      <span className="truncate">{name ?? fileName(path)}</span>
     </>
   )
   const className = cn(
@@ -54,16 +62,28 @@ export function FileChip({ path, interactive }: { path: string; interactive?: bo
       type="button"
       title={`Open ${path}`}
       onClick={() => void desktop.revealPath(path)}
-      className={cn(className, "pressable hover:bg-accent hover:text-foreground")}
+      className={cn(
+        className,
+        "pressable hover:bg-accent hover:text-foreground"
+      )}
     >
       {body}
     </button>
   )
 }
 
-export function ThreadChip({ harness, nativeId }: { harness: string; nativeId: string }) {
+export function ThreadChip({
+  harness,
+  nativeId,
+}: {
+  harness: string
+  nativeId: string
+}) {
   const thread = useThreads((state) =>
-    state.threads.find((entry) => entry.harness === harness && entry.nativeId.startsWith(nativeId))
+    state.threads.find(
+      (entry) =>
+        entry.harness === harness && entry.nativeId.startsWith(nativeId)
+    )
   )
   return (
     <span
@@ -75,7 +95,9 @@ export function ThreadChip({ harness, nativeId }: { harness: string; nativeId: s
       )}
     >
       <HarnessIcon harness={harness} className="size-3 shrink-0 text-faint" />
-      <span className="truncate">{thread?.title ?? "Referenced conversation"}</span>
+      <span className="truncate">
+        {thread?.title ?? "Referenced conversation"}
+      </span>
     </span>
   )
 }

@@ -1,5 +1,8 @@
 import { memo } from "react"
 import { tokenize } from "@/lib/mentions"
+import { attachmentRanges } from "@/lib/attachment-references"
+import type { Attachment } from "@/lib/attachments"
+import { InlineAttachment } from "./attachments"
 
 /**
  * The painted layer behind the composer's textarea.
@@ -11,14 +14,29 @@ import { tokenize } from "@/lib/mentions"
  */
 export const ReferenceOverlay = memo(function ReferenceOverlay({
   text,
+  attachments,
+  onRemove,
 }: {
   text: string
+  attachments: Attachment[]
+  onRemove(id: string): void
 }) {
-  const segments = tokenize(text)
+  const ranges = attachmentRanges(text, attachments)
+  const pieces = []
+  let cursor = 0
+  for (const range of ranges) {
+    pieces.push(...tokenize(text.slice(cursor, range.start)))
+    pieces.push({
+      kind: "attachment" as const,
+      item: range.item,
+      raw: text.slice(range.start, range.end),
+    })
+    cursor = range.end
+  }
+  const segments = [...pieces, ...tokenize(text.slice(cursor))]
 
   return (
     <div
-      aria-hidden
       // `inset-x-0 top-0` and **no** `bottom`: inside a scrolling box,
       // `inset-0` resolves `bottom` against the *visible* height, so the
       // painted layer was exactly one screenful tall no matter how long the
@@ -26,25 +44,22 @@ export const ReferenceOverlay = memo(function ReferenceOverlay({
       // textarea's own text is transparent, it simply disappeared as you
       // typed past the fold. Letting the height come from the content makes it
       // match the textarea's scroll height, which is the whole contract.
-      className="pointer-events-none absolute inset-x-0 top-0 px-3 pt-2.5 pb-1 font-sans text-ui leading-[1.55] break-words whitespace-pre-wrap text-foreground"
+      className="pointer-events-none absolute inset-x-0 top-0 px-4 pt-3 pb-1 font-sans text-ui leading-[1.55] break-words whitespace-pre-wrap text-foreground"
     >
       {segments.map((segment, index) => {
+        if (segment.kind === "attachment")
+          return (
+            <InlineAttachment
+              key={index}
+              item={segment.item}
+              reference={segment.raw}
+              onRemove={onRemove}
+            />
+          )
         if (segment.kind === "text")
           return (
-            <span key={index}>
-              {segment.text.split(/(\[Attachment \d+\])/g).map((part, index) =>
-                /^\[Attachment \d+\]$/.test(part) ? (
-                  <span
-                    key={index}
-                    data-attachment-reference
-                    className="rounded bg-fill-selected text-foreground ring-1 ring-border ring-inset"
-                  >
-                    {part}
-                  </span>
-                ) : (
-                  <span key={index}>{part}</span>
-                )
-              )}
+            <span aria-hidden key={index}>
+              {segment.text}
             </span>
           )
         if (segment.kind === "file" || segment.kind === "thread") {

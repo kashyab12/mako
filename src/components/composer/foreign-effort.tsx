@@ -38,13 +38,9 @@ export function ForeignEffortPicker({ view }: { view: ComposerSettingsView }) {
   )
 }
 
-function optionLabel(
-  option: ModelOption,
-  current: ResolvedSetting,
-  context: "new" | "existing"
-): string {
+function optionLabel(option: ModelOption, current: ResolvedSetting): string {
   if (current.kind === "unknown")
-    return `${option.role === "speed" ? "Speed" : option.label}: ${context === "new" ? "provider default" : "unknown"}`
+    return `${option.role === "speed" ? "Speed" : option.label} unavailable`
   if (option.kind === "boolean")
     return current.value === true ? "Fast" : "Standard"
   const value =
@@ -66,13 +62,7 @@ function OptionsPicker({
   const primary =
     options.find((option) => option.role === "reasoning") ?? options[0]!
   const current = view.resolved.options[primary.id] ?? { kind: "unknown" }
-  const label = primary.role
-    ? optionLabel(
-        primary,
-        current,
-        view.target.kind === "new" ? "new" : "existing"
-      )
-    : "Model options"
+  const label = primary.role ? optionLabel(primary, current) : "Model options"
   const Icon = speed ? ZapIcon : SlidersHorizontalIcon
   return (
     <Popover open={open} onOpenChange={setOpen}>

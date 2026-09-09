@@ -5,6 +5,7 @@ import { useThreads } from "@/state/thread-store"
 import { useSession } from "@/state/session"
 import { providerProfileKey, providers, useProviders } from "@/state/providers"
 import {
+  observedSessionSettings,
   resolveComposerSettingsInput,
   resolveSettingsTarget,
   settingsTargetKey,
@@ -23,6 +24,10 @@ export function useComposerSettings(provider?: string) {
       harness: conversation?.harness,
       cwd: conversation?.cwd,
       path: conversation?.threadPath,
+      nativeId:
+        conversation?.kind === "live"
+          ? conversation.session.nativeId
+          : undefined,
       settings:
         conversation?.kind === "live"
           ? conversation.session.settings
@@ -34,6 +39,14 @@ export function useComposerSettings(provider?: string) {
       active: conversation?.kind === "live",
     }
   }, shallowEqual)
+  const nativeRef = useThreads((state) =>
+    live.nativeId
+      ? state.threads.find(
+          (entry) =>
+            entry.harness === harness && entry.nativeId === live.nativeId
+        )
+      : undefined
+  )
   const target = resolveSettingsTarget({ harness, ref, live, workspace })
   const key = settingsTargetKey(target)
   const overrides = usePrefs((prefs) => prefs.settingsOverrides[key])
@@ -42,6 +55,9 @@ export function useComposerSettings(provider?: string) {
     (state) => state.contexts[providerProfileKey(harness, target.cwd)]
   )
   const refresh = () => providers.load(harness, true, target.cwd)
+  const error = useProviders(
+    (state) => state.contextErrors[providerProfileKey(harness, target.cwd)]
+  )
 
   useEffect(() => {
     const reload = () => {
@@ -65,14 +81,31 @@ export function useComposerSettings(provider?: string) {
       target.kind === "new"
         ? undefined
         : live.harness === harness && live.active
-          ? (live.settings ?? {})
-          : (ref?.settings ?? (ref?.model ? { model: ref.model } : {})),
+          ? observedSessionSettings(
+              ref ?? nativeRef,
+              live.settings,
+              profile?.models
+            )
+          : observedSessionSettings(ref, undefined),
     live:
       live.active && live.harness === harness
         ? { options: live.options }
         : undefined,
   })
-  return { target, profile, resolved, model, options, refresh }
+  const modelLabel =
+    model?.label ??
+    (resolved.model.kind === "known" ? resolved.model.value : undefined) ??
+    (!profile && !error ? "Loading model…" : "Model unavailable")
+  return {
+    target,
+    profile,
+    resolved,
+    model,
+    modelLabel,
+    options,
+    error,
+    refresh,
+  }
 }
 
 export type ComposerSettingsView = ReturnType<typeof useComposerSettings>

@@ -69,7 +69,7 @@ function AgentPanel({
 
   const pick = (harness: string) => {
     const profile = profiles[harness]
-    if (!profile) return
+    if (!profile || profile.pending) return
     if (!profile.available) {
       window.dispatchEvent(
         new CustomEvent("mako:settings", { detail: "agents" })
@@ -108,13 +108,13 @@ function AgentRow({
   const profile = view.profile
   const available = profile?.available === true
   const active = available && selected === harness
-  const model =
-    view.model?.label ?? view.resolved.settings.model ?? "Provider default"
-  const status = profile
-    ? available
-      ? model
-      : profile.error || "Set up in Agents"
-    : "Checking…"
+  const model = view.modelLabel
+  const status =
+    profile && !profile.pending
+      ? available
+        ? model
+        : profile.error || "Set up in Agents"
+      : "Checking…"
   return (
     <button
       type="button"
@@ -152,7 +152,7 @@ function AgentRow({
       </span>
       {active ? (
         <CheckIcon className="size-3.5 shrink-0 text-foreground" />
-      ) : profile && !available ? (
+      ) : profile && !profile.pending && !available ? (
         <span className="shrink-0 text-label text-faint">Set up</span>
       ) : null}
     </button>

@@ -28,10 +28,7 @@ export function ForeignModelPicker({ view }: { view: ComposerSettingsView }) {
   const identity =
     resolved.model.kind === "known" ? resolved.model.value : undefined
   const effective = selected?.id ?? identity
-  const label =
-    selected?.label ??
-    identity ??
-    (target.kind === "new" ? "Provider default" : "Unknown model")
+  const label = view.modelLabel
   const models = useMemo(
     () => rankModels(profile?.models ?? [], query, favorites, harness),
     [favorites, harness, profile?.models, query]
@@ -53,7 +50,7 @@ export function ForeignModelPicker({ view }: { view: ComposerSettingsView }) {
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={`Model: ${label ?? "Provider default"}`}
+          aria-label={`Model: ${label}`}
           className={cn(
             "pressable no-drag flex h-7 max-w-[15rem] min-w-0 items-center gap-1.5 rounded-md px-2",
             "text-ui font-medium text-foreground/85",
@@ -62,7 +59,7 @@ export function ForeignModelPicker({ view }: { view: ComposerSettingsView }) {
           )}
         >
           <HarnessIcon harness={harness} className="size-3.5" />
-          <span className="truncate">{label ?? "Provider default"}</span>
+          <span className="truncate">{label}</span>
           <ChevronDownIcon className="size-3 shrink-0 text-faint/70" />
         </button>
       </PopoverTrigger>
@@ -99,9 +96,9 @@ export function ForeignModelPicker({ view }: { view: ComposerSettingsView }) {
           <p className="px-2 pb-1 text-label text-faint">
             {settingSourceLabel(resolved.model)}
           </p>
-          {profile?.configurationError || profile?.error ? (
+          {view.error || profile?.configurationError || profile?.error ? (
             <p className="px-2 pb-1 text-label text-faint">
-              {profile.configurationError ?? profile.error}
+              {view.error ?? profile?.configurationError ?? profile?.error}
             </p>
           ) : null}
         </div>

@@ -1,3 +1,15 @@
+import { AttachmentStrip } from "./attachments"
+import { InterruptedSends } from "./interrupted-sends"
+import {
+  preserveSendingDraft,
+  settleSendingDraft,
+  interruptSendingDraft,
+} from "@/state/send-recovery"
+import { PromptQueue } from "./prompt-queue"
+import { promptDelivery } from "@/state/prompt-delivery"
+import type { ProposedPlan } from "@mako/sessions/content"
+import { appendPlanContext, parsePlanContext } from "@/lib/proposed-plan"
+import { PlanContextChips } from "@/components/composer/plan-context"
 import { hostConnectionStore, useHostConnection } from "@/state/host-connection"
 import { toast } from "sonner"
 import {
@@ -7,7 +19,12 @@ import {
   useRef,
   useState,
 } from "react"
-import { AttachmentStrip } from "@/components/composer/attachments"
+import {
+  attachmentReference,
+  attachmentRanges,
+  editAttachmentReferences,
+  restoreAttachmentReferences,
+} from "@/lib/attachment-references"
 import { Banner } from "@/components/composer/banner"
 import { ComposerActionButton } from "@/components/composer/composer-action-button"
 import { ComposerRouting } from "@/components/composer/composer-routing"
@@ -36,6 +53,11 @@ import { acp, acpStore, activeAcp, activeLiveAcp, useAcp } from "@/state/acp"
 import {
   draftText,
   rememberDraft,
+  clearCapturedDraft,
+  restoreEmptyDraft,
+  appendRecoveredDraft,
+  removeDraftPlan,
+  replaceDraftPlans,
   retainRejectedDraft,
   takeRejectedDraft,
   useDrafts,
@@ -59,15 +81,20 @@ interface CommandMention {
 type ComposerMention = ActiveMention | CommandMention
 
 type ComposerTextEvent = CustomEvent<string>
+type ComposerDraftEvent = CustomEvent<{
+  text: string
+  attachments?: Attachment[]
+}>
 
 interface RestorableDraft {
+  plans?: ProposedPlan[]
   text: string
   attachments: Attachment[]
 }
 
 declare global {
   interface WindowEventMap {
-    "mako:compose": ComposerTextEvent
+    "mako:compose": ComposerDraftEvent
     "mako:insert": ComposerTextEvent
   }
 }
@@ -82,7 +109,6 @@ function toAcpPromptAttachment(item: Attachment): PromptAttachment {
   }
 }
 
-const isMac = navigator.platform.startsWith("Mac")
 
 export function Composer() {
   const hostConnected = useHostConnection((state) => state.kind === "connected")
@@ -108,15 +134,21 @@ export function Composer() {
     shallowEqual
   )
   const meta = useSession((state) => state.meta)
+  const cwd = meta?.cwd
 
-  const [draft, setDraft] = useState(() => draftText(draftKey))
-  const [focused, setFocused] = useState(false)
+  const savedDraft = useDrafts((state) =>
+    state.drafts.find((entry) => entry.key === draftKey)
+  )
+  const attachments = useAttachments(draftKey)
+  const { reattach } = attachments
+  const storedDraft = savedDraft?.text ?? ""
+  const draft = restoreAttachmentReferences(storedDraft, attachments.items)
+  const draftPlans = savedDraft?.plans
   const [mention, setMention] = useState<ComposerMention | null>(null)
   const [dragging, setDragging] = useState(false)
   const textarea = useRef<HTMLTextAreaElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const filePicker = useRef<HTMLInputElement>(null)
-  const attachments = useAttachments(draftKey)
   const activeAttachmentDraft = useRef(draftKey)
   useLayoutEffect(() => {
     activeAttachmentDraft.current = draftKey
@@ -159,7 +191,7 @@ export function Composer() {
   const attach = useCallback(
     async (files: AttachmentInput[]) => {
       if (files.length === 0) return
-      const markers = await attachments.add(files)
+      const markers = attachments.add(files)
       if (markers && activeAttachmentDraft.current !== draftKey) {
         toast.info("Attachments were saved to the original task’s draft.")
         return
@@ -172,17 +204,24 @@ export function Composer() {
     [attachments, draftKey]
   )
 
+  /** Drop an attachment and the marker that stands for it, from either surface. */
+  const removeAttachment = (id: string) => {
+    const item = attachments.items.find((entry) => entry.id === id)
+    if (!item) return
+    update(draft.split(attachmentReference(item)).join(""))
+    attachments.remove(id)
+    textarea.current?.focus()
+  }
+
   // Swap in the draft belonging to whichever session just became active.
   const [lastDraftKey, setLastDraftKey] = useState(draftKey)
   if (lastDraftKey !== draftKey) {
     setLastDraftKey(draftKey)
-    setDraft(draftText(draftKey))
     setMention(null)
   }
 
   const update = useCallback(
     (value: string) => {
-      setDraft(value)
       rememberDraft(draftKey, value)
     },
     [draftKey]
@@ -246,13 +285,16 @@ export function Composer() {
 
   useEffect(() => {
     const focus = () => textarea.current?.focus()
-    const setText = (event: ComposerTextEvent) => {
+    const setText = (event: ComposerDraftEvent) => {
       const { detail } = event
-      updateRef.current(detail)
+      const { body, plans } = parsePlanContext(detail.text)
+      if (detail.attachments) reattach(detail.attachments)
+      updateRef.current(body)
+      replaceDraftPlans(activeAttachmentDraft.current, plans)
       requestAnimationFrame(() => {
         const node = textarea.current
         node?.focus()
-        node?.setSelectionRange(detail.length, detail.length)
+        node?.setSelectionRange(body.length, body.length)
       })
     }
     const insert = (event: ComposerTextEvent) => {
@@ -275,7 +317,7 @@ export function Composer() {
       window.removeEventListener("mako:compose", setText)
       window.removeEventListener("mako:insert", insert)
     }
-  }, [])
+  }, [reattach])
 
   const submit = useCallback(
     async (mode?: "steer" | "followUp") => {
@@ -329,62 +371,84 @@ export function Composer() {
       const staged = settledItems
       const attachmentPrompt = buildForeignPrompt(text, staged)
       const full = await appendThreadReferences(
-        attachmentPrompt,
+        appendPlanContext(attachmentPrompt, draftPlans),
         threadsStore.get().threads
       )
       if (!full.trim()) return
       const acpAttachments = staged.map(toAcpPromptAttachment)
+      const recoveryId = preserveSendingDraft({
+        key: submittedDraftKey,
+        text: draft,
+        plans: draftPlans,
+        attachments: staged,
+      })
+      if (!recoveryId) return
       const restorableDraft: RestorableDraft = {
         text: draft,
+        plans: draftPlans,
         attachments: attachments.detach(),
       }
-      update("")
-      draftRef.current = ""
+      clearCapturedDraft(submittedDraftKey, storedDraft, draftPlans)
+      draftRef.current = draftText(submittedDraftKey)
       setMention(null)
       let ok: boolean
-      if (viewingRef && (!liveSession || viewingOwnsComposer)) {
-        // An archived conversation has no native session to resume — a
-        // reply re-materializes it: the emitters write a fresh native
-        // session (same harness or any other) from the archived history,
-        // and the message goes out as its next turn.
-        ok =
-          harness === viewingRef.harness && !viewingRef.archived && !viewingRef.resumeUnavailable
-            ? mode
-              ? await threads.interruptAndSend(viewingRef, full, acpAttachments)
-              : await threads.reply(viewingRef, full, acpAttachments)
-            : await threads.moveAndSend(
-                viewingRef,
+      try {
+        if (viewingRef && (!liveSession || viewingOwnsComposer)) {
+          // An archived conversation has no native session to resume — a
+          // reply re-materializes it: the emitters write a fresh native
+          // session (same harness or any other) from the archived history,
+          // and the message goes out as its next turn.
+          ok =
+            harness === viewingRef.harness &&
+            !viewingRef.archived &&
+            !viewingRef.resumeUnavailable
+              ? mode
+                ? await threads.interruptAndSend(
+                    viewingRef,
+                    full,
+                    acpAttachments
+                  )
+                : await threads.reply(viewingRef, full, acpAttachments)
+              : await threads.moveAndSend(
+                  viewingRef,
+                  harness,
+                  full,
+                  acpAttachments
+                )
+        } else if (activeConversation) {
+          if (harness !== activeConversation.harness) {
+            if (liveSession)
+              ok = await acp.handoff(harness, full, acpAttachments)
+            else {
+              acp.deactivate()
+              ok = await acp.startFresh(
                 harness,
+                cwd ?? activeConversation.cwd,
                 full,
                 acpAttachments
               )
-      } else if (activeConversation) {
-        if (harness !== activeConversation.harness) {
-          if (liveSession) ok = await acp.handoff(harness, full, acpAttachments)
-          else {
-            acp.deactivate()
-            ok = await acp.startFresh(
-              harness,
-              meta?.cwd ?? activeConversation.cwd,
-              full,
-              acpAttachments
-            )
+            }
+          } else {
+            if (
+              mode === "steer" &&
+              liveSession?.status === "running" &&
+              acp.canSteer()
+            ) {
+              ok = await acp.steer(full, acpAttachments)
+            } else {
+              if (mode && liveSession?.status === "running") acp.cancel()
+              ok = await acp.send(full, acpAttachments)
+            }
           }
+        } else if (threadsStore.get().acpable.includes(harness)) {
+          ok = await acp.startFresh(harness, cwd ?? "", full, acpAttachments)
         } else {
-          // Mod+Enter while the agent runs: stop the turn, then send — the
-          // live protocol's own interrupt. Plain Enter queues agent-side.
-          if (mode && liveSession?.status === "running") acp.cancel()
-          ok = await acp.send(full, acpAttachments)
+          ok = await threads.startNew(harness, full)
         }
-      } else if (threadsStore.get().acpable.includes(harness)) {
-        ok = await acp.startFresh(
-          harness,
-          meta?.cwd ?? "",
-          full,
-          acpAttachments
-        )
-      } else {
-        ok = await threads.startNew(harness, full)
+      } catch (error) {
+        interruptSendingDraft(recoveryId)
+        toast.error(error instanceof Error ? error.message : String(error))
+        return
       }
       if (ok) attachments.discard(restorableDraft.attachments)
       else {
@@ -395,28 +459,33 @@ export function Composer() {
           sessionStore.get().meta?.sessionId ??
           "new"
         // This callback still owns the submitted attachment bucket, even after navigation.
-        if (!draftText(submittedDraftKey).trim()) {
-          rememberDraft(submittedDraftKey, restorableDraft.text)
+        const restored = restoreEmptyDraft(
+          submittedDraftKey,
+          restorableDraft.text,
+          restorableDraft.plans
+        )
+        if (restored) {
           attachments.reattach(restorableDraft.attachments)
         } else {
           retainRejectedDraft(
             submittedDraftKey,
             restorableDraft.text,
-            restorableDraft.attachments
+            restorableDraft.attachments,
+            restorableDraft.plans
           )
         }
-        if (currentDraftKey === submittedDraftKey && !draftRef.current.trim()) {
+        if (currentDraftKey === submittedDraftKey && restored) {
           draftRef.current = restorableDraft.text
-          setDraft(restorableDraft.text)
         } else {
           toast.error(
             "The message was not sent. Your original draft is saved in its conversation."
           )
         }
       }
+      settleSendingDraft(recoveryId)
       return
     },
-    [attachments, draft, draftKey, meta?.cwd, update]
+    [attachments, draft, storedDraft, draftKey, draftPlans, cwd]
   )
 
   const pick = useCallback(
@@ -447,6 +516,7 @@ export function Composer() {
   const stopCurrentTurn = useCallback(() => actions.stopCurrentTurn(), [])
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.nativeEvent.isComposing) return
     // The mention menu owns navigation keys while it is open.
     if (
       mention &&
@@ -454,6 +524,23 @@ export function Composer() {
     )
       return
     const node = textarea.current
+    if (node && (event.key === "Backspace" || event.key === "Delete")) {
+      const start = node.selectionStart
+      const end = node.selectionEnd
+      const touched = attachmentRanges(draft, attachments.items).filter(
+        (range) =>
+          start !== end
+            ? range.start < end && range.end > start
+            : event.key === "Backspace"
+              ? range.start < start && range.end >= start
+              : range.start <= start && range.end > start
+      )
+      if (touched.length)
+        node.setSelectionRange(
+          Math.min(start, ...touched.map((range) => range.start)),
+          Math.max(end, ...touched.map((range) => range.end))
+        )
+    }
     if (
       event.key === "ArrowUp" &&
       node &&
@@ -490,7 +577,7 @@ export function Composer() {
     if (event.key === "Enter" && !event.shiftKey) {
       promptHistory.current = null
       event.preventDefault()
-      void submit(event.metaKey || event.ctrlKey ? "followUp" : undefined)
+      void submit(event.metaKey || event.ctrlKey ? "steer" : undefined)
     }
     if (event.key === "Escape" && turnRunning) {
       event.preventDefault()
@@ -500,11 +587,44 @@ export function Composer() {
 
   const busy = status.streaming || status.compacting
   const liveHarness = useAcp((state) => activeAcp(state)?.harness ?? null)
+  const supportsSteering = useThreads((state) =>
+    state.liveCapabilities.some(
+      (item) => item.provider === liveHarness && item.canSteer
+    )
+  )
   const liveRunning = useAcp((state) => {
     const active = activeAcp(state)
-    return active?.kind === "starting" || active?.session.status === "running"
+    return (
+      active?.kind === "starting" ||
+      Boolean(
+        active &&
+        (active.session.status === "running" ||
+          active.requests?.some(
+            (request) => request.status === "dispatching"
+          ) ||
+          promptDelivery(active).starting)
+      )
+    )
   })
-  const liveStarting = useAcp((state) => activeAcp(state)?.kind === "starting")
+  const liveStarting = useAcp((state) => {
+    const active = activeAcp(state)
+    return (
+      active?.kind === "starting" ||
+      Boolean(
+        active &&
+        active.session.status !== "running" &&
+        (active.session.status === "starting" ||
+          active.requests?.some(
+            (request) => request.status === "dispatching"
+          ) ||
+          promptDelivery(active).starting)
+      )
+    )
+  })
+  const liveWorking = useAcp(
+    (state) => activeLiveAcp(state)?.session.status === "running"
+  )
+  const canSteer = supportsSteering && liveWorking
   const stopping = useAcp((state) => activeLiveAcp(state)?.canceling ?? false)
   const liveThreadPath = useAcp((state) => activeAcp(state)?.threadPath)
   const routedHarness = useThreads(
@@ -528,7 +648,9 @@ export function Composer() {
     running: turnRunning && hostConnected && !opening,
     hasContent,
   })
-  const viewingResumeUnavailable = useThreads((state) => state.viewing?.ref.resumeUnavailable)
+  const viewingResumeUnavailable = useThreads(
+    (state) => state.viewing?.ref.resumeUnavailable
+  )
   const viewingArchived = useThreads((state) =>
     Boolean(state.viewing?.ref.archived)
   )
@@ -537,26 +659,31 @@ export function Composer() {
     ? `Draft a reply for ${harnessTitle(opening.ref.harness)} — ${opening.kind === "loading" ? "loading conversation…" : "conversation could not load"}`
     : liveOwnsComposer && liveHarness
       ? liveStarting
-        ? `${harnessTitle(liveHarness)} is starting — Enter queues your message`
+        ? `Queue a message for ${harnessTitle(liveHarness)}`
         : liveRunning
-          ? `${harnessTitle(liveHarness)} is working — Enter queues your message`
+          ? `Queue a message for ${harnessTitle(liveHarness)}`
           : `Reply — ${harnessTitle(liveHarness)} answers live`
       : routedHarness
         ? newHarness !== routedHarness
           ? `Reply — moves this conversation to ${harnessTitle(newHarness)}`
           : viewingResumeUnavailable
             ? `Reply — continues in a new ${harnessTitle(routedHarness)} session`
-          : viewingArchived
-            ? `Reply — revives this archived conversation in ${harnessTitle(routedHarness)}`
-            : viewingRunning
-              ? `${harnessTitle(routedHarness)} is working — Enter queues, ${isMac ? "⌘" : "Ctrl+"}Enter interrupts`
-              : `Reply — ${harnessTitle(routedHarness)} answers`
+            : viewingArchived
+              ? `Reply — revives this archived conversation in ${harnessTitle(routedHarness)}`
+              : viewingRunning
+                ? `Queue a message for ${harnessTitle(routedHarness)}`
+                : `Reply — ${harnessTitle(routedHarness)} answers`
         : `Ask ${harnessTitle(newHarness)} for a change`
 
+  // The composer is a structural pane, not a floating card: it tiles the full
+  // width of the conversation under one hairline, like every other pane, so
+  // the queue, permissions and the input share one edge and the control row
+  // has the room it needs.
   return (
-    <div className="shrink-0 px-6 pt-1 pb-4">
-      <div className="mx-auto w-full max-w-content">
+    <div className="shrink-0 border-t border-hairline bg-surface">
+      <div className="w-full">
         <Slot name="composer.above" meta={meta} />
+        <PromptQueue />
 
         {status.compacting ? (
           <Banner text="Compacting the conversation…" />
@@ -602,12 +729,8 @@ export function Composer() {
             void attach([...event.dataTransfer.files])
           }}
           className={cn(
-            "relative rounded-xl bg-popover shadow-[var(--elevation-floating)] ring-1 transition-[box-shadow] duration-150",
-            dragging
-              ? "ring-foreground/40"
-              : focused
-                ? "ring-border"
-                : "ring-hairline"
+            "relative",
+            dragging && "ring-1 ring-foreground/40 ring-inset"
           )}
         >
           {mention ? (
@@ -628,6 +751,13 @@ export function Composer() {
            * native caret, IME, undo, and spellcheck — a contenteditable would
            * trade all four for the same visual result.
            */}
+          <InterruptedSends
+            onRestore={(recovered) => {
+              appendRecoveredDraft(draftKey, recovered)
+              attachments.reattach(recovered.attachments)
+              textarea.current?.focus()
+            }}
+          />
           {rejectedDrafts.map((rejected) => (
             <button
               key={rejected.id}
@@ -636,11 +766,7 @@ export function Composer() {
               onClick={() => {
                 const recovered = takeRejectedDraft(rejected.id)
                 if (!recovered) return
-                update(
-                  [draftRef.current, recovered.text]
-                    .filter(Boolean)
-                    .join("\n\n")
-                )
+                appendRecoveredDraft(draftKey, recovered)
                 attachments.reattach(recovered.attachments)
               }}
             >
@@ -648,30 +774,51 @@ export function Composer() {
               {rejected.text.slice(0, 80) || "Attachments"}
             </button>
           ))}
+          <PlanContextChips
+            plans={draftPlans ?? []}
+            onRemove={(plan) => removeDraftPlan(draftKey, plan)}
+          />
           <AttachmentStrip
             items={attachments.items}
-            onRemove={attachments.remove}
+            onRemove={removeAttachment}
           />
 
           <div
             ref={scroller}
             className="relative max-h-[320px] overflow-y-auto overscroll-contain"
           >
-            <ReferenceOverlay text={draft} />
+            <ReferenceOverlay
+              text={draft}
+              attachments={attachments.items}
+              onRemove={removeAttachment}
+            />
             <textarea
               ref={textarea}
               value={draft}
               rows={1}
               onChange={(event) => {
                 promptHistory.current = null
-                update(event.target.value)
+                const edited = editAttachmentReferences(
+                  draft,
+                  event.target.value,
+                  attachments.items
+                )
+                update(edited.text)
+                attachments.restoreRemoved(edited.text)
+                for (const id of edited.removed) attachments.remove(id)
+                if (edited.text !== event.target.value) {
+                  requestAnimationFrame(() =>
+                    textarea.current?.setSelectionRange(
+                      edited.caret,
+                      edited.caret
+                    )
+                  )
+                }
                 syncMention()
               }}
               onKeyUp={syncMention}
               onClick={syncMention}
-              onFocus={() => setFocused(true)}
               onBlur={() => {
-                setFocused(false)
                 // Let a click inside the menu land before it unmounts.
                 setTimeout(() => setMention(null), 120)
               }}
@@ -687,7 +834,7 @@ export function Composer() {
               className={cn(
                 // No max-height and no scrolling of its own — the wrapper owns
                 // both, so the painted layer behind it stays in register.
-                "composer-input relative block min-h-10 w-full resize-none overflow-hidden bg-transparent px-3 pb-1 pt-2.5",
+                "composer-input relative block min-h-12 w-full resize-none overflow-hidden bg-transparent px-4 pt-3 pb-1",
                 "font-sans text-ui leading-[1.55] placeholder:text-faint focus:outline-none",
                 // Transparent glyphs let the overlay show through; the caret
                 // and selection stay native and visible.
@@ -696,7 +843,7 @@ export function Composer() {
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-1 px-1.5 pb-1.5">
+          <div className="flex items-center gap-1 px-2.5 pb-2">
             <IconAction
               label="Reference a file"
               keys={["@"]}
@@ -725,9 +872,12 @@ export function Composer() {
               disabled={busy}
               attachFiles={attach}
             />
-            <ComposerRouting />
+            <div className="mx-1 h-4 w-px shrink-0 bg-hairline" />
+            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <ComposerRouting />
+            </div>
 
-            <div className="ml-auto flex items-center gap-1">
+            <div className="ml-auto flex shrink-0 items-center gap-1">
               <Slot
                 name="composer.trailing"
                 meta={meta}
@@ -735,6 +885,17 @@ export function Composer() {
                 attachFiles={attach}
               />
               <ContextDial />
+              {liveOwnsComposer && liveRunning && canSteer ? (
+                <button
+                  type="button"
+                  className="pressable rounded px-2 py-1 text-label text-muted-foreground hover:bg-fill-hover disabled:opacity-40"
+                  disabled={!hasContent || !hostConnected || Boolean(opening)}
+                  onClick={() => void submit("steer")}
+                  title="Send this message to the active turn"
+                >
+                  Steer
+                </button>
+              ) : null}
               <ComposerActionButton
                 action={primaryAction}
                 ready={hasContent && !opening && hostConnected}
