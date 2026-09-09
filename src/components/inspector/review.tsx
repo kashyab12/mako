@@ -1,6 +1,11 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react"
 import { Action } from "@/components/ui/kit"
-import { composeReview, review, useReview, type ReviewComment } from "@/state/review"
+import {
+  composeReview,
+  review,
+  useReview,
+  type ReviewComment,
+} from "@/state/review"
 import { cn } from "@/lib/utils"
 import { MessageSquarePlusIcon, PencilIcon, Trash2Icon } from "lucide-react"
 
@@ -33,7 +38,9 @@ export function Annotation({
     draft.path === path &&
     draft.line === line &&
     draft.side === side
-  const mine = comments.filter((comment) => comment.line === line && comment.side === side)
+  const mine = comments.filter(
+    (comment) => comment.line === line && comment.side === side
+  )
 
   return (
     <div className="border-y border-hairline bg-surface/60 px-3 py-1.5">
@@ -49,7 +56,11 @@ export function Annotation({
   )
 }
 
-const SavedComment = memo(function SavedComment({ comment }: { comment: ReviewComment }) {
+const SavedComment = memo(function SavedComment({
+  comment,
+}: {
+  comment: ReviewComment
+}) {
   return (
     <div className="group flex items-start gap-2 py-0.5">
       <span className="mt-[3px] size-1.5 shrink-0 rounded-full bg-caution" />
@@ -164,7 +175,10 @@ export function ReviewBar({ workspace }: { workspace: string }) {
     [allComments, workspace]
   )
   const count = comments.length
-  const files = useMemo(() => new Set(comments.map((comment) => comment.path)).size, [comments])
+  const files = useMemo(
+    () => new Set(comments.map((comment) => comment.path)).size,
+    [comments]
+  )
 
   if (count === 0) return null
 
@@ -172,7 +186,8 @@ export function ReviewBar({ workspace }: { workspace: string }) {
     <div className="flex shrink-0 items-center gap-2 border-t border-hairline bg-surface px-2.5 py-1.5">
       <span className="size-1.5 shrink-0 rounded-full bg-caution" />
       <span className="min-w-0 flex-1 truncate text-ui text-muted-foreground">
-        {count} {count === 1 ? "note" : "notes"} on {files} {files === 1 ? "file" : "files"}
+        {count} {count === 1 ? "note" : "notes"} on {files}{" "}
+        {files === 1 ? "file" : "files"}
       </span>
       <button
         type="button"
@@ -184,7 +199,11 @@ export function ReviewBar({ workspace }: { workspace: string }) {
       <Action
         tone="solid"
         onClick={() => {
-          window.dispatchEvent(new CustomEvent("mako:compose", { detail: composeReview(comments) }))
+          window.dispatchEvent(
+            new CustomEvent("mako:compose", {
+              detail: { text: composeReview(comments) },
+            })
+          )
           review.clear(workspace)
         }}
       >

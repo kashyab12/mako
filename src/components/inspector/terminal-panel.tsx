@@ -68,7 +68,12 @@ export function TerminalPanel() {
         icon={<TerminalSquareIcon />}
         title="Terminal unavailable"
         body={fault ?? "The local terminal service disconnected."}
-        action={<Action label="Retry" onClick={() => void terminalActions.refresh()} />}
+        action={
+          <Action
+            label="Retry"
+            onClick={() => void terminalActions.refresh()}
+          />
+        }
       />
     )
   }
@@ -95,7 +100,9 @@ export function TerminalPanel() {
             type="button"
             title="Search terminal"
             aria-label="Search terminal"
-            onClick={() => window.dispatchEvent(new CustomEvent("mako:terminal-search"))}
+            onClick={() =>
+              window.dispatchEvent(new CustomEvent("mako:terminal-search"))
+            }
             className="pressable flex size-7 shrink-0 items-center justify-center rounded-md text-faint hover:bg-fill-hover hover:text-foreground"
           >
             <SearchIcon className="size-3.5" />
@@ -121,7 +128,10 @@ export function TerminalPanel() {
           body="Start a shell in the current workspace. It will keep running if this window closes."
           action={
             cwd ? (
-              <Action label="New terminal" onClick={() => void terminalActions.create(cwd)} />
+              <Action
+                label="New terminal"
+                onClick={() => void terminalActions.create(cwd)}
+              />
             ) : undefined
           }
         />
@@ -171,12 +181,14 @@ function SessionTab({
     <div
       className={cn(
         "group flex h-7 max-w-44 items-center rounded-md text-label",
-        active ? "bg-fill-selected text-foreground" : "text-faint hover:text-muted-foreground"
+        active
+          ? "bg-fill-selected text-foreground"
+          : "text-faint hover:text-muted-foreground"
       )}
     >
       <span
         className={cn(
-          "ml-2 mr-1.5 size-1.5 shrink-0 rounded-full",
+          "mr-1.5 ml-2 size-1.5 shrink-0 rounded-full",
           session.status === "running"
             ? "bg-positive"
             : session.status === "interrupted"
@@ -215,7 +227,7 @@ function SessionTab({
         type="button"
         aria-label={`Close ${title}`}
         onClick={onClose}
-        className="pressable mr-1 flex size-4 shrink-0 items-center justify-center rounded opacity-0 hover:bg-background/40 group-hover:opacity-100 focus:opacity-100"
+        className="pressable mr-1 flex size-4 shrink-0 items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-background/40 focus:opacity-100"
       >
         <XIcon className="size-3" />
       </button>
@@ -252,7 +264,10 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
     const distanceFromBottom = Math.max(0, buffer.baseY - buffer.viewportY)
     addon.fit()
     if (distanceFromBottom === 0) terminal.scrollToBottom()
-    else terminal.scrollToLine(Math.max(0, terminal.buffer.active.baseY - distanceFromBottom))
+    else
+      terminal.scrollToLine(
+        Math.max(0, terminal.buffer.active.baseY - distanceFromBottom)
+      )
     terminalActions.resize(terminal.cols, terminal.rows)
   }, [])
 
@@ -343,7 +358,8 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
     const input = terminal.onData((data) => terminalActions.write(data))
     const removeClipboard = installTerminalClipboard(host, terminal)
     const observer = new ResizeObserver(() => {
-      if (resizeFrame.current !== undefined) cancelAnimationFrame(resizeFrame.current)
+      if (resizeFrame.current !== undefined)
+        cancelAnimationFrame(resizeFrame.current)
       resizeFrame.current = requestAnimationFrame(fit)
     })
     observer.observe(host)
@@ -352,7 +368,8 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
     return () => {
       observer.disconnect()
       removeClipboard()
-      if (resizeFrame.current !== undefined) cancelAnimationFrame(resizeFrame.current)
+      if (resizeFrame.current !== undefined)
+        cancelAnimationFrame(resizeFrame.current)
       input.dispose()
       selectionChange.dispose()
       writer.dispose()
@@ -423,10 +440,7 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
     replayTerminalOutput(writeOutput)
   }, [snapshot, writeOutput])
 
-  useEffect(
-    () => subscribeTerminalOutput(writeOutput),
-    [writeOutput]
-  )
+  useEffect(() => subscribeTerminalOutput(writeOutput), [writeOutput])
 
   useEffect(() => {
     const show = () => {
@@ -451,7 +465,8 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
             onChange={(event) => {
               const next = event.target.value
               setQuery(next)
-              if (next) searchAddonRef.current?.findNext(next, { incremental: true })
+              if (next)
+                searchAddonRef.current?.findNext(next, { incremental: true })
               else searchAddonRef.current?.clearDecorations()
             }}
             onKeyDown={(event) => {
@@ -467,7 +482,7 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
                 terminalRef.current?.focus()
               }
             }}
-            className="h-6 w-48 rounded px-1 text-ui text-foreground placeholder:text-faint focus:bg-raised focus:outline-none focus:ring-1 focus:ring-hairline"
+            className="h-6 w-48 rounded px-1 text-ui text-foreground placeholder:text-faint focus:bg-raised focus:ring-1 focus:ring-hairline focus:outline-none"
           />
           <button
             type="button"
@@ -505,7 +520,7 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
           onClick={() =>
             window.dispatchEvent(
               new CustomEvent("mako:compose", {
-                detail: `\n\`\`\`text\n${selection}\n\`\`\`\n`,
+                detail: { text: `\n\`\`\`text\n${selection}\n\`\`\`\n` },
               })
             )
           }
@@ -524,7 +539,13 @@ function TerminalViewport({ session }: { session: TerminalSession }) {
           </span>
           <button
             type="button"
-            onClick={() => void terminalActions.create(session.cwd, session.cols, session.rows)}
+            onClick={() =>
+              void terminalActions.create(
+                session.cwd,
+                session.cols,
+                session.rows
+              )
+            }
             className="pressable rounded px-1.5 py-0.5 text-foreground hover:bg-background/30"
           >
             New shell
@@ -563,10 +584,7 @@ function installTerminalClipboard(
   }
 }
 
-async function openTerminalLink(
-  cwd: string,
-  uri: string
-): Promise<void> {
+async function openTerminalLink(cwd: string, uri: string): Promise<void> {
   if (!uri.startsWith("file://")) {
     await desktop.openUrl(uri)
     return

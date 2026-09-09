@@ -3,6 +3,7 @@ import { desktop } from "@/state/desktop"
 import { useUpdates } from "@/state/updates"
 import { ExternalLinkIcon } from "lucide-react"
 import { FaGithub } from "react-icons/fa"
+import appIcon from "/icons/app-icon.png?url"
 
 const REPOSITORY = "https://github.com/kashyab12/mako"
 
@@ -12,7 +13,7 @@ export function AboutSection() {
     <div className="flex flex-col gap-5">
       <div className="flex items-center gap-3">
         <img
-          src="/icons/app-icon.png"
+          src={appIcon}
           alt=""
           className="size-14 rounded-xl ring-1 ring-hairline"
         />
