@@ -8,6 +8,7 @@ export interface ProviderProfileLoader extends ProviderCapability {
   capabilities: string[]
   cacheKey(env: NodeJS.ProcessEnv): string
   load(env: NodeJS.ProcessEnv, cwd?: string): Promise<HarnessProfile>
+  loadForSend?(env: NodeJS.ProcessEnv, cwd?: string): Promise<HarnessProfile>
 }
 
 export function availableProviderProfile(
@@ -23,7 +24,8 @@ export function availableProviderProfile(
     capabilities: loader.capabilities,
   }
   if (catalog.settings) profile.settings = catalog.settings
-  if (catalog.configurationError) profile.configurationError = catalog.configurationError
+  if (catalog.configurationError)
+    profile.configurationError = catalog.configurationError
   if (catalog.defaultModel) profile.defaultModel = catalog.defaultModel
   if (catalog.configuredModel) profile.configuredModel = catalog.configuredModel
   return profile

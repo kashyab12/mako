@@ -5,6 +5,7 @@ import {
   type TerminalEvent,
 } from "./shared.js"
 
+const clientId = process.argv.find((argument) => argument.startsWith("--mako-client="))?.slice("--mako-client=".length)
 const api = createMakoBridge({
   nativeWindowVideo: true,
   // Electron owns and types this trusted local transport's return value.
@@ -27,7 +28,12 @@ const api = createMakoBridge({
       ipcRenderer.removeListener("mako:terminal-event", receive)
     }
   },
-  resolveFileUrl: (url) => url,
+  resolveFileUrl: (url) => {
+    if (!clientId || !url.startsWith("mako-file:")) return url
+    const target = new URL(url)
+    target.searchParams.set("client", clientId)
+    return target.href
+  },
   pathForFile: (file) => {
     try {
       return webUtils.getPathForFile(file) || null

@@ -35,6 +35,7 @@ export interface HarnessProfileEvent {
  */
 const cache = new Map<string, { profile: HarnessProfile; loadedAt: number }>()
 const loading = new Map<string, Promise<HarnessProfile>>()
+const launching = new Map<string, Promise<HarnessProfile>>()
 const listeners = new Set<(event: HarnessProfileEvent) => void>()
 const DISPLAY_TTL_MS = 30_000
 
@@ -84,9 +85,17 @@ async function loadProfile(
   const held = cache.get(key)
   if (mode !== "refresh" && held) {
     const fresh = Date.now() - held.loadedAt < DISPLAY_TTL_MS
-    const trusted =
-      held.profile.available && !held.profile.configurationError
+    const trusted = held.profile.available && !held.profile.configurationError
     if (fresh || (mode === "send" && trusted)) return held.profile
+  }
+  if (mode === "send" && loader.loadForSend) {
+    const pending = launching.get(key)
+    if (pending) return pending
+    const request = loader
+      .loadForSend(env, cwd)
+      .finally(() => launching.delete(key))
+    launching.set(key, request)
+    return request
   }
   const request = loading.get(key) ?? startLoad(loader, key, env, cwd)
   if (mode === "display" || mode === "now") {
@@ -147,10 +156,12 @@ export async function harnessProfilesNow(
   cwd?: string
 ): Promise<HarnessProfile[]> {
   return providerHost.profiles.list().map((loader) => {
-    void loadProfile(loader.provider, cwd, "now").then((profile) => {
-      if (!profile.pending)
-        for (const listener of listeners) listener({ profile, cwd })
-    }).catch(() => {})
+    void loadProfile(loader.provider, cwd, "now")
+      .then((profile) => {
+        if (!profile.pending)
+          for (const listener of listeners) listener({ profile, cwd })
+      })
+      .catch(() => {})
     return pendingProviderProfile(loader)
   })
 }

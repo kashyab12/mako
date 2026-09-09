@@ -1,5 +1,9 @@
 import type { QueuedPromptEdit } from "./contracts/live-queue.js"
 import { handleQuit } from "./background-lifecycle.js"
+import { RUNTIME_PROTOCOL } from "./contracts/runtime.js"
+import { hostCallInputs } from "./contracts/host-call-inputs.js"
+import { runtimeInfo } from "./runtime-connection.js"
+import { lstat, unlink } from "node:fs/promises"
 import type { SessionSettings } from "@mako/sessions/settings"
 import { resolveExecutable } from "./executable.js"
 import { Appshots } from "./appshots.js"
@@ -192,8 +196,10 @@ const isDev = !app.isPackaged && !process.env.MAKO_PROD
  * comes and goes. Dev defaults to its own profile; `MAKO_PROFILE` names any
  * other, for a second checkout or a throwaway test instance.
  */
+const persistentHost = process.env.MAKO_HOST_ONLY === "1"
 const instanceProfile = process.env.MAKO_PROFILE || (isDev ? "dev" : "")
-if (instanceProfile)
+if (process.env.MAKO_DATA_ROOT) app.setPath("userData", process.env.MAKO_DATA_ROOT)
+else if (instanceProfile)
   app.setPath("userData", `${app.getPath("userData")}-${instanceProfile}`)
 if (!app.requestSingleInstanceLock()) {
   console.error(
@@ -264,8 +270,8 @@ let liveConversations: LiveConversations
 let window: BrowserWindow | null = null
 const rendererWindows = new Set<BrowserWindow>()
 let webHost: Awaited<ReturnType<typeof startWebHost>> | undefined
-const webSocket = isDev ? process.env.MAKO_WEB_SOCKET : undefined
-const webOnly = Boolean(webSocket && process.env.MAKO_WEB_ONLY !== "0")
+const webSocket = isDev || persistentHost ? process.env.MAKO_WEB_SOCKET : undefined
+const webOnly = persistentHost || Boolean(webSocket && process.env.MAKO_WEB_ONLY !== "0")
 let terminalClient: TerminalDaemonClient | null = null
 const workspaceClients = new WorkspaceClients(emit)
 
@@ -287,7 +293,7 @@ function emitTerminalWake() {
     renderer.webContents.send("mako:terminal-event", { type: "wake" })
 }
 
-function emit(event: HostEvent) {
+function emit(event: HostEvent, client?: string) {
   if (event.type === "threads") liveConversations?.discoverNativePaths()
   if (event.type === "thread-run" && event.run.status !== "running")
     nativeRequests?.ready(event.run.path)
@@ -295,9 +301,11 @@ function emit(event: HostEvent) {
   // when HEAD could have moved — so the commit trigger rides on it rather than
   // running a watcher of its own.
   if (event.type === "git") noticeHead(event.git.head)
-  webHost?.event(event)
-  for (const renderer of rendererWindows)
-    renderer.webContents.send("mako:event", event)
+  webHost?.event(event, client)
+  for (const renderer of rendererWindows) {
+    if (!client || client === `renderer:${renderer.webContents.id}`)
+      renderer.webContents.send("mako:event", event)
+  }
 }
 
 /**
@@ -329,7 +337,7 @@ function relaunch(): void {
     return
   }
   relaunching = true
-  if (!isDev) app.relaunch()
+  if (!isDev || persistentHost) app.relaunch()
   app.quit()
 }
 
@@ -1174,6 +1182,7 @@ async function readFilePreview(request: Request): Promise<Response> {
 installCrashReporting()
 
 app.whenReady().then(async () => {
+  if (persistentHost) app.dock?.hide()
   app.setAboutPanelOptions({
     applicationName: "Mako",
     applicationVersion: app.getVersion(),
@@ -1270,16 +1279,25 @@ app.whenReady().then(async () => {
     emit({ type: "browser-control", browsers })
   )
   bindIpc()
-  if (webSocket)
+  bindAcp((event) => liveConversations.observe(event))
+  bindCodexApp((event) => liveConversations.observe(event))
+  if (webSocket) {
+    if (persistentHost) {
+      const stale = await lstat(webSocket).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return null; throw error })
+      if (stale) {
+        if (!stale.isSocket() || (process.getuid && stale.uid !== process.getuid()) || await runtimeInfo(webSocket))
+          throw new Error("The shared host socket is already owned")
+        await unlink(webSocket)
+      }
+    }
     webHost = await startWebHost(webSocket, invokeHost, readFilePreview, (client) => {
       void workspaceClients.release(client)
-    })
+    }, { protocol: RUNTIME_PROTOCOL, instanceId: crypto.randomUUID(), pid: process.pid, version: app.getVersion(), methods: Object.keys(hostCallInputs) })
+  }
   if (!webOnly) await createWindow()
   installUpdates(emit)
   installThreads(emit)
   bindDrivers(emit)
-  bindAcp((event) => liveConversations.observe(event))
-  bindCodexApp((event) => liveConversations.observe(event))
   bindAutomations(emit, async (cwd, prompt) => {
     const resumable = new Set(resumableHarnesses())
     const profile = (await harnessProfiles()).find(
@@ -1311,11 +1329,11 @@ app.whenReady().then(async () => {
 })
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit()
+  if (!persistentHost && process.platform !== "darwin") app.quit()
 })
 
 app.on("before-quit", (event) => handleQuit(event, {
-  hasActiveWork,
+  hasActiveWork: () => persistentHost || hasActiveWork(),
   isRestarting: () => relaunching || shuttingDown,
   hide: () => {
     for (const renderer of rendererWindows) renderer.hide()
@@ -1341,6 +1359,6 @@ app.on("before-quit", (event) => handleQuit(event, {
   liveConversations?.stop()
   void workspaceClients.dispose()
   // After the ordinary shutdown, tell the dev launcher to bring us back.
-  if (relaunching && isDev) app.exit(RELAUNCH_EXIT_CODE)
+  if (relaunching && isDev && !persistentHost) app.exit(RELAUNCH_EXIT_CODE)
   },
 }))

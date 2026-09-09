@@ -1,4 +1,4 @@
-import { claudeResolvedSettings } from "./settings.js"
+import { claudeDiscoveryArgs, claudeResolvedSettings } from "./settings.js"
 import type { SessionSettings } from "@mako/sessions/settings"
 import { normalizeClaudeModels } from "@mako/sessions/model-catalog"
 import {
@@ -27,6 +27,35 @@ const ModelsSchema = z.object({
   ),
 })
 
+const catalogues = new Map<
+  string,
+  Promise<ReturnType<typeof normalizeClaudeModels>>
+>()
+const catalogueKey = (env: NodeJS.ProcessEnv, cwd?: string) =>
+  `${env.CLAUDE_CONFIG_DIR ?? ""}:${cwd ?? ""}`
+
+async function readCatalogue(env: NodeJS.ProcessEnv, cwd?: string) {
+  const response = await streamRequest(
+    env.CLAUDE_CODE_EXECUTABLE ?? "claude",
+    claudeDiscoveryArgs,
+    {
+      type: "control_request",
+      request_id: "mako-model-discovery",
+      request: { subtype: "list_models" },
+    },
+    env,
+    (message) => {
+      const parsed = ControlResponseSchema.safeParse(message)
+      if (!parsed.success) return undefined
+      if (parsed.data.response.subtype !== "success")
+        throw new Error("Claude model discovery was rejected")
+      return ModelsSchema.parse(parsed.data.response.response).models
+    },
+    cwd
+  )
+  return normalizeClaudeModels(response)
+}
+
 export const claudeProfileLoader: ProviderProfileLoader = {
   provider: "claude",
   label: "Claude Code",
@@ -47,63 +76,45 @@ export const claudeProfileLoader: ProviderProfileLoader = {
     "agent-teams",
   ],
   cacheKey: (env) => env.CLAUDE_CONFIG_DIR ?? "",
-  async load(env, cwd) {
-    const response = await streamRequest(
-      env.CLAUDE_CODE_EXECUTABLE ?? "claude",
-      [
-        "-p",
-        "--no-session-persistence",
-        "--input-format",
-        "stream-json",
-        "--output-format",
-        "stream-json",
-        "--verbose",
-      ],
-      {
-        type: "control_request",
-        request_id: "mako-model-discovery",
-        request: { subtype: "list_models" },
-      },
-      env,
-      (message) => {
-        const parsed = ControlResponseSchema.safeParse(message)
-        if (!parsed.success) return undefined
-        if (parsed.data.response.subtype !== "success")
-          throw new Error("Claude model discovery was rejected")
-        return ModelsSchema.parse(parsed.data.response.response).models
-      },
-      cwd
-    )
-    const catalog = normalizeClaudeModels(response)
-    for (const model of catalog.models) {
-      for (const option of model.options)
-        option.change = option.id === "agentTeams" ? "launch" : undefined
-    }
-    // One CLI launch per model, side by side: in sequence these four probes
-    // were the longest wait in the whole provider list.
-    await Promise.all(
-      catalog.models.map(async (model) => {
-        try {
-          const settings = await claudeResolvedSettings(env, cwd, model.id)
-          for (const option of model.options) {
-            if (option.id === "effort" && option.kind === "select")
-              option.current = settings.effort
-            if (option.id === "fast" && option.kind === "boolean")
-              option.current = option.disabledReason ? false : settings.fast
-          }
-          if (model.id === catalog.defaultModel) {
-            const options: NonNullable<SessionSettings["options"]> = {}
-            if (settings.effort) options.effort = settings.effort
-            const speed = model.options.find((option) => option.id === "fast")
-            if (speed?.current !== undefined) options.fast = speed.current
-            catalog.settings = { model: model.id, options }
-          }
-        } catch {
-          catalog.configurationError =
-            "Claude Code could not report all model defaults. Unreported values remain unknown."
-        }
-      })
-    )
+  async loadForSend(env, cwd) {
+    const catalog = await (catalogues.get(catalogueKey(env, cwd)) ??
+      readCatalogue(env, cwd))
     return availableProviderProfile(claudeProfileLoader, catalog)
+  },
+  async load(env, cwd) {
+    const key = catalogueKey(env, cwd)
+    const request = readCatalogue(env, cwd)
+    catalogues.set(key, request)
+    try {
+      const catalog = structuredClone(await request)
+      // One CLI launch per model, side by side: in sequence these four probes
+      // were the longest wait in the whole provider list.
+      await Promise.all(
+        catalog.models.map(async (model) => {
+          try {
+            const settings = await claudeResolvedSettings(env, cwd, model.id)
+            for (const option of model.options) {
+              if (option.id === "effort" && option.kind === "select")
+                option.current = settings.effort
+              if (option.id === "fast" && option.kind === "boolean")
+                option.current = option.disabledReason ? false : settings.fast
+            }
+            if (model.id === catalog.defaultModel) {
+              const options: NonNullable<SessionSettings["options"]> = {}
+              if (settings.effort) options.effort = settings.effort
+              const speed = model.options.find((option) => option.id === "fast")
+              if (speed?.current !== undefined) options.fast = speed.current
+              catalog.settings = { model: model.id, options }
+            }
+          } catch {
+            catalog.configurationError =
+              "Claude Code could not report all model defaults. Unreported values remain unknown."
+          }
+        })
+      )
+      return availableProviderProfile(claudeProfileLoader, catalog)
+    } finally {
+      if (catalogues.get(key) === request) catalogues.delete(key)
+    }
   },
 }

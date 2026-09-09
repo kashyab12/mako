@@ -9,6 +9,19 @@ const EffectiveSettingsSchema = z.object({
     fastModePerSessionOptIn: z.boolean().optional(),
   }),
 })
+export const claudeDiscoveryArgs = [
+  "-p",
+  "--no-session-persistence",
+  "--input-format",
+  "stream-json",
+  "--output-format",
+  "stream-json",
+  "--verbose",
+  "--strict-mcp-config",
+  "--mcp-config",
+  '{"mcpServers":{}}',
+]
+
 export async function claudeResolvedSettings(
   env: NodeJS.ProcessEnv,
   cwd: string | undefined,
@@ -16,17 +29,7 @@ export async function claudeResolvedSettings(
 ) {
   return streamRequest(
     env.CLAUDE_CODE_EXECUTABLE ?? "claude",
-    [
-      "-p",
-      "--no-session-persistence",
-      "--input-format",
-      "stream-json",
-      "--output-format",
-      "stream-json",
-      "--verbose",
-      "--model",
-      model,
-    ],
+    [...claudeDiscoveryArgs, "--model", model],
     {
       type: "control_request",
       request_id: "mako-settings",

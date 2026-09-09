@@ -36,17 +36,21 @@ async function readRequest(request: IncomingMessage) {
 export async function startWebHost(
   socket: string,
   invoke: (channel: string, args: unknown[], client?: string) => Promise<string>,
-  file: (request: Request) => Promise<Response>,
+  file: (request: Request, client?: string) => Promise<Response>,
   disconnected?: (client: string) => void,
   runtime?: RuntimeInfo
 ) {
-  const streams = new Set<ServerResponse>()
+  const streams = new Map<ServerResponse, string>()
+  const releases = new Map<string, ReturnType<typeof setTimeout>>()
   const server = createServer((request, response) => {
     response.setHeader("cache-control", "no-store")
     if (request.method === "GET" && request.url === "/health" && runtime) {
       response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(runtime))
       return
     }
+    const client = z.string().uuid().optional().safeParse(request.headers["x-mako-window"] ?? new URL(request.url ?? "/", "http://localhost").searchParams.get("client") ?? undefined)
+    if (!client.success) { response.writeHead(400).end("Invalid workspace client"); return }
+    const clientId = client.data ? `web:${client.data}` : "web"
     if (request.method === "GET" && request.url?.startsWith("/file/")) {
       const abort = new AbortController()
       response.once("close", () => abort.abort())
@@ -54,7 +58,7 @@ export async function startWebHost(
       if (request.headers.range) headers.set("range", request.headers.range)
       const url = `mako-file://${request.url.slice("/file/".length)}`
       void Promise.resolve()
-        .then(() => file(new Request(url, { headers, signal: abort.signal })))
+        .then(() => file(new Request(url, { headers, signal: abort.signal }), clientId))
         .then(async (result) => {
           response.writeHead(result.status, {
             ...Object.fromEntries(result.headers),
@@ -88,10 +92,16 @@ export async function startWebHost(
     if (request.url === "/events") {
       response.writeHead(200, { "content-type": "application/x-ndjson" })
       response.write(JSON.stringify({ channel: "ready" }) + "\n")
-      streams.add(response)
+      clearTimeout(releases.get(clientId))
+      releases.delete(clientId)
+      streams.set(response, clientId)
       response.once("close", () => {
         streams.delete(response)
-        if (client.data) disconnected?.(clientId)
+        if (client.data && ![...streams.values()].includes(clientId)) {
+          const timer = setTimeout(() => { releases.delete(clientId); disconnected?.(clientId) }, 5_000)
+          timer.unref()
+          releases.set(clientId, timer)
+        }
       })
       return
     }
@@ -129,27 +139,31 @@ export async function startWebHost(
   })
   await chmod(socket, 0o600)
   const heartbeat = setInterval(() => {
-    for (const stream of streams) stream.write("\n")
+    for (const stream of streams.keys()) stream.write("\n")
   }, 15_000)
   heartbeat.unref()
   const send = (
     channel: "event" | "terminal",
-    payload: HostEvent | TerminalEvent
+    payload: HostEvent | TerminalEvent,
+    client?: string
   ) => {
     const line = JSON.stringify({ channel, payload }) + "\n"
-    for (const stream of streams) {
+    for (const [stream, owner] of streams) {
+      if (client && client !== owner) continue
       if (stream.writableLength > 8 * 1024 * 1024)
         stream.destroy(new Error("Web client stopped consuming host events"))
       else stream.write(line)
     }
   }
   return {
-    event: (event: HostEvent) => send("event", event),
+    event: (event: HostEvent, client?: string) => send("event", event, client),
     terminal: (event: TerminalEvent) => send("terminal", event),
     close() {
       clearInterval(heartbeat)
-      for (const stream of streams) stream.end()
+      for (const stream of streams.keys()) stream.end()
       streams.clear()
+      for (const timer of releases.values()) clearTimeout(timer)
+      releases.clear()
       server.closeAllConnections()
       server.close()
     },

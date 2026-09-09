@@ -5,6 +5,13 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { runtimeInfo } from "./runtime-connection.js"
 
+export function runtimeDataRoot(appData: string, env: NodeJS.ProcessEnv): string {
+  if (env.MAKO_DATA_ROOT) return resolve(env.MAKO_DATA_ROOT)
+  const profile = env.MAKO_PROFILE
+  if (profile && !/^[a-zA-Z0-9_.-]{1,80}$/.test(profile)) throw new Error("Invalid Mako sandbox profile name")
+  return join(appData, profile ? `mako-${profile}` : "mako")
+}
+
 export function runtimeLocation(dataRoot: string) {
   const identity = createHash("sha256").update(resolve(dataRoot)).digest("hex").slice(0, 16)
   const directory = join(tmpdir(), `mako-host-${identity}`)
