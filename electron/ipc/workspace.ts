@@ -23,6 +23,11 @@ export function stopWorkspaceIpc(): void {
 
 export function installWorkspaceIpc(context: WorkspaceIpcContext): void {
   const { emit, withHost } = context
+  registerIpc(
+    "mako:create-workspace-text",
+    (_event, cwd: string, path: string, text: string) =>
+      withHost((host) => host.createWorkspaceText(cwd, path, text))
+  )
   registerIpc("mako:list-files", () => withHost((host) => host.listFiles()))
   registerIpc("mako:read-file", (_event, path: string) =>
     withHost(async (host) => {

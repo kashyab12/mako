@@ -1,7 +1,6 @@
-import { acpLiveDriver } from "../acp-live-driver.js"
 import { emitClaudeSession } from "@mako/sessions"
 import type { ProviderModule } from "../host.js"
-import { claudeAcpSource } from "./acp.js"
+import { claudeLiveDriver } from "./live-driver.js"
 import { claudeAccountCapability } from "./accounts.js"
 import { claudeMcpSource } from "./mcp.js"
 import { claudeNativeRunner } from "./native-runner.js"
@@ -12,8 +11,7 @@ import { claudeSkillSource } from "./skills.js"
 export const installClaude: ProviderModule = (host) => {
   host.accountCapabilities.register(claudeAccountCapability)
   host.nativeRunners.register(claudeNativeRunner)
-  host.acpSources.register(claudeAcpSource)
-  host.liveDrivers.register(acpLiveDriver(claudeAcpSource))
+  host.liveDrivers.register(claudeLiveDriver)
   host.profiles.register(claudeProfileLoader)
   host.processProbes.register(claudeProcessProbe)
   host.mcpSources.register(claudeMcpSource)

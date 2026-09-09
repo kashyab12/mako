@@ -1,5 +1,9 @@
-import { claudeConfiguredSettings } from "./settings.js"
-import { normalizeClaudeModels, type ClaudeModelRow } from "@mako/sessions/model-catalog"
+import { claudeResolvedSettings } from "./settings.js"
+import type { SessionSettings } from "@mako/sessions/settings"
+import {
+  normalizeClaudeModels,
+  type ClaudeModelRow,
+} from "@mako/sessions/model-catalog"
 import {
   availableProviderProfile,
   type ProviderProfileLoader,
@@ -17,13 +21,15 @@ interface ClaudeControlMessage {
 export const claudeProfileLoader: ProviderProfileLoader = {
   provider: "claude",
   label: "Claude Code",
-  transport: "acp",
+  transport: "sdk",
   capabilities: [
     "start",
     "resume",
     "fork",
     "stream",
     "interrupt",
+    "steer",
+    "compact",
     "permissions",
     "images",
     "commands",
@@ -40,6 +46,7 @@ export const claudeProfileLoader: ProviderProfileLoader = {
       env.CLAUDE_CODE_EXECUTABLE ?? "claude",
       [
         "-p",
+        "--no-session-persistence",
         "--input-format",
         "stream-json",
         "--output-format",
@@ -61,14 +68,34 @@ export const claudeProfileLoader: ProviderProfileLoader = {
     )
     const catalog = normalizeClaudeModels(response)
     for (const model of catalog.models) {
-      for (const option of model.options) option.change = "launch"
+      for (const option of model.options)
+        option.change = option.id === "agentTeams" ? "launch" : undefined
     }
-    try {
-      catalog.settings = { ...await claudeConfiguredSettings(env, cwd), model: catalog.defaultModel }
-    } catch {
-      catalog.settings = { model: catalog.defaultModel }
-      catalog.configurationError = "Claude Code settings could not be read. Unreported values remain unknown."
-    }
+    // One CLI launch per model, side by side: in sequence these four probes
+    // were the longest wait in the whole provider list.
+    await Promise.all(
+      catalog.models.map(async (model) => {
+        try {
+          const settings = await claudeResolvedSettings(env, cwd, model.id)
+          for (const option of model.options) {
+            if (option.id === "effort" && option.kind === "select")
+              option.current = settings.effort
+            if (option.id === "fast" && option.kind === "boolean")
+              option.current = option.disabledReason ? false : settings.fast
+          }
+          if (model.id === catalog.defaultModel) {
+            const options: NonNullable<SessionSettings["options"]> = {}
+            if (settings.effort) options.effort = settings.effort
+            const speed = model.options.find((option) => option.id === "fast")
+            if (speed?.current !== undefined) options.fast = speed.current
+            catalog.settings = { model: model.id, options }
+          }
+        } catch {
+          catalog.configurationError =
+            "Claude Code could not report all model defaults. Unreported values remain unknown."
+        }
+      })
+    )
     return availableProviderProfile(claudeProfileLoader, catalog)
   },
 }
