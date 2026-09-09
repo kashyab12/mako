@@ -70,7 +70,9 @@ export function Launcher() {
           title={suggestion.text}
           onRun={() =>
             window.dispatchEvent(
-              new CustomEvent("mako:compose", { detail: suggestion.text })
+              new CustomEvent("mako:compose", {
+                detail: { text: suggestion.text },
+              })
             )
           }
         />
@@ -118,7 +120,7 @@ function LauncherRow({
       style={{ animationDelay: `${60 + index * 45}ms` }}
       onClick={onRun}
       className={cn(
-        "pressable group flex h-9 w-full animate-enter items-center gap-2.5 rounded-md px-2.5",
+        "pressable group animate-enter flex h-9 w-full items-center gap-2.5 rounded-md px-2.5",
         "text-left text-ui text-muted-foreground",
         "[transition:transform_var(--duration-press)_var(--ease-out),color_120ms_ease,background-color_120ms_ease]",
         "hover:bg-fill-hover hover:text-foreground",
@@ -137,9 +139,16 @@ function LauncherRow({
       ) : Icon ? (
         <Icon className="size-3.5 shrink-0 text-faint transition-colors duration-100 group-hover:text-foreground/80" />
       ) : null}
-      <span className={cn("min-w-0 flex-1 truncate", done && "text-faint line-through")}>
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate",
+          done && "text-faint line-through"
+        )}
+      >
         {title}
-        {hint ? <span className="pl-2 text-label text-faint">{hint}</span> : null}
+        {hint ? (
+          <span className="pl-2 text-label text-faint">{hint}</span>
+        ) : null}
       </span>
       {keys ? <Keys keys={keys} /> : null}
     </button>

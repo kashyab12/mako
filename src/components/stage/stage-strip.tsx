@@ -2,6 +2,7 @@ import { IconAction } from "@/components/ui/kit"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { MakoMark } from "@/components/ui/mako-mark"
 import { activeAcp, useAcp } from "@/state/acp"
+import { usePrefs } from "@/state/prefs"
 import { useSession } from "@/state/session"
 import { useThreads } from "@/state/threads"
 import { AGENT_TAB_ID, viewer, useViewer } from "@/state/viewer"
@@ -26,6 +27,10 @@ export function StageStrip({
   const liveTitle = useAcp((state) => activeAcp(state)?.title)
   const liveThreadPath = useAcp((state) => activeAcp(state)?.threadPath)
   const nativeTitle = useSession((state) => state.meta?.sessionName)
+  const renamed = usePrefs((prefs) => {
+    const path = viewing?.path ?? liveThreadPath
+    return path ? prefs.titleOverrides[path] : undefined
+  })
 
   if (!pane) return null
   const canSplit = pane.activeId !== AGENT_TAB_ID
@@ -33,8 +38,13 @@ export function StageStrip({
     viewing && (!liveHarness || viewing.path !== liveThreadPath)
   )
   const agentHarness = viewingOwnsAgent ? viewing?.harness : liveHarness
+  // The same session is named once, wherever it appears: a rename in the
+  // rail follows it here, and a nameless one is "New thread" in both places.
   const agentTitle =
-    (viewingOwnsAgent ? viewing?.title : liveTitle) ?? nativeTitle ?? "Agent"
+    renamed ??
+    (viewingOwnsAgent ? viewing?.title : liveTitle) ??
+    nativeTitle ??
+    "New thread"
 
   return (
     <div className="flex h-10 shrink-0 items-center border-b border-hairline bg-shell">

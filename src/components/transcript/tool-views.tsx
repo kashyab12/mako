@@ -13,8 +13,12 @@ import {
 } from "@/lib/tools"
 import { cn } from "@/lib/utils"
 import {
+  ArrowLeftRightIcon,
   BookOpenIcon,
+  BrainIcon,
   CircleHelpIcon,
+  FolderInputIcon,
+  Trash2Icon,
   ClockIcon,
   FilePenLineIcon,
   FilePlusIcon,
@@ -60,6 +64,10 @@ const ICONS = new Map([
   ["awaitshell", SquareTerminalIcon],
   ["write_stdin", SquareTerminalIcon],
   ["toolsearch", SearchIcon],
+  ["delete", Trash2Icon],
+  ["move", FolderInputIcon],
+  ["think", BrainIcon],
+  ["switch_mode", ArrowLeftRightIcon],
 ])
 
 /**

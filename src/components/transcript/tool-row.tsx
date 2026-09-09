@@ -20,7 +20,6 @@ import {
   CheckIcon,
   CopyIcon,
   FileTextIcon,
-  Loader2Icon,
   XIcon,
 } from "lucide-react"
 import { ToolGlyph } from "@/components/transcript/tool-views"
@@ -113,11 +112,12 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
 })
 
 /**
- * One leading slot, three states: a spinner while the tool runs, its glyph
- * at rest, and the chevron whenever the pointer is near or the row is open.
- * The three are stacked and crossfaded with CSS alone — no state, no
- * re-render per token, and the row never shifts because the slot is one
- * fixed square.
+ * One leading slot, two layers: the tool's glyph, and the chevron whenever
+ * the pointer is near or the row is open. The glyph is what makes a row
+ * scannable, so it shows from the first frame; the running state is the
+ * status pip at the end of the row, not a spinner in place of identity.
+ * Crossfaded with CSS alone — no state, no re-render per token, and the row
+ * never shifts because the slot is one fixed square.
  */
 function LeadSlot({
   call,
@@ -132,25 +132,18 @@ function LeadSlot({
     "absolute inset-0 m-auto [transition:opacity_150ms_var(--ease-out),transform_150ms_var(--ease-out)]"
   return (
     <span className="relative size-3.5 shrink-0">
-      <Loader2Icon
-        className={cn(
-          layer,
-          "size-3.5 animate-spin text-foreground/80",
-          call.pending ? "opacity-100" : "opacity-0"
-        )}
-      />
       <ToolGlyph
         name={call.name}
         override={icon}
         className={cn(
           layer,
           "size-3.5",
-          call.isError ? "text-negative" : "text-faint",
-          call.pending
-            ? "opacity-0"
-            : open
-              ? "opacity-0"
-              : "opacity-100 group-hover/tool:opacity-0"
+          call.isError
+            ? "text-negative"
+            : call.pending
+              ? "text-foreground/80"
+              : "text-faint",
+          open ? "opacity-0" : "opacity-100 group-hover/tool:opacity-0"
         )}
       />
       <ChevronRightIcon
@@ -159,9 +152,7 @@ function LeadSlot({
           "size-3.5 text-faint",
           open
             ? "rotate-90 opacity-100"
-            : call.pending
-              ? "opacity-0"
-              : "opacity-0 group-hover/tool:opacity-100"
+            : "opacity-0 group-hover/tool:opacity-100"
         )}
       />
     </span>

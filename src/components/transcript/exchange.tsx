@@ -1,4 +1,8 @@
+import { PlanContextChips } from "@/components/composer/plan-context"
+import { appendPlanContext, parsePlanContext } from "@/lib/proposed-plan"
+import { ProposedPlanCard } from "./proposed-plan"
 import { ChangingLabel } from "@/components/ui/changing-label"
+import { RewindButton, PromptRewindButton } from "./rewind-button"
 import { useCopy } from "@/components/ui/use-copy"
 import { acp, useAcp, activeLiveAcp } from "@/state/acp"
 import { PlanSummary } from "./tool-details"
@@ -12,7 +16,6 @@ import {
   ThreadChip,
 } from "@/components/composer/reference-chip"
 import { Slot } from "@/extend/slot"
-import { tokenize } from "@/lib/mentions"
 import {
   pairTools,
   reportedSubagentCount,
@@ -21,6 +24,11 @@ import {
 } from "@/lib/tools"
 import { formatTime, textOf } from "@/lib/format"
 import { parseAttachmentAppendix } from "@/lib/attachments"
+import {
+  attachmentPromptSegments,
+  reusablePromptAttachments,
+  restoreAttachmentReferences,
+} from "@/lib/attachment-references"
 import { stripThreadReferenceAppendix } from "@/lib/thread-references"
 import {
   responseSections,
@@ -73,14 +81,21 @@ export const Exchange = memo(function Exchange({
     () => responseSections(exchange.response),
     [exchange.response]
   )
-  const plan = exchange.response.flatMap((message) => message.blocks.flatMap((block) => block.type === "toolResult" ? (block.details ?? []).filter((detail) => detail.type === "plan") : [])).at(-1)
+  const plan = exchange.response
+    .flatMap((message) =>
+      message.blocks.flatMap((block) =>
+        block.type === "toolResult"
+          ? (block.details ?? []).filter((detail) => detail.type === "plan")
+          : []
+      )
+    )
+    .at(-1)
   const provider = exchange.response.find(
     (message) => message.provider && HARNESS_LABEL[message.provider]
   )?.provider
   return (
     <article data-exchange={exchange.id} className="contain-turn scroll-mt-6">
       {exchange.prompt ? <Prompt message={exchange.prompt} /> : null}
-
       {exchange.system.map((message) => (
         <SystemNote key={message.id} message={message} />
       ))}
@@ -89,7 +104,14 @@ export const Exchange = memo(function Exchange({
         <div className={cn("flex flex-col gap-2.5", exchange.prompt && "mt-3")}>
           {provider ? <AgentByline provider={provider} /> : null}
           {sections.map((section, index) =>
-            section.kind === "prose" ? (
+            section.kind === "steer" ? (
+              <div key={section.id} className="mt-1">
+                <p className="mb-1 text-right text-label text-faint">
+                  Steered mid-turn
+                </p>
+                <Prompt message={section.message} />
+              </div>
+            ) : section.kind === "prose" ? (
               <Response key={section.id} message={section.message} showWork />
             ) : (
               <WorkSection
@@ -107,7 +129,11 @@ export const Exchange = memo(function Exchange({
         </div>
       ) : null}
 
-      {plan ? <div className="mt-3"><PlanSummary plan={plan} /></div> : null}
+      {plan ? (
+        <div className="mt-3">
+          <PlanSummary plan={plan} />
+        </div>
+      ) : null}
       {!streaming && exchange.response.length > 0 ? (
         <Footer exchange={exchange} />
       ) : null}
@@ -131,12 +157,39 @@ function AgentByline({ provider }: { provider: string }) {
 function Prompt({ message }: { message: ChatMessage }) {
   const raw = textOf(message.blocks)
   // Sent context appendices read back as chips, not walls of implementation detail.
-  const { body: text, files } = useMemo(
-    () => parseAttachmentAppendix(stripThreadReferenceAppendix(raw)),
+  const { body, plans } = useMemo(
+    () => parsePlanContext(stripThreadReferenceAppendix(raw)),
     [raw]
   )
+  const { body: text, files } = useMemo(
+    () => parseAttachmentAppendix(body),
+    [body]
+  )
   // References the user typed read back as the chips they were written as.
-  const segments = useMemo(() => tokenize(text), [text])
+  const segments = useMemo(
+    () => attachmentPromptSegments(text, files),
+    [text, files]
+  )
+  const reusable = useMemo(
+    () =>
+      reusablePromptAttachments(
+        files,
+        message.blocks.filter((block) => block.type === "attachment")
+      ),
+    [files, message.blocks]
+  )
+  const compose = () =>
+    window.dispatchEvent(
+      new CustomEvent("mako:compose", {
+        detail: {
+          text: appendPlanContext(
+            restoreAttachmentReferences(text, reusable),
+            plans
+          ),
+          attachments: reusable,
+        },
+      })
+    )
   // Edit and Fork exist only where the session tree knows this message —
   // native conversations. A foreign transcript's synthetic ids stay quiet.
   const node = useSession((state) => {
@@ -150,7 +203,7 @@ function Prompt({ message }: { message: ChatMessage }) {
     // stay reachable as a branch in History.
     if (!node) return
     if (node.parentId) await actions.navigate(node.parentId)
-    window.dispatchEvent(new CustomEvent("mako:compose", { detail: text }))
+    compose()
   }
 
   return (
@@ -163,6 +216,13 @@ function Prompt({ message }: { message: ChatMessage }) {
           {segments.map((segment, index) =>
             segment.kind === "text" ? (
               <span key={index}>{segment.text}</span>
+            ) : segment.kind === "attachment" ? (
+              <FileChip
+                key={index}
+                path={segment.file.path}
+                name={segment.file.name}
+                interactive
+              />
             ) : segment.kind === "file" ? (
               <FileChip key={index} path={segment.path} interactive />
             ) : segment.kind === "thread" ? (
@@ -176,6 +236,7 @@ function Prompt({ message }: { message: ChatMessage }) {
             )
           )}
         </div>
+        <PlanContextChips plans={plans} />
         {message.blocks
           .filter((block) => block.type === "attachment")
           .map((attachment, index) => (
@@ -186,9 +247,23 @@ function Prompt({ message }: { message: ChatMessage }) {
           ))}
         {files.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {files.map((file) => (
-              <FileChip key={file.path} path={file.path} interactive />
-            ))}
+            {files
+              .filter(
+                (file) =>
+                  !segments.some(
+                    (segment) =>
+                      segment.kind === "attachment" &&
+                      segment.file.path === file.path
+                  )
+              )
+              .map((file) => (
+                <FileChip
+                  key={file.path}
+                  path={file.path}
+                  name={file.name}
+                  interactive
+                />
+              ))}
           </div>
         ) : null}
       </div>
@@ -200,16 +275,13 @@ function Prompt({ message }: { message: ChatMessage }) {
         <button
           type="button"
           title="Put this prompt back in the composer"
-          onClick={() =>
-            window.dispatchEvent(
-              new CustomEvent("mako:compose", { detail: text })
-            )
-          }
+          onClick={compose}
           className="pressable flex items-center gap-1 rounded px-1 hover:text-foreground"
         >
           <RotateCcwIcon className="size-3" />
           Reuse
         </button>
+        <PromptRewindButton requestId={message.requestId} />
         {node ? (
           <>
             <button
@@ -439,9 +511,18 @@ function Response({
   const attachments = message.blocks.flatMap((block) =>
     block.type === "attachment" ? [block] : []
   )
+  const proposals = message.blocks.filter(
+    (block) => block.type === "proposed-plan"
+  )
   const blank =
-    !attachments.length && !thinking && !tools.length && !text && !message.error
+    !proposals.length &&
+    !attachments.length &&
+    !thinking &&
+    !tools.length &&
+    !text &&
+    !message.error
   const visible =
+    proposals.length ||
     attachments.length ||
     text ||
     message.error ||
@@ -468,6 +549,13 @@ function Response({
         <TranscriptAttachment
           key={attachment.id ?? index}
           attachment={attachment}
+        />
+      ))}
+      {proposals.map((plan) => (
+        <ProposedPlanCard
+          key={plan.id}
+          plan={plan}
+          streaming={message.streaming}
         />
       ))}
       {text ? <Prose text={text} streaming={message.streaming} /> : null}
@@ -597,24 +685,26 @@ function ForkButton({ exchange }: { exchange: ExchangeData }) {
   )
   const liveRequestId = useAcp((state) => {
     const live = activeLiveAcp(state)
-    const match = /^acp-user-(\d+)$/.exec(exchange.prompt?.id ?? "")
-    const block = match ? live?.blocks[Number(match[1])] : undefined
-    if (block?.type !== "user" || !block.requestId) return null
-    return live?.requests?.find((request) => request.id === block.requestId)
+    const requestId = exchange.prompt?.requestId
+    if (!requestId) return null
+    return live?.requests?.find((request) => request.id === requestId)
       ?.status === "completed"
-      ? block.requestId
+      ? requestId
       : null
   })
   if (liveRequestId)
     return (
-      <button
-        type="button"
-        title="Create an idle fork after this answer"
-        onClick={() => void acp.fork(liveRequestId)}
-        className="pressable flex items-center gap-1 rounded px-1 hover:text-foreground"
-      >
-        <GitForkIcon className="size-3" /> Fork
-      </button>
+      <>
+        <button
+          type="button"
+          title="Create an idle fork after this answer"
+          onClick={() => void acp.fork(liveRequestId)}
+          className="pressable flex items-center gap-1 rounded px-1 hover:text-foreground"
+        >
+          <GitForkIcon className="size-3" /> Fork
+        </button>
+        <RewindButton requestId={liveRequestId} />
+      </>
     )
   const at = last ? /^foreign-entry-(\d+)$/.exec(last.id) : null
   const entryIndex = at ? Number(at[1]) : null
