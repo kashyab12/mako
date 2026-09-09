@@ -1,0 +1,126 @@
+import assert from "node:assert/strict"
+import {
+  rpcRequest,
+  streamRequest,
+  runDiscovery,
+} from "../electron/providers/profile-transport.ts"
+import { withDiscoveryProcess } from "../electron/providers/discovery-process.ts"
+import { z } from "zod"
+
+const earlyExit = ["-e", "process.exit(2)"]
+await assert.rejects(
+  rpcRequest(process.execPath, earlyExit, "models/list", process.env, false),
+  /exited|closed/
+)
+await assert.rejects(
+  streamRequest(process.execPath, earlyExit, {}, process.env, () => undefined),
+  /exited|closed/
+)
+const closedInput = [
+  "-e",
+  'require("node:fs").closeSync(0); process.stderr.write("x".repeat(262144)); process.stdout.write(JSON.stringify({id:1,result:{}})+"\\n"); setTimeout(()=>process.exit(0),100)',
+]
+await assert.rejects(
+  rpcRequest(process.execPath, closedInput, "models/list", process.env, false),
+  /EPIPE|closed|exited|write/i
+)
+const replies = [
+  "-e",
+  'let text=""; process.stdin.on("data",chunk=>{text+=chunk;let n;while((n=text.indexOf("\\n"))>=0){const m=JSON.parse(text.slice(0,n));text=text.slice(n+1);if(m.id===1)process.stdout.write(JSON.stringify({id:1,result:{}})+"\\n");if(m.id===2)process.stdout.write(JSON.stringify({id:2,result:{models:["fixture"]}})+"\\n");}})',
+]
+assert.deepEqual(
+  await rpcRequest(
+    process.execPath,
+    replies,
+    "models/list",
+    process.env,
+    false
+  ),
+  { models: ["fixture"] }
+)
+const valueSchema = z.object({ value: z.string() })
+assert.equal(
+  await streamRequest(
+    process.execPath,
+    ["-e", "process.stdout.write(JSON.stringify({value:'complete'}))"],
+    {},
+    process.env,
+    (value) => valueSchema.parse(value).value
+  ),
+  "complete"
+)
+const rejectedAt = performance.now()
+await assert.rejects(
+  streamRequest(
+    process.execPath,
+    ["-e", "process.stdout.write('{}\\n');setInterval(()=>{},1000)"],
+    {},
+    process.env,
+    (value) => valueSchema.parse(value).value
+  ),
+  /invalid discovery response/
+)
+assert.ok(performance.now() - rejectedAt < 5_000)
+await assert.rejects(
+  runDiscovery(
+    process.execPath,
+    ["-e", "process.stdout.write('x'.repeat(9_000_000))"],
+    process.env
+  ),
+  /exceeded/
+)
+const pidSchema = z.object({ pid: z.number() })
+const pid = await streamRequest(
+  process.execPath,
+  [
+    "-e",
+    "process.on('SIGTERM',()=>{});setInterval(()=>{},1000);process.stdout.write(JSON.stringify({pid:process.pid})+'\\n')",
+  ],
+  {},
+  process.env,
+  (value) => pidSchema.parse(value).pid
+)
+assert.throws(() => process.kill(pid, 0), { code: "ESRCH" })
+let timedPid: number | undefined
+await assert.rejects(
+  withDiscoveryProcess(
+    {
+      command: process.execPath,
+      args: ["-e", "setInterval(()=>{},1000)"],
+      env: process.env,
+      timeoutMs: 200,
+    },
+    async ({ child, phase, exited }) => {
+      timedPid = child.pid
+      phase("fixture request")
+      await exited
+    }
+  ),
+  /fixture request after 200 ms/
+)
+assert.ok(timedPid)
+assert.throws(() => process.kill(timedPid, 0), { code: "ESRCH" })
+let running = 0
+let peak = 0
+await Promise.all(
+  Array.from({ length: 8 }, () =>
+    withDiscoveryProcess(
+      {
+        command: process.execPath,
+        args: ["-e", "setTimeout(()=>{},100)"],
+        env: process.env,
+      },
+      async ({ exited }) => {
+        running++
+        peak = Math.max(peak, running)
+        await exited
+        running--
+      }
+    )
+  )
+)
+assert.equal(peak, 4)
+assert.equal(running, 0)
+console.log(
+  "Profile transport: early exits, closed stdin, stderr backpressure, complete final frames, invalid responses, output limits, bounded concurrency, deadlines, and confirmed process termination verified"
+)

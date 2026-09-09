@@ -2,6 +2,8 @@ import assert from "node:assert/strict"
 import {
   readAttachmentDrafts,
   writeAttachmentDrafts,
+  readDraftStorage,
+  writeDraftStorage,
 } from "../src/lib/draft-persistence.ts"
 const saved = new Map<string, string>()
 Object.assign(globalThis, {
@@ -88,3 +90,14 @@ assert.ok(saved.get("mako.session-drafts.v1")?.includes("other conversation"))
 console.log(
   "Delegation drafts persist per conversation; late acceptance preserves newer text"
 )
+writeDraftStorage("preview-proof", "main draft")
+Object.assign(globalThis, { location: { search: "?preview=one" } })
+assert.equal(readDraftStorage("preview-proof"), null)
+writeDraftStorage("preview-proof", "preview draft")
+Object.assign(globalThis, { location: { search: "?preview=two" } })
+assert.equal(readDraftStorage("preview-proof"), null)
+Object.assign(globalThis, { location: { search: "?preview=one" } })
+assert.equal(readDraftStorage("preview-proof"), "preview draft")
+Object.assign(globalThis, { location: { search: "" } })
+assert.equal(readDraftStorage("preview-proof"), "main draft")
+console.log("Side-by-side preview drafts persist independently and cannot overwrite the working interface's draft")

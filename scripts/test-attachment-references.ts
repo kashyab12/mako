@@ -3,13 +3,16 @@ import {
   attachmentReference,
   attachmentRanges,
   editAttachmentReferences,
+  removeAttachmentReference,
   restoreAttachmentReferences,
   namedAttachmentReference,
   attachmentPromptSegments,
   reusablePromptAttachments,
+  mergeAttachmentDraft,
 } from "../src/lib/attachment-references.ts"
 import {
   buildForeignPrompt,
+  buildPrompt,
   parseAttachmentAppendix,
   type Attachment,
 } from "../src/lib/attachments.ts"
@@ -102,8 +105,138 @@ for (const body of [draft, "Compare [Attachment 1] with [Attachment 2]."]) {
     ).includes(image.stagedPath!)
   )
 }
-console.log(
-  "Inline attachment edits, deletion payloads, filename collisions, saved drafts, legacy transcript rendering, and reuse passed"
+const collisionNames = [
+  "notes.txt",
+  "notes.txt (3)",
+  "notes.txt",
+  "notes.txt (4)",
+  "notes.txt",
+]
+const collisionReferences: string[] = []
+for (const [index, name] of collisionNames.entries()) {
+  const reference = namedAttachmentReference(
+    name,
+    index + 1,
+    collisionReferences
+  )
+  assert.ok(
+    !collisionReferences.includes(reference),
+    `${reference} must identify exactly one file`
+  )
+  collisionReferences.push(reference)
+}
+
+const nested: Attachment = {
+  ...text,
+  id: "nested",
+  index: 3,
+  name: "report [notes.txt]",
+  reference: "[report [notes.txt]]",
+  stagedPath: "/retained/report-notes.txt",
+}
+const nestedDraft = `${nested.reference} then ${text.reference}`
+assert.deepEqual(
+  attachmentRanges(nestedDraft, [text, nested]).map((range) => range.item.id),
+  [nested.id, text.id]
+)
+const nestedEdit = editAttachmentReferences(nestedDraft, nestedDraft.slice(1), [
+  text,
+  nested,
+])
+assert.equal(nestedEdit.text, ` then ${text.reference}`)
+assert.deepEqual(nestedEdit.removed, [nested.id])
+assert.equal(
+  removeAttachmentReference(nestedDraft, [text, nested], text.id),
+  `${nested.reference} then `
+)
+assert.equal(
+  removeAttachmentReference(nestedDraft, [text, nested], nested.id),
+  ` then ${text.reference}`
+)
+assert.equal(
+  restoreAttachmentReferences(nested.reference!, [text, nested]),
+  `${nested.reference}\n${text.reference}`
+)
+const repeated = `${text.reference} ${text.reference}`
+assert.deepEqual(editAttachmentReferences(repeated, "", [text]).removed, [
+  text.id,
+])
+assert.deepEqual(
+  editAttachmentReferences(repeated, text.reference!, [text]).removed,
+  []
+)
+
+const duplicate: Attachment = {
+  ...text,
+  id: "duplicate",
+  index: 3,
+  stagedPath: "/retained/other-notes.txt",
+}
+const olderDuplicate = { ...text, reference: "[notes.txt (2)]" }
+for (const items of [
+  [olderDuplicate, duplicate],
+  [text, nested],
+]) {
+  const body = items.map(attachmentReference).join(" then ")
+  for (const sent of [
+    buildForeignPrompt(body, items),
+    buildPrompt(body, items).text,
+  ]) {
+    const parsed = parseAttachmentAppendix(sent)
+    const segments = attachmentPromptSegments(parsed.body, parsed.files)
+    assert.deepEqual(
+      segments
+        .filter((segment) => segment.kind === "attachment")
+        .map((segment) => segment.file.path),
+      items.map((item) => item.stagedPath),
+      "Send and transcript must preserve file identity rather than matching the first filename"
+    )
+    const restored = reusablePromptAttachments(parsed.files, [])
+    const restoredText = restoreAttachmentReferences(parsed.body, restored)
+    assert.deepEqual(
+      attachmentRanges(restoredText, restored).map(
+        (range) => range.item.stagedPath
+      ),
+      items.map((item) => item.stagedPath)
+    )
+  }
+}
+
+const incoming = {
+  ...text,
+  id: "reused",
+  stagedPath: "/retained/reused-notes.txt",
+}
+const merged = mergeAttachmentDraft([text], [incoming])
+assert.equal(new Set(merged.map((item) => item.index)).size, 2)
+assert.equal(new Set(merged.map(attachmentReference)).size, 2)
+assert.equal(merged[0], incoming)
+assert.deepEqual(mergeAttachmentDraft(merged, [incoming]), merged)
+const mergedText = restoreAttachmentReferences(incoming.reference!, merged)
+const mergedPrompt = parseAttachmentAppendix(
+  buildForeignPrompt(mergedText, merged)
+)
+assert.deepEqual(
+  attachmentPromptSegments(mergedPrompt.body, mergedPrompt.files)
+    .filter((part) => part.kind === "attachment")
+    .map((part) => part.file.path),
+  merged.map((item) => item.stagedPath)
+)
+
+const sparse = reusablePromptAttachments(
+  [{ index: 2, name: text.name, path: text.stagedPath! }],
+  [
+    {
+      type: "attachment",
+      name: "extra.txt",
+      mimeType: "text/plain",
+      source: { kind: "file", path: "/retained/extra.txt" },
+    },
+  ]
+)
+assert.deepEqual(
+  sparse.map((item) => item.index),
+  [2, 3]
 )
 
 const onlyFiles = parseAttachmentAppendix(buildForeignPrompt("", [image]))
@@ -112,4 +245,7 @@ assert.equal(onlyFiles.files[0]?.name, image.name)
 assert.equal(
   restoreAttachmentReferences("Paragraph", [image]),
   `Paragraph\n${image.reference}`
+)
+console.log(
+  "Attachment identity survives colliding filenames, nested references, removal, send, transcript rendering, and reuse"
 )

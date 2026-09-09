@@ -243,9 +243,10 @@ assert.equal(
   1,
   "Late steering confirmation must not create an empty exchange"
 )
-assert.equal(exchanges[0]?.response.length, 2)
-assert.equal(exchanges[0]?.steering?.[0]?.blocks[0]?.type, "text")
-assert.deepEqual(exchanges[0]?.steering?.[0]?.blocks[1], image)
+assert.equal(exchanges[0]?.response.length, 3)
+assert.deepEqual(exchanges[0]?.response.map((message) => message.role), ["assistant", "user", "assistant"])
+assert.equal(exchanges[0]?.response[1]?.blocks[0]?.type, "text")
+assert.deepEqual(exchanges[0]?.response[1]?.blocks[1], image)
 console.log(
   "Steering stays with its original exchange, whole-answer copy and retained attachments"
 )
@@ -264,4 +265,4 @@ const portableSteering = toExchanges(
   ])
 )
 assert.equal(portableSteering.length, 1)
-assert.equal(portableSteering[0]?.steering?.length, 1)
+assert.equal(portableSteering[0]?.response.filter((message) => message.role === "user").length, 1)

@@ -6,12 +6,18 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import WebSocket from "ws"
+import { z } from "zod"
 import { assertPackagedImports } from "./test-packaged-imports.mjs"
 
-const app = resolve(
-  process.argv[2] ?? "/tmp/mako-parity-package/mac-arm64/Mako.app"
-)
-const provider = process.argv[3] ?? "claude"
+const StartupTraceSchema = z.object({
+  stage: z.enum(["local-control", "profile", "accepted"]),
+  elapsedMs: z.number().nonnegative(),
+})
+const rendererOnly = process.argv.includes("--renderer-only")
+const args = process.argv.slice(2).filter((arg) => arg !== "--renderer-only")
+assert.ok(args.length <= 2, "Use [Mako.app] [provider] [--renderer-only]")
+const app = resolve(args[0] ?? "/tmp/mako-parity-package/mac-arm64/Mako.app")
+const provider = args[1] ?? "claude"
 const root = await mkdtemp(join(tmpdir(), "mako-packaged-lifecycle-"))
 const workspace = join(root, "workspace")
 await mkdir(workspace)
@@ -22,9 +28,28 @@ await writeFile(
 const executable = join(app, "Contents/MacOS/Mako")
 const conversationId = randomUUID()
 const marker = `PACKAGE_${randomUUID().replaceAll("-", "")}`
-const report = { app, provider, root, phases: [] }
-const soakMs = Number(process.env.MAKO_PACKAGE_SOAK_MS ?? 0)
+const report = {
+  app,
+  provider: rendererOnly ? null : provider,
+  root,
+  outcome: "running",
+  phases: [],
+}
+const soakMs = Number(
+  process.env.MAKO_PACKAGE_SOAK_MS ?? (rendererOnly ? 30_000 : 0)
+)
 assert.ok(Number.isFinite(soakMs) && soakMs >= 0 && soakMs <= 900_000)
+const memorySampler = join(root, "memory-sample")
+if (soakMs)
+  execFileSync("clang", [
+    "-O2",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    resolve("scripts/memory-sample.c"),
+    "-o",
+    memorySampler,
+  ])
 let child
 let socket
 let counter = 0
@@ -90,7 +115,29 @@ async function startPackage() {
     ],
     { cwd: workspace, env, detached: true, stdio: ["ignore", "pipe", "pipe"] }
   )
-  for (const stream of [child.stdout, child.stderr]) stream.resume()
+  child.stderr.resume()
+  let traceBuffer = ""
+  child.stdout.on("data", (chunk) => {
+    traceBuffer = (traceBuffer + chunk.toString()).slice(-8192)
+    const lines = traceBuffer.split("\n")
+    traceBuffer = lines.pop() ?? ""
+    for (const line of lines) {
+      if (!line.startsWith("[mako-startup] ")) continue
+      let value
+      try {
+        value = JSON.parse(line.slice(15))
+      } catch {
+        continue
+      }
+      const trace = StartupTraceSchema.safeParse(value)
+      if (trace.success) {
+        report.phases.push({ phase: "startup-trace", ...trace.data })
+        console.log(
+          `Startup ${trace.data.stage}: ${Math.round(trace.data.elapsedMs)} ms`
+        )
+      }
+    }
+  })
   child.once("error", (error) => {
     launchError = error
   })
@@ -137,7 +184,9 @@ async function startPackage() {
   })
   await waitFor(
     () =>
-      evaluate("Boolean(window.mako && document.querySelector('textarea'))"),
+      evaluate(
+        "Boolean(window.mako && document.querySelector('.composer-input'))"
+      ),
     Boolean,
     "preload and composer"
   )
@@ -174,52 +223,199 @@ async function memorySample() {
     previous = owned.size
     for (const [pid, parent] of processes) if (owned.has(parent)) owned.add(pid)
   }
+  assert.ok(
+    owned.size <= 128,
+    "Owned process count exceeded the verification budget"
+  )
+  const measured = JSON.parse(
+    execFileSync(memorySampler, [...owned].map(String), {
+      encoding: "utf8",
+      timeout: 5000,
+    })
+  )
+  for (const item of measured) {
+    if (item.error === undefined) continue
+    try {
+      process.kill(item.pid, 0)
+      item.processState = execFileSync(
+        "ps",
+        ["-p", String(item.pid), "-o", "stat=", "-o", "uid=", "-o", "comm="],
+        { encoding: "utf8", timeout: 5000 }
+      ).trim()
+      if (item.processState.startsWith("Z")) item.exited = true
+      item.privilegedProbe =
+        item.error === 1 &&
+        /^\S+\s+\d+\s+(?:\/bin\/)?ps$/.test(item.processState)
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ESRCH")
+        item.exited = true
+      else if (
+        error instanceof Error &&
+        "status" in error &&
+        error.status === 1
+      ) {
+        try {
+          process.kill(item.pid, 0)
+        } catch (probeError) {
+          if (
+            probeError instanceof Error &&
+            "code" in probeError &&
+            probeError.code === "ESRCH"
+          )
+            item.exited = true
+          else throw probeError
+        }
+      } else throw error
+    }
+  }
+  const pressure = execFileSync("memory_pressure", ["-Q"], {
+    encoding: "utf8",
+    timeout: 5000,
+  })
+  const free = /System-wide memory free percentage:\s*(\d+)%/.exec(pressure)
+  assert.ok(free, "System memory pressure was unavailable")
   return {
     at: Date.now(),
     rssBytes: processes
       .filter(([pid]) => owned.has(pid))
       .reduce((sum, [, , rss]) => sum + rss * 1024, 0),
+    unmeasuredPhysicalProcesses: measured.filter(
+      (item) => item.error !== undefined && !item.exited
+    ),
+    measuredPhysicalFootprintBytes: measured.reduce(
+      (sum, item) => sum + (item.physicalFootprintBytes ?? 0),
+      0
+    ),
+    memoryFreePercent: Number(free[1]),
     processCount: owned.size,
+    processes: measured,
     renderer: await command("Runtime.getHeapUsage"),
   }
 }
 async function soak() {
   if (!soakMs) return
   const draft = `Package reload draft ${randomUUID()}`
-  await evaluate("document.querySelector('textarea').focus()")
+  await waitFor(
+    () =>
+      evaluate(
+        "Boolean(document.querySelector('.composer-input:not([readonly])'))"
+      ),
+    Boolean,
+    "workspace draft target"
+  )
+  await evaluate("document.querySelector('.composer-input').focus()")
   await command("Input.insertText", { text: draft })
+  const draftState = () =>
+    evaluate(`({
+    value: document.querySelector('.composer-input')?.value,
+    focused: document.activeElement?.className,
+    stored: localStorage.getItem('mako.session-drafts.v1')
+  })`)
+  report.phases.push({
+    phase: "draft-before-reload",
+    state: await draftState(),
+  })
+  await waitFor(
+    () => evaluate("document.querySelector('.composer-input')?.value"),
+    (value) => value === draft,
+    "trusted draft input"
+  )
   const samples = []
   const started = Date.now()
-  let reloads = 0
+  const phase = {
+    phase: "renderer-reload-soak",
+    physicalCoverage:
+      "Mako and measurable children; privileged ps readings are explicitly unavailable",
+    elapsedMs: 0,
+    reloads: 0,
+    samples,
+  }
+  report.phases.push(phase)
   while (Date.now() - started < soakMs) {
     const beforeReload = await evaluate("performance.timeOrigin")
     await command("Page.reload")
     await waitFor(
       () =>
         evaluate(
-          `performance.timeOrigin !== ${beforeReload} && document.querySelector('textarea')?.value === ${JSON.stringify(draft)}`
+          `performance.timeOrigin !== ${beforeReload} && document.querySelector('.composer-input')?.value === ${JSON.stringify(draft)}`
         ).catch(() => false),
       Boolean,
       "draft recovery after packaged renderer reload"
+    ).catch(async (error) => {
+      report.phases.push({
+        phase: "draft-reload-failure",
+        state: await draftState(),
+      })
+      throw error
+    })
+    phase.reloads++
+    const sample = await memorySample()
+    samples.push(sample)
+    phase.elapsedMs = Date.now() - started
+    assert.ok(
+      sample.processes.some(
+        (item) =>
+          item.pid === child.pid && item.physicalFootprintBytes !== undefined
+      ),
+      "Host physical footprint was unavailable"
     )
-    reloads++
-    samples.push(await memorySample())
-    if (reloads % 6 === 0)
-      console.log(`Packaged soak: ${reloads} reloads with draft preserved`)
+    assert.ok(
+      sample.processes.every(
+        (item) =>
+          item.error === undefined ||
+          item.error === 3 ||
+          item.exited ||
+          item.privilegedProbe
+      ),
+      "Physical footprint sampling was denied or failed"
+    )
+    assert.ok(
+      sample.memoryFreePercent >= 10,
+      "Stopped the soak because system memory pressure is too high"
+    )
+    assert.ok(
+      sample.measuredPhysicalFootprintBytes <= 4 * 1024 ** 3,
+      "Measured physical footprint exceeded the 4 GiB safety limit"
+    )
+    assert.ok(
+      sample.rssBytes <= 4 * 1024 ** 3,
+      "Full process-tree RSS exceeded the 4 GiB safety limit"
+    )
+    if (phase.reloads % 6 === 0)
+      console.log(
+        `Packaged soak: ${phase.reloads} reloads, ${Math.round(sample.measuredPhysicalFootprintBytes / 1024 ** 2)} MiB measured physical footprint, draft preserved`
+      )
     await delay(10_000)
   }
-  report.phases.push({
-    phase: "renderer-reload-soak",
-    elapsedMs: Date.now() - started,
-    reloads,
-    samples,
-  })
+  phase.elapsedMs = Date.now() - started
+  if (samples.length >= 30) {
+    const median = (items) =>
+      items
+        .map((item) => item.measuredPhysicalFootprintBytes)
+        .sort((a, b) => a - b)[Math.floor(items.length / 2)]
+    const baseline = median(samples.slice(6, 12))
+    const final = median(samples.slice(-6))
+    phase.steadyState = {
+      baselineBytes: baseline,
+      finalBytes: final,
+      growthBytes: final - baseline,
+    }
+    assert.ok(
+      final - baseline <= Math.max(256 * 1024 ** 2, baseline * 0.25),
+      "Physical footprint grew beyond the steady-state budget"
+    )
+  }
 }
 async function completed(requestId) {
   return waitFor(
     () => bridge("liveSnapshot", [conversationId]),
     (snapshot) => {
       const request = snapshot?.requests.find((item) => item.id === requestId)
+      const transfer = snapshot?.control?.transfers.find(
+        (item) => item.input.id === requestId
+      )
+      if (transfer?.state.kind === "failed")
+        throw new Error(transfer.state.error)
       if (
         request &&
         ["failed", "uncertain", "interrupted"].includes(request.status)
@@ -255,67 +451,73 @@ try {
   const launch = await startPackage()
   report.phases.push({ phase: "packaged-launch", ...launch })
   console.log("Packaged renderer and preload ready in an isolated profile")
-  const requestId = randomUUID()
-  const sentAt = Date.now()
-  await bridge("liveStart", [
-    provider,
-    workspace,
-    {
-      conversationId,
-      title: "Mako package verification",
-      initialRequest: {
-        id: requestId,
-        text: `Remember this marker for the next turn: ${marker}. Reply with just the marker. Do not use tools or modify files.`,
-        attachments: [],
+  if (!rendererOnly) {
+    const requestId = randomUUID()
+    const sentAt = Date.now()
+    await bridge("liveStart", [
+      provider,
+      workspace,
+      {
+        conversationId,
+        title: "Mako package verification",
+        initialRequest: {
+          id: requestId,
+          text: `Remember this marker for the next turn: ${marker}. Reply with just the marker. Do not use tools or modify files.`,
+          attachments: [],
+        },
       },
-    },
-  ])
-  const acceptedMs = Date.now() - sentAt
-  const first = await completed(requestId)
-  assert.ok(answer(first, requestId).includes(marker))
-  const nativeId = first.session.nativeId
-  report.phases.push({
-    phase: "provider-completion",
-    elapsedMs: Date.now() - sentAt,
-    acceptedMs,
-    nativeIdPresent: Boolean(nativeId),
-  })
-  console.log("Packaged provider completed a real no-tools turn")
-  await waitFor(
-    () => bridge("liveSnapshot", [conversationId]),
-    (snapshot) =>
-      Boolean(
-        snapshot?.control.bindings.find(
-          (binding) => binding.nativeId === nativeId
-        )?.checkpoint
-      ),
-    "native session discovery and durable checkpoint"
-  )
-  await stopPackage()
-  // The same profile must recover its journal; the second prompt does not include the marker.
-  await startPackage()
-  const loaded = await bridge("liveSnapshot", [conversationId])
-  assert.ok(loaded)
-  assert.equal(loaded.session.nativeId, nativeId)
-  const nextId = randomUUID()
-  await bridge("livePrompt", [
-    conversationId,
-    nextId,
-    "Reply only with the marker from my previous turn. Do not use tools or modify files.",
-    [],
-  ])
-  const resumed = await completed(nextId)
-  assert.equal(resumed.session.nativeId, nativeId)
-  assert.ok(
-    answer(resumed, nextId).includes(marker),
-    "Resumed provider must recall the original marker"
-  )
-  report.phases.push({ phase: "restart-native-resume-recall", passed: true })
-  await bridge("liveClose", [conversationId])
+    ])
+    const acceptedMs = Date.now() - sentAt
+    const first = await completed(requestId)
+    assert.ok(answer(first, requestId).includes(marker))
+    const nativeId = first.session.nativeId
+    report.phases.push({
+      phase: "provider-completion",
+      elapsedMs: Date.now() - sentAt,
+      acceptedMs,
+      nativeIdPresent: Boolean(nativeId),
+    })
+    console.log("Packaged provider completed a real no-tools turn")
+    await waitFor(
+      () => bridge("liveSnapshot", [conversationId]),
+      (snapshot) =>
+        Boolean(
+          snapshot?.control.bindings.find(
+            (binding) => binding.nativeId === nativeId
+          )?.checkpoint
+        ),
+      "native session discovery and durable checkpoint"
+    )
+    await stopPackage()
+    // The same profile must recover its journal; the second prompt does not include the marker.
+    await startPackage()
+    const loaded = await bridge("liveSnapshot", [conversationId])
+    assert.ok(loaded)
+    assert.equal(loaded.session.nativeId, nativeId)
+    const nextId = randomUUID()
+    await bridge("livePrompt", [
+      conversationId,
+      nextId,
+      "Reply only with the marker from my previous turn. Do not use tools or modify files.",
+      [],
+    ])
+    const resumed = await completed(nextId)
+    assert.equal(resumed.session.nativeId, nativeId)
+    assert.ok(
+      answer(resumed, nextId).includes(marker),
+      "Resumed provider must recall the original marker"
+    )
+    report.phases.push({ phase: "restart-native-resume-recall", passed: true })
+    await bridge("liveClose", [conversationId])
+    console.log(
+      "Packaged restart retained the journal and resumed the same native session with marker recall"
+    )
+  }
   await soak()
-  console.log(
-    "Packaged restart retained the journal and resumed the same native session with marker recall"
-  )
+  report.outcome = "passed"
+} catch (error) {
+  report.outcome = "failed"
+  throw error
 } finally {
   await stopPackage()
   await writeFile(join(root, "result.json"), JSON.stringify(report, null, 2))

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { settingValueLabel } from "../src/components/composer/settings-source.ts"
 import {
   canonicalHarnessModelId,
   resolveHarnessTuning,
@@ -10,7 +11,13 @@ import {
   normalizeDevinModels,
   normalizeGrokModels,
 } from "@mako/sessions/model-catalog"
-import { harnessProfiles } from "../electron/harnesses.ts"
+import {
+  modelByIdentity,
+  optionAccepts,
+  resolveSessionSettings,
+} from "@mako/sessions/settings"
+import { harnessProfile } from "../electron/harnesses.ts"
+import { providerHost } from "../electron/providers/index.ts"
 import { claudeProfileLoader } from "../electron/providers/claude/profile.ts"
 import { devinProfileLoader } from "../electron/providers/devin/profile.ts"
 import { availableProviderProfile } from "../electron/providers/profile-loader.ts"
@@ -231,6 +238,19 @@ function assertFixtureProfiles(): void {
   assert.equal(fast?.kind, "select")
   if (fast?.kind === "select") {
     assert.equal(fast.presentation, "toggle")
+    assert.equal(settingValueLabel(fast, "false"), "Standard")
+    assert.equal(settingValueLabel(fast, "true"), "Fast")
+    assert.equal(
+      settingValueLabel({ ...fast, role: undefined }, "false"),
+      "Off"
+    )
+    assert.equal(
+      settingValueLabel(
+        { kind: "boolean", id: "enabled", label: "Enabled" },
+        false
+      ),
+      "Off"
+    )
     assert.deepEqual(
       fast.values.map((entry) => entry.value),
       ["false", "true"]
@@ -351,67 +371,75 @@ function assertGenericProfile(profile: HarnessProfile): void {
 }
 
 function assertLiveProfile(profile: HarnessProfile): void {
+  assert.ok(
+    profile.available && !profile.pending,
+    `${profile.id}: ${profile.error ?? "discovery incomplete"}`
+  )
+  assert.equal(
+    profile.configurationError,
+    undefined,
+    `${profile.id}: configuration discovery failed`
+  )
   assertGenericProfile(profile)
-  if (profile.id === "claude") {
-    assert(profile.models.every((model) => model.launchId))
-    assert(
-      profile.models.every(
-        (model) => model.id.length > 0 && model.label.length > 0
+  const model = modelByIdentity(profile.models, profile.settings?.model)
+  assert.ok(
+    model,
+    `${profile.id} must report an effective model present in its catalog`
+  )
+  const resolved = resolveSessionSettings({
+    models: profile.models,
+    context: "new",
+    phase: "launch",
+    defaults: profile.settings,
+  })
+  assert.equal(resolved.model.kind, "known")
+  assert.deepEqual(resolved.issues, [], `${profile.id} defaults must be valid`)
+  assert.equal(
+    new Set(model.options.map((option) => option.id)).size,
+    model.options.length
+  )
+  for (const option of model.options) {
+    const value = resolved.options[option.id]
+    if (option.role)
+      assert.ok(
+        value?.kind === "known",
+        `${profile.id}: ${model.id} did not report ${option.id}`
       )
-    )
-  }
-  if (profile.id === "codex") {
-    for (const id of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
-      const model = profile.models.find((entry) => entry.id === id)
-      assert(model, `Codex did not report ${id}`)
-      assert.equal(option(model, "serviceTier")?.kind, "select")
-    }
-  }
-  if (profile.id === "cursor") {
-    assert(
-      profile.models
-        .flatMap((model) => model.options)
-        .every(
-          (entry) =>
-            entry.kind !== "select" ||
-            entry.values.every((value) => value.value === `${value.value}`)
-        )
-    )
-    assert.equal(profile.defaultModel, "auto-smart")
-    if (profile.configuredModel)
-      assert.notEqual(profile.configuredModel, profile.defaultModel)
-  }
-  if (profile.id === "grok") {
-    assert(
-      profile.models.every(
-        (model) => option(model, "effort")?.kind === "select"
+    if (value?.kind === "known")
+      assert.ok(
+        optionAccepts(option, value.value),
+        `${profile.id}: ${option.id} default is not supported`
       )
-    )
   }
-  if (profile.id === "devin") {
-    assert.equal(profile.defaultModel, undefined)
-    assert(
-      profile.models.filter((model) => model.id === "adaptive").length <= 1
-    )
-    const variantIds = profile.models.flatMap(
-      (model) => model.variants?.map((variant) => variant.id) ?? []
-    )
-    assert.equal(new Set(variantIds).size, variantIds.length)
-    const current = profile.models.find((model) => model.id === "gpt-5.6-sol")
-    if (current) {
-      assert(
-        current.variants?.every(
-          (variant) => variant.contextWindow && variant.maxOutputTokens
-        )
-      )
-    }
-  }
+  console.log(`${profile.id}: ${JSON.stringify(resolved.settings)}`)
 }
 
 assertFixtureProfiles()
-const live = process.argv.includes("--live") ? await harnessProfiles() : []
-const available = live.filter((profile) => profile.available)
-for (const profile of available) assertLiveProfile(profile)
-console.log(
-  `Harness model checks passed: fixtures + ${available.length} installed profiles`
-)
+if (process.argv.includes("--live")) {
+  const loaders = providerHost.profiles.list()
+  assert.ok(loaders.length > 0, "No providers registered")
+  const failures: string[] = []
+  for (const loader of loaders) {
+    try {
+      assertLiveProfile(
+        await harnessProfile(loader.provider, true, process.cwd())
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      failures.push(`${loader.provider}: ${message}`)
+      console.error(`FAIL: ${loader.provider}: ${message}`)
+    }
+  }
+  assert.deepEqual(
+    failures,
+    [],
+    "Every registered provider must pass fresh discovery"
+  )
+  console.log(
+    `Harness model checks passed: fixtures + ${loaders.length} freshly discovered profiles`
+  )
+} else {
+  console.log(
+    "Harness model fixture checks passed; live discovery not requested"
+  )
+}

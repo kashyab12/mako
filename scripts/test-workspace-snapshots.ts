@@ -12,6 +12,8 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
+import { importSnapshotObjects } from "../electron/workspace-snapshot-git.js"
 import { WorkspaceSnapshots } from "../electron/workspace-snapshots.js"
 import {
   RewindPlanSchema,
@@ -269,9 +271,21 @@ try {
   legacyGit("add", ".")
   writeFileSync(path, "old working content\n")
   const saved = await legacyStore.capture(legacyCwd)
+  await importSnapshotObjects(legacyCwd, join(legacyRoot, "store", saved.id))
+  const metadata = new DatabaseSync(join(legacyRoot, "store/snapshots.sqlite"))
+  metadata
+    .prepare(
+      "UPDATE snapshots SET value=json_remove(value, '$.storage') WHERE id=?"
+    )
+    .run(saved.id)
+  metadata.close()
   // Reproduce the previous checkpoint format: only the working tree is rooted.
   const ref = `refs/mako/checkpoints/${saved.id}`
-  const tree = legacyGit("rev-parse", `${ref}^{tree}`)
+  const tree = legacyGit(
+    `--git-dir=${join(legacyRoot, "store", saved.id, "git")}`,
+    "rev-parse",
+    `${ref}^{tree}`
+  )
   const commit = legacyGit("commit-tree", tree, "-m", "Legacy checkpoint")
   legacyGit("update-ref", ref, commit)
   writeFileSync(path, "new content to preserve\n")

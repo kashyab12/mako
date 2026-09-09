@@ -1,4 +1,16 @@
 import { ProposedPlanCard } from "../src/components/transcript/proposed-plan"
+import { Exchange } from "../src/components/transcript/exchange"
+import { Prose } from "../src/components/transcript/markdown"
+import { RetainedRequests } from "../src/components/viewer/acp-panel"
+import { recoverableRequests } from "../src/state/prompt-delivery"
+import { agentActivity } from "../src/state/agent-activity"
+import { ActivityMark } from "../src/components/ui/activity-mark"
+import { FolderActivity } from "../src/components/rail/rail-activity"
+import { ThreadStatusMark } from "../src/components/rail/thread-status"
+import type { ThreadFolder } from "../src/lib/thread-folders"
+import { AttachmentStrip, InlineAttachment } from "../src/components/composer/attachments"
+import type { Attachment } from "../src/lib/attachments"
+import { projectDraftKey } from "../src/state/drafts"
 import { TranscriptSourceContext } from "../src/components/transcript/source-context"
 import { draftPlanReply } from "../src/state/plans"
 import {
@@ -267,3 +279,79 @@ assert.equal(restoreEmptyDraft(id, finalDraft.text, finalDraft.plans), true)
 console.log(
   "Plan context survives refused sends and newer edits; accepted sends clear only their own captured draft"
 )
+
+const screenshot: Attachment = {
+  id: "screenshot", index: 1, kind: "image", mimeType: "image/png", name: "Screenshot.png",
+  preview: "blob:fixture-image", stagedPath: "/retained/image.png", size: 42,
+}
+const clip: Attachment = { ...screenshot, id: "clip", name: "Clip.mp4", kind: "binary", mimeType: "video/mp4", preview: "blob:fixture-video" }
+const inline = renderToStaticMarkup(<InlineAttachment item={screenshot} reference="[Screenshot.png]" />)
+assert.match(inline, /\[Screenshot.png\]/)
+assert.doesNotMatch(inline, /<button|Remove|role="button"/)
+const previews = renderToStaticMarkup(<AttachmentStrip items={[screenshot, clip]} onRemove={() => {}} />)
+assert.match(previews, /<img/)
+assert.match(previews, /<video/)
+assert.equal((previews.match(/aria-label="Remove /g) ?? []).length, 2)
+assert.doesNotMatch(previews, /autoplay/i)
+rememberDraft(projectDraftKey("/project"), "Unfinished project prompt")
+rememberDraft(projectDraftKey("/other"), "Other project")
+assert.equal(draftText(projectDraftKey("/project/")), "Unfinished project prompt")
+assert.equal(draftText(projectDraftKey("/other")), "Other project")
+console.log("Composer: native inline references, one remove control per preview, image/video previews, and project-scoped drafts verified")
+
+const formattedPrompt = "- **85** still have no usable office street candidate.\n\n\n\n\nNo way dude. This is fucking not possible. We have to figure this out. Either the office address or sometimes the office address, maybe also their first address where they incorporated, or whatever it is. California must have that address or Delaware or something. They must have that address. We should get that shit. Come on man"
+const formatted = renderToStaticMarkup(<Exchange exchange={{id:"format", prompt:{id:"format", role:"user", blocks:[{type:"text",text:formattedPrompt}]}, response:[], system:[]}} />)
+assert.match(formatted, /<ul>/)
+assert.match(formatted, /<strong>85<\/strong>/)
+assert.doesNotMatch(formatted, /\*\*85\*\*/)
+assert.match(formatted, /prompt-prose whitespace-normal/)
+assert.match(formatted, /aria-label="Copy question"/)
+const files = [{index:1, name:"Screenshot.png", path:"/retained/Screenshot.png"}]
+const references = renderToStaticMarkup(<Prose text="Use **@src/file.ts** with [Screenshot.png] and $review." references={files} />)
+assert.match(references, /Open src\/file.ts/)
+assert.match(references, /Open \/retained\/Screenshot.png/)
+assert.match(references, /Skill: review/)
+const literal = renderToStaticMarkup(<Prose text={'```text\n@src/file.ts [Screenshot.png]\n```'} references={files} />)
+assert.doesNotMatch(literal, /Open src\/file.ts|Open \/retained\/Screenshot.png/)
+const screenshotName = "CleanShot 2026-09-09 at 1.01.59 AM@2x.png"
+const namedScreenshot = renderToStaticMarkup(<Exchange exchange={{id:"named-shot", prompt:{id:"named-shot",role:"user",blocks:[{type:"text",text:`[${screenshotName}]`},{type:"attachment",name:screenshotName,mimeType:"image/png",source:{kind:"file",path:"/retained/shot.png"}}]},response:[],system:[]}} />)
+assert.match(namedScreenshot, /Open \/retained\/shot.png/)
+assert.doesNotMatch(namedScreenshot, /mailto:/)
+console.log("Prompt Markdown: the reported bullet/bold case, normal paragraph flow, copy controls, rich references, screenshot names with @2x, and literal code verified")
+conversation.blocks = [{type:"user",requestId:"stopped",text:"Keep this original question"}]
+conversation.requests = [{id:"stopped",text:"Keep this original question",attachments:[],status:"interrupted"}]
+publish()
+assert.equal(renderToStaticMarkup(<RetainedRequests />), "")
+assert.equal(recoverableRequests(conversation).length, 0)
+const stoppedMarkup = renderToStaticMarkup(<Exchange interrupted exchange={{id:"stopped",prompt:{id:"stopped",role:"user",requestId:"stopped",blocks:[{type:"text",text:"Keep this original question"}]},response:[],system:[]}} />)
+assert.match(stoppedMarkup, /data-turn-stopped/)
+assert.equal(stoppedMarkup.split("Keep this original question").length - 1, 1)
+conversation.requests.push({id:"unsent",text:"Do not lose a pre-dispatch stop",attachments:[],status:"interrupted"})
+conversation.requests.push({id:"failed",text:"Failed input remains recoverable",attachments:[],status:"failed"})
+publish()
+const recoveries = renderToStaticMarkup(<RetainedRequests />)
+assert.match(recoveries, /Do not lose a pre-dispatch stop/)
+assert.match(recoveries, /Failed input remains recoverable/)
+assert.doesNotMatch(recoveries, /<details[^>]+open|Keep this original question|Message interrupted/)
+const activityBase = {waiting:false,connecting:false,preparing:false}
+assert.equal(agentActivity({...activityBase,blocks:[{type:"thinking",text:"Reasoning"}]}).kind,"reasoning")
+assert.equal(agentActivity({...activityBase,blocks:[{type:"text",text:"Answer"}]}).kind,"responding")
+for (const [toolKind, expected] of [["search","searching"],["execute","executing"],["edit","editing"]] as const) {
+  const activity = agentActivity({...activityBase,blocks:[{type:"tool",id:toolKind,toolKind,title:toolKind,input:"{}",output:"",status:"pending"}]})
+  assert.equal(activity.kind,expected)
+  assert.match(renderToStaticMarkup(<ActivityMark state={activity.kind} size={64} />), /<canvas/)
+  assert.doesNotMatch(renderToStaticMarkup(<ActivityMark state={activity.kind} />), /<canvas/)
+}
+assert.doesNotMatch(renderToStaticMarkup(<ActivityMark state="waiting" size={64} />), /<canvas/)
+const activeFolder: ThreadFolder = {key:"flage",name:"flage",cwd:"/flage",refs:[],current:false,pinned:false,latest:"",order:"",priority:1,running:0,active:1,needsInput:0,failed:0,unread:0}
+const folderMarkup = renderToStaticMarkup(<FolderActivity folder={activeFolder} />)
+assert.match(folderMarkup, /1 running/)
+assert.match(folderMarkup, /running outside this Mako/)
+assert.match(folderMarkup, /data-size="20"/)
+assert.doesNotMatch(folderMarkup, /1 active|animate-spin|lucide-loader/)
+assert.match(renderToStaticMarkup(<FolderActivity folder={{...activeFolder,running:2}} />), /3 running/)
+assert.equal(renderToStaticMarkup(<FolderActivity folder={{...activeFolder,active:0}} />), "")
+assert.doesNotMatch(renderToStaticMarkup(<FolderActivity folder={{...activeFolder,failed:1}} />), /<canvas/)
+assert.match(renderToStaticMarkup(<ThreadStatusMark status={{kind:"external-active"}} />), /data-size="20"/)
+assert.doesNotMatch(renderToStaticMarkup(<ThreadStatusMark status={{kind:"external-open"}} />), /<canvas/)
+console.log("Activity feedback: contextual recovery, distinct main states, tuned inline project/thread orbs, idle cleanup, and explicit external-running labels verified")

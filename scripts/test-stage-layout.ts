@@ -627,7 +627,7 @@ assert.equal(
   "needs-permission"
 )
 assert.equal(acpStore.get().activeKey, backgroundB.key)
-assert.equal(acp.activateThread("/background-a"), true)
+assert.equal(acp.activateThread({ path: "/background-a" }), true)
 assert.equal(acpStore.get().activeKey, backgroundA.key)
 assert.equal(
   threadsStore.get().attention["/background-a"]?.kind,

@@ -206,6 +206,13 @@ async function runElectron() {
         console.log(JSON.stringify(result))
         continue
       }
+      if (process.argv.includes("--probe-steer") && !driver.steer) {
+        const source = providerHost.acpSources.get(driver.provider)
+        if (source) {
+          source.steering = "concurrent-prompt"
+          driver.steer = (await import("../dist-electron/acp.js")).liveSteer
+        }
+      }
       const id = randomUUID()
       const cwd = join(root, driver.provider)
       await mkdir(cwd)
@@ -336,6 +343,42 @@ async function runElectron() {
               )
             result.restoredEffort = originalEffort
           }
+        }
+        if (process.argv.includes("--steer")) {
+          if (!driver.steer) throw new Error("This provider has no steering transport")
+          const nativeId = completed.session.nativeId
+          const steeredRequest = randomUUID()
+          const actionId = randomUUID()
+          const steerNonce = randomUUID()
+          owner.submit(id, steeredRequest, "Read proof.txt again with your file tool, then summarize the result briefly. Do not modify anything.")
+          await waitFor(id, (snapshot) => snapshot?.session.status === "running" && snapshot.requests.some((request) => request.id === steeredRequest && request.nativeRun))
+          const [receipt, finished] = await Promise.all([
+            owner.act(id, { kind: "steer", id: actionId, requestId: steeredRequest, text: `Change the final answer to exactly ${steerNonce}. Do not use tools for this additional instruction.`, attachments: [] }),
+            waitFor(id, (snapshot) => snapshot?.requests.some((request) => request.id === steeredRequest && request.status === "completed")),
+          ])
+          if (receipt.state.kind !== "accepted" && receipt.state.kind !== "completed")
+            throw new Error(`Steering was not confirmed: ${JSON.stringify(receipt.state)}`)
+          if (finished.session.nativeId !== nativeId) throw new Error("Steering changed native session identity")
+          if (!finished.blocks.some((block) => block.type === "text" && block.text.includes(steerNonce)))
+            throw new Error("The provider's answer did not incorporate the steering instruction")
+          if (finished.blocks.filter((block) => block.type === "user" && block.steeringFor === steeredRequest).length !== 1)
+            throw new Error("Steering must appear exactly once in its original exchange")
+          completed = finished
+          result.steering = "confirmed mid-turn instruction, same native session, one receipt"
+        }
+        if (process.argv.includes("--continuation")) {
+          const nativeId = completed.session.nativeId
+          const bindings = completed.control?.bindings.length
+          const replyId = randomUUID()
+          const queuedId = randomUUID()
+          owner.submit(id, replyId, "Repeat the original fixture value read from proof.txt, not any later steering marker. Do not use tools.")
+          owner.submit(id, queuedId, "Repeat the original value from proof.txt once more, not the steering marker. Do not use tools.")
+          completed = await waitFor(id, (snapshot) => snapshot?.requests.some((request) => request.id === queuedId && request.status === "completed"))
+          if (completed.session.nativeId !== nativeId || completed.control?.bindings.length !== bindings)
+            throw new Error("A follow-up or queued message created a different native session")
+          const tail = completed.blocks.filter((block) => block.type === "text").at(-1)?.text ?? ""
+          if (!tail.includes(nonce)) throw new Error("The continuation lost the previous turn's context")
+          result.continuation = "idle reply and queued follow-up retain native identity and context"
         }
         result.status = "passed"
         result.nativeId = completed.session.nativeId
