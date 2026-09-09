@@ -1,3 +1,4 @@
+import { cursorModelSettings } from "./cursor-settings.js"
 import { CursorDesktopStore } from "./cursor-desktop.js"
 import { attachmentFromUrl, type AttachmentContent } from "../content.js"
 /**
@@ -370,6 +371,7 @@ export class CursorProvider implements SessionProvider {
         path: file.path,
         title: named,
         model: meta.model,
+        settings: cursorModelSettings(meta.model),
         startedAt: isoOf(meta.createdAt),
         // The store file's mtime lies: Cursor batch-touches old stores
         // (migrations, vacuums), which once made month-old sessions read as
@@ -388,7 +390,10 @@ export class CursorProvider implements SessionProvider {
         const parsed = parseSidecar(sidecar)
         if (parsed?.cwd) ref.cwd = parsed.cwd
         if (!ref.title && parsed?.title) ref.title = titleFrom(parsed.title)
-        if (parsed?.model) ref.model = parsed.model
+        if (parsed?.model) {
+          ref.model = parsed.model
+          ref.settings = cursorModelSettings(parsed.model)
+        }
         if (parsed?.updatedAtMs)
           ref.updatedAt = new Date(parsed.updatedAtMs).toISOString()
         if (parsed?.createdAtMs)

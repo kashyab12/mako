@@ -31,6 +31,12 @@ interface JsonObject {
   [key: string]: JsonValue | undefined
 }
 
+interface StoredModel {
+  id?: string
+  provider?: string
+  effort?: string
+}
+
 interface SessionRow {
   id: string
   directory?: string
@@ -417,7 +423,7 @@ function refFrom(
   row: SessionRow,
   path: string,
   revision: number,
-  model: { id?: string; provider?: string } | null
+  model: StoredModel | null
 ): ThreadRef {
   const title = titleFrom(row.title) ?? titleFrom(row.projectName)
   const modelId =
@@ -438,6 +444,7 @@ function refFrom(
     bytes: revision,
     archived: row.archived,
   }
+  if (model?.effort) ref.settings = { model: modelId, options: { effort: model.effort } }
   return ref
 }
 
@@ -480,7 +487,7 @@ function latestModel(
   database: DatabaseSync,
   kind: StoreKind,
   sessionId: string
-): { id?: string; provider?: string } | null {
+): StoredModel | null {
   const table = kind === "current" ? "session_message" : "message"
   const rows = database
     .prepare(
@@ -782,17 +789,18 @@ function usageFrom(data: JsonObject): TurnUsage | undefined {
 
 function modelFromSession(
   row: SessionRow
-): { id?: string; provider?: string } | null {
+): StoredModel | null {
   if (!row.model) return null
   return {
     id: jsonText(row.model.id) ?? jsonText(row.model.modelID),
     provider: jsonText(row.model.providerID),
+    effort: jsonText(row.model.variant),
   }
 }
 
 function modelFromData(
   data: JsonObject
-): { id?: string; provider?: string } | null {
+): StoredModel | null {
   const model = jsonObject(data.model)
   const id =
     jsonText(data.modelID) ??
@@ -800,12 +808,13 @@ function modelFromData(
   const provider =
     jsonText(data.providerID) ??
     (model ? jsonText(model.providerID) : undefined)
-  return id || provider ? { id, provider } : null
+  const effort = jsonText(data.variant) ?? (model ? jsonText(model.variant) : undefined)
+  return id || provider ? { id, provider, effort } : null
 }
 
 function modelFromEntries(
   entries: ThreadEntry[]
-): { id?: string; provider?: string } | null {
+): StoredModel | null {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index]
     if (entry?.kind === "assistant" && entry.model) return { id: entry.model }

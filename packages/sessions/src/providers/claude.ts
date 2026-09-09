@@ -36,6 +36,7 @@ import {
   type LineTranslator,
 } from "../jsonl.js"
 import { normalizeToolOutput } from "../tool-output.js"
+import type { SessionSettings } from "../settings.js"
 import type { NativeFile, SessionProvider } from "./types.js"
 
 type ClaudeJsonScalar = boolean | number | string | null
@@ -83,6 +84,7 @@ type ClaudeContentBlock =
 type ClaudeContent = string | ClaudeContentBlock[]
 
 interface ClaudeUsage {
+  speed?: string
   input: number
   output: number
   cacheRead: number
@@ -97,7 +99,10 @@ interface ClaudeMessage {
 }
 
 interface ClaudeLine {
+  effort?: string
   type: string
+  /** A title Claude Code wrote for the session, rewritten as it evolves. */
+  title?: string
   uuid?: string
   timestamp?: string
   sessionId?: string
@@ -217,6 +222,7 @@ function parseUsage(
 ): ClaudeUsage | undefined {
   if (!isJsonObject(value)) return undefined
   return {
+    speed: stringValue(value["speed"]),
     input: tokenCount(value["input_tokens"]),
     output: tokenCount(value["output_tokens"]),
     cacheRead: tokenCount(value["cache_read_input_tokens"]),
@@ -243,6 +249,8 @@ function parseClaudeLine(raw: string): ClaudeLine | null {
   if (!type) return null
   return {
     type,
+    title: stringValue(root["aiTitle"]) ?? stringValue(root["summary"]),
+    effort: stringValue(root["effort"]),
     uuid: stringValue(root["uuid"]),
     timestamp: stringValue(root["timestamp"]),
     sessionId: stringValue(root["sessionId"]),
@@ -382,36 +390,20 @@ export class ClaudeProvider implements SessionProvider {
     for (const raw of head.split("\n")) {
       const line = parseClaudeLine(raw)
       if (!line) continue
-      if (!ref.nativeId && line.sessionId !== undefined)
-        ref.nativeId = line.sessionId
-      if (!ref.cwd && line.cwd !== undefined) ref.cwd = line.cwd
-      if (!ref.startedAt && line.timestamp !== undefined)
-        ref.startedAt = line.timestamp
-      if (
-        !ref.model &&
-        line.type === "assistant" &&
-        line.message?.model !== undefined
-      ) {
-        ref.model = line.message.model
-      }
-      if (
-        !ref.title &&
-        line.type === "user" &&
-        !line.isSidechain &&
-        !line.isMeta
-      ) {
-        const text = claudeCommandPrompt(plainText(line.message?.content))
-        if (text.trim() && !NOT_A_PROMPT.test(text.trimStart()))
-          ref.title = titleFrom(text)
-      }
-      if (ref.nativeId && ref.title && ref.model) break
+      fillClaudeRef(ref, line)
+      if (ref.nativeId && ref.model) break
     }
     ref.settings = {}
     await readLines(file.path, Math.max(0, file.bytes - 2 * 1024 * 1024), (raw) => {
       const line = parseClaudeLine(raw)
+      if (line) fillClaudeRef(ref, line)
       if (line?.type === "assistant" && !line.isSidechain && line.message?.model) {
         ref.model = line.message.model
-        ref.settings = { model: line.message.model }
+        const options: NonNullable<SessionSettings["options"]> = {}
+        if (line.effort) options.effort = line.effort
+        if (line.message.usage?.speed === "standard") options.fast = false
+        if (line.message.usage?.speed === "fast") options.fast = true
+        ref.settings = { model: line.message.model, options }
       }
     })
     // A session file with no session id yet is a placeholder, not a session.
@@ -457,7 +449,13 @@ function translator(): ClaudeTranslator {
     const line = parseClaudeLine(raw)
     if (!line || line.isSidechain) return
 
-    if (line.type === "summary") return
+    // Session-level records: a title Claude Code wrote, and its bookkeeping.
+    if (
+      line.type === "summary" ||
+      line.type === "ai-title" ||
+      line.type === "last-prompt"
+    )
+      return
 
     if (line.type === "user") {
       const content = line.message?.content
@@ -596,3 +594,43 @@ function attachmentParts(
       )
     : []
 }
+
+/** Refs whose title Claude Code wrote; a prompt never replaces one of these. */
+const storedTitles = new WeakSet<ThreadRef>()
+
+function fillClaudeRef(ref: ThreadRef, line: ClaudeLine): void {
+  if (line.isSidechain) return
+  if (!ref.nativeId && line.sessionId !== undefined)
+    ref.nativeId = line.sessionId
+  if (!ref.cwd && line.cwd !== undefined) ref.cwd = line.cwd
+  if (!ref.startedAt && line.timestamp !== undefined)
+    ref.startedAt = line.timestamp
+  if (
+    !ref.model &&
+    line.type === "assistant" &&
+    !line.isSidechain &&
+    line.message?.model !== undefined
+  ) {
+    ref.model = line.message.model
+  }
+  // Claude Code names the session itself (`ai-title`, once `summary`) and
+  // rewrites that name as the conversation moves on, so the latest one wins.
+  // The first prompt only stands in until a written title exists.
+  if (line.title?.trim() && (line.type === "ai-title" || line.type === "summary")) {
+    ref.title = titleFrom(line.title)
+    storedTitles.add(ref)
+    return
+  }
+  if (
+    !ref.title &&
+    !storedTitles.has(ref) &&
+    line.type === "user" &&
+    !line.isSidechain &&
+    !line.isMeta
+  ) {
+    const text = claudeCommandPrompt(plainText(line.message?.content))
+    if (text.trim() && !NOT_A_PROMPT.test(text.trimStart()))
+      ref.title = titleFrom(text)
+  }
+}
+
