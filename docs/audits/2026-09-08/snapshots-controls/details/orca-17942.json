@@ -1,0 +1,107 @@
+{
+  "issue": {
+    "url": "https://api.github.com/repos/stablyai/orca/issues/17942",
+    "repository_url": "https://api.github.com/repos/stablyai/orca",
+    "labels_url": "https://api.github.com/repos/stablyai/orca/issues/17942/labels{/name}",
+    "comments_url": "https://api.github.com/repos/stablyai/orca/issues/17942/comments",
+    "events_url": "https://api.github.com/repos/stablyai/orca/issues/17942/events",
+    "html_url": "https://github.com/stablyai/orca/issues/17942",
+    "id": 5311527545,
+    "node_id": "I_kwDORpCz1s8AAAABPJd6eQ",
+    "number": 17942,
+    "title": "[Bug]: macOS computer-use type-text duplicates text in Electron contentEditable",
+    "user": {
+      "login": "JJ8044",
+      "id": 204806671,
+      "node_id": "U_kgDODDUaDw",
+      "avatar_url": "https://avatars.githubusercontent.com/u/204806671?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/JJ8044",
+      "html_url": "https://github.com/JJ8044",
+      "followers_url": "https://api.github.com/users/JJ8044/followers",
+      "following_url": "https://api.github.com/users/JJ8044/following{/other_user}",
+      "gists_url": "https://api.github.com/users/JJ8044/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/JJ8044/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/JJ8044/subscriptions",
+      "organizations_url": "https://api.github.com/users/JJ8044/orgs",
+      "repos_url": "https://api.github.com/users/JJ8044/repos",
+      "events_url": "https://api.github.com/users/JJ8044/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/JJ8044/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "labels": [
+      {
+        "id": 10446985723,
+        "node_id": "LA_kwDORpCz1s8AAAACbrBZ-w",
+        "url": "https://api.github.com/repos/stablyai/orca/labels/bug",
+        "name": "bug",
+        "color": "cab2b6",
+        "default": true,
+        "description": "Something isn't working"
+      },
+      {
+        "id": 10684408931,
+        "node_id": "LA_kwDORpCz1s8AAAACfNckYw",
+        "url": "https://api.github.com/repos/stablyai/orca/labels/os:macos",
+        "name": "os:macos",
+        "color": "aaaaaa",
+        "default": false,
+        "description": "Issues affecting macOS"
+      }
+    ],
+    "state": "open",
+    "locked": false,
+    "assignees": [],
+    "milestone": null,
+    "comments": 0,
+    "created_at": "2026-09-01T11:58:39Z",
+    "updated_at": "2026-09-01T11:58:49Z",
+    "closed_at": null,
+    "assignee": null,
+    "author_association": "NONE",
+    "issue_field_values": [],
+    "type": {
+      "id": 18926791,
+      "node_id": "IT_kwDOB5XHZM4BIMzH",
+      "name": "Bug",
+      "description": "An unexpected problem or behavior",
+      "color": "red",
+      "created_at": "2024-02-16T03:32:10Z",
+      "updated_at": "2024-07-26T15:01:18Z",
+      "is_enabled": true
+    },
+    "active_lock_reason": null,
+    "sub_issues_summary": {
+      "total": 0,
+      "completed": 0,
+      "percent_completed": 0
+    },
+    "issue_dependencies_summary": {
+      "blocked_by": 0,
+      "total_blocked_by": 0,
+      "blocking": 0,
+      "total_blocking": 0
+    },
+    "body": "### Operating system\n\nmacOS\n\n### Orca version\n\n1.4.193\n\n### Details\n\nShort summary:\n\nOn macOS, `orca computer type-text` duplicates the supplied text in an Electron/React contentEditable composer. The visible and accessibility read-back becomes:\n\n`<input text><placeholder><input text>`\n\nNo message was sent during testing.\n\nEnvironment:\n\n- Operating system: macOS\n- Orca version: 1.4.193\n- Orca Computer Use provider version: 1.0\n- Provider SHA-256: ee86ac05cd488ff8819c606d49f5378e5d6c77daf2c271e1f9cc9c794771ccdb\n- Target application: Hermes Desktop v0.20.6 (+957)\n- Target bundle ID: com.nousresearch.hermes\n- Target control: Electron/React contentEditable composer\n\nWhat happened?\n\nA fresh Hermes session was prepared manually. The composer was empty and no active transcript was present.\n\nAfter confirming the exact application, window, and focused composer receiver, I ran a non-sensitive single-line probe:\n\n```\norca computer type-text --app com.nousresearch.hermes --window-id <WINDOW_ID> --text HERMES_INPUT_PROBE_20260901_A --json\n```\n\nThe action returned:\n\n- path: synthetic\n- verification.state: unverified\n- verification.reason: synthetic_input\n\nThe visible composer and accessibility snapshot contained:\n\n```\nHERMES_INPUT_PROBE_20260901_AGive Hermes a taskHERMES_INPUT_PROBE_20260901_A\n```\n\nThe same duplication occurred with a multiline payload supplied through `--text-stdin`, so the problem is not limited to multiline input or stdin handling.\n\nI also tested `set-value` once on a fresh empty composer:\n\n```\norca computer set-value --app com.nousresearch.hermes --window-id <WINDOW_ID> --element-index <COMPOSER_ELEMENT_INDEX> --value \"<TEST_TEXT>\" --json\n```\n\nThe result was:\n\n- verification.state: unverified\n- verification.reason: value_mismatch\n- actualPreview: Give Hermes a task\n\nThe text appeared visually, but the React input state was not updated and the semantic Send button did not appear.\n\nExpected behavior:\n\n1. The supplied text should appear exactly once.\n2. The placeholder should not become part of the composer value.\n3. React input state should be updated.\n4. The Send button should appear.\n5. The provider should return verified only after exact same-receiver read-back.\n\nCode-level observation:\n\nThe signed macOS computer-use provider binary applies `CGEventKeyboardSetUnicodeString` to both the keyDown and keyUp CGEvents and posts both events. This matches the observed two-copy insertion in the contentEditable receiver.\n\nSuggested minimal fix:\n\n- Attach the Unicode payload only to the keyDown event.\n- Post a keyUp event without a Unicode payload.\n- Reconfirm the target PID, window, and focused receiver immediately before posting.\n- Read back the exact composer value after input and return verified only when it matches.\n\nNo Hermes application source was modified. No test message was sent.\n\nHow can we reproduce it?\n\n1. Open an Electron application with a React contentEditable composer and a visible placeholder.\n2. Focus the empty composer.\n3. Confirm the focused receiver with `orca computer get-app-state`.\n4. Run `orca computer type-text` with a short single-line probe.\n5. Compare the visible composer and accessibility read-back with the supplied text.\n\nThe supplied payload is inserted twice with the placeholder between the two copies.",
+    "closed_by": null,
+    "reactions": {
+      "url": "https://api.github.com/repos/stablyai/orca/issues/17942/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "timeline_url": "https://api.github.com/repos/stablyai/orca/issues/17942/timeline",
+    "performed_via_github_app": null,
+    "state_reason": null,
+    "pinned_comment": null
+  },
+  "comments": []
+}

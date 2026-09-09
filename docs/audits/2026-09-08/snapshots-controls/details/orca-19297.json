@@ -1,0 +1,89 @@
+{
+  "issue": {
+    "url": "https://api.github.com/repos/stablyai/orca/issues/19297",
+    "repository_url": "https://api.github.com/repos/stablyai/orca",
+    "labels_url": "https://api.github.com/repos/stablyai/orca/issues/19297/labels{/name}",
+    "comments_url": "https://api.github.com/repos/stablyai/orca/issues/19297/comments",
+    "events_url": "https://api.github.com/repos/stablyai/orca/issues/19297/events",
+    "html_url": "https://github.com/stablyai/orca/issues/19297",
+    "id": 5376711378,
+    "node_id": "I_kwDORpCz1s8AAAABQHoa0g",
+    "number": 19297,
+    "title": "[Bug] Orca browser use keeps focusing the Orca App",
+    "user": {
+      "login": "orca-discord-issues[bot]",
+      "id": 292271999,
+      "node_id": "BOT_kgDOEWu3fw",
+      "avatar_url": "https://avatars.githubusercontent.com/u/127256420?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/orca-discord-issues%5Bbot%5D",
+      "html_url": "https://github.com/apps/orca-discord-issues",
+      "followers_url": "https://api.github.com/users/orca-discord-issues%5Bbot%5D/followers",
+      "following_url": "https://api.github.com/users/orca-discord-issues%5Bbot%5D/following{/other_user}",
+      "gists_url": "https://api.github.com/users/orca-discord-issues%5Bbot%5D/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/orca-discord-issues%5Bbot%5D/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/orca-discord-issues%5Bbot%5D/subscriptions",
+      "organizations_url": "https://api.github.com/users/orca-discord-issues%5Bbot%5D/orgs",
+      "repos_url": "https://api.github.com/users/orca-discord-issues%5Bbot%5D/repos",
+      "events_url": "https://api.github.com/users/orca-discord-issues%5Bbot%5D/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/orca-discord-issues%5Bbot%5D/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "labels": [
+      {
+        "id": 10446985723,
+        "node_id": "LA_kwDORpCz1s8AAAACbrBZ-w",
+        "url": "https://api.github.com/repos/stablyai/orca/labels/bug",
+        "name": "bug",
+        "color": "cab2b6",
+        "default": true,
+        "description": "Something isn't working"
+      }
+    ],
+    "state": "open",
+    "locked": false,
+    "assignees": [],
+    "milestone": null,
+    "comments": 0,
+    "created_at": "2026-09-07T15:44:28Z",
+    "updated_at": "2026-09-07T15:44:28Z",
+    "closed_at": null,
+    "assignee": null,
+    "author_association": "NONE",
+    "issue_field_values": [],
+    "type": null,
+    "active_lock_reason": null,
+    "sub_issues_summary": {
+      "total": 0,
+      "completed": 0,
+      "percent_completed": 0
+    },
+    "issue_dependencies_summary": {
+      "blocked_by": 0,
+      "total_blocked_by": 0,
+      "blocking": 0,
+      "total_blocking": 0
+    },
+    "body": "<kbd>[![Ryder](https://cdn.discordapp.com/avatars/1347628756990431233/cd553a4d9c81e003bfb2b1d08bd3c5cf.webp?size=40)](https://discord.com/channels/1492228674081263786/1546546703476461709/1546546703476461709)</kbd> [Ryder](https://discord.com/channels/1492228674081263786/1546546703476461709/1546546703476461709)  `via Discord`\n\nI'm on mac, if im using orca browser skill and move to a different screen, the borwser use will often focus the App, meaning the screen flips back to that screen. Same thing if Orca is minimized. \n\nEssentially, cannot multi-task when browser is being used because of this. \n\nHappening with Claude Code Fable 5.1\n\n",
+    "closed_by": null,
+    "reactions": {
+      "url": "https://api.github.com/repos/stablyai/orca/issues/19297/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "timeline_url": "https://api.github.com/repos/stablyai/orca/issues/19297/timeline",
+    "performed_via_github_app": null,
+    "state_reason": null,
+    "pinned_comment": null
+  },
+  "comments": []
+}
