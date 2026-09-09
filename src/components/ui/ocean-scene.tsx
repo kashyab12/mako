@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
 import { usePrefs, type OceanTone } from "@/state/prefs"
 import { OceanFin } from "./ocean-fin"
+import oceanEngraving from "/artwork/mako-ocean-engraving.webp?url"
 
 /** The engraving stays still. A small, blended light layer moves over the water. */
 export function OceanScene({
@@ -47,22 +48,24 @@ export function OceanScene({
     >
       <img
         className="ocean-engraving"
-        src="/artwork/mako-ocean-engraving.webp"
+        src={oceanEngraving}
         width={1536}
         height={1024}
         alt=""
         decoding="async"
       />
       <span className="ocean-grain" />
-      <span className="ocean-light">
-        <img
-          className="ocean-engraving"
-          src="/artwork/mako-ocean-engraving.webp"
-          width={1536}
-          height={1024}
-          alt=""
-          decoding="async"
-        />
+      <span className="ocean-water">
+        <span className="ocean-light">
+          <img
+            className="ocean-engraving"
+            src={oceanEngraving}
+            width={1536}
+            height={1024}
+            alt=""
+            decoding="async"
+          />
+        </span>
       </span>
       <OceanFin />
     </div>
