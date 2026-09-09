@@ -44,6 +44,21 @@ export function unavailableProviderProfile(
   }
 }
 
+/** Discovery has not answered yet. Never persisted; replaced by the first real load. */
+export function pendingProviderProfile(
+  loader: ProviderProfileLoader
+): HarnessProfile {
+  return {
+    id: loader.provider,
+    label: loader.label,
+    available: false,
+    pending: true,
+    transport: loader.transport,
+    models: [],
+    capabilities: loader.capabilities,
+  }
+}
+
 export function unknownProviderProfile(
   provider: string,
   error: string

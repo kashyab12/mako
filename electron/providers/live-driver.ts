@@ -3,6 +3,8 @@ import type {
   LivePermissionResponse,
   PromptAttachment,
   LiveSessionState,
+  LiveDriverEvent,
+  McpRegistrySnapshot,
 } from "../shared.js"
 import type { LiveStartOptions } from "../contracts/live-conversations.js"
 import type { ProviderCapability } from "./registry.js"
@@ -16,12 +18,17 @@ export interface ConversationTools {
 
 /** Host-only launch credentials. Never included in the renderer wire contract or journals. */
 export interface ProviderStartOptions extends LiveStartOptions {
+  emit?: (event: LiveDriverEvent) => void
+  mcpSnapshot?: () => Promise<McpRegistrySnapshot>
   fork?: { nativeId: string; runId: string }
   conversationTools?: ConversationTools
 }
 
 export interface ProviderLiveDriver extends ProviderCapability {
-  canForkAtRun?: boolean
+  observesNativeAgents?: true
+  steer?(id: string, input: ProviderSteerInput): Promise<ProviderSteerResult>
+  compact?(id: string): Promise<void>
+  forkPoint?: "run" | "checkpoint"
   canResume: boolean
   available(appPath: string): boolean
   start(cwd: string, options: ProviderStartOptions): Promise<LiveSessionState>
@@ -37,6 +44,17 @@ export interface ProviderLiveDriver extends ProviderCapability {
     response: LivePermissionResponse
   ): Promise<void>
   cancel(id: string): Promise<void>
-  close(id: string): void
+  close(id: string): void | Promise<void>
   setMode(id: string, modeId: string): Promise<void>
 }
+
+export interface ProviderSteerInput {
+  id: string
+  expectedRunId: string
+  text: string
+  attachments: PromptAttachment[]
+}
+
+/** A thrown transport error means delivery is unknown, never permission to resend. */
+export type ProviderSteerResult =
+  { kind: "accepted" } | { kind: "not-accepted"; reason: string }

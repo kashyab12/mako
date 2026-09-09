@@ -1,4 +1,4 @@
-import type { McpServer } from "@agentclientprotocol/sdk"
+import type { McpServer, ClientCapabilities } from "@agentclientprotocol/sdk"
 import type { SessionSettings } from "@mako/sessions/settings"
 import type { ProviderCapability } from "./registry.js"
 import type { RequestPermissionRequest, NewSessionRequest } from "@agentclientprotocol/sdk"
@@ -22,6 +22,7 @@ export interface AcpLaunch {
 
 /** Provider-owned process launch and environment for an interactive ACP agent. */
 export interface ProviderAcpSource extends ProviderCapability {
+  clientCapabilities?: Pick<ClientCapabilities, "_meta">
   canResume: boolean
   launchOptionIds?: readonly string[]
   sessionMetadata?(tuning: SessionSettings): NewSessionRequest["_meta"]

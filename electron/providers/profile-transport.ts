@@ -57,7 +57,7 @@ export function runDiscovery(
       stderr = (stderr + stderrDecoder.write(chunk)).slice(-4_000)
     })
     child.on("error", reject)
-    child.on("exit", (code) => {
+    child.on("close", (code) => {
       clearTimeout(timer)
       stdout = (stdout + stdoutDecoder.end()).slice(-8_000_000)
       stderr = (stderr + stderrDecoder.end()).slice(-4_000)
