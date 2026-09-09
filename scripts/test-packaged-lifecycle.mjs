@@ -14,8 +14,13 @@ const StartupTraceSchema = z.object({
   elapsedMs: z.number().nonnegative(),
 })
 const rendererOnly = process.argv.includes("--renderer-only")
-const args = process.argv.slice(2).filter((arg) => arg !== "--renderer-only")
-assert.ok(args.length <= 2, "Use [Mako.app] [provider] [--renderer-only]")
+const warmStart = process.argv.includes("--warm")
+const modelFlag = process.argv.find((arg) => arg.startsWith("--model="))
+const selectedModel = modelFlag?.slice(8)
+const args = process.argv.slice(2).filter((arg) => arg !== "--renderer-only" && arg !== "--warm" && arg !== modelFlag)
+assert.ok(args.length <= 2, "Use [Mako.app] [provider] [--renderer-only] [--warm] [--model=id]")
+const acceptanceBudget = process.env.MAKO_STARTUP_BUDGET_MS === undefined ? null : Number(process.env.MAKO_STARTUP_BUDGET_MS)
+assert.ok(acceptanceBudget === null || (Number.isFinite(acceptanceBudget) && acceptanceBudget > 0))
 const app = resolve(args[0] ?? "/tmp/mako-parity-package/mac-arm64/Mako.app")
 const provider = args[1] ?? "claude"
 const root = await mkdtemp(join(tmpdir(), "mako-packaged-lifecycle-"))
@@ -406,9 +411,10 @@ async function soak() {
     )
   }
 }
-async function completed(requestId) {
+async function completed(requestId, { startedAt, id = conversationId } = {}) {
+  let observedContent = false
   return waitFor(
-    () => bridge("liveSnapshot", [conversationId]),
+    () => bridge("liveSnapshot", [id]),
     (snapshot) => {
       const request = snapshot?.requests.find((item) => item.id === requestId)
       const transfer = snapshot?.control?.transfers.find(
@@ -423,6 +429,10 @@ async function completed(requestId) {
         throw new Error(request.error ?? request.status)
       if (snapshot?.permissions.length)
         throw new Error("Unexpected permission in a no-tools fixture")
+      if (startedAt !== undefined && !observedContent && snapshot?.blocks.some((block) => block.type === "user" && block.requestId === requestId) && answer(snapshot, requestId).trim()) {
+        observedContent = true
+        report.phases.push({ phase: "first-provider-content", elapsedMs: Date.now() - startedAt })
+      }
       return request?.status === "completed"
     },
     "provider completion",
@@ -460,6 +470,7 @@ try {
       {
         conversationId,
         title: "Mako package verification",
+        tuning: selectedModel ? { model: selectedModel } : undefined,
         initialRequest: {
           id: requestId,
           text: `Remember this marker for the next turn: ${marker}. Reply with just the marker. Do not use tools or modify files.`,
@@ -468,13 +479,15 @@ try {
       },
     ])
     const acceptedMs = Date.now() - sentAt
-    const first = await completed(requestId)
+    if (acceptanceBudget !== null) assert.ok(acceptedMs <= acceptanceBudget, `Prompt acceptance took ${acceptedMs} ms, above ${acceptanceBudget} ms`)
+    const first = await completed(requestId, { startedAt: sentAt })
     assert.ok(answer(first, requestId).includes(marker))
     const nativeId = first.session.nativeId
     report.phases.push({
       phase: "provider-completion",
       elapsedMs: Date.now() - sentAt,
       acceptedMs,
+      model: first.session.settings?.model,
       nativeIdPresent: Boolean(nativeId),
     })
     console.log("Packaged provider completed a real no-tools turn")

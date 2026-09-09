@@ -49,14 +49,17 @@ try {
   patch = await collectCommitPatch(root, signal)
   assert.match(patch.text, /Unstaged content/)
   assert.match(patch.text, /New untracked feature/)
-  await writeFile(join(root, "large.txt"), "Large diff line\n".repeat(60_000))
+  await writeFile(join(root, "large.txt"), "Large diff line\n".repeat(160_000) + "LATE_LARGE_FILE_CHANGE\n")
+  await writeFile(join(root, "package-lock.json"), JSON.stringify({ packages: "dependency\n".repeat(20_000), finalChange: "LATE_LOCKFILE_CHANGE" }))
   await writeFile(join(root, "z-last.txt"), "Do not crowd out this change\n")
   await symlink(join(root, ".env"), join(root, "link.txt"))
   patch = await collectCommitPatch(root, signal)
-  assert.ok(patch.text.length < 2_100_000)
+  assert.match(patch.text, /LATE_LARGE_FILE_CHANGE/)
+  assert.match(patch.text, /LATE_LOCKFILE_CHANGE/)
+  assert.ok(patch.text.length > 2_100_000)
   assert.match(patch.text, /Do not crowd out this change/)
   assert.doesNotMatch(patch.text, /do-not-send/)
-  assert.ok(patch.warnings.some((warning) => warning.includes("large.txt")))
+  assert.ok(!patch.warnings.some((warning) => /large.txt|package-lock/.test(warning)))
   assert.equal(
     await readFile(join(root, "first.txt"), "utf8"),
     "Unstaged content must not be sent\n"

@@ -47,17 +47,34 @@ const only = mock.method(providerHost.profiles, "list", () => [
 ])
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 try {
-  assert.equal(await resolveHarnessLaunch(profile.id, "/one", undefined), undefined)
+  assert.equal(
+    await resolveHarnessLaunch(profile.id, "/one", undefined),
+    undefined
+  )
   const nativeOptions = { options: { effort: "high" } }
-  assert.equal(await resolveHarnessLaunch(profile.id, "/one", nativeOptions), nativeOptions)
-  assert.equal(loads, 0, "Native defaults and model-free options cannot wait for model discovery")
+  assert.equal(
+    await resolveHarnessLaunch(profile.id, "/one", nativeOptions),
+    nativeOptions
+  )
+  assert.equal(
+    loads,
+    0,
+    "Native defaults and model-free options cannot wait for model discovery"
+  )
   const cacheGate = Promise.withResolvers<null>()
   recall.mock.mockImplementationOnce(() => cacheGate.promise)
   let answered = false
-  const immediate = harnessProfilesNow("/one").then((profiles) => { answered = true; return profiles })
+  const immediate = harnessProfilesNow("/one").then((profiles) => {
+    answered = true
+    return profiles
+  })
   await settle()
   cacheGate.resolve(null)
-  assert.equal(answered, true, "Provider names cannot wait for cache, account, or model discovery")
+  assert.equal(
+    answered,
+    true,
+    "Provider names cannot wait for cache, account, or model discovery"
+  )
   const pending = await immediate
   assert.ok(
     pending.some((entry) => entry.id === profile.id && entry.pending),
@@ -74,7 +91,11 @@ try {
     "Sending does not run discovery again after the display TTL"
   )
   const stale = await harnessProfile(profile.id, false, "/one")
-  assert.equal(stale.pending, undefined, "An expired profile is served, not withheld")
+  assert.equal(
+    stale.pending,
+    undefined,
+    "An expired profile is served, not withheld"
+  )
   assert.equal(loads, 2, "Ordinary discovery still refreshes expired profiles")
   await settle()
   assert.equal(reported.length, 2, "The refresh behind a stale answer reports")
