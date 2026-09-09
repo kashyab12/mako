@@ -144,6 +144,12 @@ an agent. Sending prompts, editing files, and git actions operate on real data.
 The web gateway listens on loopback and forwards same-origin requests through a
 private local socket. Run one desk host at a time for a given Mako data directory.
 
+A source checkout keeps its own data directory (`mako-dev`), so it runs beside
+the installed app; set `MAKO_PROFILE=<name>` for another isolated instance.
+Edits under `src/` hot-reload into the window. Edits under `electron/` are
+compiled as you save; run **Restart Mako** from the palette to load them.
+Conversations reopen from their journals, and only the provider processes end.
+
 For deterministic fixture cases, use `npm run dev:fixtures` and append `?mock`.
 Run `npm run generate:host-inputs` after changing host handler arguments and
 `npm run test:web` to verify the generated contract and local gateway.
