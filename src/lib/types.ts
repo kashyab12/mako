@@ -1,4 +1,10 @@
 export type {
+  NativeAgent,
+  NativeAgentRoster,
+  LiveAction,
+  LiveActionInput,
+  RewindPreview,
+  RewindInput,
   AccountHarness,
   AccountProvider,
   AccountUsage,
@@ -107,7 +113,6 @@ export {
   automationTriggerAvailable,
   THINKING_LEVELS,
 } from "../../electron/shared.ts"
-
 
 export type {
   LiveSnapshot,

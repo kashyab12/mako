@@ -1,3 +1,4 @@
+import { liveToolName } from "@/lib/tools"
 import type { Block, ChatMessage } from "@/lib/types"
 
 export interface AcpPlanEntry {
@@ -19,6 +20,7 @@ export function acpBlocksToMessages(
   provider?: string
 ): AcpConversation {
   const messages: ChatMessage[] = []
+  const prompts = new Map<string, string>()
   let plan: AcpPlanEntry[] = []
   let assistant: ChatMessage | null = null
   let turn = 0
@@ -42,16 +44,27 @@ export function acpBlocksToMessages(
     switch (block.type) {
       case "user":
         turnProvider = block.provider ?? provider
-        turn += 1
+        if (!block.steeringFor) turn += 1
         assistant = null
         messages.push({
-          id: `acp-user-${index}`,
+          id: block.requestId
+            ? `acp-request-${block.requestId}`
+            : `acp-user-${index}`,
+          requestId: block.requestId,
           role: "user",
+          steeringFor: block.steeringFor
+            ? prompts.get(block.steeringFor)
+            : undefined,
           blocks: [
             { type: "text", text: block.text },
             ...(block.attachments ?? []),
           ],
         })
+        if (block.requestId)
+          prompts.set(block.requestId, `acp-request-${block.requestId}`)
+        break
+      case "proposed-plan":
+        append(block, index)
         break
       case "text":
         append({ type: "text", text: block.text }, index)
@@ -63,7 +76,7 @@ export function acpBlocksToMessages(
         append({ type: "thinking", thinking: block.text }, index)
         break
       case "tool": {
-        const name = block.toolKind ?? block.title
+        const name = liveToolName(block.toolKind, block.title)
         append(
           {
             type: "toolCall",

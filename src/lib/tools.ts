@@ -64,7 +64,50 @@ const TOOL_LABELS = new Map([
   ["TaskUpdate", "Update task"],
   ["ToolSearch", "Find tool"],
   ["ScheduleWakeup", "Schedule"],
+  ["delete", "Delete"],
+  ["move", "Move"],
+  ["think", "Think"],
+  ["switch_mode", "Switch mode"],
 ])
+/**
+ * ACP names a tool by what it does (`execute`, `search`), Devin by its
+ * inference name (`exec`), Claude and history by the tool's own name. The
+ * transcript keys icons, labels and views on names, so every live source
+ * lands on the same vocabulary here.
+ */
+const LIVE_TOOL_KINDS = new Map([
+  ["execute", "bash"],
+  ["exec", "bash"],
+  ["shell", "bash"],
+  ["command", "bash"],
+  ["read", "read"],
+  ["edit", "edit"],
+  ["write", "write"],
+  ["search", "grep"],
+  ["fetch", "webfetch"],
+  ["delete", "delete"],
+  ["move", "move"],
+  ["think", "think"],
+  ["switch_mode", "switch_mode"],
+])
+
+/** Titles that only restate the kind carry no identity of their own. */
+const WEAK_TITLES = /^(tool|command|other|shell|execute|search|fetch|read|edit)$/i
+
+export function liveToolName(kind: string | undefined, title: string): string {
+  if (kind) {
+    const mapped = LIVE_TOOL_KINDS.get(kind.toLowerCase())
+    if (mapped) return mapped
+    if (kind !== "other") return kind
+  }
+  // `other` and no kind at all: the title is the only name there is, and only
+  // when it is a name ("read_file", "server: tool") rather than a sentence.
+  const candidate = title.trim()
+  if (candidate && !WEAK_TITLES.test(candidate) && /^[\w.:-]+(?:\s[\w.-]+)?$/.test(candidate))
+    return candidate.replace(/:\s/, ".")
+  return kind ?? "tool"
+}
+
 const NORMALIZED_TOOL_LABELS = new Map(
   [...TOOL_LABELS].map(([name, label]) => [name.toLowerCase(), label])
 )
@@ -250,7 +293,7 @@ export function summarizeToolWork(calls: ToolCall[]): ToolWorkSummary {
       agents += 1
       continue
     }
-    if (["edit", "multiedit", "apply_patch", "write"].includes(name)) {
+    if (["edit", "multiedit", "apply_patch", "write", "delete", "move"].includes(name)) {
       const path = primaryArgument(call.arguments)
       if (path) changedFiles.add(path)
       else unlocatedChanges += 1

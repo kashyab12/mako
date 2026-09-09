@@ -15,7 +15,12 @@ export interface Exchange {
   id: string
   /** The user's message, absent for anything the agent said unprompted. */
   prompt?: ChatMessage
-  /** Assistant and tool messages answering it, in order. */
+  /**
+   * Everything after the prompt, in order: assistant and tool messages, and
+   * any message the user steered in while the agent was still working. A
+   * steer stays where it landed — after the work it interrupted, before the
+   * work it redirected — never hoisted next to the prompt.
+   */
   response: ChatMessage[]
   /** Notes and separators that landed inside this exchange. */
   system: ChatMessage[]
@@ -25,6 +30,7 @@ export interface Exchange {
 export type ResponseSection =
   | { kind: "prose"; id: string; message: ChatMessage }
   | { kind: "work"; id: string; messages: ChatMessage[] }
+  | { kind: "steer"; id: string; message: ChatMessage }
 
 export function responseSections(messages: ChatMessage[]): ResponseSection[] {
   const sections: ResponseSection[] = []
@@ -45,6 +51,11 @@ export function responseSections(messages: ChatMessage[]): ResponseSection[] {
   })
 
   for (const message of messages) {
+    if (message.role === "user") {
+      flushWork()
+      sections.push({ kind: "steer", id: message.id, message })
+      continue
+    }
     const generated: ChatMessage[] = []
     let workBlocks: Block[] = []
     const flushMessageWork = () => {
@@ -58,7 +69,9 @@ export function responseSections(messages: ChatMessage[]): ResponseSection[] {
     for (const block of message.blocks) {
       if (
         message.role === "assistant" &&
-        ((block.type === "text" && block.text) || block.type === "attachment")
+        ((block.type === "text" && block.text) ||
+          block.type === "attachment" ||
+          block.type === "proposed-plan")
       ) {
         flushMessageWork()
         flushWork()
@@ -88,10 +101,18 @@ export function toExchanges(
   previous: Exchange[] = []
 ): Exchange[] {
   const exchanges: Exchange[] = []
+  const prompts = new Map<string, Exchange>()
   let current: Exchange | null = null
 
   for (const message of messages) {
     if (message.role === "user") {
+      const steered = message.steeringFor
+        ? prompts.get(message.steeringFor)
+        : undefined
+      if (steered) {
+        steered.response.push(message)
+        continue
+      }
       current = {
         id: message.id,
         prompt: message,
@@ -100,6 +121,7 @@ export function toExchanges(
         timestamp: message.timestamp,
       }
       exchanges.push(current)
+      prompts.set(message.id, current)
       continue
     }
 

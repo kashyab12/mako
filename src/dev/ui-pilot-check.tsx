@@ -63,6 +63,14 @@ async function openingDraft() {
   check(scene !== null, "the empty transcript mounts its artwork")
   check(heading !== null, "the empty transcript mounts its heading")
   check(input !== null, "the empty transcript mounts its composer")
+  await Promise.all(
+    scene
+      .getAnimations()
+      .filter(
+        (animation) => animation.effect?.getTiming().iterations !== Infinity
+      )
+      .map((animation) => animation.finished)
+  )
   const pane = fixture.querySelector("main")!
   const paneTop = () => pane.getBoundingClientRect().top
   const bounds = scene.getBoundingClientRect()
@@ -87,10 +95,12 @@ async function openingDraft() {
   for (const lines of [1, 12, 30]) {
     window.dispatchEvent(
       new CustomEvent("mako:compose", {
-        detail: Array.from(
-          { length: lines },
-          (_, i) => `Layout check ${i + 1}`
-        ).join("\n"),
+        detail: {
+          text: Array.from(
+            { length: lines },
+            (_, i) => `Layout check ${i + 1}`
+          ).join("\n"),
+        },
       })
     )
     await new Promise((resolve) => setTimeout(resolve, 60))
@@ -104,7 +114,9 @@ async function openingDraft() {
       `the opening heading stays fixed with a ${lines}-line draft`
     )
   }
-  window.dispatchEvent(new CustomEvent("mako:compose", { detail: "" }))
+  window.dispatchEvent(
+    new CustomEvent("mako:compose", { detail: { text: "" } })
+  )
   await new Promise((resolve) => requestAnimationFrame(resolve))
   flushSync(() => root.render(null))
 }
@@ -399,23 +411,43 @@ async function reflectedLight() {
     await until(() => fixture.querySelector("[data-water-moving]") !== null)
     const light = fixture.querySelector<HTMLElement>(".ocean-light")!
     const grain = fixture.querySelector<HTMLElement>(".ocean-grain")!
-    const fin = fixture.querySelector<SVGSVGElement>(".ocean-fin")!
-    const finGlint = fixture.querySelector<SVGRectElement>(".ocean-fin-glint")!
+    const fin = fixture.querySelector<HTMLElement>(".ocean-fin")!
+    const finGlint = fixture.querySelector<HTMLElement>(".ocean-fin-glint")!
     const image = fixture.querySelector<HTMLImageElement>(".ocean-engraving")!
     await until(() => image.complete && image.naturalWidth > 0)
     await new Promise((resolve) => setTimeout(resolve, 250))
     const imageBounds = () => {
       const rect = image.getBoundingClientRect()
       const pane = fixture.getBoundingClientRect()
-      return [rect.left - pane.left, rect.top - pane.top, rect.width, rect.height]
+      return [
+        rect.left - pane.left,
+        rect.top - pane.top,
+        rect.width,
+        rect.height,
+      ]
     }
     const bounds = imageBounds()
-    const first = getComputedStyle(light).maskPosition
+    const reflection = light.querySelector<HTMLImageElement>("img")!
+    const reflectionAligned = () => {
+      const original = image.getBoundingClientRect()
+      const reflected = reflection.getBoundingClientRect()
+      return [
+        original.x - reflected.x,
+        original.y - reflected.y,
+        original.width - reflected.width,
+        original.height - reflected.height,
+      ].every((delta) => Math.abs(delta) < 0.1)
+    }
+    check(
+      reflectionAligned(),
+      "the counter-moving reflection aligns with the engraving"
+    )
+    const first = getComputedStyle(light).transform
     const firstGrain = getComputedStyle(grain).transform
     const firstFin = getComputedStyle(finGlint).transform
     await new Promise((resolve) => setTimeout(resolve, 450))
     check(
-      getComputedStyle(light).maskPosition !== first,
+      getComputedStyle(light).transform !== first,
       "reflected light visibly advances through its CSS animation"
     )
     check(
@@ -424,8 +456,13 @@ async function reflectedLight() {
     )
     check(
       getComputedStyle(finGlint).transform !== firstFin &&
-        getComputedStyle(finGlint).animationDuration !== getComputedStyle(light).animationDuration,
+        getComputedStyle(finGlint).animationDuration !==
+          getComputedStyle(light).animationDuration,
       "the fin has its own moving dither with an independent period"
+    )
+    check(
+      reflectionAligned(),
+      "reflection lines remain aligned while the mask travels"
     )
     const finRect = fin.getBoundingClientRect()
     const engravingRect = image.getBoundingClientRect()
@@ -436,12 +473,17 @@ async function reflectedLight() {
         finRect.width - engravingRect.width,
         finRect.height - engravingRect.height,
       ].every((delta) => Math.abs(delta) < 0.1) &&
-        fin.getAttribute("preserveAspectRatio") === "xMidYMax slice",
+        getComputedStyle(fin).maskPosition === "50% 100%" &&
+        getComputedStyle(fin).maskSize === "cover",
       "the fin overlay shares the engraving's dimensions and bottom-aligned crop"
     )
     check(
-      imageBounds().every((value, index) => Math.abs(value - bounds[index]!) < 0.1),
-      `the engraving stays stationary throughout the light animation (${imageBounds().map((value, index) => (value - bounds[index]!).toFixed(2)).join(", ")})`
+      imageBounds().every(
+        (value, index) => Math.abs(value - bounds[index]!) < 0.1
+      ),
+      `the engraving stays stationary throughout the light animation (${imageBounds()
+        .map((value, index) => (value - bounds[index]!).toFixed(2))
+        .join(", ")})`
     )
     check(
       !fixture.querySelector("canvas"),
@@ -458,10 +500,10 @@ async function reflectedLight() {
     // Account for the -1.5s phase offset at both ends of the round trip.
     for (const boundary of [4500, 10500]) {
       sweep.currentTime = boundary - 10
-      const before = getComputedStyle(light).maskPosition
+      const before = getComputedStyle(light).transform
       sweep.currentTime = boundary + 10
       check(
-        getComputedStyle(light).maskPosition === before,
+        getComputedStyle(light).transform === before,
         `the reflection crosses its ${boundary}ms loop boundary without jumping`
       )
     }

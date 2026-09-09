@@ -66,6 +66,14 @@ function sameMessage(a: ChatMessage, b: ChatMessage): boolean {
 function sameBlock(a: Block, b: Block): boolean {
   if (a === b) return true
   switch (a.type) {
+    case "proposed-plan":
+      return (
+        b.type === "proposed-plan" &&
+        a.id === b.id &&
+        a.text === b.text &&
+        a.status === b.status &&
+        a.truncated === b.truncated
+      )
     case "text":
       return b.type === "text" && a.text === b.text
     case "thinking":
@@ -89,7 +97,8 @@ function sameBlock(a: Block, b: Block): boolean {
         a.isError === b.isError &&
         a.isCanceled === b.isCanceled &&
         a.streaming === b.streaming &&
-        JSON.stringify(a.attachments) === JSON.stringify(b.attachments)
+        JSON.stringify(a.attachments) === JSON.stringify(b.attachments) &&
+        JSON.stringify(a.details) === JSON.stringify(b.details)
       )
   }
 }

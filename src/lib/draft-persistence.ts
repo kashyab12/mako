@@ -6,6 +6,7 @@ export const SavedAttachmentSchema = z.object({
   id: z.string(),
   index: z.number(),
   name: z.string(),
+  reference: z.string().optional(),
   mimeType: z.string(),
   size: z.number(),
   kind: z.enum(["image", "text", "binary"]),
@@ -14,9 +15,11 @@ export const SavedAttachmentSchema = z.object({
   error: z.string().optional(),
 })
 let warned = false
-export function writeDraftStorage(key: string, value: string): void {
+export function writeDraftStorage(key: string, value: string): boolean {
   try {
-    globalThis.localStorage?.setItem(key, value)
+    if (!globalThis.localStorage) return false
+    globalThis.localStorage.setItem(key, value)
+    return true
   } catch {
     if (!warned) {
       warned = true
@@ -24,6 +27,7 @@ export function writeDraftStorage(key: string, value: string): void {
         "This draft is kept in memory, but could not be saved for reopening"
       )
     }
+    return false
   }
 }
 export function readDraftStorage(key: string): string | null {

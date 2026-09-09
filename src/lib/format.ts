@@ -1,5 +1,11 @@
-const time = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" })
-const day = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" })
+const time = new Intl.DateTimeFormat(undefined, {
+  hour: "numeric",
+  minute: "2-digit",
+})
+const day = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+})
 const dayYear = new Intl.DateTimeFormat(undefined, {
   month: "short",
   day: "numeric",
@@ -14,7 +20,9 @@ export function formatTime(value?: string | number) {
 export function formatDay(value?: string | number) {
   const date = toDate(value)
   if (!date) return ""
-  return date.getFullYear() === new Date().getFullYear() ? day.format(date) : dayYear.format(date)
+  return date.getFullYear() === new Date().getFullYear()
+    ? day.format(date)
+    : dayYear.format(date)
 }
 
 /** "now", "12m", "3h", "Mon", "Apr 3" — the rail needs width discipline. */
@@ -51,7 +59,8 @@ function toDate(value?: string | number) {
 
 export function formatTokens(count: number) {
   if (count < 1000) return String(count)
-  if (count < 1_000_000) return `${(count / 1000).toFixed(count < 10_000 ? 1 : 0)}k`
+  if (count < 1_000_000)
+    return `${(count / 1000).toFixed(count < 10_000 ? 1 : 0)}k`
   return `${(count / 1_000_000).toFixed(1)}M`
 }
 
@@ -85,7 +94,8 @@ export function formatRate(perMillion: number) {
 
 export function formatContextWindow(tokens: number) {
   if (!tokens) return "—"
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(tokens % 1_000_000 ? 1 : 0)}M`
+  if (tokens >= 1_000_000)
+    return `${(tokens / 1_000_000).toFixed(tokens % 1_000_000 ? 1 : 0)}M`
   return `${Math.round(tokens / 1000)}K`
 }
 
@@ -104,10 +114,13 @@ export function fileDir(path: string) {
   return parts.join("/")
 }
 
-export function textOf(blocks: Array<{ type: string; text?: string; thinking?: string }>) {
+export function textOf(
+  blocks: Array<{ type: string; text?: string; thinking?: string }>
+) {
   let out = ""
   for (const block of blocks) {
-    if (block.type === "text" && block.text) out += block.text
+    if ((block.type === "text" || block.type === "proposed-plan") && block.text)
+      out += block.text
     else if (block.type === "thinking" && block.thinking) out += block.thinking
   }
   return out.trim()

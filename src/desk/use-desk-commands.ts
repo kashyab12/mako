@@ -11,6 +11,7 @@ import { installBuiltins } from "@/desk/builtins"
 import { actions, currentTurnRunning, store } from "@/state/session"
 import { git } from "@/state/git"
 import { prefsStore, setPref, togglePref } from "@/state/prefs"
+import { updates } from "@/state/updates"
 import { stage } from "@/state/stage"
 import { surfaces } from "@/extend/surfaces"
 import { tabsStore } from "@/state/tabs"
@@ -361,6 +362,14 @@ const DESK_COMMANDS: DeskCommand[] = [
       const root = store.get().sourceRoot
       if (root) await actions.openWorkspace(root)
     },
+  },
+  {
+    id: "app.restart",
+    title: "Restart Mako",
+    section: "Session",
+    hint: "Quit and come back on the current build; conversations reopen from their journals",
+    keywords: "relaunch reload engine rebuild host",
+    run: () => updates.relaunch(),
   },
   {
     id: "view.toggle-theme",

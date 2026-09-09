@@ -1,3 +1,4 @@
+import { AgentsPanel } from "@/components/inspector/agents-panel"
 import { ControlPreviewOverlay } from "@/components/inspector/control-preview-overlay"
 import { AppshotButton } from "@/components/composer/appshot-button"
 import { ControlPreviewPanel } from "@/components/inspector/control-preview-panel"
@@ -96,6 +97,7 @@ export function installBuiltins(): () => void {
       order: 5,
       minWidth: 360,
     }),
+    registerSurface({ id: "agents", label: "Agents", icon: BotIcon, render: AgentsPanel, order: 6, minWidth: 360 }),
     // Identity, through the same slots a plugin would use.
     registerSlot("identity", "titlebar.trailing", IdentityBadge, -10),
     registerSlot("identity", "rail.footer", IdentityRow, -10),

@@ -220,6 +220,7 @@ export function installMockBridge() {
     pathForFile: () => null,
     resolveFileUrl: (url) => url,
     unwatchFile: async () => {},
+    createWorkspaceText: async (cwd: string, path: string) => `${cwd}/${path}`,
     readFile: async (path: string) => ({
       path,
       contents: `// ${path}\n// The browser mock has no filesystem; this stands in for one.\n`,
@@ -369,7 +370,10 @@ export function installMockBridge() {
       throw new Error("Appshots require a native window")
     },
     controlPreview: async () => null,
-    prepareBrowserExtension: async () => ({ directory: "/fixture/mako-browser", extensionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }),
+    prepareBrowserExtension: async () => ({
+      directory: "/fixture/mako-browser",
+      extensionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    }),
     browserControlStatus: async () => [
       {
         id: "chrome",
@@ -912,7 +916,7 @@ export function installMockBridge() {
         requests: request ? [request] : [],
         blocks: request
           ? [
-              { type: "user", text: request.text },
+              { type: "user", requestId: request.id, text: request.text },
               { type: "text", text: `Finished: ${request.text}` },
             ]
           : [],
@@ -956,6 +960,7 @@ export function installMockBridge() {
       const request = nativeRequests.find((request) => request.input.id === id)
       if (request) request.status = "dismissed"
     },
+    nativeEditQueued: async () => [],
     nativeRequests: async () => nativeRequests,
     nativeSubmit: async (input: NativeRequestInput) => {
       const thread = await window.mako?.openThread(input.path)
@@ -1059,6 +1064,19 @@ export function installMockBridge() {
       liveSnapshots.set(parent.session.id, next)
       return next
     },
+    liveAction: async () => {
+      throw new Error("Provider controls require the real host")
+    },
+    liveAcknowledgeAction: async () => {
+      throw new Error("Provider controls require the real host")
+    },
+    liveRewindPreview: async () => {
+      throw new Error("Workspace rewind requires the real host")
+    },
+    liveRewind: async () => {
+      throw new Error("Workspace rewind requires the real host")
+    },
+    liveRecoverRewinds: async () => [],
     liveFork: async (id: string, input: ForkInput) => {
       const parent = liveSnapshots.get(id)
       if (!parent) throw new Error("Missing mock source")
@@ -1179,6 +1197,31 @@ export function installMockBridge() {
       liveSnapshots.set(id, next)
       return next
     },
+    liveEditQueued: async (id, input) => {
+      const snapshot = liveSnapshots.get(id)
+      if (!snapshot) throw new Error("Missing mock session")
+      const next: LiveSnapshot = {
+        ...snapshot,
+        revision: snapshot.revision + 1,
+        requests: snapshot.requests.map((request) => {
+          if (request.id !== input.requestId) return request
+          if (request.status !== "queued" && request.status !== "held")
+            throw new Error("This message has already started")
+          switch (input.change.kind) {
+            case "edit":
+              return { ...request, status: "queued", text: input.change.text }
+            case "pause":
+              return { ...request, status: "held" }
+            case "resume":
+              return { ...request, status: "queued" }
+            case "remove":
+              return { ...request, status: "canceled" }
+          }
+        }),
+      }
+      liveSnapshots.set(id, next)
+      return next
+    },
     liveClearQueue: async (id: string) => {
       const snapshot = liveSnapshots.get(id)
       if (!snapshot) throw new Error("Missing mock session")
@@ -1217,7 +1260,7 @@ export function installMockBridge() {
         status: "completed",
       }
       const updates = [
-        { kind: "user" as const, text },
+        { kind: "user" as const, requestId, text },
         { kind: "text" as const, text: `Finished: ${text}` },
       ]
       const next = {
@@ -1467,6 +1510,7 @@ export function installMockBridge() {
       version: "0.0.0-mock",
     }),
     installUpdate: async () => {},
+    relaunch: async () => {},
     crashes: async () => [],
     crashesDir: async () => "/tmp/mako/crashes",
     clearCrashes: async () => {},
@@ -1483,6 +1527,12 @@ export function installMockBridge() {
     onEvent: (listener) => {
       listeners.add(listener)
       return () => listeners.delete(listener)
+    },
+  }
+  return {
+    setLiveSnapshot(snapshot: LiveSnapshot): void {
+      liveSnapshots.set(snapshot.session.id, snapshot)
+      acpSessions.set(snapshot.session.id, snapshot.session)
     },
   }
 }

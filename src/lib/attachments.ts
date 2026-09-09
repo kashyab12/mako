@@ -5,6 +5,10 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react"
 import { getMako } from "@/lib/bridge"
 import { toast } from "sonner"
+import {
+  attachmentReference,
+  namedAttachmentReference,
+} from "./attachment-references"
 
 /**
  * Attachments.
@@ -18,10 +22,9 @@ import { toast } from "sonner"
  * A PDF or a video therefore attaches like anything else and stays reachable,
  * rather than being refused for not fitting the model's inline contract.
  *
- * In the draft the attachment appears as `[Attachment 2]` at the caret, so its
- * position in the sentence is preserved — "compare [Attachment 1] with
- * [Attachment 2]" means something the model can follow — while the file itself
- * shows as a numbered preview above the composer.
+ * Filename references preserve each file's position in the draft. The composer
+ * paints these as removable chips; the provider receives the same filenames
+ * with an appendix that points to their staged contents.
  */
 
 export type AttachmentInput = File | { file: File; context: string }
@@ -30,6 +33,7 @@ export type AttachmentKind = "image" | "text" | "binary"
 
 export interface Attachment {
   id: string
+  reference?: string
   /** 1-based, matching the `[Attachment N]` marker in the draft. */
   index: number
   name: string
@@ -63,6 +67,7 @@ export interface AttachmentPrompt {
 }
 
 export interface AttachmentFileReference {
+  index: number
   name: string
   path: string
 }
@@ -148,6 +153,7 @@ export function useAttachments(key = "default") {
   const items = buckets[key] ?? EMPTY_ATTACHMENTS
   const nextIndex = useRef(new Map<string, number>())
   const live = useRef(new Map<string, Attachment[]>())
+  const removed = useRef(new Map<string, Attachment[]>())
   const updateItems = useCallback(
     (update: (current: Attachment[]) => Attachment[]) =>
       setBuckets((current) => {
@@ -177,8 +183,12 @@ export function useAttachments(key = "default") {
   }, [items, key])
   useEffect(() => {
     const bucketsAtUnmount = live.current
+    const removedAtUnmount = removed.current
     return () => {
-      for (const bucket of bucketsAtUnmount.values()) {
+      for (const bucket of [
+        ...bucketsAtUnmount.values(),
+        ...removedAtUnmount.values(),
+      ]) {
         for (const item of bucket) {
           if (item.preview) URL.revokeObjectURL(item.preview)
         }
@@ -188,7 +198,7 @@ export function useAttachments(key = "default") {
 
   /** Returns the markers to insert, so the caller can place them at the caret. */
   const add = useCallback(
-    async (files: AttachmentInput[]): Promise<string> => {
+    (files: AttachmentInput[]): string => {
       const accepted: PendingAttachment[] = []
 
       for (const input of files) {
@@ -211,6 +221,10 @@ export function useAttachments(key = "default") {
             id: `${file.name}-${file.size}-${file.lastModified}-${index}`,
             index,
             name: file.name,
+            reference: namedAttachmentReference(file.name, index, [
+              ...(live.current.get(key) ?? []).map(attachmentReference),
+              ...accepted.map((entry) => attachmentReference(entry.attachment)),
+            ]),
             mimeType: file.type || "application/octet-stream",
             size: file.size,
             kind,
@@ -235,14 +249,35 @@ export function useAttachments(key = "default") {
           const { attachment, file } = entry
           try {
             const resolved = await resolve(attachment, file)
+            removed.current.set(
+              key,
+              (removed.current.get(key) ?? []).map((item) =>
+                item.id === attachment.id ? attachmentMetadata(resolved) : item
+              )
+            )
             updateItems((current) =>
               current.map((item) =>
-                item.id === attachment.id ? resolved : item
+                item.id === attachment.id
+                  ? { ...resolved, preview: item.preview }
+                  : item
               )
             )
           } catch (error) {
             toast.error(
               `Could not attach ${attachment.name}: ${error instanceof Error ? error.message : error}`
+            )
+            removed.current.set(
+              key,
+              (removed.current.get(key) ?? []).map((item) =>
+                item.id === attachment.id
+                  ? {
+                      ...item,
+                      pending: false,
+                      error:
+                        "Staging failed; remove and attach this file again",
+                    }
+                  : item
+              )
             )
             updateItems((current) =>
               current.map((item) =>
@@ -261,7 +296,7 @@ export function useAttachments(key = "default") {
       )
 
       return accepted
-        .map((entry) => `[Attachment ${entry.attachment.index}]`)
+        .map((entry) => attachmentReference(entry.attachment))
         .join(" ")
     },
     [key, updateItems]
@@ -288,11 +323,40 @@ export function useAttachments(key = "default") {
     (id: string) => {
       updateItems((current) => {
         const found = current.find((item) => item.id === id)
-        if (found?.preview) URL.revokeObjectURL(found.preview)
+        if (found) {
+          if (found.preview) URL.revokeObjectURL(found.preview)
+          removed.current.set(key, [
+            ...(removed.current.get(key) ?? []).filter(
+              (item) => item.id !== id
+            ),
+            attachmentMetadata(found),
+          ])
+        }
         return current.filter((item) => item.id !== id)
       })
     },
-    [updateItems]
+    [key, updateItems]
+  )
+
+  const restoreRemoved = useCallback(
+    (text: string) => {
+      const bucket = removed.current.get(key) ?? []
+      const restoring = bucket.filter((item) =>
+        text.includes(attachmentReference(item))
+      )
+      if (!restoring.length) return
+      removed.current.set(
+        key,
+        bucket.filter((item) => !restoring.includes(item))
+      )
+      updateItems((current) => [
+        ...current,
+        ...restoring.filter(
+          (item) => !current.some((entry) => entry.id === item.id)
+        ),
+      ])
+    },
+    [key, updateItems]
   )
 
   const clear = useCallback(() => {
@@ -339,7 +403,17 @@ export function useAttachments(key = "default") {
     // A successful send must not remove attachments added to the next draft.
   }, [])
 
-  return { items, add, remove, clear, detach, reattach, discard, settled }
+  return {
+    items,
+    add,
+    remove,
+    restoreRemoved,
+    clear,
+    detach,
+    reattach,
+    discard,
+    settled,
+  }
 }
 
 async function resolve(
@@ -489,14 +563,16 @@ ${item.text}
 export function parseAttachmentAppendix(
   text: string
 ): ParsedAttachmentAppendix {
-  const at = text.lastIndexOf("\n---\n[Attachment ")
+  const separator = text.lastIndexOf("\n---\n[Attachment ")
+  const at =
+    separator >= 0 ? separator : text.startsWith("---\n[Attachment ") ? 0 : -1
   if (at === -1) return { body: text, files: [] }
-  const appendix = text.slice(at + 5)
+  const appendix = text.slice(at + (separator >= 0 ? 5 : 4))
   const files: AttachmentFileReference[] = []
   for (const match of appendix.matchAll(
-    /\[Attachment \d+\] (.+?) — .*?Saved at (.+?); read it from there/g
+    /\[Attachment (\d+)\] (.+?) — .*?Saved at (.+?); read it from there/g
   )) {
-    files.push({ name: match[1]!, path: match[2]! })
+    files.push({ index: Number(match[1]), name: match[2]!, path: match[3]! })
   }
   if (files.length === 0) return { body: text, files: [] }
   const remaining = appendix
@@ -544,4 +620,14 @@ export function useAttachmentPreview(item: Attachment): string | undefined {
     item.preview ??
     (resolved?.path === item.stagedPath ? resolved?.url : undefined)
   )
+}
+
+function attachmentMetadata(item: Attachment): Attachment {
+  return {
+    ...item,
+    preview: undefined,
+    data: undefined,
+    text: undefined,
+    context: undefined,
+  }
 }

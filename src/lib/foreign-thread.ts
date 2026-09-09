@@ -48,6 +48,9 @@ export function threadToMessages(
       const message: ChatMessage = {
         id: messageId,
         role: "user",
+        steeringFor: entry.steeringFor
+          ? `native-user-${entry.steeringFor}`
+          : undefined,
         blocks: [
           { type: "text", text: entry.text },
           ...(entry.attachments ?? []),
@@ -79,7 +82,8 @@ export function threadToMessages(
       blockIndex += 1
     ) {
       const block = entry.blocks[blockIndex]!
-      if (block.type === "attachment") blocks.push(block)
+      if (block.type === "attachment" || block.type === "proposed-plan")
+        blocks.push(block)
       if (block.type === "text") blocks.push({ type: "text", text: block.text })
       if (block.type === "thinking")
         blocks.push({ type: "thinking", thinking: block.text })
