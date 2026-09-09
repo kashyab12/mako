@@ -3,8 +3,12 @@ import type { ProviderLiveDriver } from "../live-driver.js"
 
 export const codexLiveDriver: ProviderLiveDriver = {
   provider: "codex",
+  observesNativeAgents: true,
   canResume: true,
-  canForkAtRun: true,
+  forkPoint: "run",
+  steer: async (...args) =>
+    (await import("../../codex-app.js")).codexAppSteer(...args),
+  // Native compaction failed the history-retention check; do not advertise it.
   available: () => codexExecutableCandidates().length > 0,
   start: async (...args) =>
     (await import("../../codex-app.js")).codexAppStart(...args),
