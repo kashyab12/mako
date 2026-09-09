@@ -122,6 +122,14 @@ export class LiveConversations {
     }
   }
 
+  hasActiveWork(): boolean {
+    return [...this.records.values()].some((resident) => resident.transferring || resident.opening || resident.checkpointing || resident.rewinding || (resident.driver && (
+      resident.snapshot.session.status === "running" ||
+      resident.snapshot.requests.some((request) => request.status === "dispatching" || request.status === "queued") ||
+      resident.snapshot.nativeAgents?.agents.some((agent) => agent.state.kind === "working" || agent.state.kind === "waiting")
+    )))
+  }
+
   summaries(): LiveSummary[] {
     return [
       ...this.recovered.values(),
@@ -166,13 +174,22 @@ export class LiveConversations {
         throw new Error("This conversation ID belongs to another source")
       return existing.snapshot
     }
+    const before = await this.dependencies.checkpoint?.(path)
     const base = await captureNativeHistory(path, this.dependencies.history)
     if (!base) throw new Error("The source history could not be captured")
+    const owned = this.summaries().find((summary) =>
+      summary.session.harness === base.ref.harness &&
+      summary.session.nativeId === base.ref.nativeId
+    )
+    if (owned) return this.require(owned.session.id).snapshot
+    const after = await this.dependencies.checkpoint?.(path, base.ref.harness)
+    const checkpoint = before === after ? after : undefined
     const snapshot: LiveSnapshot = {
       session: {
         id,
         harness: base.ref.harness,
         nativeId: base.ref.nativeId,
+        settings: base.ref.settings,
         cwd: base.ref.cwd ?? "",
         title: base.ref.title,
         status: "ready",
@@ -198,6 +215,8 @@ export class LiveConversations {
             provider: base.ref.harness,
             nativeId: base.ref.nativeId,
             path,
+            checkpoint,
+            tuning: base.ref.settings,
             coveredBlocks: 0,
             includesBase: true,
           },
@@ -359,7 +378,7 @@ export class LiveConversations {
           : undefined,
         conversationTools: this.dependencies.tools?.(id, id),
       })
-      .then((session) => {
+      .then(async (session) => {
         if (resident.generation !== generation) {
           driver.close(id)
           return
@@ -373,6 +392,13 @@ export class LiveConversations {
         }
         resident.connections.set(id, { driver, session })
         this.updateBinding(resident, session)
+        if (options.modeId && options.modeId !== session.currentMode) {
+          if (!session.modes.some((mode) => mode.id === options.modeId))
+            throw new Error("The saved agent mode is no longer available. Choose a mode before sending.")
+          await driver.setMode(id, options.modeId)
+          if (resident.generation !== generation) return
+          resident.snapshot = { ...resident.snapshot, session: { ...resident.snapshot.session, currentMode: options.modeId } }
+        }
         resident.opening = false
         this.flush(resident)
         this.drain(resident)
@@ -1167,7 +1193,7 @@ export class LiveConversations {
     )
       return
     void this.dependencies
-      .checkpoint(path)
+      .checkpoint(path, resident.snapshot.session.harness)
       .then((checkpoint) => {
         if (
           !checkpoint ||
@@ -1359,7 +1385,7 @@ export class LiveConversations {
             if (!binding.path || binding.id !== control.activeBindingId)
               return binding
             const checkpoint = await this.dependencies.checkpoint?.(
-              binding.path
+              binding.path, binding.provider
             )
             return {
               ...binding,

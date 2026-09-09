@@ -54,7 +54,7 @@ export interface Dependencies {
   ): ConversationTools | undefined
   providers?(): string[]
   root: string
-  checkpoint?(path: string): Promise<string | undefined>
+  checkpoint?(path: string, provider?: string): Promise<string | undefined>
   nativePath?(session: LiveSessionState): string | undefined
   canResume?(binding: ProviderBinding): Promise<boolean>
   driver(provider: string): ProviderLiveDriver | undefined

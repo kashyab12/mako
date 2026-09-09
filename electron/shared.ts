@@ -7,6 +7,7 @@
 export * from "./contracts/automations-usage-updates.js"
 export * from "./contracts/conversation-session.js"
 export * from "./contracts/git-workspace-search.js"
+export * from "./contracts/utility-models.js"
 export * from "./contracts/host-events-boot.js"
 export * from "./contracts/mcp-skills-integrations.js"
 export * from "./contracts/providers-acp.js"

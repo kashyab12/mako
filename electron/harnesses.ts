@@ -1,4 +1,6 @@
 import { accountEnv } from "./accounts.js"
+import { resolveHarnessTuning } from "./harness-models.js"
+import type { SessionSettings } from "@mako/sessions/settings"
 import { providerHost } from "./providers/index.js"
 import {
   pendingProviderProfile,
@@ -9,7 +11,7 @@ import {
 import type { HarnessProfile } from "./shared.js"
 import { providerProfileCache } from "./provider-profile-cache.js"
 
-export { resolveHarnessTuning } from "./harness-models.js"
+export { resolveHarnessTuning }
 export { normalizeAcpOptions } from "@mako/sessions/model-catalog"
 export { devinExecutable } from "./providers/devin/executable.js"
 export {
@@ -59,6 +61,15 @@ export function harnessProfileForSend(
   cwd?: string
 ): Promise<HarnessProfile> {
   return loadProfile(harness, cwd, "send")
+}
+
+export async function resolveHarnessLaunch(
+  harness: string,
+  cwd: string | undefined,
+  tuning: SessionSettings | undefined
+): Promise<SessionSettings | undefined> {
+  if (!tuning?.model) return tuning
+  return resolveHarnessTuning(await harnessProfileForSend(harness, cwd), tuning)
 }
 
 async function loadProfile(
@@ -135,9 +146,11 @@ export async function harnessProfiles(
 export async function harnessProfilesNow(
   cwd?: string
 ): Promise<HarnessProfile[]> {
-  return Promise.all(
-    providerHost.profiles
-      .list()
-      .map((loader) => loadProfile(loader.provider, cwd, "now"))
-  )
+  return providerHost.profiles.list().map((loader) => {
+    void loadProfile(loader.provider, cwd, "now").then((profile) => {
+      if (!profile.pending)
+        for (const listener of listeners) listener({ profile, cwd })
+    }).catch(() => {})
+    return pendingProviderProfile(loader)
+  })
 }

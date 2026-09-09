@@ -1,5 +1,7 @@
 import { z } from "zod"
-import type { ConversationTools } from "./providers/live-driver.js"
+import { stripVTControlCharacters } from "node:util"
+import type { ConversationTools, ProviderSteerInput, ProviderSteerResult } from "./providers/live-driver.js"
+import { AcpPromptTurn } from "./acp-prompt-turn.js"
 /**
  * Interactive foreign agents, over ACP.
  *
@@ -91,7 +93,7 @@ interface Live {
   }
   configOptions: SessionConfigOption[]
   mcpServers: McpServer[]
-  turn: Promise<unknown> | null
+  turn: AcpPromptTurn | null
 }
 
 const sessions = new Map<string, Live>()
@@ -498,46 +500,50 @@ export async function livePrompt(
   const connection = live.connection
   const sessionId = live.sessionId
   const applied = await applyTuning(live, tuning)
-  update(live, { status: "running", settings: applied.settings, configOptions: normalizeAcpOptions(applied.options) })
+  if (live.state.status === "closed" || live.turn?.acceptsSteering)
+    throw new Error("The session changed while preparing the prompt")
+  const turn = new AcpPromptTurn((result) => {
+    if (live.turn !== turn || live.state.status === "closed" || live.state.connection === "disconnected") return
+    update(live, result.kind === "completed"
+      ? { status: "ready", lastStop: result.stopReason }
+      : { status: "failed", lastStop: "failed", error: result.error })
+  })
+  live.turn = turn
+  update(live, { status: "running", nativeRunId: turn.id, error: undefined, lastStop: undefined, settings: applied.settings, configOptions: normalizeAcpOptions(applied.options) })
   emit({ type: "acp-update", id, update: { kind: "user", text } })
+  const prompt = acpPromptBlocks(text, attachments, live.promptCapabilities)
+  void turn.send(() => connection.prompt({ sessionId, prompt })).catch(() => {})
+  await Promise.resolve()
+}
+
+export async function liveSteer(id: string, input: ProviderSteerInput): Promise<ProviderSteerResult> {
+  const live = sessions.get(id)
+  if (!live?.sessionId || !live.connection)
+    throw new Error("This interactive session is not connected")
+  const turn = live.turn
+  if (providerHost.acpSources.get(live.harness)?.steering !== "concurrent-prompt" ||
+    live.state.status !== "running" || turn?.id !== input.expectedRunId || !turn.acceptsSteering)
+    return { kind: "not-accepted", reason: "The provider turn has already changed or does not support steering" }
+  const connection = live.connection
+  const sessionId = live.sessionId
+  const prompt = acpPromptBlocks(input.text, input.attachments, live.promptCapabilities)
+  await turn.send(() => connection.prompt({ sessionId, prompt }), "steer")
+  return { kind: "accepted" }
+}
+
+function acpPromptBlocks(text: string, attachments: PromptAttachment[], capabilities: Live["promptCapabilities"]): ContentBlock[] {
   const prompt: ContentBlock[] = [{ type: "text", text }]
   for (const attachment of attachments) {
-    if (
-      attachment.data &&
-      attachment.mimeType.startsWith("image/") &&
-      live.promptCapabilities.image
-    ) {
-      prompt.push({
-        type: "image",
-        data: attachment.data,
-        mimeType: attachment.mimeType,
-      })
+    if (attachment.data && attachment.mimeType.startsWith("image/") && capabilities.image) {
+      prompt.push({ type: "image", data: attachment.data, mimeType: attachment.mimeType })
     } else if (attachment.path) {
       prompt.push({
-        type: "resource_link",
-        name: attachment.name,
-        uri: pathToFileURL(attachment.path).href,
-        mimeType: attachment.mimeType,
-        size: attachment.size,
+        type: "resource_link", name: attachment.name, uri: pathToFileURL(attachment.path).href,
+        mimeType: attachment.mimeType, size: attachment.size,
       })
     }
   }
-  const turn = Promise.resolve()
-    .then(() => connection.prompt({ sessionId, prompt }))
-    .then((result) => {
-      if (live.state.status !== "closed")
-        update(live, { status: "ready", lastStop: result.stopReason })
-    })
-    .catch((error) => {
-      if (live.state.status !== "closed") {
-        update(live, {
-          status: "failed",
-          error: error instanceof Error ? error.message : String(error),
-        })
-      }
-    })
-  live.turn = turn
-  await Promise.resolve()
+  return prompt
 }
 
 export function acpRespondPermission(
@@ -552,12 +558,17 @@ export async function liveSetMode(id: string, modeId: string): Promise<void> {
   const live = sessions.get(id)
   if (!live?.sessionId || !live.connection) return
   await live.connection.setSessionMode({ sessionId: live.sessionId, modeId })
-  update(live, { currentMode: modeId })
+  live.configOptions = live.configOptions.map((option) =>
+    option.type === "select" && (option.category === "mode" || option.id === "mode")
+      ? { ...option, currentValue: modeId } : option
+  )
+  update(live, { currentMode: modeId, configOptions: normalizeAcpOptions(live.configOptions), settings: acpObservedSettings(live.configOptions, live.state.settings?.model) })
 }
 
 export async function liveCancel(id: string): Promise<void> {
   const live = sessions.get(id)
   if (!live?.sessionId || !live.connection) return
+  live.turn?.cancel()
   await live.connection.cancel({ sessionId: live.sessionId })
 }
 
@@ -590,10 +601,11 @@ function updateState(live: Live, patch: Partial<LiveSessionState>): void {
 /** Structured tracing at INFO and below is narration, not a failure reason. */
 const TRACE_LINE = /^\d{4}-\d\d-\d\dT\S+\s+(?:TRACE|DEBUG|INFO)\b/
 
-function stderrDetail(text: string): string {
-  const lines = text
+export function stderrDetail(text: string): string {
+  const lines = stripVTControlCharacters(text)
     .trim()
     .split("\n")
-    .filter((line) => line.trim() && !TRACE_LINE.test(line))
+    .map((line) => line.trim())
+    .filter((line) => line && !TRACE_LINE.test(line))
   return (lines[lines.length - 1] ?? "").trim().slice(0, 300)
 }

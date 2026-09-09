@@ -134,6 +134,9 @@ export class LiveTransfers {
       this.save(resident, { ...transfer, state: { kind: "preparing" } })
       const source = resident.snapshot
       const control = this.host.control(resident)
+      const currentBinding = control.bindings.find((binding) => binding.id === control.activeBindingId)
+      const reconnect = !resident.driver && currentBinding?.provider === transfer.input.provider && Boolean(currentBinding.nativeId)
+      const tuning = transfer.input.tuning ?? (reconnect ? source.session.settings ?? currentBinding?.tuning : undefined)
       const bindings = control.bindings.map((binding) =>
         binding.id === control.activeBindingId && resident.driver
           ? {
@@ -159,8 +162,7 @@ export class LiveTransfers {
         for (const binding of [...bindings].reverse()) {
           if (
             binding.provider === transfer.input.provider &&
-            JSON.stringify(binding.tuning) ===
-              JSON.stringify(transfer.input.tuning) &&
+            (reconnect ? binding.id === control.activeBindingId : JSON.stringify(binding.tuning) === JSON.stringify(transfer.input.tuning)) &&
             (await this.host.dependencies.canResume?.(binding))
           ) {
             prior = binding
@@ -168,6 +170,8 @@ export class LiveTransfers {
           }
         }
       }
+      if (reconnect && !prior)
+        throw new Error("The saved native session cannot be resumed safely. It may still be open elsewhere or have changed. No replacement session was started.")
       const nativeFork =
         !bindings.length &&
         control.ancestry?.nativeFork?.provider === transfer.input.provider &&
@@ -177,7 +181,7 @@ export class LiveTransfers {
       const manifest = await prepareLiveContext({
         snapshot: source,
         root: join(this.host.dependencies.root, "context"),
-        fromBlock: prior?.coveredBlocks ?? 0,
+        fromBlock: reconnect ? source.blocks.length : prior?.coveredBlocks ?? 0,
         includesBase: !nativeFork && !prior?.includesBase,
       })
       if (resident.generation !== generation) return
@@ -202,9 +206,20 @@ export class LiveTransfers {
             source.session.id
           ),
           title: source.session.title,
-          tuning: transfer.input.tuning,
+          tuning,
         })
         prepared = { driver, session }
+        if (prior?.nativeId && session.nativeId !== prior.nativeId)
+          throw new Error("The provider returned a different session while resuming. The saved conversation was not replaced.")
+        const selectedMode = transfer.input.tuning?.options?.mode
+        const requestedMode = session.modes.find((mode) => mode.id === selectedMode)
+        if (reconnect && selectedMode !== undefined && !requestedMode)
+          throw new Error("The requested agent mode is unavailable after reconnecting")
+        const mode = reconnect ? requestedMode?.id ?? source.session.currentMode : null
+        if (mode && mode !== session.currentMode) {
+          await driver.setMode(bindingId, mode)
+          prepared.session = { ...session, currentMode: mode }
+        }
       }
       if (resident.generation !== generation) {
         if (preparedId) {
@@ -220,6 +235,7 @@ export class LiveTransfers {
         throw new Error(
           "The destination did not become ready; the source conversation is unchanged"
         )
+      const appliedTuning = prepared.session.settings ?? tuning
       const latestBindings = this.host
         .control(resident)
         .bindings.map((binding) => {
@@ -239,7 +255,7 @@ export class LiveTransfers {
         id: bindingId,
         provider: transfer.input.provider,
         nativeId: prepared.session.nativeId,
-        tuning: transfer.input.tuning,
+        tuning: appliedTuning,
         coveredBlocks: 0,
         includesBase: false,
       }
@@ -282,7 +298,7 @@ export class LiveTransfers {
           bindings: (prior ? latestBindings : [...latestBindings, binding]).map(
             (candidate) =>
               candidate.id === bindingId
-                ? { ...candidate, includesBase: true }
+                ? { ...candidate, includesBase: true, tuning: appliedTuning }
                 : candidate
           ),
           transfers: this.host

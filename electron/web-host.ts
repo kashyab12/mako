@@ -34,8 +34,9 @@ async function readRequest(request: IncomingMessage) {
 /** Development-only host transport on a private Unix socket, never a public TCP listener. */
 export async function startWebHost(
   socket: string,
-  invoke: (channel: string, args: unknown[]) => Promise<string>,
-  file: (request: Request) => Promise<Response>
+  invoke: (channel: string, args: unknown[], client?: string) => Promise<string>,
+  file: (request: Request) => Promise<Response>,
+  disconnected?: (client: string) => void
 ) {
   const streams = new Set<ServerResponse>()
   const server = createServer((request, response) => {
@@ -72,11 +73,20 @@ export async function startWebHost(
       response.writeHead(405).end()
       return
     }
+    const client = z.string().uuid().optional().safeParse(request.headers["x-mako-window"])
+    if (!client.success) {
+      response.writeHead(400).end("Invalid workspace client")
+      return
+    }
+    const clientId = client.data ? `web:${client.data}` : "web"
     if (request.url === "/events") {
       response.writeHead(200, { "content-type": "application/x-ndjson" })
       response.write(JSON.stringify({ channel: "ready" }) + "\n")
       streams.add(response)
-      response.once("close", () => streams.delete(response))
+      response.once("close", () => {
+        streams.delete(response)
+        if (client.data) disconnected?.(clientId)
+      })
       return
     }
     if (request.url !== "/rpc") {
@@ -87,7 +97,8 @@ export async function startWebHost(
       .then(async ({ channel, args }) => {
         const encoded = await invoke(
           channel,
-          args.map((arg) => (arg.kind === "absent" ? undefined : arg.value))
+          args.map((arg) => (arg.kind === "absent" ? undefined : arg.value)),
+          clientId
         )
         response
           .writeHead(200, { "content-type": "application/json" })

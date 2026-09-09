@@ -354,14 +354,6 @@ export class AgentHost {
     return this.workspaceGit.patch(staged)
   }
 
-  async generateCommitMessage(options?: {
-    prompt?: string
-    model?: string
-  }): Promise<string> {
-    void options
-    unavailable("Built-in commit message generation")
-  }
-
   async gitCommit(
     message: string,
     options: { amend?: boolean } = {}

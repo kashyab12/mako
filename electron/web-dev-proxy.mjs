@@ -39,6 +39,7 @@ export function webHostProxy(socket) {
           return
         }
         const headers = { "content-type": "application/json" }
+        if (request.headers["x-mako-window"]) headers["x-mako-window"] = request.headers["x-mako-window"]
         if (preview && request.headers.range)
           headers.range = request.headers.range
         const upstream = hostRequest(

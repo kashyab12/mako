@@ -1,4 +1,5 @@
 import type { QueuedPromptEdit } from "./contracts/live-queue.js"
+import { handleQuit } from "./background-lifecycle.js"
 import type { SessionSettings } from "@mako/sessions/settings"
 import { resolveExecutable } from "./executable.js"
 import { Appshots } from "./appshots.js"
@@ -78,7 +79,9 @@ import {
   userAvatar,
   type CreatePullOptions,
 } from "./github.js"
-import { HostPool } from "./pool.js"
+import type { HostPool } from "./pool.js"
+import { WorkspaceClients } from "./workspace-clients.js"
+import { hostClient } from "./host-client.js"
 import { listExternalEditors, openInExternalEditor } from "./editors.js"
 import { workspacePreviewPath } from "./workspace-preview.js"
 import {
@@ -109,7 +112,7 @@ import {
 } from "./drivers.js"
 import {
   harnessProfile,
-  harnessProfileForSend,
+  resolveHarnessLaunch,
   harnessProfiles,
   harnessProfilesNow,
   onHarnessProfile,
@@ -259,11 +262,12 @@ let controlService: Awaited<ReturnType<typeof startControlService>> | null =
   null
 let liveConversations: LiveConversations
 let window: BrowserWindow | null = null
+const rendererWindows = new Set<BrowserWindow>()
 let webHost: Awaited<ReturnType<typeof startWebHost>> | undefined
 const webSocket = isDev ? process.env.MAKO_WEB_SOCKET : undefined
+const webOnly = Boolean(webSocket && process.env.MAKO_WEB_ONLY !== "0")
 let terminalClient: TerminalDaemonClient | null = null
-const pool = new HostPool(emit)
-let starting: Promise<unknown> | null = null
+const workspaceClients = new WorkspaceClients(emit)
 
 function terminal() {
   if (!terminalClient) throw new Error("Terminal service is not ready")
@@ -279,9 +283,8 @@ function ensureMakoLocalControl() {
 
 function emitTerminalWake() {
   webHost?.terminal({ type: "wake" })
-  if (!window?.isDestroyed()) {
-    window?.webContents.send("mako:terminal-event", { type: "wake" })
-  }
+  for (const renderer of rendererWindows)
+    renderer.webContents.send("mako:terminal-event", { type: "wake" })
 }
 
 function emit(event: HostEvent) {
@@ -293,8 +296,8 @@ function emit(event: HostEvent) {
   // running a watcher of its own.
   if (event.type === "git") noticeHead(event.git.head)
   webHost?.event(event)
-  if (window?.isDestroyed()) return
-  window?.webContents.send("mako:event", event)
+  for (const renderer of rendererWindows)
+    renderer.webContents.send("mako:event", event)
 }
 
 /**
@@ -306,8 +309,25 @@ function emit(event: HostEvent) {
  */
 const RELAUNCH_EXIT_CODE = 75
 let relaunching = false
+let shuttingDown = false
+
+function hasActiveWork(): boolean {
+  return Boolean(liveConversations?.hasActiveWork() || nativeRequests?.list().some((request) => request.status === "dispatching" || request.status === "queued"))
+}
+
+async function reopenWindow(): Promise<void> {
+  if (webOnly && !rendererWindows.size) return
+  await app.dock?.show()
+  for (const renderer of rendererWindows) renderer.show()
+  if (window && !window.isDestroyed()) window.focus()
+  else if (!webOnly) await createWindow()
+}
 
 function relaunch(): void {
+  if (hasActiveWork()) {
+    emit({ type: "notice", level: "info", message: "Agents are still running. Reload the interface or open a preview; restart the host after they finish." })
+    return
+  }
   relaunching = true
   if (!isDev) app.relaunch()
   app.quit()
@@ -315,11 +335,7 @@ function relaunch(): void {
 
 /** Start the first tab once, however many callers race for it. */
 async function ready(): Promise<HostPool> {
-  starting ??= pool.ensure().finally(() => {
-    starting = null
-  })
-  await starting
-  return pool
+  return workspaceClients.ready(hostClient())
 }
 
 /**
@@ -338,12 +354,16 @@ async function withHost<T>(
 
 async function createWindow() {
   nativeTheme.themeSource = "dark"
+  if (isDev) {
+    app.setName("Mako Dev")
+    app.dock?.setBadge("DEV")
+  }
   const icon =
     process.platform === "darwin" && app.isPackaged ? undefined : appIcon()
   if (icon && process.platform === "darwin") app.dock?.setIcon(icon)
 
   const windowOptions: BrowserWindowConstructorOptions = {
-    title: "Mako",
+    title: isDev ? "Mako Dev" : "Mako",
     width: 1480,
     height: 940,
     minWidth: 900,
@@ -367,8 +387,10 @@ async function createWindow() {
   }
   if (icon) windowOptions.icon = icon
   window = new BrowserWindow(windowOptions)
+  trackRenderer(window)
 
   window.once("ready-to-show", () => {
+    if (app.commandLine.hasSwitch("background")) return
     // Full working area, not a floating rectangle someone has to drag out.
     window?.maximize()
     window?.show()
@@ -449,6 +471,41 @@ async function createWindow() {
     )
   } else {
     await window.loadFile(join(__dirname, "../dist/index.html"))
+  }
+}
+
+function trackRenderer(renderer: BrowserWindow): void {
+  rendererWindows.add(renderer)
+  const client = `renderer:${renderer.webContents.id}`
+  renderer.once("closed", () => {
+    rendererWindows.delete(renderer)
+    void workspaceClients.release(client)
+  })
+}
+
+async function openPreviewWindow(): Promise<void> {
+  const preview = new BrowserWindow({
+    title: isDev ? "Mako Dev Preview" : "Mako Preview",
+    width: 1200, height: 860, minWidth: 640, minHeight: 540,
+    show: false,
+    webPreferences: { preload: join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: false, backgroundThrottling: true },
+  })
+  trackRenderer(preview)
+  preview.webContents.setWindowOpenHandler(({ url }) => { void shell.openExternal(url); return { action: "deny" } })
+  const id = crypto.randomUUID()
+  try {
+    if (isDev) {
+      const url = new URL(process.env.VITE_DEV_SERVER_URL ?? "http://127.0.0.1:5173")
+      url.searchParams.set("preview", id)
+      await preview.loadURL(url.href)
+    } else await preview.loadFile(join(__dirname, "../dist/index.html"), { query: { preview: id } })
+    if (!app.commandLine.hasSwitch("background")) {
+      await app.dock?.show()
+      preview.show()
+    }
+  } catch (error) {
+    preview.destroy()
+    throw error
   }
 }
 
@@ -554,20 +611,14 @@ function bindIpc() {
     followThread(path, fromByte)
   )
   handle("mako:thread-unfollow", () => unfollowThread())
-  handle("mako:thread-resumable", () => [
-    ...new Set([
-      ...resumableHarnesses(),
-      ...providerHost.liveDrivers
-        .list()
-        .filter((driver) => driver.available(app.getAppPath()))
-        .map((driver) => driver.provider),
-    ]),
-  ])
-  handle("mako:thread-continue-targets", async () =>
-    (await harnessProfiles())
-      .filter((profile) => profile.available)
-      .map((profile) => profile.id)
-  )
+  const installed = () => [...new Set([
+    ...resumableHarnesses(),
+    ...providerHost.liveDrivers.list()
+      .filter((driver) => driver.available(app.getAppPath()))
+      .map((driver) => driver.provider),
+  ])]
+  handle("mako:thread-resumable", installed)
+  handle("mako:thread-continue-targets", installed)
   /**
    * Continue a conversation on a *different* harness: render the handoff and
    * open it as the first prompt of a fresh session there. The new session
@@ -648,14 +699,12 @@ function bindIpc() {
   onHarnessProfile(({ profile, cwd }) =>
     emit({ type: "harness-profile", profile, cwd })
   )
-  handle("mako:harness-availability", async () =>
-    Object.fromEntries(
-      (await harnessProfiles()).map((profile) => [
-        profile.id,
-        profile.available,
-      ])
-    )
-  )
+  handle("mako:harness-availability", () => {
+    const available = new Set(installed())
+    return Object.fromEntries(providerHost.profiles.list().map((profile) => [
+      profile.provider, available.has(profile.provider),
+    ]))
+  })
   handle("mako:daemon-status", () => daemonStatus())
   handle("mako:daemon-login", () => daemonLoginEnabled())
   handle("mako:daemon-login-set", (_e, enabled: boolean) =>
@@ -814,12 +863,15 @@ function bindIpc() {
   handle(
     "mako:live-start",
     async (_event, harness: string, cwd: string, options: LiveStartOptions) => {
-      await ensureMakoLocalControl().catch(() => null)
-      const profile = await harnessProfileForSend(harness, cwd)
-      await liveConversations.start(harness, cwd, {
-        ...options,
-        tuning: resolveHarnessTuning(profile, options.tuning),
-      })
+      const began = performance.now()
+      const trace = (stage: string) => {
+        if (process.env.MAKO_STARTUP_TRACE === "1")
+          console.info("[mako-startup]", JSON.stringify({ stage, elapsedMs: performance.now() - began }))
+      }
+      const tuning = await resolveHarnessLaunch(harness, cwd, options.tuning)
+      trace("profile")
+      await liveConversations.start(harness, cwd, { ...options, tuning })
+      trace("accepted")
       return liveConversations.snapshot(options.conversationId)
     }
   )
@@ -876,14 +928,8 @@ function bindIpc() {
   handle(
     "mako:live-transfer",
     async (_event, id: string, input: TransferInput) => {
-      const profile = await harnessProfileForSend(
-        input.provider,
-        liveConversations.snapshot(id)?.session.cwd
-      )
-      return liveConversations.transfer(id, {
-        ...input,
-        tuning: resolveHarnessTuning(profile, input.tuning),
-      })
+      const tuning = await resolveHarnessLaunch(input.provider, liveConversations.snapshot(id)?.session.cwd, input.tuning)
+      return liveConversations.transfer(id, { ...input, tuning })
     }
   )
   handle(
@@ -952,14 +998,8 @@ function bindIpc() {
     ) => {
       const session = liveConversations.snapshot(id)?.session
       if (!session) throw new Error("This conversation is no longer available")
-      const profile = await harnessProfileForSend(session.harness, session.cwd)
-      return liveConversations.submit(
-        id,
-        requestId,
-        text,
-        attachments,
-        resolveHarnessTuning(profile, tuning)
-      )
+      const selected = await resolveHarnessLaunch(session.harness, session.cwd, tuning)
+      return liveConversations.submit(id, requestId, text, attachments, selected)
     }
   )
   handle(
@@ -981,16 +1021,8 @@ function bindIpc() {
     async (_e, harness: string, prompt: string, options?: SessionSettings) => {
       const live = await ready()
       const cwd = live.active.workspace
-      const profile = await harnessProfileForSend(harness, cwd)
-      return {
-        run: await startFresh(
-          harness,
-          cwd,
-          prompt,
-          resolveHarnessTuning(profile, options)
-        ),
-        cwd,
-      }
+      const tuning = await resolveHarnessLaunch(harness, cwd, options)
+      return { run: await startFresh(harness, cwd, prompt, tuning), cwd }
     }
   )
 
@@ -1071,8 +1103,15 @@ function bindIpc() {
 
   handle("mako:update-state", () => updateState())
   handle("mako:check-updates", () => check())
-  handle("mako:install-update", () => installNow())
+  handle("mako:install-update", () => {
+    if (hasActiveWork()) {
+      emit({ type: "notice", level: "info", message: "The update is ready. Finish or stop active agents before installing it." })
+      return
+    }
+    return installNow()
+  })
   handle("mako:relaunch", () => relaunch())
+  handle("mako:open-preview-window", () => openPreviewWindow())
 
   handle("mako:crashes", () => listCrashes())
   handle("mako:crashes-dir", () => crashesDir())
@@ -1150,28 +1189,36 @@ app.whenReady().then(async () => {
     join(app.getPath("userData"), "terminal"),
     (event) => {
       webHost?.terminal(event)
-      if (!window?.isDestroyed())
-        window?.webContents.send("mako:terminal-event", event)
+      for (const renderer of rendererWindows)
+        renderer.webContents.send("mako:terminal-event", event)
     }
   )
+  powerMonitor.on("shutdown", () => { shuttingDown = true })
   powerMonitor.on("resume", emitTerminalWake)
   powerMonitor.on("unlock-screen", emitTerminalWake)
   liveConversations = new LiveConversations({
-    mcpSnapshot: (cwd) => discoverMcpRegistry(cwd, app.getAppPath()),
+    mcpSnapshot: async (cwd) => {
+      await ensureMakoLocalControl().catch(() => null)
+      return discoverMcpRegistry(cwd, app.getAppPath())
+    },
     workspaceSnapshots: new WorkspaceSnapshots(
       join(app.getPath("userData"), "workspace-snapshots")
     ),
-    checkpoint: nativeCheckpoint,
+    checkpoint: (path, provider) => {
+      const driver = provider ? providerHost.liveDrivers.get(provider) : undefined
+      return driver?.checkpoint ? driver.checkpoint(path) : nativeCheckpoint(path)
+    },
     nativePath: (session) =>
       listThreads().find(
         (ref) =>
           ref.harness === session.harness && ref.nativeId === session.nativeId
       )?.path,
-    canResume: (binding) =>
-      canResumeBinding(
-        binding,
-        providerHost.processProbes.get(binding.provider)
-      ),
+    canResume: (binding) => {
+      const driver = providerHost.liveDrivers.get(binding.provider)
+      return driver?.canResumeBinding
+        ? driver.canResumeBinding(binding)
+        : canResumeBinding(binding, providerHost.processProbes.get(binding.provider))
+    },
     appPath: app.getAppPath(),
     root: join(app.getPath("userData"), "conversations"),
     tools: (bindingId, conversationId) => {
@@ -1199,11 +1246,8 @@ app.whenReady().then(async () => {
       read: async (path) => (await openThread(path))?.ref ?? null,
       running: (path) => threadRun(path)?.status === "running",
       execute: async (ref, text, tuning) => {
-        const profile = await harnessProfileForSend(ref.harness, ref.cwd)
-        await resumeNative(ref, text, {
-          ...resolveHarnessTuning(profile, tuning),
-          captureOutput: true,
-        })
+        const selected = await resolveHarnessLaunch(ref.harness, ref.cwd, tuning)
+        await resumeNative(ref, text, { ...selected, captureOutput: true })
         const result = await waitForNativeRun(ref.path)
         if (result.state.status !== "done")
           throw new Error(
@@ -1227,8 +1271,10 @@ app.whenReady().then(async () => {
   )
   bindIpc()
   if (webSocket)
-    webHost = await startWebHost(webSocket, invokeHost, readFilePreview)
-  else await createWindow()
+    webHost = await startWebHost(webSocket, invokeHost, readFilePreview, (client) => {
+      void workspaceClients.release(client)
+    })
+  if (!webOnly) await createWindow()
   installUpdates(emit)
   installThreads(emit)
   bindDrivers(emit)
@@ -1260,17 +1306,22 @@ app.whenReady().then(async () => {
       version: app.getVersion(),
     })
   })
-  app.on("activate", () => {
-    if (!webSocket && BrowserWindow.getAllWindows().length === 0)
-      void createWindow()
-  })
+  app.on("activate", () => { void reopenWindow() })
+  app.on("second-instance", () => { void reopenWindow() })
 })
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit()
 })
 
-app.on("before-quit", () => {
+app.on("before-quit", (event) => handleQuit(event, {
+  hasActiveWork,
+  isRestarting: () => relaunching || shuttingDown,
+  hide: () => {
+    for (const renderer of rendererWindows) renderer.hide()
+    app.dock?.hide()
+  },
+  cleanup: () => {
   webHost?.close()
   powerMonitor.removeListener("resume", emitTerminalWake)
   powerMonitor.removeListener("unlock-screen", emitTerminalWake)
@@ -1288,7 +1339,8 @@ app.on("before-quit", () => {
   nativeRequests?.stop()
   conversationMcp?.close()
   liveConversations?.stop()
-  void pool.dispose()
+  void workspaceClients.dispose()
   // After the ordinary shutdown, tell the dev launcher to bring us back.
   if (relaunching && isDev) app.exit(RELAUNCH_EXIT_CODE)
-})
+  },
+}))

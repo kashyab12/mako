@@ -1,4 +1,3 @@
-import { execFile } from "node:child_process"
 import { createHash, randomUUID } from "node:crypto"
 import {
   existsSync,
@@ -18,7 +17,6 @@ import {
 } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
 import { DatabaseSync } from "node:sqlite"
-import { promisify } from "node:util"
 import { z } from "zod"
 import {
   RewindPlanSchema,
@@ -28,18 +26,23 @@ import {
   type WorkspaceSnapshot,
 } from "./contracts/workspace-snapshots.js"
 
-const execute = promisify(execFile)
-const oid = z.string().regex(/^[a-f0-9]{40,64}$/)
-const RecordSchema = WorkspaceSnapshotSchema.extend({
-  gitDir: z.string(),
-  head: z.string(),
-  tree: oid,
-  indexDigest: z.union([
-    z.literal("absent"),
-    z.string().regex(/^[a-f0-9]{64}$/),
-  ]),
-})
-type SnapshotRecord = z.infer<typeof RecordSchema>
+import {
+  SnapshotRecordSchema as RecordSchema,
+  SnapshotRetentionPolicySchema,
+  pruneSnapshotRecords,
+  retainedSnapshotBytes,
+  type SnapshotRecord,
+  type SnapshotRetentionPolicy,
+} from "./workspace-snapshot-retention.js"
+
+import {
+  snapshotGit as git,
+  privateSnapshotObjects,
+  sealSnapshotObjects,
+  snapshotPayloadBytes,
+  importSnapshotObjects,
+  reclaimSnapshotOrphans,
+} from "./workspace-snapshot-git.js"
 const OperationSchema = z.object({
   plan: RewindPlanSchema,
   backupId: z.string().uuid(),
@@ -49,6 +52,7 @@ type RestoreOperation = z.infer<typeof OperationSchema>
 const RowSchema = z.object({ value: z.string() })
 interface ActiveRun {
   scope: string
+  snapshotId?: string
   error?: string
 }
 const LockSchema = z.object({
@@ -56,37 +60,6 @@ const LockSchema = z.object({
   pid: z.number().int(),
   token: z.string().uuid(),
 })
-
-async function git(
-  cwd: string,
-  args: string[],
-  index?: string,
-  input?: string
-): Promise<string> {
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    GIT_AUTHOR_NAME: "Mako",
-    GIT_AUTHOR_EMAIL: "mako@localhost",
-    GIT_COMMITTER_NAME: "Mako",
-    GIT_COMMITTER_EMAIL: "mako@localhost",
-  }
-  for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"])
-    delete env[key]
-  if (index) env.GIT_INDEX_FILE = index
-  const result = execute(
-    "git",
-    ["--no-optional-locks", "-c", "core.fsmonitor=false", ...args],
-    {
-      cwd,
-      env,
-      maxBuffer: 16 * 1024 * 1024,
-      timeout: 30_000,
-    }
-  )
-  if (input !== undefined) result.child.stdin?.end(input)
-  const { stdout } = await result
-  return stdout
-}
 
 /** Only remove our own abandoned locks. A Git/user lock is never guessed stale. */
 function acquireLock(path: string): () => void {
@@ -136,14 +109,19 @@ export class WorkspaceSnapshots {
   private readonly db: DatabaseSync
   private readonly busy = new Set<string>()
   private readonly runs = new Map<string, ActiveRun>()
+  private readonly orphanBytes = new Map<string, number>()
   private readonly root: string
-  constructor(root: string) {
+  private readonly retention: SnapshotRetentionPolicy
+  constructor(root: string, retention: Partial<SnapshotRetentionPolicy> = {}) {
+    this.retention = SnapshotRetentionPolicySchema.parse(retention)
     this.root = root
-    mkdirSync(root, { recursive: true })
+    mkdirSync(root, { recursive: true, mode: 0o700 })
     this.db = new DatabaseSync(join(root, "snapshots.sqlite"))
     this.db
       .exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS snapshots (id TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS snapshots_scope_created
+        ON snapshots (json_extract(value, '$.scope'), json_extract(value, '$.createdAt') DESC, id DESC);
       CREATE TABLE IF NOT EXISTS restores (id TEXT PRIMARY KEY, value TEXT NOT NULL);`)
   }
 
@@ -191,7 +169,9 @@ export class WorkspaceSnapshots {
     this.runs.set(id, run)
     try {
       if (run.error) throw new Error(run.error)
-      return await this.capture(scope)
+      const snapshot = await this.capture(scope)
+      run.snapshotId = snapshot.id
+      return snapshot
     } catch (error) {
       run.error = error instanceof Error ? error.message : String(error)
       throw error
@@ -225,7 +205,93 @@ export class WorkspaceSnapshots {
     const scope = await this.scope(cwd)
     return this.locked(scope, async (gitDir) => {
       this.assertNoPending(scope)
-      return this.summary(await this.captureLocked(scope, gitDir))
+      const record = await this.captureLocked(scope, gitDir)
+      await this.maintainLocked(record)
+      return this.summary(record)
+    })
+  }
+
+  async prune(cwd: string): Promise<number> {
+    const scope = await this.scope(cwd)
+    return this.locked(scope, (gitDir) => this.pruneLocked(scope, gitDir))
+  }
+
+  private async maintainLocked(record: SnapshotRecord): Promise<void> {
+    try {
+      await this.pruneLocked(record.scope, record.gitDir, record.id)
+    } catch (error) {
+      console.warn("Workspace checkpoint retention deferred:", error)
+    }
+  }
+
+  private pruneLocked(
+    scope: string,
+    gitDir: string,
+    currentId?: string,
+    additionalBytes = 0
+  ): Promise<number> {
+    const protectedIds = new Set(currentId ? [currentId] : [])
+    for (const run of this.runs.values()) {
+      if (run.snapshotId) protectedIds.add(run.snapshotId)
+    }
+    for (const row of this.db.prepare("SELECT value FROM restores").iterate()) {
+      const operation = OperationSchema.parse(
+        JSON.parse(RowSchema.parse(row).value)
+      )
+      if (operation.state !== "applying") continue
+      protectedIds.add(operation.plan.targetId)
+      protectedIds.add(operation.plan.expectedId)
+      protectedIds.add(operation.backupId)
+    }
+    return pruneSnapshotRecords({
+      db: this.db,
+      root: this.root,
+      scope,
+      gitDir,
+      protectedIds,
+      policy: this.retention,
+      additionalBytes: additionalBytes + (this.orphanBytes.get(scope) ?? 0),
+      removeRefs: async (expired) => {
+        const records = expired.filter((record) => !record.storage)
+        if (!records.length) return
+        const output = await git(scope, [
+          "for-each-ref",
+          "--format=%(refname)%00%(objectname)%00%(tree)%00%(symref)%00%(contents)%00",
+          ...records.map((record) => `refs/mako/checkpoints/${record.id}`),
+        ])
+        const refs = new Map(
+          output
+            .split("\0\n")
+            .filter(Boolean)
+            .map((entry) => {
+              const [ref, ...fields] = entry.split("\0")
+              return [ref, fields]
+            })
+        )
+        const commands: string[] = []
+        for (const record of records) {
+          const ref = `refs/mako/checkpoints/${record.id}`
+          const fields = refs.get(ref)
+          if (!fields) continue
+          const [commit, tree, symref, message] = fields
+          if (
+            fields.length !== 4 ||
+            symref ||
+            tree !== record.tree ||
+            message.trim() !== `Mako checkpoint ${record.id}` ||
+            (record.commit && record.commit !== commit)
+          )
+            throw new Error("The checkpoint ref changed. Cleanup was refused.")
+          commands.push(`delete ${ref} ${commit}`)
+        }
+        if (commands.length)
+          await git(
+            scope,
+            ["update-ref", "--no-deref", "--stdin"],
+            undefined,
+            ["start", ...commands, "prepare", "commit", ""].join("\n")
+          )
+      },
     })
   }
 
@@ -235,8 +301,11 @@ export class WorkspaceSnapshots {
     return this.locked(target.scope, async (gitDir) => {
       this.assertNoPending(target.scope)
       await this.validateRepository(target)
+      this.retain(target)
       const current = await this.captureLocked(target.scope, gitDir)
       const paths = await this.changedPaths(current, target)
+      this.retain(current)
+      await this.maintainLocked(current)
       return {
         target: this.summary(target),
         current: this.summary(current),
@@ -249,59 +318,78 @@ export class WorkspaceSnapshots {
 
   async restore(input: RewindPlan, complete: () => void): Promise<void> {
     const plan = RewindPlanSchema.parse(input)
+    if (this.operation(plan)?.state === "completed") {
+      complete()
+      return
+    }
     const target = this.get(plan.targetId)
     this.assertIdle(target.scope)
     await this.locked(target.scope, async (gitDir) => {
-      const row = this.db
-        .prepare("SELECT value FROM restores WHERE id=?")
-        .get(plan.fork.id)
-      let operation = row
-        ? OperationSchema.parse(JSON.parse(RowSchema.parse(row).value))
-        : null
-      if (operation && JSON.stringify(operation.plan) !== JSON.stringify(plan))
-        throw new Error("This rewind ID belongs to another operation")
+      let operation = this.operation(plan)
       if (operation?.state === "completed") {
         complete()
         return
       }
       this.assertNoPending(target.scope, plan.fork.id)
       await this.validateRepository(target)
-      const current = await this.captureLocked(target.scope, gitDir)
-      if (!operation) {
-        const expected = this.get(plan.expectedId)
-        if (!this.sameState(current, expected))
-          throw new Error(
-            "The workspace changed after the preview. Review a new preview before rewinding."
-          )
-        operation = { plan, backupId: current.id, state: "applying" }
-        this.saveOperation(operation)
-      }
-      const backup = this.get(operation.backupId)
-      await this.assertRecoverable(current, backup, target)
-      // The intent is durable before the first file changes. If the process dies,
-      // recovery validates each path against the two recorded states before proceeding.
-      try {
-        await this.restoreFiles(current, target)
-        complete()
-      } catch (error) {
-        try {
-          const partial = await this.captureLocked(target.scope, gitDir)
-          await this.assertRecoverable(partial, backup, target)
-          await this.restoreFiles(partial, backup)
-          this.db.prepare("DELETE FROM restores WHERE id=?").run(plan.fork.id)
-        } catch (recoveryError) {
-          throw new AggregateError(
-            [error, recoveryError],
-            "Rewind failed and recovery is still required. The saved workspace backup has been retained.",
-            { cause: recoveryError }
-          )
+      this.retain(target)
+      this.retain(this.get(plan.expectedId))
+      await this.withCurrentState(target.scope, gitDir, async (current) => {
+        if (!operation) {
+          const expected = this.get(plan.expectedId)
+          if (!this.sameState(current, expected))
+            throw new Error(
+              "The workspace changed after the preview. Review a new preview before rewinding."
+            )
+          operation = { plan, backupId: expected.id, state: "applying" }
+          this.saveOperation(operation)
         }
-        throw error
-      }
-      // A journal commit followed by a receipt-write failure remains pending;
-      // recovery repeats the idempotent completion, never undoes a committed fork.
-      this.saveOperation({ ...operation, state: "completed" })
+        const backup = this.get(operation.backupId)
+        await this.assertRecoverable(current, backup, target)
+        // The intent is durable before the first file changes. If the process dies,
+        // recovery validates each path against the two recorded states before proceeding.
+        try {
+          await this.restoreFiles(current, target)
+          complete()
+        } catch (error) {
+          try {
+            await this.withCurrentState(
+              target.scope,
+              gitDir,
+              async (partial) => {
+                await this.assertRecoverable(partial, backup, target)
+                await this.restoreFiles(partial, backup)
+              }
+            )
+            this.db.prepare("DELETE FROM restores WHERE id=?").run(plan.fork.id)
+          } catch (recoveryError) {
+            throw new AggregateError(
+              [error, recoveryError],
+              "Rewind failed and recovery is still required. The saved workspace backup has been retained.",
+              { cause: recoveryError }
+            )
+          }
+          throw error
+        }
+        // A journal commit followed by a receipt-write failure remains pending;
+        // recovery repeats the idempotent completion, never undoes a committed fork.
+        this.saveOperation({ ...operation, state: "completed" })
+        await this.maintainLocked(target)
+      })
     })
+  }
+
+  private operation(plan: RewindPlan): RestoreOperation | null {
+    const row = this.db
+      .prepare("SELECT value FROM restores WHERE id=?")
+      .get(plan.fork.id)
+    if (!row) return null
+    const operation = OperationSchema.parse(
+      JSON.parse(RowSchema.parse(row).value)
+    )
+    if (JSON.stringify(operation.plan) !== JSON.stringify(plan))
+      throw new Error("This rewind ID belongs to another operation")
+    return operation
   }
 
   private saveOperation(operation: RestoreOperation): void {
@@ -332,6 +420,25 @@ export class WorkspaceSnapshots {
   private summary(record: SnapshotRecord): WorkspaceSnapshot {
     return WorkspaceSnapshotSchema.parse(record)
   }
+  private retain(record: SnapshotRecord): void {
+    this.db.prepare("UPDATE snapshots SET value=? WHERE id=?").run(
+      JSON.stringify({
+        ...record,
+        retainUntil: Math.max(
+          record.retainUntil ?? 0,
+          Date.now() + this.retention.previewTtlMs
+        ),
+      }),
+      record.id
+    )
+  }
+  private objects(...records: SnapshotRecord[]) {
+    return {
+      read: records
+        .filter((record) => record.storage)
+        .map((record) => join(this.root, record.id, "git/objects")),
+    }
+  }
   private async scope(cwd: string): Promise<string> {
     try {
       return await realpath(
@@ -358,6 +465,19 @@ export class WorkspaceSnapshots {
       ).trim()
       releases.push(acquireLock(join(gitDir, "mako-snapshots.lock")))
       releases.push(acquireLock(join(gitDir, "index.lock")))
+      if (!this.orphanBytes.has(scope)) {
+        const known = new Set<string>()
+        for (const row of this.db
+          .prepare(
+            "SELECT id FROM snapshots WHERE json_extract(value, '$.scope')=?"
+          )
+          .iterate(scope))
+          known.add(z.string().uuid().parse(row.id))
+        this.orphanBytes.set(
+          scope,
+          await reclaimSnapshotOrphans(this.root, scope, known)
+        )
+      }
       return await work(gitDir)
     } finally {
       for (const release of releases.reverse()) release()
@@ -383,7 +503,13 @@ export class WorkspaceSnapshots {
       throw new Error(
         "The Git branch or HEAD changed since this checkpoint. Rewinding files across that change is not supported."
       )
-    await git(record.scope, ["cat-file", "-e", `${record.tree}^{tree}`])
+    await git(
+      record.scope,
+      ["cat-file", "-e", `${record.tree}^{tree}`],
+      undefined,
+      undefined,
+      this.objects(record)
+    )
     if (record.indexDigest !== "absent") {
       const bytes = await readFile(join(this.root, record.id, "index"))
       if (
@@ -411,7 +537,8 @@ export class WorkspaceSnapshots {
           record.scope,
           ["cat-file", "--batch-check=%(objectname) %(objecttype)"],
           undefined,
-          `${objects.join("\n")}\n`
+          `${objects.join("\n")}\n`,
+          this.objects(record)
         )
         if (
           available !==
@@ -432,9 +559,22 @@ export class WorkspaceSnapshots {
       left.indexDigest === right.indexDigest
     )
   }
+  private async withCurrentState<T>(
+    scope: string,
+    gitDir: string,
+    work: (current: SnapshotRecord) => Promise<T>
+  ): Promise<T> {
+    const current = await this.captureLocked(scope, gitDir, "temporary")
+    try {
+      return await work(current)
+    } finally {
+      await rm(join(this.root, current.id), { recursive: true, force: true })
+    }
+  }
   private async captureLocked(
     scope: string,
-    gitDir: string
+    gitDir: string,
+    lifetime: "retained" | "temporary" = "retained"
   ): Promise<SnapshotRecord> {
     const sparse = (
       await git(scope, ["config", "--bool", "core.sparseCheckout"]).catch(
@@ -502,24 +642,47 @@ export class WorkspaceSnapshots {
     }
     const id = randomUUID()
     const directory = join(this.root, id)
-    mkdirSync(directory)
+    mkdirSync(directory, { mode: 0o700 })
+    writeFileSync(
+      join(directory, "capture-owner.json"),
+      JSON.stringify({
+        owner: "mako-checkpoint",
+        scope,
+        pid: process.pid,
+        state: "preparing",
+      }),
+      { mode: 0o600, flag: "wx" }
+    )
     const index = join(directory, "index")
     const workingIndex = join(directory, "working-index")
     const userIndex = join(gitDir, "index")
     const hasIndex = existsSync(userIndex)
     const head = await this.head(scope)
+    let record: SnapshotRecord
     try {
+      if (
+        bytes > this.retention.maxSnapshotBytes ||
+        (hasIndex &&
+          (await lstat(userIndex)).size >
+            Math.min(16 * 1024 ** 2, this.retention.maxSnapshotBytes))
+      )
+        throw new Error(
+          "The checkpoint exceeds its object storage limit. No workspace files were changed."
+        )
+      const objects = await privateSnapshotObjects(scope, directory)
+      const captureGit = (args: string[], index?: string) =>
+        git(scope, args, index, undefined, objects)
       if (hasIndex) {
         await copyFile(userIndex, index)
         // Expand split indexes so retained snapshots do not depend on sharedindex GC.
-        await git(scope, ["update-index", "--no-split-index"], index)
+        await captureGit(["update-index", "--no-split-index"], index)
       } else {
-        await git(scope, ["read-tree", "--empty"], workingIndex)
+        await captureGit(["read-tree", "--empty"], workingIndex)
       }
       // The live index can move on immediately. Keep its saved tree reachable
       // from our checkpoint ref so Git GC cannot discard staged-only blobs.
       const stagedTree = hasIndex
-        ? (await git(scope, ["write-tree"], index)).trim()
+        ? (await captureGit(["write-tree"], index)).trim()
         : undefined
       if (hasIndex) await copyFile(index, workingIndex)
       const indexDigest = hasIndex
@@ -527,9 +690,8 @@ export class WorkspaceSnapshots {
             .update(await readFile(index))
             .digest("hex")
         : "absent"
-      await git(scope, ["add", "-A", "--", "."], workingIndex)
-      const stagedEntries = await git(
-        scope,
+      await captureGit(["add", "-A", "--", "."], workingIndex)
+      const stagedEntries = await captureGit(
         ["ls-files", "--stage", "-z"],
         workingIndex
       )
@@ -539,14 +701,14 @@ export class WorkspaceSnapshots {
         throw new Error(
           "Workspace checkpoints cannot include embedded Git repositories"
         )
-      const tree = (await git(scope, ["write-tree"], workingIndex)).trim()
+      const tree = (await captureGit(["write-tree"], workingIndex)).trim()
       if ((await this.head(scope)) !== head)
         throw new Error("Git HEAD changed while capturing the workspace")
       const parents = stagedTree
         ? [
             "-p",
             (
-              await git(scope, [
+              await captureGit([
                 "commit-tree",
                 stagedTree,
                 "-m",
@@ -556,7 +718,7 @@ export class WorkspaceSnapshots {
           ]
         : []
       const commit = (
-        await git(scope, [
+        await captureGit([
           "commit-tree",
           tree,
           ...parents,
@@ -564,9 +726,26 @@ export class WorkspaceSnapshots {
           `Mako checkpoint ${id}`,
         ])
       ).trim()
-      await git(scope, ["update-ref", `refs/mako/checkpoints/${id}`, commit])
+      await captureGit([
+        `--git-dir=${join(directory, "git")}`,
+        "update-ref",
+        `refs/mako/checkpoints/${id}`,
+        commit,
+      ])
+      await sealSnapshotObjects(
+        scope,
+        directory,
+        commit,
+        objects,
+        this.retention.maxSnapshotBytes
+      )
       await rm(workingIndex, { force: true })
-      const record: SnapshotRecord = {
+      const payloadBytes = await snapshotPayloadBytes(directory)
+      if (payloadBytes > this.retention.maxSnapshotBytes)
+        throw new Error(
+          "The checkpoint exceeds its object storage limit. No workspace files were changed."
+        )
+      record = {
         id,
         scope,
         createdAt: Date.now(),
@@ -574,36 +753,59 @@ export class WorkspaceSnapshots {
         gitDir,
         head,
         tree,
+        commit,
+        storage: { kind: "private", bytes: payloadBytes },
         indexDigest,
       }
+      if (lifetime === "temporary") return record
+      await this.pruneLocked(scope, gitDir, undefined, payloadBytes)
+      if (
+        (await retainedSnapshotBytes(this.db, this.root, scope)) +
+          (this.orphanBytes.get(scope) ?? 0) +
+          payloadBytes >
+        this.retention.maxStorageBytes
+      )
+        throw new Error(
+          "Checkpoint storage is full. Active turns and recovery checkpoints were retained; no workspace files were changed."
+        )
       this.db
         .prepare("INSERT INTO snapshots VALUES (?, ?)")
         .run(id, JSON.stringify(record))
-      return record
     } catch (error) {
-      await git(scope, [
-        "update-ref",
-        "-d",
-        `refs/mako/checkpoints/${id}`,
-      ]).catch(() => {})
       await rm(directory, { recursive: true, force: true })
       throw error
     }
+    writeFileSync(
+      join(directory, "capture-owner.json"),
+      JSON.stringify({
+        owner: "mako-checkpoint",
+        scope,
+        pid: process.pid,
+        state: "committed",
+      })
+    )
+    return record
   }
   private async changedPaths(
     from: SnapshotRecord,
     to: SnapshotRecord
   ): Promise<string[]> {
     return (
-      await git(from.scope, [
-        "diff-tree",
-        "--no-commit-id",
-        "--name-only",
-        "-r",
-        "-z",
-        from.tree,
-        to.tree,
-      ])
+      await git(
+        from.scope,
+        [
+          "diff-tree",
+          "--no-commit-id",
+          "--name-only",
+          "-r",
+          "-z",
+          from.tree,
+          to.tree,
+        ],
+        undefined,
+        undefined,
+        this.objects(from, to)
+      )
     )
       .split("\0")
       .filter(Boolean)
@@ -611,7 +813,15 @@ export class WorkspaceSnapshots {
   private async treeFiles(
     record: SnapshotRecord
   ): Promise<Map<string, string>> {
-    const lines = (await git(record.scope, ["ls-tree", "-rz", record.tree]))
+    const lines = (
+      await git(
+        record.scope,
+        ["ls-tree", "-rz", record.tree],
+        undefined,
+        undefined,
+        this.objects(record)
+      )
+    )
       .split("\0")
       .filter(Boolean)
     return new Map(
@@ -708,11 +918,21 @@ export class WorkspaceSnapshots {
     const temporary = await mkdtemp(join(this.root, "restore-"))
     try {
       const index = join(temporary, "index")
-      await git(target.scope, ["read-tree", current.tree], index)
+      if (target.storage)
+        await importSnapshotObjects(target.scope, join(this.root, target.id))
+      await git(
+        target.scope,
+        ["read-tree", current.tree],
+        index,
+        undefined,
+        this.objects(current, target)
+      )
       await git(
         target.scope,
         ["read-tree", "--reset", "-u", target.tree],
-        index
+        index,
+        undefined,
+        this.objects(current, target)
       )
       const destination = join(target.gitDir, "index")
       if (target.indexDigest !== "absent") {

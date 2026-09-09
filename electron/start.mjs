@@ -7,6 +7,8 @@ import { mkdtemp, chmod, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { webHostProxy } from "./web-dev-proxy.mjs"
+import { manualDevUpdates } from "./dev-updates.mjs"
+import { createHash } from "node:crypto"
 
 // ORCA: Electron-based hosts leak this. If it stays set, Electron boots as Node
 // and `require("electron")` is the npm stub instead of the real API.
@@ -19,15 +21,15 @@ const require = createRequire(import.meta.url)
 const electronPath = require("electron")
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const web = process.argv.includes("--web")
+const hot = process.argv.includes("--hot")
 const cacheDirectory = await mkdtemp(join(tmpdir(), "mako-vite-"))
-const socketDirectory = web
-  ? await mkdtemp(join(tmpdir(), "mako-web-"))
-  : undefined
-if (socketDirectory) await chmod(socketDirectory, 0o700)
-const socket = socketDirectory ? join(socketDirectory, "host.sock") : undefined
+const socketDirectory = await mkdtemp(join(tmpdir(), "mako-web-"))
+await chmod(socketDirectory, 0o700)
+const socket = join(socketDirectory, "host.sock")
 const server = await createServer({
   cacheDir: cacheDirectory,
-  plugins: socket ? [webHostProxy(socket)] : [],
+  define: { "import.meta.env.MAKO_MANUAL_RELOAD": JSON.stringify(!hot) },
+  plugins: [webHostProxy(socket), ...(!hot ? [manualDevUpdates()] : [])],
   root,
   server: {
     host: "127.0.0.1",
@@ -59,8 +61,15 @@ const compiler = spawn(
   { stdio: "inherit", cwd: root }
 )
 
-const hostEnvironment = { ...process.env, VITE_DEV_SERVER_URL: url }
-if (socket) hostEnvironment.MAKO_WEB_SOCKET = socket
+const profile = process.env.MAKO_PROFILE || `dev-${createHash("sha256").update(root).digest("hex").slice(0, 8)}`
+const hostEnvironment = {
+  ...process.env,
+  VITE_DEV_SERVER_URL: url,
+  MAKO_PROFILE: profile,
+  MAKO_WEB_SOCKET: socket,
+  MAKO_WEB_ONLY: web ? "1" : "0",
+}
+console.log(`[mako-dev] ${profile} · ${hot ? "automatic hot updates" : "manual reload"} · ${url}`)
 let child
 let stopping = false
 

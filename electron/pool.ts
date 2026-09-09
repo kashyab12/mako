@@ -19,6 +19,7 @@ export class HostPool {
   private hosts: AgentHost[] = []
   private activeIndex = 0
   private counter = 0
+  private readonly prefix = crypto.randomUUID()
   private emit: (event: HostEvent) => void
 
   constructor(emit: (event: HostEvent) => void) {
@@ -172,7 +173,7 @@ export class HostPool {
   }
 
   private async spawn(cwd: string, { activate = true } = {}): Promise<AgentHost> {
-    const host = new AgentHost(`tab-${++this.counter}`, this.emit)
+    const host = new AgentHost(`tab-${this.prefix}-${++this.counter}`, this.emit)
     if (!activate) host.setForeground(false)
     await host.start(cwd)
     this.hosts.push(host)
