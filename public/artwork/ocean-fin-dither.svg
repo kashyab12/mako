@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 1024"><defs><pattern
+          id="grain"
+          width="9"
+          height="9"
+          patternUnits="userSpaceOnUse"
+        >
+          <g fill="white">
+            <circle cx="1.2" cy="1.6" r="1.05" />
+            <circle cx="5.8" cy="0.9" r="0.9" />
+            <circle cx="3.6" cy="4.4" r="1.15" />
+            <circle cx="8.1" cy="5.3" r="1" />
+            <circle cx="0.6" cy="7.3" r="0.85" />
+            <circle cx="5.3" cy="8.2" r="1.05" />
+          </g>
+        </pattern></defs><path d="M1143 709C1159 672 1180 641 1209 627C1203 663 1200 705 1215 723C1190 720 1165 716 1143 712Z" fill="url(#grain)"/></svg>
