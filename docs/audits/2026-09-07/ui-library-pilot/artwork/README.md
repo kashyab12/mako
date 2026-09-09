@@ -1,5 +1,13 @@
 # Ocean opening revision
 
+## Packaged desktop asset correction
+
+The installed desktop initially showed only the dither and SVG fin because the JSX ocean images used `/artwork/mako-ocean-engraving.webp`. HTTP served that URL, but Electron's `loadFile` resolved it to `file:///artwork/...`, outside `app.asar`. The asset was present inside the package. The CSS dither URL had been transformed by Vite, which explained why that layer still appeared.
+
+The ocean and About icon now use Vite `?url` imports, producing module-relative URLs in the packaged renderer. `npm run test:renderer-assets` builds the actual components once and loads them over HTTP and Electron `file://`, decoding both ocean images, the About icon and the CSS grain mask. Before the fix, HTTP passed and file mode failed at the missing ocean URL. After the fix both pass. `package:mac` runs this check before packaging.
+
+The corrected application was built, signed, installed at `/Applications/Mako.app` and reopened. `../screenshots/desktop-assets-fixed.png` shows the actual installed desktop rendering the ocean and fin. Full build and lint pass. A backup of the prior installed application remains at `/tmp/mako-desktop-asset-fix/previous-Mako.app`.
+
 The earlier faint procedural wave did not meet the requested visual ambition. After inspecting capy.ai's illustrated scenery and panel composition, the opening now uses an original generated marine engraving, with the existing warm palette applied through CSS. No Capy artwork was copied.
 
 The source PNG is retained here. The application serves `public/artwork/mako-ocean-engraving.webp`, encoded at quality 85, approximately 266KB. The illustration is decorative and hidden from accessibility. Detailed water is below the opening controls.
