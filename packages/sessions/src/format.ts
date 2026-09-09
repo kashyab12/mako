@@ -308,7 +308,11 @@ function entryCharacters(entry: ThreadEntry): number {
   if (entry.kind === "event")
     return entry.label.length + (entry.detail?.length ?? 0)
   return entry.blocks.reduce((sum, block) => {
-    if (block.type === "text" || block.type === "thinking")
+    if (
+      block.type === "text" ||
+      block.type === "thinking" ||
+      block.type === "proposed-plan"
+    )
       return sum + block.text.length
     if (block.type === "attachment") return sum + JSON.stringify(block).length
     return (

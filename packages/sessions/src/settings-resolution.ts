@@ -107,7 +107,8 @@ export function resolveSessionSettings(
     if (
       option?.disabledReason &&
       source !== "session" &&
-      source !== "provider"
+      source !== "provider" &&
+      source !== "model-default"
     ) {
       result.issues.push({ option: id, message: option.disabledReason })
     }
@@ -145,7 +146,13 @@ export function resolveModelLaunch(
     }
   }
   if (!model.variants?.length)
-    return { ...selected, model: model.launchId ?? model.id }
+    return {
+      ...selected,
+      model:
+        settings.model && model.aliases?.includes(settings.model)
+          ? settings.model
+          : (model.launchId ?? model.id),
+    }
   const values = { ...selected.options }
   for (const option of model.options) {
     const value = optionDefault(option)
@@ -163,5 +170,15 @@ export function resolveModelLaunch(
     throw new Error(
       `The selected options are not available together for ${model.label}.`
     )
-  return { model: variant.id, options: { ...values, ...variant.values } }
+  // The variant id already says everything it carries. Sending those values
+  // again as options asks a transport for a control it does not expose:
+  // Devin's ACP session has no effort option, only model ids like
+  // `swe-1-7-medium`, and re-applying `effort` there killed the session.
+  const remaining: SessionSettings["options"] = {}
+  for (const [id, value] of Object.entries(values)) {
+    if (value !== undefined && !(id in variant.values)) remaining[id] = value
+  }
+  return Object.keys(remaining).length
+    ? { model: variant.id, options: remaining }
+    : { model: variant.id }
 }

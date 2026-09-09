@@ -1,6 +1,10 @@
 import { SessionSettingsSchema } from "./settings.js"
 import { z } from "zod"
-import { AttachmentContentSchema, ToolDetailSchema } from "./content.js"
+import {
+  AttachmentContentSchema,
+  ToolDetailSchema,
+  ProposedPlanSchema,
+} from "./content.js"
 
 export const TurnUsageSchema = z.object({
   input: z.number().optional(),
@@ -13,6 +17,7 @@ export const EntryBlockSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text"), text: z.string() }),
   z.object({ type: z.literal("thinking"), text: z.string() }),
   AttachmentContentSchema,
+  ProposedPlanSchema,
   z.object({
     type: z.literal("tool"),
     name: z.string(),
@@ -30,6 +35,7 @@ export const ThreadEntrySchema = z.discriminatedUnion("kind", [
   z.object({
     ...identity,
     kind: z.literal("user"),
+    steeringFor: z.string().optional(),
     text: z.string(),
     attachments: z.array(AttachmentContentSchema).optional(),
   }),

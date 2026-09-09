@@ -1,3 +1,4 @@
+export { cursorModelSettings } from "./providers/cursor-settings.js"
 import {
   modelByIdentity,
   type SessionSettings,
@@ -183,6 +184,26 @@ export function harnessModelByIdentity(
   return modelByIdentity(models, identity)
 }
 
+/**
+ * Claude Code's picker names some rows by family alone: "Fable" for
+ * `claude-fable-5-1`, while Fable 5 is a different model with different
+ * prices. Every other harness writes the version. The resolved id always
+ * knows it, so the label says it: "Fable 5.1", "Opus 5 (1M context)".
+ */
+export function claudeVersionedLabel(
+  id: string,
+  displayName: string | undefined
+): string {
+  if (!displayName) return id
+  const match = /^claude-([a-z]+)-(\d+)(?:-(\d+))?(?=$|\[|-20\d{6})/.exec(id)
+  if (!match) return displayName
+  const [, family, major, minor] = match
+  const version = minor ? `${major}.${minor}` : major
+  // The family word, unless a version already follows it ("Sonnet 4.6").
+  const unversioned = new RegExp(`\\b${family}\\b(?!\\s*\\d)`, "i")
+  return displayName.replace(unversioned, (name) => `${name} ${version}`)
+}
+
 export function normalizeClaudeModels(
   response: ClaudeModelRow[]
 ): HarnessModelCatalog {
@@ -200,14 +221,17 @@ export function normalizeClaudeModels(
     if (row.supportsEffort && efforts.length > 0) {
       options.push(selectOption("effort", "Reasoning", efforts))
     }
-    if (row.supportsFastMode) {
-      options.push({
-        kind: "boolean",
-        id: "fast",
-        label: "Fast mode",
-        role: "speed",
-      })
+    const speed: HarnessModelOption = {
+      kind: "boolean",
+      id: "fast",
+      label: "Fast mode",
+      role: "speed",
     }
+    if (!row.supportsFastMode) {
+      speed.current = false
+      speed.disabledReason = "Fast mode is not available for this model."
+    }
+    options.push(speed)
     options.push({
       kind: "boolean",
       id: "agentTeams",
@@ -217,9 +241,13 @@ export function normalizeClaudeModels(
     const model: HarnessModel = {
       id,
       launchId,
-      label: presentString(row.displayName) ?? id,
+      label: claudeVersionedLabel(id, presentString(row.displayName)),
       options,
     }
+    // Claude's API messages omit the CLI context selector. Match capabilities
+    // across those identities while retaining an explicit selector at launch.
+    const base = id.replace(/\[1m\]$/, "")
+    model.aliases = id === base ? [`${base}[1m]`] : [base]
     if (row.description) model.description = row.description
     byId.set(id, model)
   }
@@ -347,7 +375,14 @@ export function normalizeCursorModels(
   const configured = harnessModelByIdentity(models, configuredModel)?.id
   if (configured) {
     catalog.configuredModel = configured
-    catalog.settings = { model: configured }
+    catalog.settings = {
+      model: configured,
+      options: Object.fromEntries(
+        (byId.get(configured)?.options ?? []).flatMap((option) =>
+          option.current === undefined ? [] : [[option.id, option.current]]
+        )
+      ),
+    }
   }
   return catalog
 }
@@ -407,7 +442,13 @@ export function normalizeGrokModels(
   const catalog: HarnessModelCatalog = { models }
   if (defaultModel && listed.has(defaultModel)) {
     catalog.defaultModel = defaultModel
-    catalog.settings = { model: defaultModel }
+    const effort = models
+      .find((model) => model.id === defaultModel)
+      ?.options.find((option) => option.id === "effort")?.current
+    catalog.settings = {
+      model: defaultModel,
+      options: effort === undefined ? {} : { effort },
+    }
   }
   return catalog
 }
@@ -658,21 +699,24 @@ function canonicalDevinDefault(
 function acpOptionRole(
   option: AcpConfigOptionInput
 ): "reasoning" | "speed" | undefined {
-  const id = option.category ?? option.id
-  if (
-    id === "thought_level" ||
-    id === "reasoning" ||
-    id === "effort" ||
-    id === "reasoning_effort"
-  )
-    return "reasoning"
-  if (
-    id === "fast" ||
-    id === "fastMode" ||
-    id === "speed" ||
-    id === "serviceTier"
-  )
-    return "speed"
+  // Thinking is an independent enable switch, even under thought_level.
+  if (option.id === "thinking") return undefined
+  for (const id of [option.id, option.category]) {
+    if (
+      id === "thought_level" ||
+      id === "reasoning" ||
+      id === "effort" ||
+      id === "reasoning_effort"
+    )
+      return "reasoning"
+    if (
+      id === "fast" ||
+      id === "fastMode" ||
+      id === "speed" ||
+      id === "serviceTier"
+    )
+      return "speed"
+  }
   return undefined
 }
 

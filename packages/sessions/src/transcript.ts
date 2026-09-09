@@ -527,6 +527,15 @@ function renderEntries(
           "",
           fenced(block.text, "text")
         )
+      } else if (block.type === "proposed-plan") {
+        parts.push(
+          "",
+          `#### Block ${blockNumber} — proposed plan (${block.status})`,
+          "",
+          fenced(block.text, "markdown")
+        )
+        if (block.truncated)
+          parts.push("", "The saved plan was truncated at the size limit.")
       } else if (block.type === "thinking") {
         parts.push(
           "",
@@ -561,7 +570,9 @@ function renderEntries(
         )
         renderToolField(
           parts,
-          [block.output, describeToolDetails(block.details ?? [])].filter((value) => value !== undefined && value !== "").join("\n\n") || block.output,
+          [block.output, describeToolDetails(block.details ?? [])]
+            .filter((value) => value !== undefined && value !== "")
+            .join("\n\n") || block.output,
           "output",
           toolOrdinal,
           inlinePayloadLimit,

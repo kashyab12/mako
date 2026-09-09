@@ -96,6 +96,10 @@ async function flatten(
     const parts: string[] = []
     for (const block of entry.blocks) {
       if (block.type === "attachment") parts.push(describeAttachments([block]))
+      if (block.type === "proposed-plan")
+        parts.push(
+          `[Proposed plan: ${block.status}${block.truncated ? "; truncated" : ""}]\n${block.text}`
+        )
       if (block.type === "text" && block.text.trim())
         parts.push(block.text.trim())
       if (block.type === "tool") {

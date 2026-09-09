@@ -63,18 +63,44 @@ export function attachmentDescription(attachment: AttachmentContent): string {
 
 /** Provider-supplied results that cannot be reconstructed reliably from plain text. */
 export const ToolDetailSchema = z.discriminatedUnion("type", [
-  z.object({type: z.literal("diff"), path: z.string(), oldText: z.string().nullable(), newText: z.string()}),
-  z.object({type: z.literal("terminal"), terminalId: z.string()}),
-  z.object({type: z.literal("plan"), entries: z.array(z.object({content: z.string(), status: z.string()}))}),
+  z.object({
+    type: z.literal("diff"),
+    path: z.string(),
+    oldText: z.string().nullable(),
+    newText: z.string(),
+  }),
+  z.object({ type: z.literal("terminal"), terminalId: z.string() }),
+  z.object({
+    type: z.literal("plan"),
+    entries: z.array(z.object({ content: z.string(), status: z.string() })),
+  }),
 ])
 export type ToolDetail = z.infer<typeof ToolDetailSchema>
 
 export function describeToolDetails(details: ToolDetail[]): string {
-  return details.map((detail) => {
-    switch (detail.type) {
-      case "diff": return `File: ${detail.path}\nBefore:\n${detail.oldText ?? ""}\nAfter:\n${detail.newText}`
-      case "terminal": return `Provider terminal: ${detail.terminalId}`
-      case "plan": return detail.entries.map((entry) => `${entry.status}: ${entry.content}`).join("\n")
-    }
-  }).join("\n\n")
+  return details
+    .map((detail) => {
+      switch (detail.type) {
+        case "diff":
+          return `File: ${detail.path}\nBefore:\n${detail.oldText ?? ""}\nAfter:\n${detail.newText}`
+        case "terminal":
+          return `Provider terminal: ${detail.terminalId}`
+        case "plan":
+          return detail.entries
+            .map((entry) => `${entry.status}: ${entry.content}`)
+            .join("\n")
+      }
+    })
+    .join("\n\n")
 }
+
+/** A proposed plan is an answer artifact, distinct from an execution checklist. */
+export const MAX_PROPOSED_PLAN_LENGTH = 256_000
+export const ProposedPlanSchema = z.object({
+  type: z.literal("proposed-plan"),
+  id: z.string(),
+  text: z.string().max(MAX_PROPOSED_PLAN_LENGTH),
+  status: z.enum(["drafting", "proposed"]),
+  truncated: z.boolean().optional(),
+})
+export type ProposedPlan = z.infer<typeof ProposedPlanSchema>

@@ -754,7 +754,7 @@ export class SessionCatalog {
       for (const [path, entry] of this.byPath) entries[path] = entry
       await writeFile(
         this.cachePath,
-        JSON.stringify({ version: 6, entries }),
+        JSON.stringify({ version: 8, entries }),
         "utf8"
       )
     } catch {
