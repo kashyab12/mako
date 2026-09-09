@@ -1,11 +1,17 @@
-import { useState } from "react"
-import { createHook, createStore } from "@/state/store"
+import { useRef, useState } from "react"
+import { ListTodoIcon, XIcon } from "lucide-react"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { SearchSelect } from "@/components/ui/search-select"
+import { useDrafts, rememberDraft, clearSubmittedDraft } from "@/state/drafts"
 import { acp, useAcp, activeLiveAcp } from "@/state/acp"
 import { useThreads } from "@/state/threads"
 import { harnessLabel } from "@/components/rail/harness-meta"
-
-const taskDrafts = createStore<Record<string, string>>({})
-const useTaskDrafts = createHook(taskDrafts)
 
 const EMPTY_CHILDREN: never[] = []
 export function ConversationRelations() {
@@ -29,122 +35,158 @@ export function ConversationRelations() {
   )
   const targets = useThreads((state) => state.acpable)
   const conversationId = useAcp((state) => state.activeKey ?? "")
-  const task = useTaskDrafts((drafts) => drafts[conversationId] ?? "")
-  const setTask = (text: string) =>
-    taskDrafts.set((drafts) => ({ ...drafts, [conversationId]: text }))
+  const draftKey = `delegation:${conversationId}`
+  const task = useDrafts(
+    (state) => state.drafts.find((draft) => draft.key === draftKey)?.text ?? ""
+  )
+  const setTask = (text: string) => rememberDraft(draftKey, text)
   const [provider, setProvider] = useState("")
   const [sending, setSending] = useState(false)
+  const [open, setOpen] = useState(false)
+  const taskInput = useRef<HTMLTextAreaElement>(null)
+  if (!hasTask && !ancestry && children.length === 0) return null
   return (
-    <div className="shrink-0 border-b border-hairline px-3.5 py-2 text-label text-muted-foreground">
-      {ancestry ? (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
         <button
           type="button"
-          className="pressable mb-2 underline"
-          onClick={() => void acp.openRelated(ancestry.parentId)}
+          className="pressable flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-ui text-faint hover:bg-fill-hover hover:text-foreground"
         >
-          {ancestry.kind === "fork"
-            ? "Forked from parent conversation"
-            : "Task delegated by parent conversation"}
+          <ListTodoIcon className="size-3" />
+          {children.length > 0 ? `${children.length} delegated` : "Delegate"}
         </button>
-      ) : null}
-      {ancestry?.kind === "fork" && hasTask ? (
-        <button
-          type="button"
-          className="pressable ml-3 underline"
-          onClick={() => void acp.mergeFork()}
-        >
-          Send findings to parent
-        </button>
-      ) : null}
-      {pendingMerges > 0 ? (
-        <p>
-          {pendingMerges} fork results will be included in the next turn. Files
-          are unchanged.
-        </p>
-      ) : null}
-      {children.map((child) => (
-        <div key={child.id} className="flex items-center gap-2 py-1">
-          <button
-            type="button"
-            className="pressable min-w-0 flex-1 truncate text-left hover:text-foreground"
-            onClick={() => void acp.openRelated(child.id)}
-          >
-            {child.task}
-          </button>
-          <span>
-            {harnessLabel(child.provider)} · {child.status}
-          </span>
-          {child.delivery === "pending" || child.delivery === "queued" ? (
+      </DialogTrigger>
+      <DialogContent
+        className="max-h-[80vh] w-[min(100vw_-_32px,480px)] overflow-y-auto p-5"
+        onOpenAutoFocus={(event) => {
+          if (taskInput.current) {
+            event.preventDefault()
+            taskInput.current.focus()
+          }
+        }}
+      >
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <DialogTitle>
+            {children.length > 0 || ancestry
+              ? "Related tasks"
+              : "Delegate a task"}
+          </DialogTitle>
+          <DialogClose asChild>
             <button
               type="button"
-              className="pressable underline"
-              onClick={() => void acp.cancelChild(child.id)}
+              aria-label="Close tasks"
+              className="pressable rounded p-1 text-faint hover:bg-fill-hover hover:text-foreground"
             >
-              Cancel
+              <XIcon className="size-4" />
+            </button>
+          </DialogClose>
+        </div>
+        <div className="flex flex-col gap-3 text-ui text-muted-foreground">
+          {ancestry ? (
+            <button
+              type="button"
+              className="pressable mb-2 underline"
+              onClick={() => void acp.openRelated(ancestry.parentId)}
+            >
+              Open original conversation
             </button>
           ) : null}
-        </div>
-      ))}
-      {hasTask && ancestry?.kind !== "delegation" ? (
-        <details>
-          <summary className="pressable cursor-pointer">
-            Delegate a task
-          </summary>
-          <form
-            className="mt-2 flex flex-col gap-2"
-            onSubmit={(event) => {
-              event.preventDefault()
-              const submitted = task
-              if (!submitted.trim() || sending) return
-              setSending(true)
-              void acp
-                .delegate(provider || targets[0] || "", submitted)
-                .then((accepted) => {
-                  if (accepted)
-                    taskDrafts.set((drafts) =>
-                      drafts[conversationId] === submitted
-                        ? { ...drafts, [conversationId]: "" }
-                        : drafts
-                    )
-                })
-                .finally(() => setSending(false))
-            }}
-          >
-            <label>
-              Provider{" "}
-              <select
-                className="ml-2 rounded border border-hairline bg-surface p-1 text-ui"
-                value={provider || targets[0] || ""}
-                onChange={(event) => setProvider(event.target.value)}
-              >
-                {targets.map((target) => (
-                  <option key={target} value={target}>
-                    {harnessLabel(target)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <textarea
-              aria-label="Delegated task"
-              className="min-h-16 resize-y rounded border border-hairline bg-surface p-2 text-ui"
-              value={task}
-              onChange={(event) => setTask(event.target.value)}
-              placeholder="Give the child a specific task and the context it needs"
-            />
-            <p>
-              The child receives this task in its own workspace snapshot. Its files
-              stay separate; findings return to this conversation.
-            </p>
+          {ancestry?.kind === "fork" && hasTask ? (
             <button
-              type="submit"
-              disabled={sending || !task.trim() || targets.length === 0}
-              className="pressable self-start rounded border border-hairline px-2 py-1 hover:bg-fill-hover disabled:opacity-50"
+              type="button"
+              className="pressable ml-3 underline"
+              onClick={() => void acp.mergeFork()}
             >
-              {sending ? "Starting child…" : "Start child task"}
+              Return findings
             </button>
-          </form>
-        </details>
-      ) : null}
-    </div>
+          ) : null}
+          {pendingMerges > 0 ? (
+            <p>
+              {pendingMerges} fork results will be included in the next turn.
+              Files are unchanged.
+            </p>
+          ) : null}
+          {children.map((child) => (
+            <div key={child.id} className="flex items-center gap-2 py-1">
+              <button
+                type="button"
+                className="pressable min-w-0 flex-1 truncate text-left hover:text-foreground"
+                onClick={() => void acp.openRelated(child.id)}
+              >
+                {child.task}
+              </button>
+              <span>
+                {harnessLabel(child.provider)} · {child.status}
+              </span>
+              {child.delivery === "pending" || child.delivery === "queued" ? (
+                <button
+                  type="button"
+                  className="pressable underline"
+                  onClick={() => void acp.cancelChild(child.id)}
+                >
+                  Cancel
+                </button>
+              ) : null}
+            </div>
+          ))}
+          {hasTask && ancestry?.kind !== "delegation" ? (
+            <section>
+              <form
+                className="flex flex-col gap-3"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  const submitted = task
+                  if (!submitted.trim() || sending) return
+                  setSending(true)
+                  void acp
+                    .delegate(provider || targets[0] || "", submitted)
+                    .then((accepted) => {
+                      if (accepted) clearSubmittedDraft(draftKey, submitted)
+                    })
+                    .finally(() => setSending(false))
+                }}
+              >
+                <p className="text-label text-faint">
+                  Run a focused task in a separate workspace. Findings return
+                  here; file changes stay separate.
+                </p>
+                <SearchSelect
+                  label="Task provider"
+                  value={provider || targets[0] || ""}
+                  options={targets.map((target) => ({
+                    value: target,
+                    label: harnessLabel(target),
+                  }))}
+                  onChange={setProvider}
+                  className="self-start"
+                />
+                <label
+                  htmlFor="delegated-task"
+                  className="text-ui font-medium text-foreground"
+                >
+                  Task
+                </label>
+                <textarea
+                  ref={taskInput}
+                  id="delegated-task"
+                  aria-label="Delegated task"
+                  className="max-h-64 min-h-28 w-full resize-y rounded border border-hairline bg-surface p-2 text-ui"
+                  value={task}
+                  onChange={(event) => setTask(event.target.value)}
+                  placeholder="Describe the task and what a useful result should include"
+                />
+                <button
+                  type="submit"
+                  disabled={sending || !task.trim() || targets.length === 0}
+                  className="pressable self-end rounded-md bg-foreground px-3 py-1.5 text-ui font-medium text-background disabled:opacity-40"
+                >
+                  {sending ? "Starting task…" : "Delegate task"}
+                </button>
+              </form>
+            </section>
+          ) : null}
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

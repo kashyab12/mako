@@ -1,15 +1,14 @@
-import { ConversationRelations } from "./conversation-relations"
+import { promptDelivery } from "@/state/prompt-delivery"
 import { TransferStatus } from "./transfer-status"
-import { threads, threadsStore } from "@/state/threads"
+import { LiveActionStatus } from "./live-action-status"
 import { loadEarlierLive } from "@/state/live-recovery"
-import { useEffect, useState } from "react"
-import { HarnessIcon } from "@/components/ui/provider-icon"
-import { SearchSelect } from "@/components/ui/search-select"
-import { harnessLabel } from "@/components/rail/harness-meta"
+import { useState } from "react"
 import { ConversationTimeline } from "@/components/transcript/conversation-timeline"
-import { acp, acpStore, activeAcp, activeLiveAcp, useAcp } from "@/state/acp"
+import { acp, activeAcp, activeLiveAcp, useAcp } from "@/state/acp"
 import type { LivePermissionRequest } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { liveToolName } from "@/lib/tools"
+import { ToolGlyph } from "@/components/transcript/tool-views"
 import {
   CheckCheckIcon,
   CheckIcon,
@@ -37,25 +36,6 @@ export function AcpPanel() {
   const session = useAcp((state) => activeLiveAcp(state)?.session ?? null)
   const starting = useAcp((state) => activeAcp(state)?.kind === "starting")
 
-  useEffect(() => {
-    if (!session && !starting) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return
-      if (event.key === "Escape") {
-        event.preventDefault()
-        // Permission prompts consume Escape first; otherwise the same muscle
-        // memory as the native transcript stops a running turn. Only an idle
-        // Escape closes the session.
-        const live = activeLiveAcp(acpStore.get())
-        if (live?.permission) acp.answerPermission(null)
-        else if (live?.session.status === "running") acp.cancel()
-        else acp.close()
-      }
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [session, starting])
-
   if (starting) {
     return (
       <div className="animate-enter flex min-h-0 flex-1 flex-col bg-surface">
@@ -67,97 +47,12 @@ export function AcpPanel() {
 
   return (
     <div className="animate-enter flex min-h-0 flex-1 flex-col bg-surface">
-      <div className="flex h-11 shrink-0 items-center gap-2.5 border-b border-hairline px-3.5">
-        <HarnessIcon harness={session.harness} className="size-3.5" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-ui font-medium">
-            {session.title ?? `${harnessLabel(session.harness)}, live`}
-          </p>
-          <p className="truncate text-label text-faint">
-            {harnessLabel(session.harness)} · live · {session.cwd}
-          </p>
-        </div>
-        <LiveStatus />
-        <ModePicker />
-        <button
-          type="button"
-          aria-label="End live session"
-          title="Ends the live session — the conversation stays in Threads"
-          onClick={() => acp.close()}
-          className="pressable shrink-0 rounded p-1 text-faint hover:text-foreground"
-        >
-          <XIcon className="size-3.5" />
-        </button>
-      </div>
-
-      {session.connection === "disconnected" ? <CaptureNotice /> : null}
-      <ConversationRelations key={session.id} />
-      <TransferStatus />
       <Blocks />
+      <TransferStatus />
+      <LiveActionStatus />
       <RetainedRequests />
       <Permission />
     </div>
-  )
-}
-
-/**
- * The agent's own modes, verbatim. "acceptEdits" and "plan" are its words
- * for its behaviours; renaming them here would mean documenting a mapping
- * forever.
- */
-function LiveStatus() {
-  const session = useAcp((state) => activeLiveAcp(state)?.session ?? null)
-  const permission = useAcp((state) => activeLiveAcp(state)?.permission ?? null)
-  const canceling = useAcp((state) => activeLiveAcp(state)?.canceling ?? false)
-  const sending = useAcp((state) => activeLiveAcp(state)?.sending ?? false)
-  const queued = useAcp((state) => activeLiveAcp(state)?.queued ?? EMPTY_QUEUE)
-  if (!session) return null
-  const label = permission
-    ? "Needs input"
-    : canceling
-      ? "Stopping…"
-      : sending
-        ? "Starting turn…"
-        : session.status === "running"
-          ? queued.length > 0
-            ? `Working · ${queued.length} queued`
-            : "Working"
-          : session.status === "failed"
-            ? "Failed"
-            : "Ready"
-  return (
-    <span
-      className={cn(
-        "shrink-0 rounded-full px-2 py-0.5 text-label",
-        permission
-          ? "bg-caution/10 text-caution"
-          : session.status === "failed"
-            ? "bg-negative/10 text-negative"
-            : session.status === "running" || canceling || sending
-              ? "bg-fill-selected text-foreground/80"
-              : "bg-raised text-faint"
-      )}
-    >
-      {label}
-    </span>
-  )
-}
-
-function ModePicker() {
-  const session = useAcp((state) => activeLiveAcp(state)?.session ?? null)
-  if (!session || session.modes.length === 0) return null
-  return (
-    <SearchSelect
-      value={session.currentMode ?? ""}
-      label="Agent mode"
-      searchPlaceholder="Search modes"
-      className="w-36 shrink-0"
-      options={session.modes.map((mode) => ({
-        value: mode.id,
-        label: mode.name,
-      }))}
-      onChange={(next) => acp.setMode(next)}
-    />
   )
 }
 
@@ -165,8 +60,19 @@ function Blocks({ starting = false }: { starting?: boolean }) {
   const session = useAcp((state) => activeLiveAcp(state)?.session ?? null)
   const projection = useAcp((state) => activeAcp(state)?.projection)
   const history = useAcp((state) => activeAcp(state)?.base)
+  const preparing = useAcp((state) => {
+    const current = activeLiveAcp(state)
+    return Boolean(
+      current &&
+      (current.requests?.some((request) => request.status === "dispatching") ||
+        promptDelivery(current).starting)
+    )
+  })
   const running =
-    starting || session?.status === "starting" || session?.status === "running"
+    starting ||
+    preparing ||
+    session?.status === "starting" ||
+    session?.status === "running"
   const exchanges = projection?.exchanges ?? EMPTY_QUEUE
   const lastExchangeId = exchanges.at(-1)?.id
 
@@ -185,10 +91,20 @@ function Blocks({ starting = false }: { starting?: boolean }) {
             The session is loaded. Anything you send continues it — same
             conversation, same working directory.
           </p>
-          <AcpActivity running={running} starting={starting} />
+          <AcpActivity
+            running={running}
+            starting={starting || session?.status === "starting"}
+            preparing={preparing && session?.status !== "running"}
+          />
         </div>
       }
-      footer={<AcpActivity running={running} starting={starting} />}
+      footer={
+        <AcpActivity
+          running={running}
+          starting={starting || session?.status === "starting"}
+          preparing={preparing && session?.status !== "running"}
+        />
+      }
     />
   )
 }
@@ -196,14 +112,16 @@ function Blocks({ starting = false }: { starting?: boolean }) {
 function AcpActivity({
   running,
   starting = false,
+  preparing = false,
 }: {
   running: boolean
   starting?: boolean
+  preparing?: boolean
 }) {
   return running ? (
     <div className="flex items-center gap-1.5 py-2 text-label text-faint">
       <Loader2Icon className="size-3 animate-spin" />
-      {starting ? "starting the agent" : "working"}
+      {starting ? "Starting…" : preparing ? "Sending…" : "Working…"}
     </div>
   ) : null
 }
@@ -223,11 +141,18 @@ function Permission() {
   return (
     <div className="shrink-0 border-t border-hairline bg-surface/60 px-4 py-2.5">
       <p className="flex items-center gap-1.5 text-ui text-foreground/90">
-        <ShieldQuestionIcon className="size-3.5 shrink-0 text-caution/90" />
+        {permission.kind ? (
+          <ToolGlyph
+            name={liveToolName(permission.kind, permission.title)}
+            className="size-3.5 shrink-0 text-caution/90"
+          />
+        ) : (
+          <ShieldQuestionIcon className="size-3.5 shrink-0 text-caution/90" />
+        )}
         <span className="min-w-0 truncate font-mono">{permission.title}</span>
       </p>
       <p className="pt-0.5 pb-2 text-label text-faint">
-        Choose how long to allow it. Escape denies this request.
+        Choose how long to allow it.
       </p>
       <div className="flex flex-wrap gap-1.5">
         {permission.options.map((option) => {
@@ -393,34 +318,10 @@ function QuestionPermission({
   )
 }
 
-function CaptureNotice() {
-  const path = useAcp((state) => activeAcp(state)?.threadPath)
-  return (
-    <div className="border-b border-hairline px-3.5 py-2 text-ui text-muted-foreground">
-      This conversation is saved. Sending a message starts a provider connection
-      from this captured history.
-      {path ? (
-        <button
-          className="pressable ml-2 underline"
-          onClick={() => {
-            const ref = threadsStore
-              .get()
-              .threads.find((item) => item.path === path)
-            if (ref) void threads.view(ref, "native")
-          }}
-        >
-          View current provider history
-        </button>
-      ) : null}
-    </div>
-  )
-}
-
 function RetainedRequests() {
   const requests = useAcp((state) => activeAcp(state)?.requests ?? EMPTY_QUEUE)
   const retained = requests.filter(
     (request) =>
-      request.status === "queued" ||
       request.status === "uncertain" ||
       request.status === "failed" ||
       request.status === "interrupted"
@@ -431,13 +332,11 @@ function RetainedRequests() {
       {retained.map((request) => (
         <div key={request.id} className="contain-turn mb-2">
           <p className="text-muted-foreground">
-            {request.status === "queued"
-              ? "Queued message"
-              : request.status === "uncertain"
-                ? "Completion not confirmed"
-                : request.status === "interrupted"
-                  ? "Message interrupted"
-                  : "Message failed"}
+            {request.status === "uncertain"
+              ? "Completion not confirmed"
+              : request.status === "interrupted"
+                ? "Message interrupted"
+                : "Message failed"}
             : {request.error}
           </p>
           <p className="line-clamp-3 whitespace-pre-wrap">{request.text}</p>

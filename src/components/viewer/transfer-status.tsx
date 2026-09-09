@@ -3,18 +3,19 @@ import { useAcp, activeLiveAcp, acp } from "@/state/acp"
 import { harnessLabel } from "@/components/rail/harness-meta"
 
 /** Only transfer changes wake this row; token updates retain control identity. */
-export function TransferStatus() {
+export function TransferStatus({ history = false }: { history?: boolean }) {
   const bindings = useAcp((state) => activeLiveAcp(state)?.control?.bindings)
   const id = useAcp((state) => state.activeKey)
   const transfer = useAcp((state) =>
     activeLiveAcp(state)?.control?.transfers.at(-1)
   )
   if (!transfer) return null
+  if (!history && transfer.state.kind === "accepted") return null
   const provider = harnessLabel(transfer.input.provider)
   const state = transfer.state
   return (
     <details
-      className="shrink-0 border-b border-hairline px-3.5 py-2 text-label text-muted-foreground"
+      className="shrink-0 border-t border-hairline px-3.5 py-2 text-label text-muted-foreground"
       open={state.kind === "failed" || state.kind === "uncertain"}
     >
       <summary className="pressable cursor-pointer">
