@@ -122,7 +122,7 @@ export function reduceLiveUpdates(
   for (const update of updates) {
     const last = next.at(-1)
     switch (update.kind) {
-      case "user":
+      case "user": {
         if (!update.steeringFor) {
           tools.clear()
           turnStart = next.length
@@ -138,6 +138,7 @@ export function reduceLiveUpdates(
         if (update.steeringFor) user.steeringFor = update.steeringFor
         next.push(user)
         break
+      }
       case "text":
       case "thinking": {
         const index = update.id
