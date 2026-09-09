@@ -194,6 +194,7 @@ const threadCatalogActions = {
     threadsStore.set({
       resumable,
       targets,
+      liveCapabilities: capabilities,
       acpable: capabilities.map((item) => item.provider),
       interactiveResume: capabilities
         .filter((item) => item.canResume)

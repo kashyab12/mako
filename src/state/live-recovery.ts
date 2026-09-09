@@ -15,6 +15,9 @@ export function applyLiveSnapshot(snapshot: LiveSnapshot): void {
   const id = snapshot.session.id
   const existing = acpStore.get().conversations[id]
   if (existing?.hydrated && (existing.revision ?? 0) > snapshot.revision) return
+  const pendingPrompts = existing?.pendingPrompts?.filter(
+    (prompt) => !snapshot.requests.some((request) => request.id === prompt.id)
+  )
   replaceAcpConversation(id, {
     key: id,
     draftKey: existing?.draftKey ?? id,
@@ -30,14 +33,18 @@ export function applyLiveSnapshot(snapshot: LiveSnapshot): void {
       binding.path ? [binding.path] : []
     ),
     control: snapshot.control,
+    nativeAgents: snapshot.nativeAgents,
     requests: snapshot.requests,
+    pendingPrompts,
     base: snapshot.base,
     blocks: snapshot.blocks,
     revision: snapshot.revision,
     hydrated: true,
-    projection: projectLive(snapshot, existing?.projection),
+    projection: projectLive(snapshot, existing?.projection, pendingPrompts),
     permission: snapshot.permissions[0] ?? null,
-    queued: snapshot.requests.filter((request) => request.status === "queued"),
+    queued: snapshot.requests.filter(
+      (request) => request.status === "queued" || request.status === "held"
+    ),
     hiddenUserPrompt: null,
     sending: false,
     canceling: false,
@@ -99,16 +106,24 @@ export function applyLiveBatch(batch: LiveBatch): void {
   const session = batch.session ?? current.session
   const blocks = reduceLiveUpdates(current.blocks, batch.updates)
   const base = batch.base === undefined ? (current.base ?? null) : batch.base
+  const requests = batch.requests ?? current.requests
+  const pendingPrompts = batch.requests
+    ? current.pendingPrompts?.filter(
+        (prompt) => !batch.requests?.some((request) => request.id === prompt.id)
+      )
+    : current.pendingPrompts
   replaceAcpConversation(batch.id, {
     ...current,
     control: batch.control ?? current.control,
+    nativeAgents: batch.nativeAgents ?? current.nativeAgents,
     nativePaths: batch.control
       ? batch.control.bindings.flatMap((binding) =>
           binding.path ? [binding.path] : []
         )
       : current.nativePaths,
     harness: session.harness,
-    requests: batch.requests ?? current.requests,
+    requests,
+    pendingPrompts,
     blocks,
     session,
     revision: batch.revision,
@@ -123,16 +138,36 @@ export function applyLiveBatch(batch: LiveBatch): void {
       ? (batch.permissions[0] ?? null)
       : current.permission,
     queued: batch.requests
-      ? batch.requests.filter((request) => request.status === "queued")
+      ? batch.requests.filter(
+          (request) => request.status === "queued" || request.status === "held"
+        )
       : current.queued,
-    projection: projectLive({ blocks, base, session }, current.projection),
+    projection:
+      requests === current.requests &&
+      pendingPrompts === current.pendingPrompts &&
+      blocks === current.blocks &&
+      base === current.base &&
+      session.status === current.session.status &&
+      session.harness === current.session.harness
+        ? current.projection
+        : projectLive(
+            { blocks, base, session, requests },
+            current.projection,
+            pendingPrompts
+          ),
     updatedAt: Date.now(),
   })
-  if (batch.requests?.some((request) =>
-    request.status === "completed" && current.requests?.some((previous) =>
-      previous.id === request.id && previous.status === "dispatching"
+  if (
+    batch.requests?.some(
+      (request) =>
+        request.status === "completed" &&
+        current.requests?.some(
+          (previous) =>
+            previous.id === request.id && previous.status === "dispatching"
+        )
     )
-  )) playFeedback("complete")
+  )
+    playFeedback("complete")
   const next = acpStore.get().conversations[batch.id]
   if (next && batch.session?.settings) acknowledgeComposerSettings(next)
   if (

@@ -35,4 +35,10 @@ export const updates = {
     if (!hasBridge()) return
     void getMako().installUpdate()
   },
+
+  /** Quit and come back on the current build. Conversations reopen from their journals. */
+  relaunch() {
+    if (!hasBridge()) return
+    void getMako().relaunch()
+  },
 }

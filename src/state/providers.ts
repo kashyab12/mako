@@ -14,6 +14,7 @@ export interface DaemonInfo {
 interface ProviderState {
   profiles: Record<string, HarnessProfile>
   contexts: Record<string, HarnessProfile>
+  contextErrors: Record<string, string>
   availability: Record<string, boolean> | null
   daemon: DaemonInfo | null
   daemonLogin: boolean | null
@@ -22,6 +23,7 @@ interface ProviderState {
 export const providerStore = createStore<ProviderState>({
   profiles: {},
   contexts: {},
+  contextErrors: {},
   availability: null,
   daemon: null,
   daemonLogin: null,
@@ -41,12 +43,30 @@ const loadedAt = new Map<string, number>()
 const generations = new Map<string, number>()
 const scopes = new Map<string, { provider: string; cwd: string }>()
 
+/** One provider's discovery landed, from a request or a host event. */
+export function admitProfile(profile: HarnessProfile, cwd: string): void {
+  admit(profile, cwd)
+}
+
 function admit(profile: HarnessProfile, cwd: string): void {
+  const key = providerProfileKey(profile.id, cwd)
+  const previous = providerStore.get().contexts[key]
+  const failed = !profile.available || Boolean(profile.configurationError)
+  const observed =
+    previous?.available && failed
+      ? {
+          ...previous,
+          configurationError: `${profile.configurationError ?? profile.error ?? "Settings refresh failed."} Showing the last reported settings.`,
+        }
+      : profile
+  const contextErrors = { ...providerStore.get().contextErrors }
+  delete contextErrors[key]
   providerStore.set({
-    profiles: { ...providerStore.get().profiles, [profile.id]: profile },
+    contextErrors,
+    profiles: { ...providerStore.get().profiles, [profile.id]: observed },
     contexts: {
       ...providerStore.get().contexts,
-      [providerProfileKey(profile.id, cwd)]: profile,
+      [key]: observed,
     },
   })
 }
@@ -55,17 +75,19 @@ export const providers = {
   async refreshAccount(provider: string): Promise<void> {
     generations.set(provider, (generations.get(provider) ?? 0) + 1)
     const contexts = { ...providerStore.get().contexts }
+    const contextErrors = { ...providerStore.get().contextErrors }
     const workspaces = new Set<string>()
     for (const [key, scope] of scopes) {
       if (scope.provider !== provider) continue
       workspaces.add(scope.cwd)
       delete contexts[key]
+      delete contextErrors[key]
       loadedAt.delete(key)
       requests.delete(key)
     }
     const profiles = { ...providerStore.get().profiles }
     delete profiles[provider]
-    providerStore.set({ profiles, contexts })
+    providerStore.set({ profiles, contexts, contextErrors })
     if (!workspaces.size) workspaces.add("")
     await Promise.all(
       [...workspaces].map((cwd) => providers.load(provider, true, cwd))
@@ -82,10 +104,14 @@ export const providers = {
         const next = { ...providerStore.get().profiles }
         for (const profile of profiles) {
           if (
-            (generations.get(profile.id) ?? 0) ===
+            (generations.get(profile.id) ?? 0) !==
             (accountGenerations.get(profile.id) ?? 0)
           )
-            next[profile.id] = profile
+            continue
+          // A placeholder never replaces a discovery that already arrived.
+          if (profile.pending && next[profile.id] && !next[profile.id].pending)
+            continue
+          next[profile.id] = profile
         }
         providerStore.set({ profiles: next })
         loaded = true
@@ -110,7 +136,21 @@ export const providers = {
       .then((profile) => {
         if ((generations.get(provider) ?? 0) !== generation) return
         admit(profile, cwd)
-        loadedAt.set(key, Date.now())
+        if (profile.available && !profile.configurationError)
+          loadedAt.set(key, Date.now())
+      })
+      .catch((error) => {
+        if ((generations.get(provider) ?? 0) !== generation) return
+        providerStore.set({
+          contextErrors: {
+            ...providerStore.get().contextErrors,
+            [key]:
+              error instanceof Error
+                ? error.message
+                : "Model settings could not be loaded",
+          },
+        })
+        throw error
       })
       .finally(() => {
         if (requests.get(key) === request) requests.delete(key)

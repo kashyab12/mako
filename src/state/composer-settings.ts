@@ -112,15 +112,40 @@ export function settingsSession(
     target.kind === "thread"
       ? acpForThread(acpStore.get(), target.path)
       : acpStore.get().conversations[target.id]
-  if (conversation?.kind === "live") return conversation.session.settings ?? {}
-  if (target.kind !== "thread") return undefined
   const ref =
-    threads.opening?.ref.path === target.path
-      ? threads.opening.ref
-      : threads.viewing?.ref.path === target.path
-        ? threads.viewing.ref
-        : threads.threads.find((entry) => entry.path === target.path)
-  return ref?.settings ?? (ref?.model ? { model: ref.model } : {})
+    target.kind === "thread"
+      ? threads.opening?.ref.path === target.path
+        ? threads.opening.ref
+        : threads.viewing?.ref.path === target.path
+          ? threads.viewing.ref
+          : threads.threads.find((entry) => entry.path === target.path)
+      : conversation?.kind === "live"
+        ? threads.threads.find(
+            (entry) =>
+              entry.harness === target.harness &&
+              entry.nativeId === conversation.session.nativeId
+          )
+        : undefined
+  return observedSessionSettings(
+    ref,
+    conversation?.kind === "live" ? conversation.session.settings : undefined,
+    providerStore.get().contexts[providerProfileKey(target.harness, target.cwd)]
+      ?.models
+  )
+}
+
+/** Native observations fill gaps only while both snapshots name the same model. */
+export function observedSessionSettings(
+  ref: Pick<ThreadRef, "model" | "settings"> | undefined,
+  live: SessionSettings | undefined,
+  models: readonly SessionModel[] = []
+): SessionSettings {
+  const native = ref?.settings ?? (ref?.model ? { model: ref.model } : {})
+  if (!live) return native
+  const liveModel = modelByIdentity(models, live.model)?.id ?? live.model
+  const nativeModel = modelByIdentity(models, native.model)?.id ?? native.model
+  if (liveModel && nativeModel && liveModel !== nativeModel) return live
+  return { ...native, ...live, options: { ...native.options, ...live.options } }
 }
 
 export function settingsConversation(
@@ -213,7 +238,10 @@ export async function settingsForSend(
     conversation?.kind === "live"
       ? { options: conversation.session.configOptions }
       : undefined
-  await providers.load(target.harness, false, target.cwd)
+  const cached =
+    providerStore.get().contexts[providerProfileKey(target.harness, target.cwd)]
+  if (!cached?.available || cached.configurationError)
+    await providers.load(target.harness, false, target.cwd)
   const profile =
     providerStore.get().contexts[providerProfileKey(target.harness, target.cwd)]
   const { resolved } = resolveComposerSettingsInput({

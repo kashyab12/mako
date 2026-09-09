@@ -1,4 +1,10 @@
-import { currentSettingsTarget, settingsForSend, type ComposerTarget } from "@/state/composer-settings"
+import { stagePrompt } from "@/state/acp-pending"
+import { projectAcp } from "@/state/live-projection"
+import {
+  currentSettingsTarget,
+  settingsForSend,
+  type ComposerTarget,
+} from "@/state/composer-settings"
 import { applyLiveSnapshot } from "@/state/live-recovery"
 import { getMako } from "@/lib/bridge"
 import type { AcpBlock } from "@/lib/acp-blocks"
@@ -17,6 +23,20 @@ export type AcpStartOptions = Omit<
   "conversationId"
 >
 
+const MAX_PROMPT_TITLE = 60
+
+/** The first line of a prompt, as the rail names every other thread. */
+export function titleFromPrompt(prompt: string): string | undefined {
+  const text = prompt
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line && !/^\[[^\]]+\]$/.test(line))
+  if (!text) return undefined
+  return text.length > MAX_PROMPT_TITLE
+    ? `${text.slice(0, MAX_PROMPT_TITLE - 1)}…`
+    : text
+}
+
 interface BeginStartInput {
   settingsTarget?: ComposerTarget
   harness: string
@@ -32,7 +52,8 @@ export function beginStart(input: BeginStartInput): StartingAcpConversation {
   const key = crypto.randomUUID()
   const conversation: StartingAcpConversation = {
     kind: "starting",
-    settingsTarget: input.settingsTarget ?? currentSettingsTarget(input.harness),
+    settingsTarget:
+      input.settingsTarget ?? currentSettingsTarget(input.harness),
     key,
     draftKey: input.threadPath ?? key,
     harness: input.harness,
@@ -45,6 +66,7 @@ export function beginStart(input: BeginStartInput): StartingAcpConversation {
     createdAt: now,
     updatedAt: now,
   }
+  conversation.projection = projectAcp(conversation)
   replaceAcpConversation(key, conversation)
   acpStore.set({ activeKey: key })
   return conversation
@@ -56,7 +78,12 @@ export function updateStarting(
 ): void {
   updateAcpConversation(key, (conversation) =>
     conversation.kind === "starting"
-      ? { ...conversation, ...patch, updatedAt: Date.now() }
+      ? {
+          ...conversation,
+          ...patch,
+          updatedAt: Date.now(),
+          projection: projectAcp({ ...conversation, ...patch }),
+        }
       : conversation
   )
 }
@@ -90,10 +117,29 @@ export async function launch(
   prompt?: string,
   attachments: PromptAttachment[] = []
 ): Promise<boolean> {
+  const requestId = crypto.randomUUID()
+  if (prompt !== undefined) {
+    const blocks = starting.blocks.map((block) =>
+      block.type === "user" ? { ...block, requestId } : block
+    )
+    updateStarting(starting.key, { blocks })
+    stagePrompt(starting.key, {
+      id: requestId,
+      text: prompt,
+      attachments,
+      displayText: starting.hiddenUserPrompt
+        ? blocks
+            .filter((block) => block.type === "user")
+            .map((block) => block.text)
+            .join("\n")
+        : undefined,
+    })
+  }
   try {
     const snapshot = await getMako().liveStart(starting.harness, starting.cwd, {
       ...options,
-      tuning: options.tuning ?? await settingsForSend(starting.settingsTarget),
+      tuning:
+        options.tuning ?? (await settingsForSend(starting.settingsTarget)),
       conversationId: starting.key,
       threadPath: starting.threadPath,
       displayPrompt: starting.hiddenUserPrompt
@@ -105,7 +151,7 @@ export async function launch(
       initialRequest:
         prompt === undefined
           ? undefined
-          : { id: crypto.randomUUID(), text: prompt, attachments },
+          : { id: requestId, text: prompt, attachments },
     })
     applyLiveSnapshot(snapshot)
     return true

@@ -1,3 +1,4 @@
+import type { PendingPrompt } from "@/state/prompt-delivery"
 import type { ComposerTarget } from "@/state/composer-settings"
 import type { LiveSnapshot } from "@/lib/types"
 import type { LiveProjection } from "@/state/live-projection"
@@ -15,6 +16,8 @@ export interface AcpQueuedPrompt {
 }
 
 interface AcpConversationBase {
+  pendingPrompts?: PendingPrompt[]
+  nativeAgents?: LiveSnapshot["nativeAgents"]
   key: string
   draftKey: string
   harness: string

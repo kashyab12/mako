@@ -1,10 +1,22 @@
-import { currentSettingsTarget, threadSettingsTarget, settingsForSend } from "@/state/composer-settings"
+import { stagePrompt } from "@/state/acp-pending"
+import {
+  currentSettingsTarget,
+  threadSettingsTarget,
+  settingsForSend,
+} from "@/state/composer-settings"
 import { leaveViewerForLive } from "@/state/thread-viewing"
+import { performLiveAction } from "@/state/live-actions"
 import { applyLiveSnapshot, hydrateLive } from "@/state/live-recovery"
 import { getMako, hasBridge } from "@/lib/bridge"
-import type { PromptAttachment, ThreadRef, TransferInput } from "@/lib/types"
+import type {
+  PromptAttachment,
+  ThreadRef,
+  TransferInput,
+  RewindInput,
+  RewindPreview,
+} from "@/lib/types"
 import { activeIs, updateLive } from "@/state/acp-live"
-import { sendTo } from "@/state/acp-queue"
+import { editQueuedPrompt, sendTo } from "@/state/acp-queue"
 import {
   beginStart,
   failStart,
@@ -12,6 +24,7 @@ import {
   updateStarting,
   waitForPromotion,
   type AcpStartOptions,
+  titleFromPrompt,
 } from "@/state/acp-start"
 import {
   acpForThread,
@@ -57,6 +70,66 @@ export type {
 }
 
 export const acp = {
+  canSteer(): boolean {
+    const live = activeLiveAcp(acpStore.get())
+    return Boolean(
+      live &&
+      live.session.status === "running" &&
+      threadsStore
+        .get()
+        .liveCapabilities.find((item) => item.provider === live.harness)
+        ?.canSteer
+    )
+  },
+
+  /**
+   * Send a queued message into the running turn instead of after it. The
+   * queue entry leaves only once the provider has accepted the steer, so a
+   * refused steer costs nothing and the message stays in line.
+   */
+  async steerQueued(requestId: string): Promise<boolean> {
+    const live = activeLiveAcp(acpStore.get())
+    const queued = live?.requests?.find(
+      (item) => item.id === requestId && (item.status === "queued" || item.status === "held")
+    )
+    if (!live || !queued) return false
+    const accepted = await acp.steer(queued.text, queued.attachments)
+    if (!accepted) return false
+    await editQueuedPrompt(
+      { kind: "live", id: live.key },
+      { id: queued.id, text: queued.text, attachments: queued.attachments },
+      { kind: "remove" }
+    )
+    return true
+  },
+
+  async steer(
+    text: string,
+    attachments: PromptAttachment[] = []
+  ): Promise<boolean> {
+    const live = activeLiveAcp(acpStore.get())
+    const request = live?.requests?.find(
+      (item) => item.status === "dispatching"
+    )
+    if (!live || !request) return false
+    return performLiveAction(live.key, {
+      kind: "steer",
+      id: crypto.randomUUID(),
+      requestId: request.id,
+      text,
+      attachments,
+    })
+  },
+
+  async compact(): Promise<boolean> {
+    const live = activeLiveAcp(acpStore.get())
+    if (!live) return false
+    return performLiveAction(live.key, {
+      kind: "compact",
+      id: crypto.randomUUID(),
+    })
+  },
+
   activate(key: string): boolean {
     const conversation = acpStore.get().conversations[key]
     if (!conversation) return false
@@ -145,7 +218,9 @@ export const acp = {
     const canResume = canResumeInteractively(ref.harness)
     const harness = canResume ? ref.harness : threadsStore.get().composerHarness
     const starting = beginStart({
-      settingsTarget: canResume ? threadSettingsTarget(ref) : { kind: "new", harness, cwd: ref.cwd ?? "" },
+      settingsTarget: canResume
+        ? threadSettingsTarget(ref)
+        : { kind: "new", harness, cwd: ref.cwd ?? "" },
       harness,
       cwd: ref.cwd ?? "",
       title: ref.title,
@@ -236,19 +311,18 @@ export const acp = {
       acp.activate(existing.key)
       return acp.send(prompt, attachments)
     }
+    // Named from the first prompt, the way every other thread is; the
+    // provider's own title replaces it once the session file reports one.
+    const title = displayPrompt ? titleFromPrompt(displayPrompt) : undefined
     const starting = beginStart({
       harness,
       cwd,
+      title,
       threadPath,
       blocks: displayPrompt ? [{ type: "user", text: displayPrompt }] : [],
       hiddenUserPrompt: displayPrompt === prompt ? null : prompt,
     })
-    return launch(
-      starting,
-      {},
-      prompt,
-      attachments
-    )
+    return launch(starting, title ? { title } : {}, prompt, attachments)
   },
 
   async delegate(provider: string, task: string): Promise<boolean> {
@@ -318,6 +392,36 @@ export const acp = {
     }
   },
 
+  async previewRewind(
+    requestId: string,
+    position: "before" | "after"
+  ): Promise<{ sourceId: string; preview: RewindPreview }> {
+    const current = activeLiveAcp(acpStore.get())
+    if (!current || !hasBridge())
+      throw new Error("Open the conversation before rewinding")
+    return {
+      sourceId: current.key,
+      preview: await getMako().liveRewindPreview(
+        current.key,
+        requestId,
+        position
+      ),
+    }
+  },
+
+  async rewind(sourceId: string, input: RewindInput): Promise<void> {
+    const snapshot = await getMako().liveRewind(sourceId, input)
+    applyLiveSnapshot(snapshot)
+    if (activeLiveAcp(acpStore.get())?.key === sourceId)
+      acp.activate(snapshot.session.id)
+  },
+
+  async recoverRewinds(): Promise<number> {
+    const snapshots = await getMako().liveRecoverRewinds()
+    for (const snapshot of snapshots) applyLiveSnapshot(snapshot)
+    return snapshots.length
+  },
+
   viewProviderHistory(path: string): void {
     const ref = threadsStore
       .get()
@@ -341,7 +445,8 @@ export const acp = {
         provider: harness,
         text: prompt,
         attachments,
-        tuning: tuning ?? await settingsForSend(currentSettingsTarget(harness)),
+        tuning:
+          tuning ?? (await settingsForSend(currentSettingsTarget(harness))),
       })
       applyLiveSnapshot(snapshot)
       leaveViewerForLive(harness)
@@ -366,10 +471,13 @@ export const acp = {
   send(text: string, attachments: PromptAttachment[] = []): Promise<boolean> {
     const current = activeAcp(acpStore.get())
     if (!current) return Promise.resolve(false)
-    if (current.kind === "starting")
+    if (current.kind === "starting") {
+      const requestId = crypto.randomUUID()
+      stagePrompt(current.key, { id: requestId, text, attachments })
       return waitForPromotion(current.draftKey).then((ready) =>
-        ready ? sendTo(current.key, text, attachments) : false
+        ready ? sendTo(current.key, text, attachments, requestId) : false
       )
+    }
     return sendTo(current.key, text, attachments)
   },
 

@@ -1,4 +1,5 @@
 import type {
+  LiveCapability,
   NativeRequest,
   ExternalThreadActivity,
   Thread,
@@ -59,6 +60,7 @@ export interface ThreadsState {
   /** Harnesses that can be driven interactively (ACP). */
   acpable: string[]
   interactiveResume: string[]
+  liveCapabilities: LiveCapability[]
   /** The native run for the viewed thread, if one was started. */
   run: ThreadRunState | null
   /** Every live run owned by Mako, with its start and current operation. */

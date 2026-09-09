@@ -1,6 +1,7 @@
 import { playFeedback } from "@/state/feedback"
 import { receiveControlActivity } from "@/state/control-preview"
 import { hostConnectionStore } from "@/state/host-connection"
+import { admitProfile } from "@/state/providers"
 import { applyLiveBatch, hydrateLiveSummaries } from "@/state/live-recovery"
 import { createHook, createStore, shallowEqual } from "@/state/store"
 import type {
@@ -129,6 +130,10 @@ function apply(event: HostEvent) {
   }
   if (event.type === "live-batch") {
     applyLiveBatch(event.batch)
+    return
+  }
+  if (event.type === "harness-profile") {
+    admitProfile(event.profile, event.cwd ?? "")
     return
   }
   const active = tabsStore.get().activeId
@@ -310,7 +315,7 @@ function applyToActive(event: HostEvent) {
 
 function report(message: string) {
   toast.error(message, {
-          duration: Infinity,
+    duration: Infinity,
     action: {
       label: "Troubleshoot",
       onClick: () =>
@@ -711,7 +716,7 @@ export const actions = {
     })
     if (result.text) {
       window.dispatchEvent(
-        new CustomEvent("mako:compose", { detail: result.text })
+        new CustomEvent("mako:compose", { detail: { text: result.text } })
       )
     }
   },
@@ -735,6 +740,7 @@ export const actions = {
   },
 
   compact(instructions?: string) {
+    if (activeLiveAcp(acpStore.get())) return acp.compact()
     return guard(() => getMako().compact(instructions))
   },
 
@@ -756,11 +762,15 @@ export const actions = {
     if (git && store.get().meta?.cwd === workspace) store.set({ git })
   },
 
-  async copy(text: string, { notify = true }: { notify?: boolean } = {}): Promise<boolean> {
+  async copy(
+    text: string,
+    { notify = true }: { notify?: boolean } = {}
+  ): Promise<boolean> {
     try {
       await getMako().copy(text)
       toast.dismiss("clipboard-error")
-      if (notify) toast.success("Copied", { id: "clipboard-success", duration: 1600 })
+      if (notify)
+        toast.success("Copied", { id: "clipboard-success", duration: 1600 })
       playFeedback("copy")
       return true
     } catch {
