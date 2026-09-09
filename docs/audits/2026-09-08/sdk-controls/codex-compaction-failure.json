@@ -1,0 +1,12 @@
+{
+  "provider": "codex",
+  "result": "withheld",
+  "nativeSessionId": "01a082df-0979-7083-9c34-65757f71f432",
+  "compactionReceipt": "completed",
+  "resumedSameNativeId": true,
+  "replacementHistoryMessages": 5,
+  "replacementHistoryContainsSteeringMarker": false,
+  "modelRecall": "I don’t have the earlier CONTROL_ marker in the available context.",
+  "scope": "Disposable fixture workspace; complete source transcript retained by Mako",
+  "decision": "Do not register manual Codex compaction until history retention passes"
+}

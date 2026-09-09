@@ -1,0 +1,51 @@
+{
+  "url": "http://127.0.0.1:5186/",
+  "root": "/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-rewind-e2e-iaCgSk",
+  "cwd": "/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-rewind-e2e-iaCgSk/workspace",
+  "provider": "codex",
+  "sourceId": "1496640c-0e3e-4c76-9fd3-950244980f15",
+  "forkId": "b0536752-e539-4dad-bd0e-74c1bff03085",
+  "requestIds": [
+    "9770962a-c48d-45e0-a153-3b5eb1613558",
+    "26d44ab0-40c6-48df-95e6-a8cfafbe98eb"
+  ],
+  "controls": true,
+  "compaction": false,
+  "steeringResult": {
+    "result": {
+      "input": {
+        "kind": "steer",
+        "id": "44addc51-c93f-4e34-9edc-8f2c6027ee2c",
+        "requestId": "9770962a-c48d-45e0-a153-3b5eb1613558",
+        "text": "Keep the file-writing task unchanged. Replace the final reply instruction: reply FIRST_DONE followed by CONTROL_8da25776-b580-405b-85f2-d85b39e2273a. Remember this marker for later.",
+        "attachments": []
+      },
+      "digest": "01cc429cfc11ad9a2a52940997335fb3f780ac04bdc8e06ec45b81ab209e7862",
+      "bindingId": "1496640c-0e3e-4c76-9fd3-950244980f15",
+      "createdAt": 1788902322526,
+      "state": {
+        "kind": "accepted"
+      }
+    }
+  },
+  "preview": {
+    "target": {
+      "id": "0d8dab1a-a7e7-4ae4-9923-5f3ec694f321",
+      "scope": "/private/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-rewind-e2e-iaCgSk/workspace",
+      "createdAt": 1788902342171,
+      "files": 1
+    },
+    "current": {
+      "id": "6d002ab0-9f6d-4153-84a6-b19afb2f440c",
+      "scope": "/private/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-rewind-e2e-iaCgSk/workspace",
+      "createdAt": 1788902351726,
+      "files": 1
+    },
+    "changedFiles": [
+      "checkpoint.txt"
+    ],
+    "changedFileCount": 1,
+    "stagingChanged": false
+  },
+  "checkedAt": "2026-09-08T21:19:34.544Z"
+}
