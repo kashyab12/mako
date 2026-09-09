@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { BotIcon, ChevronDownIcon } from "lucide-react"
+import { GitBranchIcon, ChevronDownIcon } from "lucide-react"
 import { activeLiveAcp, useAcp } from "@/state/acp"
 import { stage } from "@/state/stage"
 import { useThreads } from "@/state/threads"
@@ -167,7 +167,7 @@ export function AgentsToggle() {
       onClick={() => stage.toggle("agents")}
       className="pressable flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-ui text-faint hover:bg-fill-hover hover:text-foreground"
     >
-      <BotIcon className="size-3" />
+      <GitBranchIcon className="size-3" />
       {count} {count === 1 ? "agent" : "agents"}
     </button>
   )

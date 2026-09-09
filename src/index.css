@@ -268,6 +268,36 @@
  * Base
  * ------------------------------------------------------------------ */
 
+diffs-container {
+  color-scheme: inherit;
+  --diffs-bg: var(--surface);
+  --diffs-fg: var(--foreground);
+  --diffs-font-family: var(--font-mono);
+  --diffs-header-font-family: var(--font-sans);
+  --diffs-font-size: 12px;
+  --diffs-line-height: 20px;
+  --diffs-bg-buffer-override: var(--surface);
+  --diffs-bg-context-override: var(--raised);
+  --diffs-bg-context-gutter-override: var(--raised);
+  --diffs-bg-separator-override: var(--surface);
+  --diffs-bg-hover-override: var(--fill-hover);
+  --diffs-fg-number-override: var(--faint);
+  --diffs-fg-number-addition-override: var(--added);
+  --diffs-fg-number-deletion-override: var(--removed);
+  --diffs-addition-color-override: var(--added);
+  --diffs-deletion-color-override: var(--removed);
+  --diffs-modified-color-override: var(--caution);
+  --diffs-bg-addition-override: color-mix(in oklab, var(--added) 12%, var(--surface));
+  --diffs-bg-deletion-override: color-mix(in oklab, var(--removed) 12%, var(--surface));
+  --diffs-bg-addition-number-override: color-mix(in oklab, var(--added) 8%, var(--surface));
+  --diffs-bg-deletion-number-override: color-mix(in oklab, var(--removed) 8%, var(--surface));
+  --diffs-bg-addition-emphasis-override: color-mix(in oklab, var(--added) 24%, transparent);
+  --diffs-bg-deletion-emphasis-override: color-mix(in oklab, var(--removed) 24%, transparent);
+  --diffs-selection-color-override: var(--foreground);
+  --diffs-bg-selection-override: var(--fill-selected);
+  --diffs-bg-selection-number-override: var(--fill-selected);
+}
+
 @layer base {
   * {
     border-color: var(--border);
@@ -385,7 +415,7 @@
     [data-thread-row][data-jump-index]::after {
     content: attr(data-jump-index);
     position: absolute;
-    right: 5px;
+    left: 4px;
     display: grid;
     width: 16px;
     height: 16px;
@@ -396,6 +426,10 @@
     box-shadow: inset 0 0 0 0.5px var(--hairline);
     font-size: var(--text-label);
     font-weight: 640;
+  }
+
+  .thread-jump-scope[data-jump-hints] [data-thread-row][data-thread-indent][data-jump-index]::after {
+    left: 24px;
   }
 
   /*
@@ -506,8 +540,44 @@
   opacity: 0.72;
 }
 
+.activity-mark {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  place-items: center;
+}
+.activity-mark > svg { width: 13px; height: 13px; stroke-width: 1.7; }
+.activity-mark.activity-detail { width: 64px; height: 64px; }
+.activity-mark.activity-inline {
+  width: 20px;
+  height: 20px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, currentColor 5%, transparent);
+}
+.activity-detail > svg { width: 24px; height: 24px; }
+.activity-mark[data-state="failed"] { color: var(--negative); }
+.activity-mark[data-state="waiting"] { color: var(--caution); }
+.activity-mark[data-state="complete"] { color: var(--muted-foreground); }
+.activity-idle { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: 0.45; }
+.activity-meter { display: flex; align-items: end; gap: 2px; height: 11px; }
+.activity-meter > i { width: 2px; height: 65%; background: currentColor; border-radius: 1px; }
+.activity-meter > i:nth-child(2) { height: 100%; }
+.activity-meter > i:nth-child(3) { height: 40%; }
+.activity-orb { contain: layout paint; }
+
+.composer-send:not(:disabled) {
+  border: 1px solid color-mix(in srgb, var(--foreground) 70%, var(--surface));
+  background: linear-gradient(160deg, var(--foreground), color-mix(in srgb, var(--foreground) 75%, var(--surface)) 52%, var(--foreground));
+}
+
+.attachment-preview {
+  transition: opacity 150ms var(--ease-out);
+  @starting-style { opacity: 0; }
+}
+
 .animate-spin {
-  visibility: hidden;
   animation: none;
 }
 

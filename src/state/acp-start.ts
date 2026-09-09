@@ -1,4 +1,5 @@
 import { stagePrompt } from "@/state/acp-pending"
+import { prefsStore } from "@/state/prefs"
 import { projectAcp } from "@/state/live-projection"
 import {
   currentSettingsTarget,
@@ -138,6 +139,7 @@ export async function launch(
   try {
     const snapshot = await getMako().liveStart(starting.harness, starting.cwd, {
       ...options,
+      modeId: options.modeId ?? prefsStore.get().providerModes[starting.harness],
       tuning:
         options.tuning ?? (await settingsForSend(starting.settingsTarget)),
       conversationId: starting.key,

@@ -6,7 +6,11 @@ import {
 import { useState } from "react"
 import { createRoot } from "react-dom/client"
 import { Composer } from "@/components/composer/composer"
+import { HotIndicator } from "@/components/shell/hot-indicator"
 import { AcpPanel } from "@/components/viewer/acp-panel"
+import { Exchange } from "@/components/transcript/exchange"
+import { ActivityMark } from "@/components/ui/activity-mark"
+import { MODE_DRAWS, resolvePreset } from "thinking-orbs"
 import { AgentsPanel } from "@/components/inspector/agents-panel"
 import { WorkspaceFocusContext } from "@/components/stage/workspace-focus-context"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -52,6 +56,13 @@ const snapshot: LiveSnapshot = {
     },
   ],
   blocks: [
+    { type: "user", text: "Keep the reply in the same Claude conversation." },
+    { type: "text", text: "The provider session ID now owns continuation. An account-specific path is an alias, not a reason to create a new conversation." },
+    { type: "user", text: "Preserve my unfinished prompt when I return to this project." },
+    { type: "text", text: "The draft belongs to the project until it is sent. Opening New again restores the text and its staged attachments." },
+    { type: "user", text: "Check the composer and keyboard navigation." },
+    { type: "tool", id: "test-command", toolKind: "execute", title: "Run composer tests", input: "{\"command\":\"npm run test:live-controls\"}", output: "All composer checks passed.", status: "completed" },
+    { type: "text", text: "Attachment references remain part of the text. Their previews carry the remove buttons, and the turn navigator stays beside the transcript." },
     {
       type: "user",
       text: "Review the routing changes and check the tests.",
@@ -180,8 +191,50 @@ function publishQueue(starting: boolean) {
   mock.setLiveSnapshot(next)
   applyLiveSnapshot(next)
 }
+const formattingPrompt = "- **85** still have no usable office street candidate.\n\n\n\n\nNo way dude. This is fucking not possible. We have to figure this out. Either the office address or sometimes the office address, maybe also their first address where they incorporated, or whatever it is. California must have that address or Delaware or something. They must have that address. We should get that shit. Come on man"
+
+Object.assign(window, { makoActivityBenchmark: () => {
+  const canvas = document.createElement("canvas")
+  canvas.width = 128
+  canvas.height = 128
+  const context = canvas.getContext("2d")
+  if (!context) throw new Error("No 2D canvas")
+  return ([20, 64] as const).flatMap((size) => (["working", "solving", "searching", "weaving", "shaping", "composing", "connecting"] as const).map((state) => {
+    canvas.width = size * 2
+    canvas.height = size * 2
+    const preset = resolvePreset(state, size)
+    const samples: number[] = []
+    for (let index = 0; index < 120; index++) {
+      const start = performance.now()
+      context.setTransform(2, 0, 0, 2, 0, 0)
+      context.clearRect(0, 0, size, size)
+      MODE_DRAWS[preset.mode](context, size, index / 30, true, preset.opts)
+      samples.push(performance.now() - start)
+    }
+    samples.sort((a,b) => a-b)
+    return { state, size, meanMs: samples.reduce((a,b) => a+b, 0) / samples.length, p95Ms: samples[114] }
+  }))
+}})
+
 export function Fixture() {
   const [narrow, setNarrow] = useState(false)
+  if (new URLSearchParams(location.search).has("motion")) return (
+    <main id="activity-gallery" className="mx-auto max-w-content p-8">
+      <h1 className="mb-6 text-title font-semibold">Activity states</h1>
+      <div className="grid grid-cols-3 gap-6">
+        {([ ["reasoning","Reasoning"], ["searching","Searching / reading"], ["executing","Running tools"], ["editing","Editing"], ["responding","Responding"], ["connecting","Connecting"], ["waiting","Needs approval"], ["failed","Failed"], ["complete","Complete"] ] as const).map(([state,label]) => (
+          <div key={state} className="flex flex-col items-center gap-2 border border-hairline p-4 text-ui"><ActivityMark state={state} size={64} /><span>{label}</span></div>
+        ))}
+      </div>
+    </main>
+  )
+  if (new URLSearchParams(location.search).has("format")) return (
+    <TooltipProvider>
+      <main id="prompt-format" data-source={formattingPrompt} className="mx-auto max-w-content p-8">
+        <Exchange exchange={{id:"format-prompt", prompt:{id:"format-prompt",role:"user",blocks:[{type:"text",text:formattingPrompt}]},response:[],system:[]}} />
+      </main>
+    </TooltipProvider>
+  )
   return (
     <TooltipProvider>
       <WorkspaceFocusContext
@@ -195,6 +248,7 @@ export function Fixture() {
         <div className="flex h-screen flex-col bg-surface">
           <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-hairline px-4 py-2 text-label text-faint">
             <span>Isolated live workflow fixture · no agent is started</span>
+            <HotIndicator />
             <button
               className="pressable rounded border border-hairline px-2 py-1"
               onClick={() => publishQueue(true)}
@@ -216,6 +270,7 @@ export function Fixture() {
             </button>
             <button
               className="pressable rounded border border-hairline px-2 py-1"
+              data-fixture="running"
               onClick={() => publishQueue(false)}
             >
               Working with queue

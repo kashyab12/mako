@@ -13,7 +13,7 @@ import type {
   SettingValue,
 } from "@mako/sessions/settings"
 import type { ComposerSettingsView } from "./use-composer-settings"
-import { settingSourceLabel } from "./settings-source"
+import { settingSourceLabel, settingValueLabel } from "./settings-source"
 import { cn } from "@/lib/utils"
 
 export function ForeignEffortPicker({ view }: { view: ComposerSettingsView }) {
@@ -41,11 +41,7 @@ export function ForeignEffortPicker({ view }: { view: ComposerSettingsView }) {
 function optionLabel(option: ModelOption, current: ResolvedSetting): string {
   if (current.kind === "unknown")
     return `${option.role === "speed" ? "Speed" : option.label} unavailable`
-  if (option.kind === "boolean")
-    return current.value === true ? "Fast" : "Standard"
-  const value =
-    option.values.find((entry) => entry.value === current.value)?.label ??
-    String(current.value)
+  const value = settingValueLabel(option, current.value)
   return option.role === "reasoning" ? `${value} reasoning` : value
 }
 
@@ -154,7 +150,9 @@ function OptionSection({
             )}
           >
             <span className="min-w-0 flex-1">
-              <span className="block text-ui">{entry.label}</span>
+              <span className="block text-ui">
+                {settingValueLabel(option, entry.value)}
+              </span>
               {entry.description ? (
                 <span className="block text-label text-faint">
                   {entry.description}

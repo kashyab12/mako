@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react"
 import { consumeFullReload, onHotUpdate, type HotUpdate } from "@/desk/hot-reload"
 import { cn } from "@/lib/utils"
-import { RotateCcwIcon, ZapIcon } from "lucide-react"
+import { RotateCcwIcon, ZapIcon, SquareArrowOutUpRightIcon } from "lucide-react"
+import { manualReload, interfacePreview, openInterfacePreview, reloadInterface } from "@/state/development"
 
 /**
  * Says when Mako has just rewritten itself.
@@ -21,7 +22,7 @@ export function HotIndicator() {
   useEffect(() => onHotUpdate(setUpdate), [])
 
   useEffect(() => {
-    if (!update) return
+    if (!update || update.kind === "available") return
     const timer = setTimeout(() => setUpdate(null), 2400)
     return () => clearTimeout(timer)
   }, [update])
@@ -31,6 +32,21 @@ export function HotIndicator() {
     const timer = setTimeout(() => setReloaded(false), 4000)
     return () => clearTimeout(timer)
   }, [reloaded])
+
+  if (manualReload || !import.meta.env.DEV) {
+    return (
+      <div className="no-drag flex shrink-0 items-center gap-1 text-label">
+        {manualReload || interfacePreview ? <span title={interfacePreview ? "This window shares agents and conversations with the Mako host that opened it." : "This dev build has a separate host from installed Mako. Open a shared preview to compare interfaces with the same live chats."} className="border border-hairline px-1.5 py-0.5 text-muted-foreground">{interfacePreview ? "Shared preview" : "Isolated dev"}</span> : null}
+        <button type="button" onClick={reloadInterface} title="Load the latest interface without stopping agents. Host changes need Restart Mako." className="pressable flex h-6 items-center gap-1 rounded px-1.5 hover:bg-fill-hover hover:text-foreground">
+          <RotateCcwIcon className="size-3" />
+          {update?.kind === "available" ? "Reload UI · changes ready" : "Reload UI"}
+        </button>
+        <button type="button" onClick={openInterfacePreview} aria-label="Open shared-host preview" title="Share live chats with this Mako host. Separate dev builds do not sync live conversations." className="pressable flex size-6 items-center justify-center rounded hover:bg-fill-hover hover:text-foreground">
+          <SquareArrowOutUpRightIcon className="size-3" />
+        </button>
+      </div>
+    )
+  }
 
   if (reloaded) {
     return (

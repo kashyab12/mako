@@ -131,7 +131,7 @@ export const threadViewingActions = {
   async view(ref: ThreadRef, mode: "conversation" | "native" = "conversation") {
     if (!hasBridge()) return
     const { acp, acpStore, activeAcp } = await import("@/state/acp")
-    const activated = mode === "conversation" && acp.activateThread(ref.path)
+    const activated = mode === "conversation" && acp.activateThread(ref)
     if (!activated) acp.deactivate()
     const liveHarness = activated
       ? (activeAcp(acpStore.get())?.harness ?? ref.harness)

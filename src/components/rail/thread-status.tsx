@@ -1,12 +1,6 @@
-import { useEffect, useRef } from "react"
 import { formatRelative } from "@/lib/format"
 import type { ThreadStatus } from "@/state/threads"
-import {
-  CheckIcon,
-  Loader2Icon,
-  ShieldQuestionIcon,
-  TriangleAlertIcon,
-} from "lucide-react"
+import { ActivityMark, type ActivityState } from "@/components/ui/activity-mark"
 
 export function ThreadStatusMark({
   status,
@@ -15,101 +9,53 @@ export function ThreadStatusMark({
   status: ThreadStatus
   updatedAt?: string
 }) {
-  switch (status.kind) {
-    case "working":
-      return (
-        <span
-          title={status.detail ?? "Working in Mako"}
-          className="flex shrink-0 items-center gap-1 text-label text-ember/80"
-        >
-          <Loader2Icon className="size-3 animate-spin" />
-          <span className="max-w-24 truncate">
-            {status.detail ?? "Working"}
-          </span>
-          <Elapsed since={status.since} />
-        </span>
-      )
-    case "needs-permission":
-      return (
-        <span
-          title={status.detail ?? "Needs input"}
-          className="flex shrink-0 items-center gap-1 text-label text-caution"
-        >
-          <ShieldQuestionIcon className="size-3" />
-          Needs input
-        </span>
-      )
-    case "failed":
-      return (
-        <span
-          title={status.detail ?? "Failed"}
-          className="flex shrink-0 items-center gap-1 text-label text-negative"
-        >
-          <TriangleAlertIcon className="size-3" />
-          Failed
-        </span>
-      )
-    case "review":
-      return (
-        <span className="flex shrink-0 items-center gap-1 text-label text-positive">
-          <CheckIcon className="size-3" />
-          {status.unread ? "Done" : "Reviewed"}
-        </span>
-      )
-    case "observed":
-      return (
-        <span
-          title="The native session file changed recently; running state is unconfirmed"
-          className="shrink-0 text-label text-faint"
-        >
-          Updated
-        </span>
-      )
-    case "external-active":
-      return (
-        <span
-          title="Running in another app"
-          className="flex shrink-0 items-center gap-1 text-label text-faint"
-        >
-          <Loader2Icon className="size-3 animate-spin" />
-          Active
-        </span>
-      )
-    case "external-open":
-      return (
-        <span
-          title="Open in another app; no running turn reported"
-          className="shrink-0 text-label text-faint"
-        >
-          Open
-        </span>
-      )
-    case "idle":
-      return updatedAt ? (
-        <span className="tabular shrink-0 text-label text-faint">
-          {formatRelative(updatedAt)}
-        </span>
-      ) : null
-  }
-}
-
-function Elapsed({ since }: { since: number }) {
-  const element = useRef<HTMLSpanElement>(null)
-  useEffect(() => {
-    const update = () => {
-      if (element.current)
-        element.current.textContent = formatElapsed(Date.now() - since)
-    }
-    update()
-    const timer = window.setInterval(update, 1000)
-    return () => window.clearInterval(timer)
-  }, [since])
-  return <span ref={element} className="tabular" />
-}
-
-function formatElapsed(milliseconds: number): string {
-  const seconds = Math.max(0, Math.floor(milliseconds / 1000))
-  if (seconds < 60) return `${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h`
+  if (status.kind === "idle")
+    return updatedAt ? (
+      <span className="tabular shrink-0 text-label text-faint">
+        {formatRelative(updatedAt)}
+      </span>
+    ) : null
+  if (status.kind === "external-open" || status.kind === "observed")
+    return (
+      <span
+        title={
+          status.kind === "external-open"
+            ? "Open in another app; no running turn reported"
+            : "The session changed; running state is unconfirmed"
+        }
+        className="shrink-0 text-label text-faint"
+      >
+        {status.kind === "external-open" ? "Open" : "Updated"}
+      </span>
+    )
+  const state: ActivityState =
+    status.kind === "failed"
+      ? "failed"
+      : status.kind === "needs-permission"
+        ? "waiting"
+        : status.kind === "review"
+          ? "complete"
+          : "working"
+  const label =
+    status.kind === "working"
+      ? (status.detail ?? "Working in Mako")
+      : status.kind === "external-active"
+        ? "Working in another app"
+        : status.kind === "failed"
+          ? (status.detail ?? "Failed")
+          : status.kind === "needs-permission"
+            ? (status.detail ?? "Needs your approval")
+            : status.unread
+              ? "Answer ready to review"
+              : "Reviewed"
+  return (
+    <span
+      role="status"
+      aria-label={label}
+      title={label}
+      className="flex shrink-0 items-center text-muted-foreground"
+    >
+      <ActivityMark state={state} size={20} />
+    </span>
+  )
 }

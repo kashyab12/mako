@@ -1,5 +1,6 @@
 import { getMako } from "@/lib/bridge"
 import type {
+  CommitGenerationInput,
   GitCommitEntry,
   GitDiff,
   GitFileStatus,
@@ -62,11 +63,12 @@ export const git = {
     return getMako().gitPush()
   },
 
-  generateMessage(options?: {
-    prompt?: string
-    model?: string
-  }): Promise<string> {
-    return getMako().generateCommitMessage(options)
+  generateMessage(input: CommitGenerationInput) {
+    return getMako().generateCommitMessage(input)
+  },
+
+  cancelGeneration(requestId: string): Promise<void> {
+    return getMako().cancelCommitGeneration(requestId)
   },
 
   defaultPrompt(): Promise<string> {

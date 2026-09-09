@@ -1,7 +1,7 @@
 import { playFeedback } from "@/state/feedback"
 import { receiveControlActivity } from "@/state/control-preview"
 import { hostConnectionStore } from "@/state/host-connection"
-import { admitProfile } from "@/state/providers"
+import { admitProfile, providers } from "@/state/providers"
 import { applyLiveBatch, hydrateLiveSummaries } from "@/state/live-recovery"
 import { createHook, createStore, shallowEqual } from "@/state/store"
 import type {
@@ -138,6 +138,7 @@ function apply(event: HostEvent) {
   }
   const active = tabsStore.get().activeId
   if (event.tabId && event.tabId !== active) {
+    if (!tabsStore.get().tabs.some((tab) => tab.id === event.tabId)) return
     absorb(event.tabId, event)
     return
   }
@@ -421,6 +422,7 @@ export const actions = {
       return () => {}
     }
     const unsubscribe = bridge.onEvent(apply)
+    void providers.loadAll()
     try {
       const boot = await withTimeout(
         bridge.boot(),
@@ -485,7 +487,7 @@ export const actions = {
     }
     const next = cacheOf(id)
     threads.closeViewer()
-    if (!next.meta?.sessionFile || !acp.activateThread(next.meta.sessionFile))
+    if (!next.meta?.sessionFile || !acp.activateThread({ path: next.meta.sessionFile }))
       acp.deactivate()
     tabsStore.set({ activeId: id })
     patchTab(id, { unread: false })
@@ -521,7 +523,7 @@ export const actions = {
     threads.closeViewer()
     if (
       !tab.session.meta.sessionFile ||
-      !acp.activateThread(tab.session.meta.sessionFile)
+      !acp.activateThread({ path: tab.session.meta.sessionFile })
     )
       acp.deactivate()
     addTab(tab)
@@ -557,7 +559,7 @@ export const actions = {
           capabilities: opened.capabilities,
         }
       : cacheOf(result.activeId)
-    if (!next.meta?.sessionFile || !acp.activateThread(next.meta.sessionFile))
+    if (!next.meta?.sessionFile || !acp.activateThread({ path: next.meta.sessionFile }))
       acp.deactivate()
     store.set({
       meta: next.meta,

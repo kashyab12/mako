@@ -4,17 +4,18 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { RunningThreads } from "@/components/rail/active-threads"
+import { LiveAgentRow } from "@/components/rail/active-threads"
+import type { AcpPresence } from "@/state/acp-presence"
 import { ThreadRow } from "@/components/rail/thread-row"
 import { harnessLabel } from "@/components/rail/harness-meta"
 import { formatRelative } from "@/lib/format"
 import {
   groupThreadFolders,
   threadBelongsToWorkspace,
+  threadFolderKey,
   type ThreadFolder,
 } from "@/lib/thread-folders"
 import {
-  activeThreadRefs,
   threadStatus,
   threadStatusPriority,
   threadsStore,
@@ -114,6 +115,8 @@ export function AgentThreads() {
   const collapsed = usePrefs((prefs) => prefs.collapsedGroups)
   const scope = usePrefs((prefs) => prefs.railScope)
   const sortBy = usePrefs((prefs) => prefs.railSortBy)
+  const grouping = usePrefs((prefs) => prefs.railGrouping)
+  const railWidth = usePrefs((prefs) => prefs.railWidth)
   const { cwd, ready: workspaceReady } = useWorkspaceFocus()
   const branch = useSession((state) => state.git?.branch)
   const focusedBranch = workspaceReady ? branch : undefined
@@ -165,21 +168,6 @@ export function AgentThreads() {
     return byHarness
   }, [all])
 
-  const activeThreads = useMemo(
-    () =>
-      activeThreadRefs(all, {
-        ...threadsStore.get(),
-        attention,
-        externalActivity,
-        observed,
-        working,
-      }),
-    [all, attention, externalActivity, observed, working]
-  )
-  const activePaths = useMemo(
-    () => new Set(activeThreads.map((ref) => ref.path)),
-    [activeThreads]
-  )
   const unboundLiveAgents = useMemo(() => {
     const nativePaths = new Set(all.map((ref) => ref.path))
     const nativeIdentities = new Set(
@@ -187,12 +175,15 @@ export function AgentThreads() {
     )
     return liveAgents.filter(
       (presence) =>
+        (!filter.length || filter.includes(presence.harness)) &&
+        (scope !== "workspace" || threadBelongsToWorkspace(presence, cwd)) &&
+        (!deferred.trim() || `${presence.title ?? ""} ${presence.cwd} ${presence.harness}`.toLowerCase().includes(deferred.trim().toLowerCase())) &&
         (!presence.threadPath || !nativePaths.has(presence.threadPath)) &&
         !presence.nativePaths?.some((path) => nativePaths.has(path)) &&
         (!presence.nativeId ||
           !nativeIdentities.has(`${presence.harness}:${presence.nativeId}`))
     )
-  }, [all, liveAgents])
+  }, [all, liveAgents, filter, scope, cwd, deferred])
 
   const matched = useMemo(() => {
     const needle = deferred.trim().toLowerCase()
@@ -231,7 +222,7 @@ export function AgentThreads() {
       const status = threadStatus(ref, state)
       nextPriorities[ref.path] = threadStatusPriority(status)
       nextActivity[ref.path] = {
-        running: Boolean(working[ref.path]),
+        running: status.kind === "working",
         needsInput: status.kind === "needs-permission",
         failed: status.kind === "failed",
         unread: status.kind === "review" && status.unread,
@@ -252,6 +243,7 @@ export function AgentThreads() {
     () =>
       groupThreadFolders({
         refs: matched,
+        live: unboundLiveAgents,
         currentCwd: cwd,
         pinnedThreads: pinned,
         pinnedFolders: pinnedProjects,
@@ -259,11 +251,15 @@ export function AgentThreads() {
         activity: threadActivity,
         sortBy,
       }),
-    [cwd, matched, pinned, pinnedProjects, priorities, sortBy, threadActivity]
+    [cwd, matched, unboundLiveAgents, pinned, pinnedProjects, priorities, sortBy, threadActivity]
   )
+  const recent = useMemo(() => [
+    ...matched.map((ref) => ({ kind: "native" as const, key: ref.path, at: ref.updatedAt ?? "", ref })),
+    ...unboundLiveAgents.map((presence) => ({ kind: "live" as const, key: presence.key, at: new Date(presence.createdAt).toISOString(), presence })),
+  ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 80), [matched, unboundLiveAgents])
 
   const searchActive = Boolean(deferred.trim())
-  const quietPinned = held.filter((ref) => !activePaths.has(ref.path))
+  const quietPinned = held
   const shownPinned = showAllPinned
     ? quietPinned
     : quietPinned.slice(0, PINNED_ROWS)
@@ -337,9 +333,9 @@ export function AgentThreads() {
           }
           className="scroll-fade-scroller min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3"
         >
-          {!loaded && matched.length === 0 ? (
+          {!loaded && matched.length === 0 && unboundLiveAgents.length === 0 ? (
             <RailSkeleton />
-          ) : matched.length === 0 ? (
+          ) : matched.length === 0 && unboundLiveAgents.length === 0 ? (
             searchActive || filter.length > 0 ? (
               <p className="px-3 pt-8 text-center text-ui leading-relaxed text-faint">
                 Nothing matches.
@@ -366,19 +362,19 @@ export function AgentThreads() {
                 ]}
               />
             )
-          ) : searchActive ? (
+          ) : searchActive || grouping === "recent" ? (
             <div className="pt-1">
-              {matched.slice(0, 80).map((ref) => (
-                <ThreadRow key={ref.path} threadRef={ref} showFolder />
-              ))}
+              <DraftThreads />
+              {recent.map((row) => row.kind === "native"
+                ? <ThreadRow key={row.key} threadRef={row.ref} showFolder />
+                : <LiveAgentRow key={row.key} presence={row.presence} />)}
+              {matched.length + unboundLiveAgents.length > recent.length ? (
+                <button type="button" onClick={() => setSearching(true)} className="pressable h-7 w-full px-2 text-left text-label text-faint hover:text-foreground">Search older threads</button>
+              ) : null}
             </div>
           ) : (
             <>
               <DraftThreads />
-              <RunningThreads
-                refs={activeThreads}
-                liveAgents={unboundLiveAgents}
-              />
               {quietPinned.length > 0 ? (
                 <section className="pt-1 pb-2">
                   <p className="flex h-7 items-center gap-1.5 px-1.5 text-label font-medium text-faint">
@@ -405,9 +401,9 @@ export function AgentThreads() {
                 <FolderSection
                   key={folder.key}
                   folder={folder}
-                  branch={folder.current ? focusedBranch : undefined}
+                  branch={folder.current && railWidth >= 320 ? focusedBranch : undefined}
                   now={now}
-                  hiddenPaths={activePaths}
+                  liveAgents={unboundLiveAgents.filter((presence) => (threadFolderKey(presence) || "~") === folder.key)}
                   collapsed={collapsed.includes(`ws:${folder.key}`)}
                   onToggle={() => {
                     const key = `ws:${folder.key}`
@@ -445,7 +441,7 @@ export function AgentThreads() {
                 <FolderSection
                   folder={sessions}
                   now={now}
-                  hiddenPaths={activePaths}
+                  liveAgents={unboundLiveAgents.filter((presence) => !threadFolderKey(presence))}
                   collapsed={collapsed.includes(`ws:${sessions.key}`)}
                   onToggle={() => {
                     const key = `ws:${sessions.key}`
@@ -491,6 +487,7 @@ function RailHeader({
   filter: string[]
 }) {
   const input = useRef<HTMLInputElement | null>(null)
+  const grouping = usePrefs((prefs) => prefs.railGrouping)
 
   if (searching) {
     return (
@@ -525,9 +522,11 @@ function RailHeader({
 
   return (
     <div className="flex h-9 shrink-0 items-center px-2 pt-1.5">
-      <span className="px-1.5 text-label font-medium text-faint">
-        Workspaces
-      </span>
+      <div className="flex items-center gap-0.5" role="group" aria-label="Thread view">
+        {([ ["project", "Projects"], ["recent", "Recent"] ] as const).map(([value, label]) => (
+          <button key={value} type="button" aria-pressed={grouping === value} onClick={() => setPref("railGrouping", value)} className={cn("pressable h-6 rounded px-1.5 text-label transition-colors hover:bg-fill-hover", grouping === value ? "bg-fill-selected font-medium text-foreground" : "text-faint")}>{label}</button>
+        ))}
+      </div>
       <span className="flex-1" />
       <button
         type="button"
@@ -698,7 +697,7 @@ function FolderSection({
   folder,
   branch,
   now,
-  hiddenPaths,
+  liveAgents,
   collapsed,
   onToggle,
   onNew,
@@ -709,7 +708,7 @@ function FolderSection({
   folder: ThreadFolder
   branch?: string
   now: number
-  hiddenPaths: ReadonlySet<string>
+  liveAgents: AcpPresence[]
   collapsed: boolean
   onToggle: () => void
   onNew?: () => void
@@ -728,9 +727,10 @@ function FolderSection({
   const contentId = `folder-${folder.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`
 
   const lead = folder.current ? LEAD_ROWS : REST_ROWS
-  const available = folder.refs.filter((ref) => !hiddenPaths.has(ref.path))
-  const visible = available.slice(0, lead + pages * PAGE_ROWS)
-  const hidden = available.length - visible.length
+  const limit = lead + pages * PAGE_ROWS
+  const shownLive = liveAgents.slice(0, limit)
+  const visible = folder.refs.slice(0, Math.max(0, limit - shownLive.length))
+  const hidden = folder.refs.length + liveAgents.length - visible.length - shownLive.length
 
   return (
     <section className="pb-1">
@@ -819,6 +819,7 @@ function FolderSection({
         )}
       >
         <div className="min-h-0 overflow-hidden">
+          {shownLive.map((presence) => <LiveAgentRow key={presence.key} presence={presence} indent />)}
           {visible.map((ref) => (
             <ThreadRow key={ref.path} threadRef={ref} indent />
           ))}

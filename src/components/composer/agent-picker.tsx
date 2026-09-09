@@ -69,8 +69,8 @@ function AgentPanel({
 
   const pick = (harness: string) => {
     const profile = profiles[harness]
-    if (!profile || profile.pending) return
-    if (!profile.available) {
+    if (!profile) return
+    if (!profile.available && !profile.pending) {
       window.dispatchEvent(
         new CustomEvent("mako:settings", { detail: "agents" })
       )
@@ -107,7 +107,7 @@ function AgentRow({
   const view = useComposerSettings(harness)
   const profile = view.profile
   const available = profile?.available === true
-  const active = available && selected === harness
+  const active = selected === harness
   const model = view.modelLabel
   const status =
     profile && !profile.pending

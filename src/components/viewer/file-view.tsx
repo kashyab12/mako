@@ -5,7 +5,6 @@ import { FileIcon } from "lucide-react"
 import { formatBytes } from "@/lib/format"
 import { Prose } from "@/components/transcript/markdown"
 import { TabularPreview } from "@/components/viewer/tabular-preview"
-import { usePrefs } from "@/state/prefs"
 import type { FileContents } from "@/lib/types"
 import { viewerFileUrl, type ViewerRenderMode } from "@/state/viewer"
 
@@ -29,7 +28,6 @@ export function FileView({
   line?: number
   mode: ViewerRenderMode
 }) {
-  const theme = usePrefs((prefs) => prefs.theme)
   const host = useRef<HTMLDivElement>(null)
 
   /**
@@ -94,7 +92,6 @@ export function FileView({
           file={{ name: file.path, contents: file.contents }}
           selectedLines={line ? { start: line, end: line } : null}
           options={{
-            themeType: theme === "light" ? "light" : "dark",
             disableFileHeader: true,
           }}
         />

@@ -91,10 +91,10 @@ export const ThreadRow = memo(function ThreadRow({
     (state) => state.opening?.ref.path ?? state.viewing?.ref.path
   )
   const livePath = useAcp((state) => activeAcp(state)?.threadPath)
-  const liveProvider = useAcp((state) => acpForThread(state, ref.path)?.harness)
+  const liveProvider = useAcp((state) => acpForThread(state, ref)?.harness)
   const selectedLive = useAcp((state) =>
     Boolean(
-      state.activeKey && acpForThread(state, ref.path)?.key === state.activeKey
+      state.activeKey && acpForThread(state, ref)?.key === state.activeKey
     )
   )
 
@@ -140,6 +140,7 @@ export const ThreadRow = memo(function ThreadRow({
         .join("\n")}
       data-active={lit || undefined}
       data-thread-row
+      data-thread-indent={indent || undefined}
       className={cn(
         "group flex h-7 w-full items-center gap-2 rounded-md pr-1.5 text-left",
         indent ? "pl-[26px]" : "pl-1.5",

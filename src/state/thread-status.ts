@@ -1,4 +1,5 @@
 import { toast } from "sonner"
+import { acpForThread, acpStore } from "@/state/acp-state"
 import type { ThreadRef, ThreadRunState } from "@/lib/types"
 import type { AttentionByPath, ThreadsState } from "@/state/thread-state"
 import { threadsStore } from "@/state/thread-store"
@@ -41,7 +42,17 @@ export function threadStatus(
   ref: ThreadRef,
   state: ThreadsState = threadsStore.get()
 ): ThreadStatus {
-  const attention = state.attention[ref.path]
+  const owned = acpForThread(acpStore.get(), ref)
+  const attention = state.attention[owned?.threadPath ?? ref.path]
+  if (owned?.kind === "live" && owned.session.connection === "connected") {
+    if (owned.permission)
+      return { kind: "needs-permission", since: owned.updatedAt, detail: owned.permission.title }
+    if (owned.session.status === "running" || owned.session.status === "starting")
+      return state.working[owned.threadPath ?? ref.path] ?? { kind: "working", since: owned.createdAt }
+    if (owned.session.status === "failed")
+      return { kind: "failed", at: owned.updatedAt, detail: owned.session.error }
+    return attention?.kind === "review" ? attention : IDLE_STATUS
+  }
   if (attention?.kind === "needs-permission") return attention
   const working = state.working[ref.path]
   if (working) return working

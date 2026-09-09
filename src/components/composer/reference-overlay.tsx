@@ -15,11 +15,9 @@ import { InlineAttachment } from "./attachments"
 export const ReferenceOverlay = memo(function ReferenceOverlay({
   text,
   attachments,
-  onRemove,
 }: {
   text: string
   attachments: Attachment[]
-  onRemove(id: string): void
 }) {
   const ranges = attachmentRanges(text, attachments)
   const pieces = []
@@ -44,7 +42,7 @@ export const ReferenceOverlay = memo(function ReferenceOverlay({
       // textarea's own text is transparent, it simply disappeared as you
       // typed past the fold. Letting the height come from the content makes it
       // match the textarea's scroll height, which is the whole contract.
-      className="pointer-events-none absolute inset-x-0 top-0 px-4 pt-3 pb-1 font-sans text-ui leading-[1.55] break-words whitespace-pre-wrap text-foreground"
+      className="pointer-events-none absolute inset-x-0 top-0 px-4 pt-4 pb-2 font-sans text-ui leading-[1.55] break-words whitespace-pre-wrap text-foreground"
     >
       {segments.map((segment, index) => {
         if (segment.kind === "attachment")
@@ -53,7 +51,6 @@ export const ReferenceOverlay = memo(function ReferenceOverlay({
               key={index}
               item={segment.item}
               reference={segment.raw}
-              onRemove={onRemove}
             />
           )
         if (segment.kind === "text")

@@ -15,10 +15,14 @@ export const SavedAttachmentSchema = z.object({
   error: z.string().optional(),
 })
 let warned = false
+function storageKey(key: string): string {
+  const preview = new URLSearchParams(globalThis.location?.search).get("preview")
+  return preview ? `mako.preview.${preview}.${key}` : key
+}
 export function writeDraftStorage(key: string, value: string): boolean {
   try {
     if (!globalThis.localStorage) return false
-    globalThis.localStorage.setItem(key, value)
+    globalThis.localStorage.setItem(storageKey(key), value)
     return true
   } catch {
     if (!warned) {
@@ -32,7 +36,7 @@ export function writeDraftStorage(key: string, value: string): boolean {
 }
 export function readDraftStorage(key: string): string | null {
   try {
-    return globalThis.localStorage?.getItem(key) ?? null
+    return globalThis.localStorage?.getItem(storageKey(key)) ?? null
   } catch {
     return null
   }

@@ -342,16 +342,19 @@ export function summarizeToolWork(calls: ToolCall[]): ToolWorkSummary {
 export function primaryArgument<Content>(value: Content): string {
   const args = parseToolArguments(value)
   if (!args) return ""
-  const candidate =
-    args.path ??
-    args.file_path ??
-    args.filePath ??
-    args.command ??
-    args.pattern ??
-    args.query ??
-    args.url ??
-    args.directory
-  return candidate === undefined || candidate === null ? "" : String(candidate)
+  for (const key of [
+    "command", "cmd", "path", "file_path", "filePath", "notebook_path",
+    "file", "filename", "pattern", "glob_pattern", "query", "search_query",
+    "url", "uri", "directory", "directory_path", "cwd", "skill", "title",
+    "description", "task", "prompt",
+  ]) {
+    const value = args[key]
+    const text = stringContent(value)
+    if (text?.trim()) return text
+    if (Array.isArray(value) && value.length && value.every((item) => stringContent(item) !== undefined))
+      return value.join(" ")
+  }
+  return ""
 }
 
 export interface ToolExecutionOutput {

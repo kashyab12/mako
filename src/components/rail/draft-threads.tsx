@@ -1,7 +1,8 @@
 import { PencilLineIcon } from "lucide-react"
 import { workspaceName } from "@/lib/format"
-import { useDrafts, type SessionDraft } from "@/state/drafts"
-import { actions } from "@/state/session"
+import { projectDraftKey, useDrafts, type SessionDraft } from "@/state/drafts"
+import { activeAcp, useAcp } from "@/state/acp"
+import { actions, useSession } from "@/state/session"
 import { useTabs } from "@/state/tabs"
 import { useThreads } from "@/state/threads"
 
@@ -20,20 +21,24 @@ function sameDrafts(left: SessionDraft[], right: SessionDraft[]): boolean {
 export function DraftThreads() {
   const tabs = useTabs((state) => state.tabs)
   const activeTabId = useTabs((state) => state.activeId)
-  const viewingPath = useThreads((state) => state.viewing?.ref.path)
+  const viewingPath = useThreads((state) => state.opening?.ref.path ?? state.viewing?.ref.path)
+  const liveKey = useAcp((state) => activeAcp(state)?.draftKey)
+  const cwd = useSession((state) => state.meta?.cwd ?? "")
+  const activeDraftKey = liveKey ?? viewingPath ?? projectDraftKey(cwd)
   const drafts = useDrafts(
     (state) =>
       state.drafts
         .filter(
           (draft) =>
-            draft.key !== activeTabId && draft.key !== viewingPath
+            draft.key !== activeTabId && draft.key !== activeDraftKey
         )
         .sort((left, right) => right.updatedAt - left.updatedAt),
     sameDrafts
   )
   const rows = drafts.flatMap((draft) => {
     const tab = tabs.find((candidate) => candidate.id === draft.key)
-    return tab ? [{ draft, tab }] : []
+    const project = draft.key.startsWith("project:") ? draft.key.slice(8) : tab?.cwd
+    return project ? [{ draft, tab, project }] : []
   })
   if (!rows.length) return null
   return (
@@ -42,11 +47,11 @@ export function DraftThreads() {
         <PencilLineIcon className="size-3 opacity-60" />
         Drafts
       </p>
-      {rows.slice(0, 4).map(({ draft, tab }) => (
+      {rows.slice(0, 4).map(({ draft, tab, project }) => (
         <button
           key={draft.key}
           type="button"
-          onClick={() => void actions.switchTab(tab.id)}
+          onClick={() => void (tab ? actions.switchTab(tab.id) : actions.newConversationIn(project))}
           title={draft.text}
           className="group flex h-7 w-full items-center gap-2 rounded-md px-1.5 text-left transition-colors duration-100 hover:bg-fill-hover"
         >
@@ -55,7 +60,7 @@ export function DraftThreads() {
             {draft.text.split("\n", 1)[0]}
           </span>
           <span className="max-w-20 shrink-0 truncate text-label text-faint/70">
-            {workspaceName(tab.cwd)}
+            {workspaceName(project)}
           </span>
         </button>
       ))}

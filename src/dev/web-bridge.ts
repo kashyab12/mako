@@ -14,9 +14,10 @@ export async function installWebBridge(): Promise<void> {
   const events = new Set<(event: HostEvent) => void>()
   const terminals = new Set<(event: TerminalEvent) => void>()
   let connected = false
+  const clientId = crypto.randomUUID()
   const response = await fetch("/__mako/events", {
     method: "POST",
-    headers: { "x-mako-client": "web" },
+    headers: { "x-mako-client": "web", "x-mako-window": clientId },
   })
   if (!response.ok || !response.body)
     throw new Error(
@@ -60,7 +61,7 @@ export async function installWebBridge(): Promise<void> {
         )
       const reply = await fetch("/__mako/rpc", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-mako-client": "web" },
+        headers: { "content-type": "application/json", "x-mako-client": "web", "x-mako-window": clientId },
         body: JSON.stringify({
           channel,
           args: args.map((value) =>

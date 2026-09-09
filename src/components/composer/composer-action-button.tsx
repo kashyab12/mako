@@ -43,7 +43,7 @@ export function ComposerActionButton({
       aria-label={label}
       title={label}
       className={cn(
-        "pressable relative flex size-6 shrink-0 items-center justify-center rounded-full",
+        "composer-send pressable relative flex size-8 shrink-0 items-center justify-center rounded-none focus-visible:outline focus-visible:outline-offset-2 focus-visible:outline-ring",
         "[transition:transform_var(--duration-press)_var(--ease-out),background-color_160ms_ease,opacity_160ms_ease]",
         enabled
           ? "bg-foreground text-background hover:opacity-90"
@@ -51,11 +51,11 @@ export function ComposerActionButton({
       )}
     >
       {stop ? (
-        <SquareIcon className="size-2.5 fill-current" strokeWidth={0} />
+        <SquareIcon className="size-3 fill-current" strokeWidth={0} />
       ) : queue ? (
-        <CornerDownLeftIcon className="size-3" />
+        <CornerDownLeftIcon className="size-4" />
       ) : (
-        <ArrowUpIcon className="size-3.5" strokeWidth={2.2} />
+        <ArrowUpIcon className="size-4" strokeWidth={2.2} />
       )}
     </button>
   )

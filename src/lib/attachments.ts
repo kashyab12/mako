@@ -1,3 +1,4 @@
+import { mediaTypeForPath } from "./transcript-media"
 import {
   readAttachmentDrafts,
   writeAttachmentDrafts,
@@ -7,7 +8,10 @@ import { getMako } from "@/lib/bridge"
 import { toast } from "sonner"
 import {
   attachmentReference,
+  attachmentRanges,
+  attachmentPromptText,
   namedAttachmentReference,
+  mergeAttachmentDraft,
 } from "./attachment-references"
 
 /**
@@ -138,7 +142,8 @@ const TEXT_EXTENSIONS = new Set([
 ])
 
 export function classify(file: File): AttachmentKind {
-  if (file.type.startsWith("image/") && file.type !== "image/svg+xml")
+  const mime = file.type || mediaTypeForPath(file.name) || "application/octet-stream"
+  if (mime.startsWith("image/") && mime !== "image/svg+xml")
     return "image"
   const ext = file.name.split(".").pop()?.toLowerCase() ?? ""
   if (file.type.startsWith("text/") || TEXT_EXTENSIONS.has(ext)) return "text"
@@ -209,12 +214,12 @@ export function useAttachments(key = "default") {
           continue
         }
         const kind = classify(file)
-        const index =
-          nextIndex.current.get(key) ??
-          Math.max(
-            0,
-            ...(live.current.get(key) ?? []).map((item) => item.index)
-          ) + 1
+        const mimeType = file.type || mediaTypeForPath(file.name) || "application/octet-stream"
+        const index = Math.max(
+          nextIndex.current.get(key) ?? 1,
+          ...(live.current.get(key) ?? []).map((item) => item.index + 1),
+          ...(removed.current.get(key) ?? []).map((item) => item.index + 1)
+        )
         nextIndex.current.set(key, index + 1)
         accepted.push({
           attachment: {
@@ -223,13 +228,14 @@ export function useAttachments(key = "default") {
             name: file.name,
             reference: namedAttachmentReference(file.name, index, [
               ...(live.current.get(key) ?? []).map(attachmentReference),
+              ...(removed.current.get(key) ?? []).map(attachmentReference),
               ...accepted.map((entry) => attachmentReference(entry.attachment)),
             ]),
-            mimeType: file.type || "application/octet-stream",
+            mimeType,
             size: file.size,
             kind,
             context,
-            preview: kind === "image" ? URL.createObjectURL(file) : undefined,
+            preview: /^(image|video|audio)\//.test(mimeType) ? URL.createObjectURL(file) : undefined,
             pending: true,
           },
           file,
@@ -252,13 +258,13 @@ export function useAttachments(key = "default") {
             removed.current.set(
               key,
               (removed.current.get(key) ?? []).map((item) =>
-                item.id === attachment.id ? attachmentMetadata(resolved) : item
+                item.id === attachment.id ? attachmentMetadata({ ...resolved, index: item.index, reference: item.reference }) : item
               )
             )
             updateItems((current) =>
               current.map((item) =>
                 item.id === attachment.id
-                  ? { ...resolved, preview: item.preview }
+                  ? { ...resolved, index: item.index, reference: item.reference, preview: item.preview }
                   : item
               )
             )
@@ -341,20 +347,14 @@ export function useAttachments(key = "default") {
   const restoreRemoved = useCallback(
     (text: string) => {
       const bucket = removed.current.get(key) ?? []
-      const restoring = bucket.filter((item) =>
-        text.includes(attachmentReference(item))
-      )
+      const referenced = new Set(attachmentRanges(text, [...(live.current.get(key) ?? []), ...bucket]).map((range) => range.item.id))
+      const restoring = bucket.filter((item) => referenced.has(item.id))
       if (!restoring.length) return
       removed.current.set(
         key,
         bucket.filter((item) => !restoring.includes(item))
       )
-      updateItems((current) => [
-        ...current,
-        ...restoring.filter(
-          (item) => !current.some((entry) => entry.id === item.id)
-        ),
-      ])
+      updateItems((current) => mergeAttachmentDraft(current, restoring))
     },
     [key, updateItems]
   )
@@ -386,11 +386,7 @@ export function useAttachments(key = "default") {
 
   const reattach = useCallback(
     (taken: Attachment[]) => {
-      const ids = new Set(taken.map((item) => item.id))
-      const combined = [
-        ...taken,
-        ...(live.current.get(key) ?? []).filter((item) => !ids.has(item.id)),
-      ]
+      const combined = mergeAttachmentDraft(live.current.get(key) ?? [], taken)
       live.current.set(key, combined)
       replaceItems(combined)
     },
@@ -516,7 +512,7 @@ export function buildPrompt(
   }
 
   if (appendix.length === 0) return { text: draft, images }
-  const body = draft.trim()
+  const body = attachmentPromptText(draft, items).trim()
   return {
     text: `${body}${body ? "\n\n" : ""}---\n${appendix.join("\n\n")}`,
     images,
@@ -550,7 +546,7 @@ ${item.text}
     }
   }
   if (appendix.length === 0) return draft
-  const body = draft.trim()
+  const body = attachmentPromptText(draft, items).trim()
   return `${body}${body ? "\n\n" : ""}---\n${appendix.join("\n\n")}`
 }
 
@@ -603,7 +599,7 @@ export function useAttachmentPreview(item: Attachment): string | undefined {
   } | null>(null)
   useEffect(() => {
     const path = item.stagedPath
-    if (item.kind !== "image" || item.preview || !path) return
+    if (!/^(image|video|audio)\//.test(item.mimeType) || item.preview || !path) return
     let current = true
     void getMako()
       .readFile(path)
@@ -615,7 +611,7 @@ export function useAttachmentPreview(item: Attachment): string | undefined {
     return () => {
       current = false
     }
-  }, [item.kind, item.preview, item.stagedPath])
+  }, [item.mimeType, item.preview, item.stagedPath])
   return (
     item.preview ??
     (resolved?.path === item.stagedPath ? resolved?.url : undefined)

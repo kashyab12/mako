@@ -1,18 +1,21 @@
-import { promptDelivery } from "@/state/prompt-delivery"
+import { promptDelivery, recoverableRequests } from "@/state/prompt-delivery"
+import { agentActivity } from "@/state/agent-activity"
+import { shallowEqual } from "@/state/store"
+import { useCopy } from "@/components/ui/use-copy"
+import { ActivityMark } from "@/components/ui/activity-mark"
 import { TransferStatus } from "./transfer-status"
 import { LiveActionStatus } from "./live-action-status"
 import { loadEarlierLive } from "@/state/live-recovery"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { ConversationTimeline } from "@/components/transcript/conversation-timeline"
 import { acp, activeAcp, activeLiveAcp, useAcp } from "@/state/acp"
-import type { LivePermissionRequest } from "@/lib/types"
+import type { LivePermissionRequest, LiveRequest } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { liveToolName } from "@/lib/tools"
 import { ToolGlyph } from "@/components/transcript/tool-views"
 import {
   CheckCheckIcon,
   CheckIcon,
-  Loader2Icon,
   ShieldQuestionIcon,
   XIcon,
 } from "lucide-react"
@@ -60,6 +63,8 @@ function Blocks({ starting = false }: { starting?: boolean }) {
   const session = useAcp((state) => activeLiveAcp(state)?.session ?? null)
   const projection = useAcp((state) => activeAcp(state)?.projection)
   const history = useAcp((state) => activeAcp(state)?.base)
+  const requests = useAcp((state) => activeAcp(state)?.requests ?? EMPTY_QUEUE)
+  const interruptedRequests = useMemo(() => new Map(requests.map((request) => [request.id, request.status === "interrupted"])), [requests])
   const preparing = useAcp((state) => {
     const current = activeLiveAcp(state)
     return Boolean(
@@ -84,6 +89,7 @@ function Blocks({ starting = false }: { starting?: boolean }) {
       onLoadEarlier={session ? () => loadEarlierLive(session.id) : undefined}
       exchanges={exchanges}
       streamingId={running ? lastExchangeId : undefined}
+      interruptedRequests={interruptedRequests}
       failedId={session?.status === "failed" ? lastExchangeId : undefined}
       empty={
         <div className="mx-auto flex w-full max-w-content flex-col gap-4 px-6 py-6">
@@ -118,10 +124,14 @@ function AcpActivity({
   starting?: boolean
   preparing?: boolean
 }) {
+  const activity = useAcp((state) => {
+    const live = activeLiveAcp(state)
+    return agentActivity({ blocks: live?.blocks ?? EMPTY_QUEUE, waiting: Boolean(live?.permission), connecting: starting, preparing })
+  }, shallowEqual)
   return running ? (
-    <div className="flex items-center gap-1.5 py-2 text-label text-faint">
-      <Loader2Icon className="size-3 animate-spin" />
-      {starting ? "Starting…" : preparing ? "Sending…" : "Working…"}
+    <div role="status" data-agent-activity={activity.kind} className="flex min-w-0 items-center gap-2 py-1 text-ui text-muted-foreground">
+      <ActivityMark state={activity.kind} size={64} />
+      <span className="truncate">{activity.label}</span>
     </div>
   ) : null
 }
@@ -318,36 +328,29 @@ function QuestionPermission({
   )
 }
 
-function RetainedRequests() {
-  const requests = useAcp((state) => activeAcp(state)?.requests ?? EMPTY_QUEUE)
-  const retained = requests.filter(
-    (request) =>
-      request.status === "uncertain" ||
-      request.status === "failed" ||
-      request.status === "interrupted"
-  )
-  if (!retained.length) return null
+export function RetainedRequests() {
+  const requests = useAcp((state) => {
+    const current = activeAcp(state)
+    return current ? recoverableRequests(current) : EMPTY_QUEUE
+  }, (left, right) => left.length === right.length && left.every((request, index) => request === right[index]))
+  if (!requests.length) return null
   return (
-    <div className="max-h-48 shrink-0 overflow-y-auto border-t border-hairline p-3 text-ui">
-      {retained.map((request) => (
-        <div key={request.id} className="contain-turn mb-2">
-          <p className="text-muted-foreground">
-            {request.status === "uncertain"
-              ? "Completion not confirmed"
-              : request.status === "interrupted"
-                ? "Message interrupted"
-                : "Message failed"}
-            : {request.error}
-          </p>
-          <p className="line-clamp-3 whitespace-pre-wrap">{request.text}</p>
-          <button
-            className="pressable underline"
-            onClick={() => void navigator.clipboard.writeText(request.text)}
-          >
-            Copy message
-          </button>
-        </div>
-      ))}
+    <div className="max-h-48 shrink-0 overflow-y-auto border-t border-hairline px-4 text-label text-muted-foreground">
+      {requests.map((request) => <RequestRecovery key={request.id} request={request} />)}
     </div>
+  )
+}
+
+function RequestRecovery({ request }: { request: LiveRequest }) {
+  const text = request.displayText ?? request.text
+  const { copy, copied } = useCopy(text)
+  const label = request.status === "uncertain" ? "Delivery unconfirmed" : request.status === "interrupted" ? "Stopped message" : "Message failed"
+  return (
+    <details className="py-2" data-request-recovery={request.id}>
+      <summary className="pressable cursor-pointer">{label}. Review saved message</summary>
+      {request.error ? <p className="mt-2">{request.error}</p> : null}
+      <p className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap">{text}</p>
+      <button type="button" onClick={() => void copy()} className="pressable mt-2 rounded px-1 py-1 hover:bg-fill-hover hover:text-foreground">{copied ? "Copied" : "Copy saved message"}</button>
+    </details>
   )
 }

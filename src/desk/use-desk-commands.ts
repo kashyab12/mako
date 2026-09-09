@@ -10,8 +10,10 @@ import {
 import { installBuiltins } from "@/desk/builtins"
 import { actions, currentTurnRunning, store } from "@/state/session"
 import { git } from "@/state/git"
+import { commitDrafts } from "@/state/commit-drafts"
 import { prefsStore, setPref, togglePref } from "@/state/prefs"
 import { updates } from "@/state/updates"
+import { openInterfacePreview, reloadInterface } from "@/state/development"
 import { stage } from "@/state/stage"
 import { surfaces } from "@/extend/surfaces"
 import { tabsStore } from "@/state/tabs"
@@ -158,12 +160,16 @@ const DESK_COMMANDS: DeskCommand[] = [
     title: "Draft a commit message",
     section: "Workspace",
     keys: "mod+shift+g",
-    hint: "From the staged diff, using the current model",
+    hint: "From the diff, using your connected drafting model",
     run: () => {
       stage.open("changes")
-      requestAnimationFrame(() =>
-        window.dispatchEvent(new CustomEvent("mako:draft-commit"))
-      )
+      const model = prefsStore.get().commitModel
+      if (!model || model === "current" || model === "auto") {
+        window.dispatchEvent(new CustomEvent("mako:settings", { detail: "commits" }))
+        return
+      }
+      const cwd = store.get().git?.cwd ?? store.get().meta?.cwd
+      if (cwd) void commitDrafts.generate(cwd)
     },
   },
   {
@@ -362,6 +368,19 @@ const DESK_COMMANDS: DeskCommand[] = [
       const root = store.get().sourceRoot
       if (root) await actions.openWorkspace(root)
     },
+  },
+  {
+    id: "app.reload-interface",
+    title: "Reload interface without stopping agents",
+    section: "View",
+    keys: "mod+r",
+    run: reloadInterface,
+  },
+  {
+    id: "app.preview-interface",
+    title: "Open shared-host preview window",
+    section: "View",
+    run: openInterfacePreview,
   },
   {
     id: "app.restart",

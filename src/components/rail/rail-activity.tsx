@@ -1,47 +1,26 @@
 import type { ThreadFolder } from "@/lib/thread-folders"
-import {
-  Loader2Icon,
-  ShieldQuestionIcon,
-  TriangleAlertIcon,
-} from "lucide-react"
+import { ActivityMark, type ActivityState } from "@/components/ui/activity-mark"
 
 export function FolderActivity({ folder }: { folder: ThreadFolder }) {
-  const working = folder.running ? `${folder.running} working` : null
-  if (folder.needsInput)
-    return (
-      <span className="flex shrink-0 items-center gap-1 text-label text-caution">
-        <ShieldQuestionIcon className="size-3" />
-        {folder.needsInput} needs input{working ? ` · ${working}` : ""}
-      </span>
-    )
-  if (folder.failed)
-    return (
-      <span className="flex shrink-0 items-center gap-1 text-label text-negative">
-        <TriangleAlertIcon className="size-3" />
-        {folder.failed} failed{working ? ` · ${working}` : ""}
-      </span>
-    )
-  if (folder.unread)
-    return (
-      <span className="shrink-0 text-label text-positive">
-        {folder.unread} done{working ? ` · ${working}` : ""}
-      </span>
-    )
-  if (folder.running)
-    return (
-      <span className="flex shrink-0 items-center gap-1 text-label text-faint">
-        <Loader2Icon className="size-3 animate-spin" />
-        {working}
-      </span>
-    )
-  if (folder.active)
-    return (
-      <span className="flex shrink-0 items-center gap-1 text-label text-faint">
-        <Loader2Icon className="size-3 animate-spin" />
-        {folder.active} active
-      </span>
-    )
-  return null
+  const running = folder.running + folder.active
+  const state: ActivityState = folder.needsInput ? "waiting" : folder.failed ? "failed" : running ? "working" : folder.unread ? "complete" : "idle"
+  if (state === "idle") return null
+  const label = folder.needsInput ? `${folder.needsInput} ${folder.needsInput === 1 ? "needs" : "need"} input`
+    : folder.failed ? `${folder.failed} failed`
+    : running ? `${running} running` : `${folder.unread} to review`
+  const description = [
+    folder.running ? `${folder.running} running in this Mako` : null,
+    folder.active ? `${folder.active} running outside this Mako` : null,
+    folder.needsInput ? `${folder.needsInput} awaiting approval` : null,
+    folder.failed ? `${folder.failed} failed` : null,
+    folder.unread ? `${folder.unread} replies to review` : null,
+  ].filter(Boolean).join(", ")
+  return (
+    <span data-folder-activity={state} title={description} aria-label={`${folder.name}: ${description}`} className="flex shrink-0 items-center gap-1 text-label text-muted-foreground">
+      <ActivityMark state={state} size={20} />
+      <span>{label}</span>
+    </span>
+  )
 }
 
 /**

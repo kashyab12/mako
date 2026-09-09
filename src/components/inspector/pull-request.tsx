@@ -246,6 +246,7 @@ function ComposePull({
   branch?: string
   onDone: () => void
 }) {
+  const cwd = useSession((state) => state.git?.cwd ?? state.meta?.cwd ?? "")
   const [title, setTitle] = useState("")
   const [body, setBody] = useState("")
   const [draft, setDraft] = useState(false)
@@ -273,11 +274,13 @@ function ComposePull({
     try {
       // The utility model reads the same bounded diff as the commit drafter,
       // but uses a PR-specific structure with a summary and test plan.
-      const text = await git.generateMessage({
+      const result = await git.generateMessage({
+        requestId: crypto.randomUUID(),
+        cwd,
         prompt: PULL_REQUEST_PROMPT,
         model: prefsStore.get().commitModel,
       })
-      const [first, ...rest] = text.split("\n")
+      const [first, ...rest] = result.message.split("\n")
       setTitle((current) => current || (first ?? "").trim())
       setBody((current) => current || rest.join("\n").trim())
     } catch (error) {
@@ -289,7 +292,7 @@ function ComposePull({
     } finally {
       setDrafting(false)
     }
-  }, [drafting])
+  }, [drafting, cwd])
 
   const create = useCallback(async function createPullRequest() {
     if (!title.trim() || busy) return

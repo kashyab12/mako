@@ -22,9 +22,14 @@ export function activeIs(id: string): boolean {
 
 export function syncThreadStatus(
   conversation: LiveAcpConversation,
-  previousStatus: LiveSessionState["status"]
+  previousStatus: LiveSessionState["status"],
+  previousPath?: string
 ): void {
   const { session, threadPath, queued } = conversation
+  if (previousPath && previousPath !== threadPath) {
+    setThreadRunning(previousPath, false)
+    setThreadAttention(previousPath, null)
+  }
   if (!threadPath) return
   setThreadRunning(
     threadPath,

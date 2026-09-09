@@ -67,15 +67,13 @@ export const threadContinuationActions = {
     attachments: PromptAttachment[] = []
   ): Promise<boolean> {
     if (!hasBridge()) return false
+    if (acpForThread(acpStore.get(), ref))
+      return (await import("@/state/acp")).acp.resumeAndSend(ref, prompt, attachments)
     if (ref.resumeUnavailable) return threadContinuationActions.moveAndSend(ref, ref.harness, prompt, attachments)
     const status = threadStatus(ref)
     if (status.kind === "external-open" || status.kind === "external-active") {
-      return threadContinuationActions.moveAndSend(
-        ref,
-        ref.harness,
-        prompt,
-        attachments
-      )
+      toast.error("This session is open in another app. Close it there before replying, or explicitly fork it to continue separately.")
+      return false
     }
     if (status.kind === "observed") {
       toast("Live activity detected", {
@@ -89,8 +87,7 @@ export const threadContinuationActions = {
     const echoed = appendOptimisticReply(ref, prompt)
     if (
       canResumeInteractively(ref.harness) &&
-      (!threadsStore.get().working[ref.path] ||
-        acpForThread(acpStore.get(), ref.path)) &&
+      !threadsStore.get().working[ref.path] &&
       threadsStore.get().acpable.includes(ref.harness)
     ) {
       const resumed = await (

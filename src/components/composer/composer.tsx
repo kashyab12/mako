@@ -20,7 +20,7 @@ import {
   useState,
 } from "react"
 import {
-  attachmentReference,
+  removeAttachmentReference,
   attachmentRanges,
   editAttachmentReferences,
   restoreAttachmentReferences,
@@ -52,6 +52,7 @@ import { cn } from "@/lib/utils"
 import { acp, acpStore, activeAcp, activeLiveAcp, useAcp } from "@/state/acp"
 import {
   draftText,
+  projectDraftKey,
   rememberDraft,
   clearCapturedDraft,
   restoreEmptyDraft,
@@ -69,7 +70,7 @@ import {
   useSession,
 } from "@/state/session"
 import { threads, threadsStore, useThreads } from "@/state/threads"
-import { AtSignIcon, PaperclipIcon, XIcon } from "lucide-react"
+import { AtSignIcon, PaperclipIcon, XIcon, Maximize2Icon, Minimize2Icon } from "lucide-react"
 
 interface CommandMention {
   sigil: "/"
@@ -112,13 +113,14 @@ function toAcpPromptAttachment(item: Attachment): PromptAttachment {
 
 export function Composer() {
   const hostConnected = useHostConnection((state) => state.kind === "connected")
-  const sessionId = useSession((state) => state.meta?.sessionId)
+  const workspaceCwd = useSession((state) => state.meta?.cwd ?? "")
   const viewingPath = useThreads(
     (state) => state.opening?.ref.path ?? state.viewing?.ref.path
   )
   const opening = useThreads((state) => state.opening)
   const liveDraftKey = useAcp((state) => activeAcp(state)?.draftKey)
-  const draftKey = liveDraftKey ?? viewingPath ?? sessionId ?? "new"
+  const draftKey = liveDraftKey ?? viewingPath ?? projectDraftKey(workspaceCwd)
+  const draftReady = Boolean(liveDraftKey || viewingPath || workspaceCwd)
   const status = useSession(
     useCallback(
       (state) => ({
@@ -146,10 +148,12 @@ export function Composer() {
   const draftPlans = savedDraft?.plans
   const [mention, setMention] = useState<ComposerMention | null>(null)
   const [dragging, setDragging] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const textarea = useRef<HTMLTextAreaElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const filePicker = useRef<HTMLInputElement>(null)
   const activeAttachmentDraft = useRef(draftKey)
+  const preparingSends = useRef(new Set<string>())
   useLayoutEffect(() => {
     activeAttachmentDraft.current = draftKey
   }, [draftKey])
@@ -206,9 +210,7 @@ export function Composer() {
 
   /** Drop an attachment and the marker that stands for it, from either surface. */
   const removeAttachment = (id: string) => {
-    const item = attachments.items.find((entry) => entry.id === id)
-    if (!item) return
-    update(draft.split(attachmentReference(item)).join(""))
+    update(removeAttachmentReference(draft, attachments.items, id))
     attachments.remove(id)
     textarea.current?.focus()
   }
@@ -319,7 +321,7 @@ export function Composer() {
     }
   }, [reattach])
 
-  const submit = useCallback(
+  const submitDraft = useCallback(
     async (mode?: "steer" | "followUp") => {
       if (hostConnectionStore.get().kind === "disconnected") {
         toast.error(
@@ -402,13 +404,7 @@ export function Composer() {
             harness === viewingRef.harness &&
             !viewingRef.archived &&
             !viewingRef.resumeUnavailable
-              ? mode
-                ? await threads.interruptAndSend(
-                    viewingRef,
-                    full,
-                    acpAttachments
-                  )
-                : await threads.reply(viewingRef, full, acpAttachments)
+              ? await threads.reply(viewingRef, full, acpAttachments)
               : await threads.moveAndSend(
                   viewingRef,
                   harness,
@@ -436,7 +432,6 @@ export function Composer() {
             ) {
               ok = await acp.steer(full, acpAttachments)
             } else {
-              if (mode && liveSession?.status === "running") acp.cancel()
               ok = await acp.send(full, acpAttachments)
             }
           }
@@ -456,8 +451,7 @@ export function Composer() {
           activeAcp(acpStore.get())?.draftKey ??
           threadsStore.get().opening?.ref.path ??
           threadsStore.get().viewing?.ref.path ??
-          sessionStore.get().meta?.sessionId ??
-          "new"
+          projectDraftKey(sessionStore.get().meta?.cwd ?? "")
         // This callback still owns the submitted attachment bucket, even after navigation.
         const restored = restoreEmptyDraft(
           submittedDraftKey,
@@ -487,6 +481,18 @@ export function Composer() {
     },
     [attachments, draft, storedDraft, draftKey, draftPlans, cwd]
   )
+
+  const submit = useCallback(async (mode?: "steer" | "followUp") => {
+    if (preparingSends.current.has(draftKey)) return
+    preparingSends.current.add(draftKey)
+    try {
+      await submitDraft(mode)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      preparingSends.current.delete(draftKey)
+    }
+  }, [draftKey, submitDraft])
 
   const pick = useCallback(
     (value: string) => {
@@ -680,8 +686,8 @@ export function Composer() {
   // the queue, permissions and the input share one edge and the control row
   // has the room it needs.
   return (
-    <div className="shrink-0 border-t border-hairline bg-surface">
-      <div className="w-full">
+    <div data-composer inert={!draftReady} aria-busy={!draftReady} className={cn("flex min-h-0 shrink-0 flex-col border-t border-hairline bg-surface", expanded ? "max-h-[80dvh]" : "max-h-[55dvh]")}>
+      <div className="flex min-h-0 w-full flex-col">
         <Slot name="composer.above" meta={meta} />
         <PromptQueue />
 
@@ -729,7 +735,7 @@ export function Composer() {
             void attach([...event.dataTransfer.files])
           }}
           className={cn(
-            "relative",
+            "relative flex min-h-0 flex-col",
             dragging && "ring-1 ring-foreground/40 ring-inset"
           )}
         >
@@ -785,12 +791,11 @@ export function Composer() {
 
           <div
             ref={scroller}
-            className="relative max-h-[320px] overflow-y-auto overscroll-contain"
+            className={cn("relative min-h-0 overflow-y-auto overscroll-contain", expanded ? "max-h-[60dvh]" : "max-h-[min(320px,35dvh)]")}
           >
             <ReferenceOverlay
               text={draft}
               attachments={attachments.items}
-              onRemove={removeAttachment}
             />
             <textarea
               ref={textarea}
@@ -829,12 +834,13 @@ export function Composer() {
                 event.preventDefault()
                 void attach(files)
               }}
-              placeholder={placeholder}
+              readOnly={!draftReady}
+              placeholder={draftReady ? placeholder : "Opening workspace…"}
               spellCheck={false}
               className={cn(
                 // No max-height and no scrolling of its own — the wrapper owns
                 // both, so the painted layer behind it stays in register.
-                "composer-input relative block min-h-12 w-full resize-none overflow-hidden bg-transparent px-4 pt-3 pb-1",
+                "composer-input relative block min-h-20 w-full resize-none overflow-hidden bg-transparent px-4 pt-4 pb-2",
                 "font-sans text-ui leading-[1.55] placeholder:text-faint focus:outline-none",
                 // Transparent glyphs let the overlay show through; the caret
                 // and selection stay native and visible.
@@ -843,7 +849,7 @@ export function Composer() {
             />
           </div>
 
-          <div className="flex items-center gap-1 px-2.5 pb-2">
+          <div className="flex min-h-11 shrink-0 items-center gap-1 px-3 pb-3">
             <IconAction
               label="Reference a file"
               keys={["@"]}
@@ -873,7 +879,7 @@ export function Composer() {
               attachFiles={attach}
             />
             <div className="mx-1 h-4 w-px shrink-0 bg-hairline" />
-            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&>*]:shrink-0 [&::-webkit-scrollbar]:hidden">
               <ComposerRouting />
             </div>
 
@@ -884,6 +890,9 @@ export function Composer() {
                 disabled={busy}
                 attachFiles={attach}
               />
+              <IconAction label={expanded ? "Collapse draft" : "Expand draft"} size="xs" side="top" onClick={() => { setExpanded((value) => !value); textarea.current?.focus({ preventScroll: true }) }}>
+                {expanded ? <Minimize2Icon /> : <Maximize2Icon />}
+              </IconAction>
               <ContextDial />
               {liveOwnsComposer && liveRunning && canSteer ? (
                 <button

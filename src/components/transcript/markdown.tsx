@@ -2,12 +2,17 @@ import { DiagramPreview, HighlightedCode } from "./code-preview"
 import { TranscriptAttachment } from "./attachment"
 import { markdownMedia, previewableMediaUrl } from "@/lib/transcript-media"
 import { Paragraph } from "./paragraph"
+import { FileChip, SkillChip, ThreadChip } from "@/components/composer/reference-chip"
+import { remarkPromptReferences, type PromptReference } from "@/lib/prompt-markdown"
+import type { AttachmentFileReference } from "@/lib/attachments"
 import { ProseStreamingContext } from "./prose-layout-context"
 import { ChangingLabel } from "@/components/ui/changing-label"
 import { useCopy } from "@/components/ui/use-copy"
 import { remarkFileCitations } from "@/lib/citation-markdown"
 import {
   Children,
+  createContext,
+  useMemo,
   isValidElement,
   memo,
   useEffect,
@@ -50,28 +55,41 @@ import { viewer } from "@/state/viewer"
  * refresh, so the throttle is invisible.
  */
 const STREAM_FRAME_MS = 90
+const EMPTY_REFERENCES = new Map<string, PromptReference>()
+const PromptReferencesContext = createContext<ReadonlyMap<string, PromptReference>>(EMPTY_REFERENCES)
 
 export const Prose = memo(function Prose({
   text,
   streaming,
   className,
   urlTransform,
+  references,
 }: {
   text: string
   className?: string
+  references?: readonly AttachmentFileReference[]
   /** While true the parse is rate-limited rather than run per token. */
   streaming?: boolean
   urlTransform?: (url: string) => string
 }) {
   const source = useThrottled(text, Boolean(streaming))
+  const referenceInput = useMemo(() => references
+    ? { text: source, files: references, references: new Map<string, PromptReference>() }
+    : null, [source, references])
+  const referenceMap = referenceInput?.references ?? EMPTY_REFERENCES
+  const plugins = useMemo<NonNullable<Parameters<typeof Markdown>[0]["remarkPlugins"]>>(() => referenceInput
+    ? [remarkGfm, [remarkPromptReferences, referenceInput], remarkFileCitations]
+    : [remarkGfm, remarkFileCitations], [referenceInput])
 
   return (
     <div className={cn("mako-prose", className)}>
       <ProseStreamingContext value={Boolean(streaming)}>
+        <PromptReferencesContext value={referenceMap}>
         <Markdown
-          remarkPlugins={[remarkGfm, remarkFileCitations]}
+          remarkPlugins={plugins}
           components={components}
           urlTransform={(url) =>
+            referenceMap.has(url) ||
             decodeFileCitation(url) ||
             markdownFileTarget(url) ||
             previewableMediaUrl(url)
@@ -81,6 +99,7 @@ export const Prose = memo(function Prose({
         >
           {source}
         </Markdown>
+        </PromptReferencesContext>
       </ProseStreamingContext>
     </div>
   )
@@ -177,6 +196,12 @@ function MarkdownMedia({ src, alt }: ComponentProps<"img">) {
 
 function CitationLink({ href, children }: ComponentProps<"a">) {
   const source = useTranscriptSource()
+  const references = useContext(PromptReferencesContext)
+  const reference = href ? references.get(href) : undefined
+  if (reference?.kind === "attachment") return <FileChip path={reference.file.path} name={reference.file.name} interactive />
+  if (reference?.kind === "file") return <FileChip path={reference.path} interactive />
+  if (reference?.kind === "thread") return <ThreadChip harness={reference.harness} nativeId={reference.nativeId} />
+  if (reference?.kind === "skill") return <SkillChip name={reference.name} />
   const target = markdownFileTarget(href)
   if (!href)
     return (

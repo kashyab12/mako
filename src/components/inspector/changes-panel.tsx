@@ -80,7 +80,6 @@ export function ChangesPanel() {
 function WorkspaceChanges() {
   const git = useSession((state) => state.git)
   const workspace = git?.root ?? git?.cwd ?? ""
-  const theme = usePrefs((prefs) => prefs.theme)
   const collapsed = usePrefs((prefs) => prefs.collapsedDirs)
   const selectedDiffs = usePrefs((prefs) => prefs.selectedDiffs)
   const files = useMemo(() => git?.files ?? [], [git])
@@ -368,7 +367,7 @@ function WorkspaceChanges() {
                   ? { oldFile: null, newFile: diff.newFile }
                   : { oldFile: diff.oldFile!, newFile: null })}
               options={{
-                themeType: theme === "light" ? "light" : "dark",
+                disableFileHeader: true,
                 diffStyle,
                 overflow: wrapDiff ? "wrap" : "scroll",
                 // Off by default, which is why the comment control rendered

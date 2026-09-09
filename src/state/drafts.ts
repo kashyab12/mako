@@ -63,6 +63,10 @@ function restoredDrafts(): DraftState {
 export const draftsStore = createStore<DraftState>(restoredDrafts())
 export const useDrafts = createHook(draftsStore)
 
+export function projectDraftKey(cwd: string): string {
+  return `project:${cwd.replace(/\/+$/, "") || "/"}`
+}
+
 export function draftText(key: string): string {
   return draftsStore.get().drafts.find((draft) => draft.key === key)?.text ?? ""
 }

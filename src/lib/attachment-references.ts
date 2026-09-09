@@ -18,8 +18,10 @@ export function namedAttachmentReference(
   used: readonly string[]
 ): string {
   const label = name.replace(/[\r\n]/g, " ")
-  const reference = `[${label}]`
-  return used.includes(reference) ? `[${label} (${index})]` : reference
+  let reference = `[${label}]`
+  let suffix = index
+  while (used.includes(reference)) reference = `[${label} (${suffix++})]`
+  return reference
 }
 
 export interface AttachmentRange {
@@ -32,7 +34,7 @@ export function attachmentRanges(
   text: string,
   items: readonly Attachment[]
 ): AttachmentRange[] {
-  return items
+  const ranges = items
     .flatMap((item) => {
       const reference = attachmentReference(item)
       const ranges: AttachmentRange[] = []
@@ -43,7 +45,39 @@ export function attachmentRanges(
       }
       return ranges
     })
-    .sort((left, right) => left.start - right.start)
+    .sort((left, right) => left.start - right.start || right.end - left.end)
+  let end = 0
+  return ranges.filter((range) => {
+    if (range.start < end) return false
+    end = range.end
+    return true
+  })
+}
+
+export function attachmentPromptText(
+  text: string,
+  items: readonly Attachment[]
+): string {
+  return attachmentRanges(text, items).reduceRight(
+    (body, range) =>
+      body.slice(0, range.start) +
+      `[Attachment ${range.item.index}]` +
+      body.slice(range.end),
+    text
+  )
+}
+
+export function removeAttachmentReference(
+  text: string,
+  items: readonly Attachment[],
+  id: string
+): string {
+  return attachmentRanges(text, items)
+    .filter((range) => range.item.id === id)
+    .reduceRight(
+      (body, range) => body.slice(0, range.start) + body.slice(range.end),
+      text
+    )
 }
 
 /** A partial edit of a file reference edits the whole attachment. */
@@ -79,14 +113,14 @@ export function editAttachmentReferences(
   const to = Math.max(end, ...touched.map((range) => range.end))
   const insertion = after.slice(start, nextEnd)
   const text = before.slice(0, from) + insertion + before.slice(to)
+  const remaining = new Set(
+    attachmentRanges(text, items).map((range) => range.item.id)
+  )
   return {
     text,
-    removed: touched
-      .map((range) => range.item.id)
-      .filter((id) => {
-        const item = items.find((entry) => entry.id === id)!
-        return !text.includes(attachmentReference(item))
-      }),
+    removed: [...new Set(touched.map((range) => range.item.id))].filter(
+      (id) => !remaining.has(id)
+    ),
     caret: from + insertion.length,
   }
 }
@@ -95,14 +129,22 @@ export function restoreAttachmentReferences(
   text: string,
   items: readonly Attachment[]
 ): string {
-  const restored = items.reduce(
-    (body, item) =>
-      body.split(`[Attachment ${item.index}]`).join(attachmentReference(item)),
-    text
+  const references = new Map(
+    items.map((item) => [
+      `[Attachment ${item.index}]`,
+      attachmentReference(item),
+    ])
+  )
+  const restored = text.replace(
+    /\[Attachment \d+\]/g,
+    (reference) => references.get(reference) ?? reference
+  )
+  const present = new Set(
+    attachmentRanges(restored, items).map((range) => range.item.id)
   )
   const missing = items
+    .filter((item) => !present.has(item.id))
     .map(attachmentReference)
-    .filter((reference) => !restored.includes(reference))
   return missing.length
     ? `${restored}${restored && !restored.endsWith("\n") ? "\n" : ""}${missing.join(" ")}`
     : restored
@@ -145,24 +187,48 @@ export function attachmentPromptSegments(
   return [...segments, ...tokenize(text.slice(cursor))]
 }
 
+export function mergeAttachmentDraft(
+  current: readonly Attachment[],
+  incoming: readonly Attachment[]
+): Attachment[] {
+  const ids = new Set(incoming.map((item) => item.id))
+  const combined = [...incoming, ...current.filter((item) => !ids.has(item.id))]
+  const indices = new Set<number>()
+  const references: string[] = []
+  let nextIndex = Math.max(0, ...combined.map((item) => item.index)) + 1
+  return combined.map((item) => {
+    const index = indices.has(item.index) ? nextIndex++ : item.index
+    const original = attachmentReference(item)
+    const reference = references.includes(original)
+      ? namedAttachmentReference(item.name, index, references)
+      : original
+    indices.add(index)
+    references.push(reference)
+    return index === item.index && reference === original
+      ? item
+      : { ...item, index, reference }
+  })
+}
+
 export function reusablePromptAttachments(
   files: readonly AttachmentFileReference[],
   media: readonly AttachmentContent[]
-): Attachment[] {
+): Array<Attachment & { stagedPath: string }> {
   const paths = new Map(files.map((file) => [file.path, file]))
+  let nextIndex = Math.max(0, ...files.map((file) => file.index)) + 1
   for (const attachment of media) {
     if (
       attachment.source.kind === "file" &&
       !paths.has(attachment.source.path)
     ) {
       paths.set(attachment.source.path, {
-        index: paths.size + 1,
+        index: nextIndex++,
         name: attachment.name,
         path: attachment.source.path,
       })
     }
   }
-  const result: Attachment[] = []
+  const result: Array<Attachment & { stagedPath: string }> = []
   for (const file of paths.values()) {
     const original = media.find(
       (attachment) =>

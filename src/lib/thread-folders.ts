@@ -1,6 +1,7 @@
 import { workspaceName } from "@/lib/format"
 import type { ThreadRef } from "@/lib/types"
 import type { RailSortBy } from "@/state/prefs"
+import type { AcpPresence } from "@/state/acp-presence"
 
 export interface ThreadFolderActivity {
   running?: boolean
@@ -49,7 +50,7 @@ function isHomePath(path: string): boolean {
 }
 
 export function threadBelongsToWorkspace(
-  ref: ThreadRef,
+  ref: Pick<ThreadRef, "cwd" | "workspace">,
   workspace: string | undefined
 ): boolean {
   const root = normalizedPath(workspace)
@@ -60,12 +61,13 @@ export function threadBelongsToWorkspace(
   })
 }
 
-export function threadFolderKey(ref: ThreadRef): string {
+export function threadFolderKey(ref: Pick<ThreadRef, "cwd" | "workspace">): string {
   return folderPath(ref.workspace ?? ref.cwd)
 }
 
 export function groupThreadFolders({
   refs,
+  live = [],
   currentCwd,
   pinnedThreads,
   pinnedFolders,
@@ -74,6 +76,7 @@ export function groupThreadFolders({
   sortBy,
 }: {
   refs: ThreadRef[]
+  live?: AcpPresence[]
   currentCwd?: string
   pinnedThreads: string[]
   pinnedFolders: string[]
@@ -92,6 +95,10 @@ export function groupThreadFolders({
     if (!byCwd.has(key)) byCwd.set(key, [])
     if (held.has(ref.path)) continue
     byCwd.get(key)?.push(ref)
+  }
+  for (const presence of live) {
+    const key = threadFolderKey(presence)
+    if (!byCwd.has(key)) byCwd.set(key, [])
   }
   const normalizedCurrent = folderPath(currentCwd)
   const currentKey =
@@ -116,9 +123,11 @@ export function groupThreadFolders({
   const result: ThreadFolder[] = [...byCwd.entries()].map(([key, entries]) => {
     entries.sort(byOrder)
     const allEntries = allByCwd.get(key) ?? entries
+    const present = live.filter((presence) => threadFolderKey(presence) === key)
+    const liveLatest = present.reduce((latest, presence) => Math.max(latest, presence.createdAt), 0)
     const latest = allEntries.reduce(
       (top, ref) => ((ref.updatedAt ?? "") > top ? ref.updatedAt! : top),
-      ""
+      liveLatest ? new Date(liveLatest).toISOString() : ""
     )
     const order =
       sortBy === "created"
@@ -128,10 +137,10 @@ export function groupThreadFolders({
             ""
           )
         : latest
-    let priority = 0
-    let running = 0
-    let needsInput = 0
-    let failed = 0
+    let running = present.filter((presence) => presence.status === "running" || presence.status === "starting").length
+    let needsInput = present.filter((presence) => presence.status === "needs-permission").length
+    let failed = present.filter((presence) => presence.status === "failed").length
+    let priority = needsInput ? 5 : failed ? 4 : running ? 2 : 0
     let unread = 0
     let active = 0
     for (const ref of allEntries) {

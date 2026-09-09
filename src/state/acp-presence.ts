@@ -73,17 +73,27 @@ export function sameAcpPresence(
 }
 
 /** Preserve native references while choosing one row for an app-owned conversation. */
-export function canonicalThreadRefs<T extends { path: string }>(
+export function canonicalThreadRefs<T extends { path: string; harness?: string; nativeId?: string }>(
   refs: T[],
   conversations: AcpPresence[],
   pinned: string[]
 ): T[] {
   const paths = new Set(refs.map((ref) => ref.path))
+  const byIdentity = new Map<string, string[]>()
+  for (const ref of refs) {
+    if (!ref.nativeId || !ref.harness) continue
+    const key = JSON.stringify([ref.harness, ref.nativeId])
+    const aliases = byIdentity.get(key) ?? []
+    aliases.push(ref.path)
+    byIdentity.set(key, aliases)
+  }
   const hidden = new Set<string>()
   for (const conversation of conversations) {
-    const aliases = (conversation.nativePaths ?? []).filter((path) =>
-      paths.has(path)
-    )
+    const aliases = [...new Set([
+      ...(conversation.nativePaths ?? []),
+      ...(conversation.threadPath ? [conversation.threadPath] : []),
+      ...(byIdentity.get(JSON.stringify([conversation.harness, conversation.nativeId])) ?? []),
+    ])].filter((path) => paths.has(path))
     const representative =
       aliases.find((path) => pinned.includes(path)) ??
       (conversation.threadPath && paths.has(conversation.threadPath)

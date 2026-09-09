@@ -333,10 +333,7 @@ function DocumentView({ document }: { document: ViewerDocument }) {
  * a syntax-highlighting runtime that has no business in the boot path.
  */
 const LazyDiff = lazy(async () => {
-  const [{ MultiFileDiff, Virtualizer }, { prefsStore }] = await Promise.all([
-    import("@pierre/diffs/react"),
-    import("@/state/prefs"),
-  ])
+  const { MultiFileDiff, Virtualizer } = await import("@pierre/diffs/react")
   function Center({
     diffs,
     note,
@@ -344,7 +341,6 @@ const LazyDiff = lazy(async () => {
     diffs: import("@/lib/types").GitDiff[]
     note?: string
   }) {
-    const theme = prefsStore.get().theme
     const showable = diffs.filter(
       (diff) => !diff.binary && (diff.oldFile || diff.newFile)
     )
@@ -364,7 +360,6 @@ const LazyDiff = lazy(async () => {
                 ? { oldFile: null, newFile: diff.newFile }
                 : { oldFile: diff.oldFile!, newFile: null })}
             options={{
-              themeType: theme === "light" ? "light" : "dark",
               diffStyle: "split",
             }}
           />

@@ -1,4 +1,5 @@
 import { Slot } from "@/extend/slot"
+import { registerCommands } from "@/extend/commands"
 import {
   TranscriptSourceContext,
   type TranscriptSource,
@@ -72,6 +73,7 @@ export function ConversationTimeline({
   exchanges,
   streamingId,
   interruptedId,
+  interruptedRequests,
   failedId,
   empty,
   footer,
@@ -84,6 +86,7 @@ export function ConversationTimeline({
   exchanges: ExchangeData[]
   streamingId?: string
   interruptedId?: string
+  interruptedRequests?: ReadonlyMap<string, boolean>
   failedId?: string
   empty: ReactNode
   footer?: ReactNode
@@ -101,6 +104,7 @@ export function ConversationTimeline({
   const pinned = useRef(true)
   const lastScrollTop = useRef(0)
   const restore = useRef<ScrollAnchor | null>(null)
+  const pendingJump = useRef<string | null>(null)
   const [showJump, setShowJump] = useState(false)
   const [activeTurn, setActiveTurn] = useState<string | null>(null)
   const [limit, setLimit] = useState(INITIAL_TURNS)
@@ -233,31 +237,43 @@ export function ConversationTimeline({
     requestAnimationFrame(() => node.removeAttribute("data-preserve-scroll"))
   }, [hidden, onLoadEarlier, shown.length])
 
-  const jump = useCallback((id: string) => {
+  const jump = useCallback((id: string, behavior: ScrollBehavior = "smooth") => {
     restore.current = null
     pinned.current = false
+    const index = exchanges.findIndex((exchange) => exchange.id === id)
+    if (index < 0) return
+    if (index < hidden) {
+      pendingJump.current = id
+      setLimit(exchanges.length - index)
+      return
+    }
     viewport.current
       ?.querySelector(`[data-exchange="${CSS.escape(id)}"]`)
-      ?.scrollIntoView({ behavior: "smooth", block: "start" })
-  }, [])
+      ?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : behavior, block: "start" })
+  }, [exchanges, hidden])
+
+  useLayoutEffect(() => {
+    const id = pendingJump.current
+    if (!id) return
+    pendingJump.current = null
+    jump(id, "auto")
+  }, [jump])
 
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey)) return
-      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return
-      if (shown.length === 0) return
-      event.preventDefault()
-      const at = shown.findIndex((exchange) => exchange.id === activeTurn)
-      const from = at < 0 ? shown.length - 1 : at
-      const offset = event.key === "ArrowDown" ? 1 : -1
-      const next = Math.min(shown.length - 1, Math.max(0, from + offset))
-      jump(shown[next]!.id)
+    const move = (offset: number) => {
+      if (!exchanges.length) return
+      const at = exchanges.findIndex((exchange) => exchange.id === activeTurn)
+      const from = at < 0 ? exchanges.length - 1 : at
+      const next = Math.min(exchanges.length - 1, Math.max(0, from + offset))
+      jump(exchanges[next]!.id, "auto")
     }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [activeTurn, shown, jump])
+    return registerCommands([
+      { id: "transcript.previous-prompt", title: "Previous prompt", section: "View", keys: "mod+arrowup", run: () => move(-1) },
+      { id: "transcript.next-prompt", title: "Next prompt", section: "View", keys: "mod+arrowdown", run: () => move(1) },
+    ])
+  }, [activeTurn, exchanges, jump])
 
-  const showNavigator = !isEmpty && shown.length >= 3
+  const showNavigator = !isEmpty && exchanges.length >= 3
 
   return (
     <TranscriptSourceContext value={sourceValue}>
@@ -310,7 +326,7 @@ export function ConversationTimeline({
                   streaming={exchange.id === streamingId}
                   interrupted={
                     exchange.id === interruptedId ||
-                    exchangeInterrupted(exchange)
+                    (interruptedRequests?.get(exchange.prompt?.requestId ?? "") ?? exchangeInterrupted(exchange))
                   }
                   failed={exchange.id === failedId}
                 />
@@ -321,7 +337,7 @@ export function ConversationTimeline({
         </div>
         {showNavigator ? (
           <TurnNavigator
-            exchanges={shown}
+            exchanges={exchanges}
             activeId={activeTurn}
             onJump={jump}
             paneRef={pane}

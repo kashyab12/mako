@@ -341,8 +341,18 @@ export function installMockBridge() {
         deletions: 33,
       },
     ],
-    generateCommitMessage: async () =>
-      "Reserve a gutter for the turn navigator\n\nThe navigator was absolutely positioned over the transcript, so on a\nnarrow pane its ticks sat on top of the prose.",
+    generateCommitMessage: async () => ({
+      message: "Reserve a gutter for the turn navigator",
+      model: "google/gemini-2.5-flash", scope: "staged", files: 2, warnings: [], requests: 1,
+    }),
+    cancelCommitGeneration: async () => {},
+    utilityModelSettings: async () => ({ providers: [
+      { id: "google", name: "Google", description: "Gemini with a Google AI Studio API key" },
+      { id: "openai-compatible", name: "OpenAI-compatible", description: "Local models or your own endpoint" },
+    ], connections: [], issues: [], secureStorage: true }),
+    utilityModelCatalog: async (input) => ({ source: input.source, models: [{ id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", contextTokens: 1_048_576 }], fetchedAt: Date.now(), stale: false }),
+    connectUtilityModel: async (input) => ({ provider: input.provider, model: input.model, baseUrl: input.baseUrl, contextTokens: input.contextTokens }),
+    disconnectUtilityModel: async () => {},
 
     stageFile: async (name: string) => ({
       path: `/tmp/mako-attachments/${name}`,
@@ -1511,6 +1521,7 @@ export function installMockBridge() {
     }),
     installUpdate: async () => {},
     relaunch: async () => {},
+    openPreviewWindow: async () => {},
     crashes: async () => [],
     crashesDir: async () => "/tmp/mako/crashes",
     clearCrashes: async () => {},

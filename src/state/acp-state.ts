@@ -1,6 +1,6 @@
 import type { PendingPrompt } from "@/state/prompt-delivery"
 import type { ComposerTarget } from "@/state/composer-settings"
-import type { LiveSnapshot } from "@/lib/types"
+import type { LiveSnapshot, ThreadRef } from "@/lib/types"
 import type { LiveProjection } from "@/state/live-projection"
 import type { AcpBlock } from "@/lib/acp-blocks"
 import type {
@@ -76,19 +76,26 @@ export function activeLiveAcp(state: AcpState): LiveAcpConversation | null {
 
 export function acpForThread(
   state: AcpState,
-  path: string
+  ref: ThreadRef | { path: string }
 ): AcpConversation | null {
+  const { path } = ref
+  const identity = "nativeId" in ref ? ref : undefined
   let found: AcpConversation | null = null
   for (const conversation of Object.values(state.conversations)) {
     const available =
       conversation.kind === "starting" ||
       conversation.session.status !== "closed"
+    const ownsIdentity = identity && conversation.kind === "live" &&
+      conversation.session.harness === identity.harness &&
+      conversation.session.nativeId === identity.nativeId
     if (
       available &&
-      (conversation.threadPath === path ||
-        conversation.nativePaths?.includes(path) ||
-        conversation.control?.bindings.some(
-          (binding) => binding.path === path
+      (ownsIdentity ||
+        ((!identity || conversation.harness === identity.harness) &&
+          (conversation.threadPath === path || conversation.nativePaths?.includes(path))) ||
+        conversation.control?.bindings.some((binding) =>
+          (!identity || binding.provider === identity.harness) &&
+          (binding.path === path || (identity && binding.nativeId === identity.nativeId))
         )) &&
       (!found || conversation.updatedAt > found.updatedAt)
     )
@@ -101,7 +108,7 @@ export function liveAcpForThread(
   state: AcpState,
   path: string
 ): LiveAcpConversation | null {
-  const conversation = acpForThread(state, path)
+  const conversation = acpForThread(state, { path })
   return conversation?.kind === "live" ? conversation : null
 }
 

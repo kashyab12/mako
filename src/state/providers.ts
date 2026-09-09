@@ -86,7 +86,11 @@ export const providers = {
       requests.delete(key)
     }
     const profiles = { ...providerStore.get().profiles }
-    delete profiles[provider]
+    const previous = profiles[provider]
+    if (previous) profiles[provider] = {
+      id: previous.id, label: previous.label, transport: previous.transport,
+      capabilities: previous.capabilities, models: [], available: false, pending: true,
+    }
     providerStore.set({ profiles, contexts, contextErrors })
     if (!workspaces.size) workspaces.add("")
     await Promise.all(

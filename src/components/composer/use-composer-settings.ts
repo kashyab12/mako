@@ -18,7 +18,7 @@ export function useComposerSettings(provider?: string) {
   const ref = useThreads((state) => state.opening?.ref ?? state.viewing?.ref)
   const workspace = useSession((state) => state.meta?.cwd)
   const live = useAcp((state) => {
-    const conversation = ref ? acpForThread(state, ref.path) : activeAcp(state)
+    const conversation = ref ? acpForThread(state, ref) : activeAcp(state)
     return {
       id: conversation?.key,
       harness: conversation?.harness,
@@ -61,10 +61,10 @@ export function useComposerSettings(provider?: string) {
 
   useEffect(() => {
     const reload = () => {
-      void providers.load(harness, true, target.cwd).catch(() => {})
+      void providers.load(harness, false, target.cwd).catch(() => {})
     }
     void providers.load(harness, false, target.cwd).catch(() => {})
-    const interval = window.setInterval(reload, 30_000)
+    const interval = window.setInterval(reload, 300_000)
     window.addEventListener("focus", reload)
     return () => {
       window.clearInterval(interval)
@@ -95,7 +95,7 @@ export function useComposerSettings(provider?: string) {
   const modelLabel =
     model?.label ??
     (resolved.model.kind === "known" ? resolved.model.value : undefined) ??
-    (!profile && !error ? "Loading model…" : "Model unavailable")
+    ((!profile || profile.pending) && !error ? "Loading model…" : "Model unavailable")
   return {
     target,
     profile,

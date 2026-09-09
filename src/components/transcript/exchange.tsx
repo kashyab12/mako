@@ -10,11 +10,7 @@ import { TranscriptAttachment } from "./attachment"
 import { memo, useMemo, useState } from "react"
 import { Prose } from "@/components/transcript/markdown"
 import { ToolRow } from "@/components/transcript/tool-row"
-import {
-  FileChip,
-  SkillChip,
-  ThreadChip,
-} from "@/components/composer/reference-chip"
+import { FileChip } from "@/components/composer/reference-chip"
 import { Slot } from "@/extend/slot"
 import {
   pairTools,
@@ -134,8 +130,8 @@ export const Exchange = memo(function Exchange({
           <PlanSummary plan={plan} />
         </div>
       ) : null}
-      {!streaming && exchange.response.length > 0 ? (
-        <Footer exchange={exchange} />
+      {exchange.response.length > 0 || interrupted ? (
+        <Footer exchange={exchange} streaming={streaming} interrupted={interrupted} />
       ) : null}
     </article>
   )
@@ -178,6 +174,8 @@ function Prompt({ message }: { message: ChatMessage }) {
       ),
     [files, message.blocks]
   )
+  const referenceFiles = useMemo(() => reusable.map((item) => ({ index: item.index, name: item.name, path: item.stagedPath })), [reusable])
+  const { copied, copy } = useCopy(restoreAttachmentReferences(text, reusable))
   const compose = () =>
     window.dispatchEvent(
       new CustomEvent("mako:compose", {
@@ -212,30 +210,7 @@ function Prompt({ message }: { message: ChatMessage }) {
           at a reading measure, unmistakably theirs without a ring. The
           assistant's reply below stays full-width and chrome-free. */}
       <div className="max-w-[min(82%,64ch)] rounded-xl rounded-br-md bg-raised px-3.5 py-2.5">
-        <div className="text-prose whitespace-pre-wrap text-foreground">
-          {segments.map((segment, index) =>
-            segment.kind === "text" ? (
-              <span key={index}>{segment.text}</span>
-            ) : segment.kind === "attachment" ? (
-              <FileChip
-                key={index}
-                path={segment.file.path}
-                name={segment.file.name}
-                interactive
-              />
-            ) : segment.kind === "file" ? (
-              <FileChip key={index} path={segment.path} interactive />
-            ) : segment.kind === "thread" ? (
-              <ThreadChip
-                key={index}
-                harness={segment.harness}
-                nativeId={segment.nativeId}
-              />
-            ) : (
-              <SkillChip key={index} name={segment.name} />
-            )
-          )}
-        </div>
+        <Prose text={text} references={referenceFiles} className="prompt-prose whitespace-normal" />
         <PlanContextChips plans={plans} />
         {message.blocks
           .filter((block) => block.type === "attachment")
@@ -268,7 +243,11 @@ function Prompt({ message }: { message: ChatMessage }) {
         ) : null}
       </div>
 
-      <div className="mt-1 flex h-4 items-center justify-end gap-2 px-0.5 text-label text-faint opacity-0 transition-opacity duration-150 group-hover/prompt:opacity-100 focus-within:opacity-100">
+      <div className="mt-1 flex min-h-6 items-center justify-end gap-2 px-0.5 text-label text-muted-foreground">
+        <button type="button" aria-label="Copy question" onClick={() => void copy()} className="pressable flex h-6 items-center gap-1 rounded px-1 hover:bg-fill-hover hover:text-foreground">
+          {copied ? <CheckIcon className="size-3" /> : <CopyIcon className="size-3" />}
+          {copied ? "Copied question" : "Copy question"}
+        </button>
         {message.timestamp ? (
           <span className="tabular">{formatTime(message.timestamp)}</span>
         ) : null}
@@ -357,7 +336,7 @@ function WorkSection({
   const showWork = live || open
   return (
     <div className="flex flex-col gap-2.5">
-      {folded ? (
+      {folded && !live ? (
         <WorkSummary
           work={work}
           live={live}
@@ -580,13 +559,13 @@ function Thinking({ text, live }: { text: string; live: boolean }) {
   const lastLine = trimmed.slice(trimmed.lastIndexOf("\n") + 1)
   const summary = lastLine.length > 120 ? `…${lastLine.slice(-119)}` : lastLine
   return (
-    <div className="rounded-md bg-foreground/[0.045]">
+    <div className="rounded-sm border border-transparent">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-label={`${live ? "Reasoning in progress" : "Reasoning"}${summary ? `: ${summary}` : ""}`}
-        className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-ui text-faint transition-colors duration-100 hover:text-muted-foreground"
+        className="pressable flex w-full items-center gap-2 px-2 py-1.5 text-left text-ui text-muted-foreground transition-colors duration-100 hover:bg-fill-hover hover:text-foreground"
       >
         <ChevronRightIcon
           className={cn(
@@ -631,14 +610,15 @@ function SystemNote({ message }: { message: ChatMessage }) {
 /* one footer per answer                                               */
 /* ------------------------------------------------------------------ */
 
-function Footer({ exchange }: { exchange: ExchangeData }) {
+function Footer({ exchange, streaming, interrupted }: { exchange: ExchangeData; streaming?: boolean; interrupted?: boolean }) {
   const text = responseText(exchange)
   const { copied, copy } = useCopy(text)
   const last = exchange.response.at(-1)
-  if (!text && !last?.timestamp) return null
+  if (!text && !last?.timestamp && !interrupted) return null
 
   return (
-    <div className="mt-1.5 flex h-4 items-center gap-2.5 text-label text-faint opacity-0 transition-opacity duration-150 group-hover/transcript:opacity-100 focus-within:opacity-100">
+    <div className="mt-1.5 flex min-h-6 items-center gap-2.5 text-label text-muted-foreground">
+      {interrupted && !streaming ? <span data-turn-stopped>Stopped</span> : null}
       {last?.timestamp ? (
         <span className="tabular">{formatTime(last.timestamp)}</span>
       ) : null}
@@ -646,6 +626,7 @@ function Footer({ exchange }: { exchange: ExchangeData }) {
       {text ? (
         <button
           type="button"
+          aria-label="Copy answer"
           title="Copy the agent's whole answer to this question"
           onClick={() => {
             void copy()
@@ -662,7 +643,7 @@ function Footer({ exchange }: { exchange: ExchangeData }) {
           </span>
         </button>
       ) : null}
-      <ForkButton exchange={exchange} />
+      {!streaming && !interrupted ? <ForkButton exchange={exchange} /> : null}
       {last ? <Slot name="transcript.turn.trailing" message={last} /> : null}
     </div>
   )

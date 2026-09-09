@@ -21,6 +21,10 @@ const mediaTypes = new Map([
   ["pdf", "application/pdf"],
 ])
 
+export function mediaTypeForPath(path: string): string | undefined {
+  return mediaTypes.get(path.split(/[?#]/)[0]?.split(".").at(-1)?.toLowerCase() ?? "")
+}
+
 export function markdownMedia(
   source: string,
   label?: string
@@ -30,7 +34,7 @@ export function markdownMedia(
   const name = label || pathname.split("/").at(-1) || "Attachment"
   const mimeType =
     /^data:([^;,]+)/i.exec(source)?.[1] ??
-    mediaTypes.get(pathname.split(".").at(-1)?.toLowerCase() ?? "") ??
+    mediaTypeForPath(pathname) ??
     "image/png"
   return file
     ? {

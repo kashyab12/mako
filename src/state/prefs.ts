@@ -46,6 +46,8 @@ export interface Prefs {
   railMode: RailMode
   railScope: RailScope
   railSortBy: RailSortBy
+  railGrouping: "project" | "recent"
+  providerModes: PreferenceStringMap
   collapsedGroups: string[]
   collapsedDirs: string[]
   /** Folders open in the project tree. Keys are folded paths, not path prefixes. */
@@ -106,6 +108,8 @@ const defaults: Prefs = {
   railMode: "threads",
   railScope: "all",
   railSortBy: "recent",
+  railGrouping: "project",
+  providerModes: {},
   collapsedGroups: [],
   collapsedDirs: [],
   openDirs: [],
@@ -325,6 +329,8 @@ function parsePrefs(value: JsonValue): Prefs | null {
       defaults.agentHarnessFilter
     ),
     composerHarness: readComposerHarness(value.composerHarness),
+    railGrouping: readChoice(value.railGrouping, ["project", "recent"], defaults.railGrouping),
+    providerModes: readStringRecord(value.providerModes),
     providerSettings: readProviderSettings(value.providerSettings, value.composerTuning),
     settingsOverrides: readSettingsOverrides(value.settingsOverrides),
     keybindings: readStringRecord(value.keybindings),
@@ -369,8 +375,23 @@ export const prefsStore = createStore<Prefs>(load())
 export const usePrefs = createHook(prefsStore)
 
 let queued = false
+let receiving = false
+globalThis.window?.addEventListener?.("storage", (event) => {
+  if (event.key !== KEY || !event.newValue) return
+  try {
+    const value: JsonValue = JSON.parse(event.newValue)
+    const next = parsePrefs(value)
+    if (!next) return
+    receiving = true
+    prefsStore.set({ providerModes: next.providerModes, providerSettings: next.providerSettings, settingsOverrides: next.settingsOverrides })
+  } catch {
+    return
+  } finally {
+    receiving = false
+  }
+})
 prefsStore.subscribe(() => {
-  if (queued) return
+  if (queued || receiving) return
   queued = true
   queueMicrotask(() => {
     queued = false

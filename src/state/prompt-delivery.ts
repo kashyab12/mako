@@ -24,6 +24,11 @@ interface PromptDelivery {
   queued: PendingPrompt[]
 }
 
+export function recoverableRequests(input: Pick<DeliveryInput, "blocks" | "requests">): LiveRequest[] {
+  const visible = new Set(input.blocks.flatMap((block) => block.type === "user" && block.requestId ? [block.requestId] : []))
+  return (input.requests ?? []).filter((request) => request.status === "failed" || request.status === "uncertain" || (request.status === "interrupted" && !visible.has(request.id)))
+}
+
 /** Delivery receipts may precede provider startup. Only work behind a turn is a queue. */
 export function promptDelivery(input: DeliveryInput): PromptDelivery {
   const requests = input.requests ?? []

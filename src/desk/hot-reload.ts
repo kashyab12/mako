@@ -16,6 +16,7 @@
  */
 
 export interface HotUpdate {
+  kind: "applied" | "available"
   /** Renderer paths that were swapped in, workspace-relative. */
   files: string[]
   /** Monotonic, so a repeated edit to one file still reads as a new event. */
@@ -37,11 +38,14 @@ export function onHotUpdate(listener: Listener): () => void {
 
 function announce(files: string[]) {
   if (files.length === 0) return
-  const update = { files, at: Date.now() }
+  const update: HotUpdate = { files, at: Date.now(), kind: "applied" }
   for (const listener of listeners) listener(update)
 }
 
 if (import.meta.hot) {
+  import.meta.hot.on("mako:update-available", (update: HotUpdate) => {
+    for (const listener of listeners) listener(update)
+  })
   import.meta.hot.on("vite:afterUpdate", (payload) => {
     announce(
       payload.updates

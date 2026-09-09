@@ -54,7 +54,8 @@ export function applyLiveSnapshot(snapshot: LiveSnapshot): void {
   if (restored?.kind === "live")
     syncThreadStatus(
       restored,
-      existing?.kind === "live" ? existing.session.status : "starting"
+      existing?.kind === "live" ? existing.session.status : "starting",
+      existing?.threadPath
     )
   const buffered = pending.get(id) ?? []
   pending.delete(id)
@@ -174,7 +175,7 @@ export function applyLiveBatch(batch: LiveBatch): void {
     next?.kind === "live" &&
     (batch.session || batch.permissions || batch.requests)
   )
-    syncThreadStatus(next, current.session.status)
+    syncThreadStatus(next, current.session.status, current.threadPath)
 }
 
 export function hydrateLiveSummaries(summaries: LiveSummary[]): void {
@@ -204,10 +205,13 @@ export function hydrateLiveSummaries(summaries: LiveSummary[]): void {
     const restored = acpStore.get().conversations[summary.session.id]
     if (restored?.kind === "live") syncThreadStatus(restored, "starting")
   }
-  const newest = summaries.toSorted((a, b) => b.createdAt - a.createdAt)[0]
-  if (newest && !acpStore.get().activeKey) {
-    acpStore.set({ activeKey: newest.session.id })
-    void hydrateLive(newest.session.id)
+  const requested = globalThis.sessionStorage?.getItem("mako:reload-conversation")
+  globalThis.sessionStorage?.removeItem("mako:reload-conversation")
+  const selected = summaries.find((summary) => summary.session.id === requested) ??
+    summaries.toSorted((a, b) => b.createdAt - a.createdAt)[0]
+  if (selected && requested !== "new" && !acpStore.get().activeKey) {
+    acpStore.set({ activeKey: selected.session.id })
+    void hydrateLive(selected.session.id)
   }
 }
 

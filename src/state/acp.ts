@@ -1,4 +1,5 @@
 import { stagePrompt } from "@/state/acp-pending"
+import { prefsStore, setPref } from "@/state/prefs"
 import {
   currentSettingsTarget,
   threadSettingsTarget,
@@ -149,8 +150,8 @@ export const acp = {
     return true
   },
 
-  activateThread(path: string): boolean {
-    const conversation = acpForThread(acpStore.get(), path)
+  activateThread(ref: ThreadRef | { path: string }): boolean {
+    const conversation = acpForThread(acpStore.get(), ref)
     return conversation ? acp.activate(conversation.key) : false
   },
 
@@ -213,7 +214,7 @@ export const acp = {
 
   async openInteractive(ref: ThreadRef): Promise<boolean> {
     if (!hasBridge()) return false
-    const existing = acpForThread(acpStore.get(), ref.path)
+    const existing = acpForThread(acpStore.get(), ref)
     if (existing) return acp.activate(existing.key)
     const canResume = canResumeInteractively(ref.harness)
     const harness = canResume ? ref.harness : threadsStore.get().composerHarness
@@ -263,7 +264,7 @@ export const acp = {
     attachments: PromptAttachment[] = []
   ): Promise<boolean> {
     if (!hasBridge()) return false
-    const existing = acpForThread(acpStore.get(), ref.path)
+    const existing = acpForThread(acpStore.get(), ref)
     if (existing) {
       acp.activate(existing.key)
       if (existing.kind === "live")
@@ -305,7 +306,7 @@ export const acp = {
   ): Promise<boolean> {
     if (!hasBridge()) return false
     const existing = threadPath
-      ? acpForThread(acpStore.get(), threadPath)
+      ? acpForThread(acpStore.get(), { path: threadPath })
       : null
     if (existing) {
       acp.activate(existing.key)
@@ -516,12 +517,15 @@ export const acp = {
       .catch((error) => toast.error(String(error)))
   },
 
-  setMode(modeId: string): void {
+  async setMode(modeId: string): Promise<void> {
     const current = activeLiveAcp(acpStore.get())
-    if (current && hasBridge())
-      void getMako()
-        .liveSetMode(current.key, modeId)
-        .catch((error) => toast.error(String(error)))
+    if (!current || !hasBridge()) return
+    try {
+      await getMako().liveSetMode(current.key, modeId)
+      setPref("providerModes", { ...prefsStore.get().providerModes, [current.harness]: modeId })
+    } catch (error) {
+      toast.error(String(error))
+    }
   },
 
   async unqueue(): Promise<void> {

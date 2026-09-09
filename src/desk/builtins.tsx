@@ -3,7 +3,7 @@ import { ControlPreviewOverlay } from "@/components/inspector/control-preview-ov
 import { AppshotButton } from "@/components/composer/appshot-button"
 import { ControlPreviewPanel } from "@/components/inspector/control-preview-panel"
 import {
-  BotIcon,
+  GitBranchIcon,
   MonitorIcon,
   FilesIcon,
   GitCompareIcon,
@@ -97,7 +97,7 @@ export function installBuiltins(): () => void {
       order: 5,
       minWidth: 360,
     }),
-    registerSurface({ id: "agents", label: "Agents", icon: BotIcon, render: AgentsPanel, order: 6, minWidth: 360 }),
+    registerSurface({ id: "agents", label: "Agents", icon: GitBranchIcon, render: AgentsPanel, order: 6, minWidth: 360 }),
     // Identity, through the same slots a plugin would use.
     registerSlot("identity", "titlebar.trailing", IdentityBadge, -10),
     registerSlot("identity", "rail.footer", IdentityRow, -10),
@@ -107,7 +107,7 @@ export function installBuiltins(): () => void {
 
     ...["bash", "Bash", "shell", "Shell", "exec_command"].map((name) =>
       registerToolView(name, {
-        summary: (call: ToolCall) => argAt(call.arguments, "description") ?? argAt(call.arguments, "command") ?? argAt(call.arguments, "cmd") ?? "",
+        summary: (call: ToolCall) => argAt(call.arguments, "command") ?? argAt(call.arguments, "cmd") ?? argAt(call.arguments, "description") ?? "",
         body: BashBody,
       })
     ),
@@ -230,7 +230,7 @@ export function installBuiltins(): () => void {
           argAt(call.arguments, "cell_id") ??
           "Background agent",
         body: SubagentBody,
-        icon: BotIcon,
+        icon: GitBranchIcon,
       })
     ),
   ]

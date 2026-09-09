@@ -1,4 +1,6 @@
 import { useCopy } from "@/components/ui/use-copy"
+import { ActivityMark } from "@/components/ui/activity-mark"
+import { toolActivity } from "@/state/agent-activity"
 import { memo, useState, type ComponentType } from "react"
 import { useToolView, type ToolCall } from "@/extend/slots"
 import {
@@ -42,11 +44,10 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-md border transition-colors duration-150",
+        "overflow-hidden rounded-sm border transition-colors duration-150",
         call.isError
           ? "border-negative/30 bg-negative/[0.04]"
-          : "border-hairline bg-surface",
-        open && "border-border"
+          : open ? "border-hairline bg-surface" : "border-transparent"
       )}
     >
       <div className="group/tool flex items-center">
@@ -60,7 +61,7 @@ export const ToolRow = memo(function ToolRow({ call }: { call: ToolCall }) {
         >
           <LeadSlot call={call} open={open} icon={view?.icon} />
           <span className="shrink-0 text-ui font-medium text-foreground/90">
-            {toolLabel(call.name)}
+            {toolLabel(call.name) === "Shell" ? "$" : toolLabel(call.name)}
           </span>
           <span className="min-w-0 flex-1 truncate font-mono text-ui text-faint">
             {summary}
@@ -162,9 +163,8 @@ function LeadSlot({
 function Status({ call }: { call: ToolCall }) {
   if (call.pending) {
     return (
-      <span className="flex shrink-0 items-center gap-1 text-label text-ember">
-        <span className="animate-live size-1 rounded-full bg-ember" />
-        running
+      <span role="status" aria-label="Running" className="shrink-0 text-muted-foreground">
+        <ActivityMark state={toolActivity(call.name)} />
       </span>
     )
   }

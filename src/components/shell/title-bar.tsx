@@ -95,12 +95,9 @@ export function TitleBar() {
         <Slot name="titlebar.leading" />
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 flex justify-center">
-        <div className="pointer-events-auto flex min-w-0 max-w-[46%] items-center gap-2">
+      <div className="flex min-w-0 flex-1 justify-center px-3">
+        <div className="flex min-w-0 max-w-full items-center gap-2">
           <MakoMark className="size-3.5 text-foreground/60" />
-          {streaming ? (
-            <span className="size-1.5 shrink-0 animate-live rounded-full bg-ember" aria-label="Streaming" />
-          ) : null}
           <SessionTitle name={name} fallback={workspaceName(cwd)} />
         </div>
       </div>

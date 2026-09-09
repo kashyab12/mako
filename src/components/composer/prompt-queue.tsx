@@ -100,9 +100,9 @@ export function PromptQueue() {
   return (
     <section
       aria-label="Queued messages"
-      className="mx-2 overflow-hidden rounded-t-lg border border-b-0 border-hairline bg-raised/40"
+      className="flex max-h-[min(240px,20dvh)] shrink-0 flex-col overflow-hidden rounded-none border-b border-hairline bg-raised/40"
     >
-      <div className="flex h-8 items-center gap-2 px-3 text-label text-faint">
+      <div className="flex h-8 shrink-0 items-center gap-2 px-3 text-label text-faint">
         <CornerDownRightIcon className="size-3.5" />
         <span className="font-medium text-muted-foreground">Up next</span>
         <span>
@@ -114,7 +114,7 @@ export function PromptQueue() {
             : "After this turn"}
         </span>
       </div>
-      <div className="max-h-64 overflow-y-auto">
+      <div className="min-h-0 overflow-y-auto">
         {shown.map((request) => (
           <QueueRow
             key={request.id}

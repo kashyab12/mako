@@ -70,7 +70,7 @@ export function currentSettingsTarget(
   const state = threadsStore.get()
   const ref = state.opening?.ref ?? state.viewing?.ref
   const live = ref
-    ? acpForThread(acpStore.get(), ref.path)
+    ? acpForThread(acpStore.get(), ref)
     : activeAcp(acpStore.get())
   return resolveSettingsTarget({
     harness,
@@ -110,7 +110,7 @@ export function settingsSession(
   const threads = threadsStore.get()
   const conversation =
     target.kind === "thread"
-      ? acpForThread(acpStore.get(), target.path)
+      ? acpForThread(acpStore.get(), { path: target.path })
       : acpStore.get().conversations[target.id]
   const ref =
     target.kind === "thread"
@@ -154,7 +154,7 @@ export function settingsConversation(
   if (target.kind === "new") return undefined
   return target.kind === "live"
     ? acpStore.get().conversations[target.id]
-    : (acpForThread(acpStore.get(), target.path) ?? undefined)
+    : (acpForThread(acpStore.get(), { path: target.path }) ?? undefined)
 }
 
 interface ComposerSettingsInput {
@@ -254,7 +254,12 @@ export async function settingsForSend(
   })
   if (resolved.issues.length)
     throw new Error(resolved.issues.map((issue) => issue.message).join(" "))
-  return resolved.settings
+  const mode = conversation?.kind === "live"
+    ? conversation.session.currentMode
+    : prefs.providerModes[target.harness]
+  return mode && resolved.settings.options?.mode !== undefined
+    ? { ...resolved.settings, options: { ...resolved.settings.options, mode } }
+    : resolved.settings
 }
 
 function saveOverrides(
