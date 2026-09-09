@@ -30,7 +30,7 @@ const descriptions = {
   release:
     "Release this task's exact tab binding. Leaves the tab and the shared Chrome connection open.",
   observe:
-    "Read the exact tab's title, URL and bounded accessibility nodes. Fresh opaque refs can be used for clicking, typing or uploads. Observation replaces earlier refs for this tab.",
+    "Read the exact tab's title, URL and accessibility nodes within a 60 KB text budget. omitted counts excluded nodes; truncatedTextFields reports shortened names/values. Fresh opaque refs can be used for clicking, typing or uploads. Observation replaces earlier refs for this tab. For clipped content, inspect a specific element through CDP rather than requesting the entire document.",
   screenshot:
     "Return an actual image plus its exact target identity. JPEG is the compact default; PNG and full-page capture are available. Does not change the selected target or reconnect.",
   evaluate:

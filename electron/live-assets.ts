@@ -31,7 +31,16 @@ export function promptFingerprint(
           attachment.data,
           attachment.path,
         ]),
-        ...(settings ? [[settings.model, Object.entries(settings.options ?? {}).sort(([a], [b]) => a.localeCompare(b))]] : []),
+        ...(settings
+          ? [
+              [
+                settings.model,
+                Object.entries(settings.options ?? {}).sort(([a], [b]) =>
+                  a.localeCompare(b)
+                ),
+              ],
+            ]
+          : []),
       ])
     )
     .digest("hex")
@@ -137,7 +146,11 @@ export class LiveAssets {
   }
 
   prepare(update: LiveUpdate): LiveUpdate[] {
-    if (update.kind === "text" || update.kind === "thinking") {
+    if (
+      update.kind === "text" ||
+      update.kind === "thinking" ||
+      update.kind === "proposed-plan"
+    ) {
       if (update.text.length <= PREVIEW_LIMIT) return [update]
       const chunks: LiveUpdate[] = []
       for (let offset = 0; offset < update.text.length; offset += PREVIEW_LIMIT)

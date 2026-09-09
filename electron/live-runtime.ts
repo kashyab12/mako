@@ -5,6 +5,8 @@ import type {
   LiveSessionState,
   LiveStartOptions,
   HostEvent,
+  LiveDriverEvent,
+  McpRegistrySnapshot,
 } from "./shared.js"
 import type { ThreadPage } from "@mako/sessions"
 import type {
@@ -17,12 +19,16 @@ import type {
   ConversationTools,
 } from "./providers/live-driver.js"
 import type { LiveJournal } from "./live-journal.js"
+import type { WorkspaceSnapshots } from "./workspace-snapshots.js"
 export interface ProviderConnection {
   driver: ProviderLiveDriver
   session: LiveSessionState
 }
 
 export interface Resident {
+  closing?: boolean
+  checkpointing?: boolean
+  rewinding?: boolean
   connections: Map<string, ProviderConnection>
   transferring: boolean
   snapshot: LiveSnapshot
@@ -39,6 +45,8 @@ export interface Resident {
 }
 
 export interface Dependencies {
+  mcpSnapshot?(cwd: string): Promise<McpRegistrySnapshot>
+  workspaceSnapshots?: WorkspaceSnapshots
   appPath: string
   tools?(
     bindingId: string,
@@ -47,6 +55,7 @@ export interface Dependencies {
   providers?(): string[]
   root: string
   checkpoint?(path: string): Promise<string | undefined>
+  nativePath?(session: LiveSessionState): string | undefined
   canResume?(binding: ProviderBinding): Promise<boolean>
   driver(provider: string): ProviderLiveDriver | undefined
   history(path: string, before?: number): Promise<ThreadPage | null>
@@ -54,6 +63,7 @@ export interface Dependencies {
 }
 
 export interface LiveAccess {
+  observe(event: LiveDriverEvent): void
   retainAttachments(attachments: PromptAttachment[]): PromptAttachment[]
   dependencies: Dependencies
   bindingOwners: Map<string, string>
@@ -62,7 +72,7 @@ export interface LiveAccess {
   control(resident: Resident): ConversationControl
   flush(resident: Resident): void
   drain(resident: Resident): void
-  close(id: string): void
+  close(id: string): Promise<void>
   pending(resident: Resident): ContextTransfer | undefined
   storageFailed(resident: Resident, boundary: FailureBoundary): void
   open(

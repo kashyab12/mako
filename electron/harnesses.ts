@@ -1,8 +1,10 @@
 import { accountEnv } from "./accounts.js"
 import { providerHost } from "./providers/index.js"
 import {
+  pendingProviderProfile,
   unavailableProviderProfile,
   unknownProviderProfile,
+  type ProviderProfileLoader,
 } from "./providers/profile-loader.js"
 import type { HarnessProfile } from "./shared.js"
 import { providerProfileCache } from "./provider-profile-cache.js"
@@ -17,24 +19,80 @@ export {
   type OpenCodeInstallation,
 } from "./providers/opencode/installation.js"
 
+export interface HarnessProfileEvent {
+  profile: HarnessProfile
+  cwd?: string
+}
+
+/**
+ * Discovery spawns each provider's CLI, and the slowest one used to gate the
+ * whole list: the picker showed two agents until every probe had answered.
+ * Now a request answers from what is already known — memory, then the last
+ * snapshot on disk, then a pending placeholder — while the real load runs
+ * behind it and reports through `onHarnessProfile`.
+ */
 const cache = new Map<string, { profile: HarnessProfile; loadedAt: number }>()
 const loading = new Map<string, Promise<HarnessProfile>>()
+const listeners = new Set<(event: HarnessProfileEvent) => void>()
+const DISPLAY_TTL_MS = 30_000
 
-export async function harnessProfile(
+type Mode = "display" | "refresh" | "send" | "now"
+
+export function onHarnessProfile(
+  listener: (event: HarnessProfileEvent) => void
+): () => void {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
+export function harnessProfile(
   harness: string,
   force = false,
   cwd?: string
+): Promise<HarnessProfile> {
+  return loadProfile(harness, cwd, force ? "refresh" : "display")
+}
+
+/** Sending validates the selection already shown; discovery is not a per-turn tax. */
+export function harnessProfileForSend(
+  harness: string,
+  cwd?: string
+): Promise<HarnessProfile> {
+  return loadProfile(harness, cwd, "send")
+}
+
+async function loadProfile(
+  harness: string,
+  cwd: string | undefined,
+  mode: Mode
 ): Promise<HarnessProfile> {
   const loader = providerHost.profiles.get(harness)
   if (!loader) return unknownProviderProfile(harness, "Unknown provider")
   const env = await accountEnv(harness, process.env)
   const key = `${harness}:${loader.cacheKey(env)}:${cwd ?? ""}`
-  if (!force) {
-    const held = cache.get(key)
-    if (held && Date.now() - held.loadedAt < 30_000) return held.profile
+  const held = cache.get(key)
+  if (mode !== "refresh" && held) {
+    const fresh = Date.now() - held.loadedAt < DISPLAY_TTL_MS
+    const trusted =
+      held.profile.available && !held.profile.configurationError
+    if (fresh || (mode === "send" && trusted)) return held.profile
   }
-  const active = loading.get(key)
-  if (active) return active
+  const request = loading.get(key) ?? startLoad(loader, key, env, cwd)
+  if (mode === "display" || mode === "now") {
+    // Stale beats blank: the refresh lands as an event moments later.
+    const snapshot = held?.profile ?? (await providerProfileCache.get(key))
+    if (snapshot) return snapshot
+    if (mode === "now") return pendingProviderProfile(loader)
+  }
+  return request
+}
+
+function startLoad(
+  loader: ProviderProfileLoader,
+  key: string,
+  env: NodeJS.ProcessEnv,
+  cwd: string | undefined
+): Promise<HarnessProfile> {
   const request = (async () => {
     let profile: HarnessProfile
     try {
@@ -46,13 +104,22 @@ export async function harnessProfile(
       )
     }
     cache.set(key, { profile, loadedAt: Date.now() })
-    await providerProfileCache.put(key, profile).catch(() => {})
+    // Only a working profile is worth answering with before discovery runs;
+    // a transient failure must not greet the next launch as fact.
+    if (profile.available)
+      await providerProfileCache.put(key, profile).catch(() => {})
+    const event: HarnessProfileEvent = { profile }
+    if (cwd !== undefined) event.cwd = cwd
+    for (const listener of listeners) listener(event)
     return profile
   })().finally(() => loading.delete(key))
   loading.set(key, request)
+  // Callers that answer from a snapshot never observe this promise.
+  request.catch(() => {})
   return request
 }
 
+/** Every provider, resolved. Hosts that filter on availability wait for discovery. */
 export async function harnessProfiles(
   force = false,
   cwd?: string
@@ -61,5 +128,16 @@ export async function harnessProfiles(
     providerHost.profiles
       .list()
       .map((loader) => harnessProfile(loader.provider, force, cwd))
+  )
+}
+
+/** Every provider, immediately: what is known now, with discovery reporting behind it. */
+export async function harnessProfilesNow(
+  cwd?: string
+): Promise<HarnessProfile[]> {
+  return Promise.all(
+    providerHost.profiles
+      .list()
+      .map((loader) => loadProfile(loader.provider, cwd, "now"))
   )
 }

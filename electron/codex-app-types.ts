@@ -1,9 +1,14 @@
+import type { CodexAgentItem } from "./providers/codex/agents.js"
 import type { SessionSettings } from "@mako/sessions/settings"
 import type { AttachmentContent } from "@mako/sessions"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import type { StringDecoder } from "node:string_decoder"
 import type { JsonObject, JsonRpcId, JsonValue } from "./codex-app-json.js"
 import type { LiveSessionState, LiveUpdate } from "./shared.js"
+import type { TurnStartParams } from "./providers/codex/generated/v2/TurnStartParams.js"
+import type { TurnSteerParams } from "./providers/codex/generated/v2/TurnSteerParams.js"
+import type { ThreadCompactStartParams } from "./providers/codex/generated/v2/ThreadCompactStartParams.js"
+import type { TurnInterruptParams } from "./providers/codex/generated/v2/TurnInterruptParams.js"
 
 export type Tuning = SessionSettings
 
@@ -16,6 +21,7 @@ type FileChange = { path?: string; diff?: string; kind?: JsonValue }
 type McpToolError = { message?: string }
 
 export type ThreadItem =
+  | CodexAgentItem
   | {
       type: "userMessage"
       id: string
@@ -100,18 +106,10 @@ export type RpcParams = {
     serviceTier?: string
     config?: JsonObject
   }
-  "turn/start": {
-    threadId: string
-    input: Array<
-      | { type: "text"; text: string; textElements?: JsonValue[] }
-      | { type: "localImage"; path: string }
-    >
-    cwd: string
-    model?: string
-    effort?: string
-    serviceTier?: string
-  }
-  "turn/interrupt": { threadId: string; turnId: string }
+  "turn/start": TurnStartParams
+  "turn/steer": TurnSteerParams
+  "thread/compact/start": ThreadCompactStartParams
+  "turn/interrupt": TurnInterruptParams
 }
 
 export type RpcResults = {
@@ -120,6 +118,8 @@ export type RpcResults = {
   "thread/fork": ThreadResponse
   "thread/resume": ThreadResponse
   "turn/start": { turn: Turn }
+  "turn/steer": { turnId: string }
+  "thread/compact/start": JsonObject
   "turn/interrupt": JsonObject
 }
 
@@ -155,6 +155,7 @@ export interface ProtocolCallbacks {
   handleFatal(message: string): void
   updateState(patch: Partial<LiveSessionState>): void
   emitUpdate(update: LiveUpdate): void
+  observeAgents(item: CodexAgentItem, replay: boolean): void
   handleServerRequest(id: JsonRpcId, method: string, params: JsonObject): void
   resolveServerRequest(id: JsonRpcId): void
   clearTurnServerRequests(turnId: string): void

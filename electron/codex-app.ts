@@ -1,6 +1,12 @@
+import { CodexAgents } from "./providers/codex/agents.js"
 import { codexServiceTier } from "@mako/sessions/model-catalog"
 import type { SessionSettings } from "@mako/sessions/settings"
 import { codexWireSettings } from "./providers/codex/settings.js"
+import { codexInput } from "./providers/codex/input.js"
+import type {
+  ProviderSteerInput,
+  ProviderSteerResult,
+} from "./providers/live-driver.js"
 import { resolveCodexExecutable } from "./providers/codex/executable.js"
 import type { ConversationTools } from "./providers/live-driver.js"
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
@@ -65,6 +71,7 @@ type Live = {
   stdoutBuffer: string
   stderrBuffer: string
   decoder: StringDecoder
+  agents: CodexAgents
   protocol: ProtocolCallbacks
   startupTimer: ReturnType<typeof setTimeout> | null
   replayUpdates: LiveUpdate[] | null
@@ -146,10 +153,15 @@ export async function codexAppStart(
     stdoutBuffer: "",
     stderrBuffer: "",
     decoder: new StringDecoder("utf8"),
+    agents: new CodexAgents(),
     protocol: {
       handleFatal: (message) => protocolFatal(live, message),
       updateState: (patch) => updateState(live, patch),
       emitUpdate: (update) => emitUpdate(live, update),
+      observeAgents: (item, replay) => {
+        for (const agent of live.agents.project(item, replay))
+          emit({ type: "acp-agent", id: live.id, agent })
+      },
       handleServerRequest: (rpcId, method, params) =>
         handleServerRequest(live, permissionCallbacks, rpcId, method, params),
       resolveServerRequest: (rpcId) => resolveServerRequest(live, rpcId),
@@ -188,8 +200,12 @@ export async function codexAppStart(
     if (replayUpdates.length > 0)
       emit({ type: "acp-updates", id: live.id, updates: replayUpdates })
     const settings: SessionSettings = { model: response.model, options: {} }
-    if (response.reasoningEffort) settings.options!.effort = response.reasoningEffort
-    if (response.serviceTier !== undefined) settings.options!.serviceTier = codexServiceTier(response.serviceTier ?? "default")
+    if (response.reasoningEffort)
+      settings.options!.effort = response.reasoningEffort
+    if (response.serviceTier !== undefined)
+      settings.options!.serviceTier = codexServiceTier(
+        response.serviceTier ?? "default"
+      )
     updateState(live, {
       nativeId: response.thread.id,
       settings,
@@ -237,24 +253,9 @@ export async function codexAppPrompt(
   })
   emitUpdate(live, { kind: "user", text })
   try {
-    const input: RpcParams["turn/start"]["input"] = [
-      { type: "text", text, textElements: [] },
-    ]
-    for (const attachment of attachments) {
-      if (!attachment.path)
-        throw new Error(`Attachment ${attachment.name} was not staged`)
-      if (attachment.mimeType.startsWith("image/")) {
-        input.push({ type: "localImage", path: attachment.path })
-      } else {
-        input.push({
-          type: "text",
-          text: `User attachment ${attachment.name} (${attachment.mimeType}): ${attachment.path}`,
-        })
-      }
-    }
     const result = await rpcRequest(live, "turn/start", {
       threadId: live.threadId,
-      input,
+      input: codexInput(text, attachments),
       cwd: live.cwd,
       ...codexWireSettings(tuning),
     })
@@ -300,6 +301,45 @@ export async function codexAppCancel(id: string): Promise<void> {
   })
 }
 
+export async function codexAppSteer(
+  id: string,
+  input: ProviderSteerInput
+): Promise<ProviderSteerResult> {
+  const live = sessions.get(id)
+  if (
+    !live?.threadId ||
+    live.exited ||
+    live.state.status !== "running" ||
+    live.currentTurnId !== input.expectedRunId
+  )
+    return {
+      kind: "not-accepted",
+      reason: "The selected Codex turn is no longer active",
+    }
+  const result = await rpcRequest(live, "turn/steer", {
+    threadId: live.threadId,
+    expectedTurnId: input.expectedRunId,
+    clientUserMessageId: input.id,
+    input: codexInput(input.text, input.attachments),
+  })
+  if (result.turnId !== input.expectedRunId)
+    throw new Error("Codex acknowledged steering for a different turn")
+  return { kind: "accepted" }
+}
+
+export async function codexAppCompact(id: string): Promise<void> {
+  const live = sessions.get(id)
+  if (!live?.threadId || live.exited || live.state.status !== "ready")
+    throw new Error("Wait for Codex to become idle before compacting")
+  updateState(live, {
+    status: "running",
+    nativeRunId: undefined,
+    lastStop: undefined,
+    error: undefined,
+  })
+  await rpcRequest(live, "thread/compact/start", { threadId: live.threadId })
+}
+
 export function codexAppClose(id: string): void {
   const live = sessions.get(id)
   if (!live) return
@@ -325,7 +365,12 @@ async function openThread(
   sendRpc(live, { jsonrpc: "2.0", method: "initialized" })
   const tuning = threadTuning(
     live.tuning,
-    codexMcpConfig(live.mcpSnapshot, live.conversationToolsUrl, live.control, live.id)
+    codexMcpConfig(
+      live.mcpSnapshot,
+      live.conversationToolsUrl,
+      live.control,
+      live.id
+    )
   )
   if (fork)
     return rpcRequest(live, "thread/fork", {
@@ -349,10 +394,13 @@ function threadTuning(
 ): Omit<RpcParams["thread/start"], "cwd"> {
   const result: Omit<RpcParams["thread/start"], "cwd"> = {}
   const selected = codexWireSettings(tuning)
-  const base = selected.effort ? { model_reasoning_effort: selected.effort } : undefined
+  const base = selected.effort
+    ? { model_reasoning_effort: selected.effort }
+    : undefined
   const config = mergeCodexConfig(base, mcpConfig)
   if (selected.model) result.model = selected.model
-  if (selected.serviceTier !== undefined) result.serviceTier = selected.serviceTier
+  if (selected.serviceTier !== undefined)
+    result.serviceTier = selected.serviceTier
   if (config) result.config = config
   return result
 }

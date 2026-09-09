@@ -12,6 +12,9 @@ import { webHostProxy } from "./web-dev-proxy.mjs"
 // and `require("electron")` is the npm stub instead of the real API.
 delete process.env.ELECTRON_RUN_AS_NODE
 
+/** The host asks to come back on the current build with this exit code. */
+const RELAUNCH_EXIT_CODE = 75
+
 const require = createRequire(import.meta.url)
 const electronPath = require("electron")
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
@@ -41,20 +44,49 @@ if (!url) {
   throw new Error("Vite did not expose a local development URL")
 }
 
+// The renderer hot-reloads through Vite; the host cannot. Keeping the host
+// compiler running means an edit under electron/ is on disk by the time the
+// window says "rebuilt", and Restart Mako loads it without leaving the desk.
+const compiler = spawn(
+  process.execPath,
+  [
+    join(root, "node_modules", "typescript", "bin", "tsc"),
+    "-p",
+    "tsconfig.electron.json",
+    "--watch",
+    "--preserveWatchOutput",
+  ],
+  { stdio: "inherit", cwd: root }
+)
+
 const hostEnvironment = { ...process.env, VITE_DEV_SERVER_URL: url }
 if (socket) hostEnvironment.MAKO_WEB_SOCKET = socket
-const child = spawn(electronPath, ["."], {
-  stdio: "inherit",
-  cwd: root,
-  env: hostEnvironment,
-})
+let child
 let stopping = false
+
+function launch() {
+  child = spawn(electronPath, ["."], {
+    stdio: "inherit",
+    cwd: root,
+    env: hostEnvironment,
+  })
+  child.on("exit", (code, signal) => {
+    if (code === RELAUNCH_EXIT_CODE && !stopping) {
+      launch()
+      return
+    }
+    void stop(signal ? 1 : (code ?? 0))
+  })
+}
 
 async function stop(code, signal) {
   if (stopping) return
   stopping = true
   if (child.exitCode === null && child.signalCode === null) {
     child.kill(signal ?? "SIGTERM")
+  }
+  if (compiler.exitCode === null && compiler.signalCode === null) {
+    compiler.kill("SIGTERM")
   }
   await server.close()
   if (socketDirectory)
@@ -63,8 +95,6 @@ async function stop(code, signal) {
   process.exitCode = code
 }
 
-child.on("exit", (code, signal) => {
-  void stop(signal ? 1 : (code ?? 0))
-})
+launch()
 process.once("SIGINT", () => void stop(130, "SIGINT"))
 process.once("SIGTERM", () => void stop(143, "SIGTERM"))

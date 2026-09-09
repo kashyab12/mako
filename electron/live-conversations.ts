@@ -1,7 +1,20 @@
+import {
+  QueuedPromptEditSchema,
+  type QueuedPromptEdit,
+} from "./contracts/live-queue.js"
+import {
+  disconnectNativeAgents,
+  observeNativeAgent,
+  NativeAgentObservationSchema,
+} from "./contracts/native-agents.js"
 import type { SessionSettings } from "@mako/sessions/settings"
 import { captureNativeHistory } from "./native-history.js"
 import { prepareLiveContext, contextPrompt } from "./live-context.js"
 import { LiveTransfers } from "./live-transfers.js"
+import { LiveCheckpoints } from "./live-checkpoints.js"
+import { LiveActions } from "./live-actions.js"
+import type { LiveActionInput } from "./contracts/live-actions.js"
+import type { RewindInput } from "./contracts/workspace-snapshots.js"
 import { LiveChildren } from "./live-children.js"
 import { errorMessage } from "./live-runtime.js"
 import type {
@@ -38,6 +51,8 @@ import { LiveJournal, LiveRequestSchema, journalIds } from "./live-journal.js"
 
 /** Owns durable conversation intent and observation. Providers still own execution. */
 export class LiveConversations {
+  private readonly checkpoints: LiveCheckpoints
+  private readonly actions: LiveActions
   private readonly transfers: LiveTransfers
   private readonly children: LiveChildren
   private readonly records = new Map<string, Resident>()
@@ -51,6 +66,7 @@ export class LiveConversations {
     this.dependencies = dependencies
     this.assets = new LiveAssets(join(dependencies.root, "assets"))
     const access: LiveAccess = {
+      observe: (event) => this.observe(event),
       retainAttachments: (attachments) => this.assets.retainPrompt(attachments),
       close: (id) => this.close(id),
       pending: (resident) => this.transfers.pending(resident),
@@ -66,6 +82,10 @@ export class LiveConversations {
       open: (provider, cwd, options, ancestry) =>
         this.open(provider, cwd, options, ancestry),
     }
+    this.checkpoints = new LiveCheckpoints(access, (id, input) =>
+      this.fork(id, input)
+    )
+    this.actions = new LiveActions(access)
     this.transfers = new LiveTransfers(access)
     this.children = new LiveChildren(access)
     for (const id of journalIds(dependencies.root)) {
@@ -297,13 +317,16 @@ export class LiveConversations {
         ? [
             LiveRequestSchema.parse({
               ...options.initialRequest,
+              displayText: options.displayPrompt,
               tuning: options.tuning,
               inputDigest: promptFingerprint(
                 options.initialRequest.text,
                 options.initialRequest.attachments,
                 options.tuning
               ),
-              attachments: this.assets.retainPrompt(options.initialRequest.attachments),
+              attachments: this.assets.retainPrompt(
+                options.initialRequest.attachments
+              ),
               status: "queued",
             }),
           ]
@@ -330,6 +353,10 @@ export class LiveConversations {
     void driver
       .start(cwd, {
         ...options,
+        emit: (event) => this.observe(event),
+        mcpSnapshot: this.dependencies.mcpSnapshot
+          ? () => this.dependencies.mcpSnapshot!(cwd)
+          : undefined,
         conversationTools: this.dependencies.tools?.(id, id),
       })
       .then((session) => {
@@ -421,6 +448,9 @@ export class LiveConversations {
     if (!resident?.driver) return
     if (event.type === "acp-session") {
       const previousStatus = resident.snapshot.session.status
+      const finishedRequest = resident.snapshot.requests.find(
+        (request) => request.status === "dispatching"
+      )
       resident.snapshot = {
         ...resident.snapshot,
         session: {
@@ -443,10 +473,18 @@ export class LiveConversations {
       const connection = resident.connections.get(bindingId)
       if (connection) connection.session = { ...event.session, id: bindingId }
       if (event.session.connection === "disconnected") {
+        resident.snapshot = {
+          ...resident.snapshot,
+          nativeAgents: disconnectNativeAgents(
+            resident.snapshot.nativeAgents,
+            bindingId
+          ),
+        }
         resident.driver = null
         resident.connections.delete(bindingId)
       }
       if (previousStatus === "running" && event.session.status !== "running") {
+        this.actions.settle(resident, bindingId)
         resident.snapshot = {
           ...resident.snapshot,
           permissions: [],
@@ -460,10 +498,33 @@ export class LiveConversations {
                       ? "completed"
                       : "failed",
                   error: event.session.error,
+                  nativeRun:
+                    request.nativeRun && event.session.nativeForkId
+                      ? {
+                          ...request.nativeRun,
+                          forkId: event.session.nativeForkId,
+                        }
+                      : request.nativeRun,
                 }
               : request
           ),
         }
+        if (finishedRequest)
+          this.checkpoints.settle(resident, finishedRequest.id)
+      }
+    } else if (event.type === "acp-agent") {
+      const agent = NativeAgentObservationSchema.parse(event.agent)
+      resident.snapshot = {
+        ...resident.snapshot,
+        nativeAgents: observeNativeAgent(resident.snapshot.nativeAgents, {
+          ...agent,
+          bindingId,
+          provider: resident.snapshot.session.harness,
+          requestId: resident.snapshot.requests.find(
+            (request) => request.status === "dispatching"
+          )?.id,
+          observedAt: Date.now(),
+        }),
       }
     } else if (event.type === "acp-permission") {
       resident.snapshot = {
@@ -521,6 +582,8 @@ export class LiveConversations {
     tuning?: SessionSettings
   ): LiveRequest {
     const resident = this.require(id)
+    if (resident.rewinding)
+      throw new Error("Wait for the workspace rewind to finish before sending")
     if (this.transfers.pending(resident))
       throw new Error(
         "A provider switch is pending. Wait for it to settle before sending another message."
@@ -533,7 +596,11 @@ export class LiveConversations {
       tuning,
       status: "queued",
     })
-    const inputDigest = promptFingerprint(request.text, request.attachments, request.tuning)
+    const inputDigest = promptFingerprint(
+      request.text,
+      request.attachments,
+      request.tuning
+    )
     const existing = resident.snapshot.requests.find(
       (candidate) => candidate.id === request.id
     )
@@ -542,7 +609,8 @@ export class LiveConversations {
         existing.inputDigest
           ? existing.inputDigest !== inputDigest
           : existing.text !== text ||
-            JSON.stringify(existing.attachments) !== JSON.stringify(attachments) ||
+            JSON.stringify(existing.attachments) !==
+              JSON.stringify(attachments) ||
             JSON.stringify(existing.tuning) !== JSON.stringify(tuning)
       )
         throw new Error(
@@ -711,26 +779,37 @@ export class LiveConversations {
     }
     let nativeFork: NonNullable<ConversationControl["ancestry"]>["nativeFork"]
     let entries = source.base?.entries ?? []
-    if (command.point.kind === "run") {
+    if (command.point.kind === "run" || command.point.kind === "before-run") {
       const requestId = command.point.requestId
       const request = source.requests.find(
         (candidate) => candidate.id === requestId
       )
-      if (request?.status !== "completed")
+      if (
+        !request ||
+        (command.point.kind === "run" && request.status !== "completed")
+      )
         throw new Error("Fork from a completed answer")
       const binding = source.control?.bindings.find(
         (candidate) => candidate.id === request.nativeRun?.bindingId
       )
+      const forkPoint = this.dependencies.driver(command.provider)?.forkPoint
+      const nativePoint =
+        forkPoint === "checkpoint"
+          ? request.nativeRun?.forkId
+          : forkPoint === "run"
+            ? request.nativeRun?.runId
+            : undefined
       if (
+        command.point.kind === "run" &&
         binding?.nativeId &&
         request.nativeRun &&
         binding.provider === command.provider &&
-        this.dependencies.driver(command.provider)?.canForkAtRun
+        nativePoint
       )
         nativeFork = {
           provider: binding.provider,
           nativeId: binding.nativeId,
-          runId: request.nativeRun.runId,
+          runId: nativePoint,
         }
       const start = source.blocks.findIndex(
         (block) => block.type === "user" && block.requestId === requestId
@@ -738,12 +817,20 @@ export class LiveConversations {
       if (start < 0)
         throw new Error("The source turn is not present in this capture")
       const next = source.blocks.findIndex(
-        (block, index) => index > start && block.type === "user"
+        (block, index) =>
+          index > start && block.type === "user" && !block.steeringFor
       )
       entries = [
         ...entries,
         ...liveEntries(
-          source.blocks.slice(0, next < 0 ? source.blocks.length : next)
+          source.blocks.slice(
+            0,
+            command.point.kind === "before-run"
+              ? start
+              : next < 0
+                ? source.blocks.length
+                : next
+          )
         ),
       ]
     } else {
@@ -769,6 +856,9 @@ export class LiveConversations {
         id: command.id,
         harness: command.provider,
         nativeId: undefined,
+        nativePath: undefined,
+        nativeRunId: undefined,
+        nativeForkId: undefined,
         title: source.session.title ? `${source.session.title} — fork` : "Fork",
         status: "ready",
         connection: "disconnected",
@@ -834,7 +924,39 @@ export class LiveConversations {
     return snapshot
   }
 
+  previewRewind(
+    id: string,
+    requestId: string,
+    position: "before" | "after" = "after"
+  ) {
+    if (this.actions.blocks(this.require(id)))
+      throw new Error("Resolve the pending provider action before rewinding")
+    return this.checkpoints.preview(id, requestId, position)
+  }
+
+  rewind(id: string, input: RewindInput) {
+    if (this.actions.blocks(this.require(id)))
+      throw new Error("Resolve the pending provider action before rewinding")
+    return this.checkpoints.rewind(id, input)
+  }
+
+  act(id: string, input: LiveActionInput) {
+    return this.actions.submit(id, input)
+  }
+
+  acknowledgeAction(id: string, actionId: string): Promise<void> {
+    return this.actions.acknowledge(id, actionId)
+  }
+
+  recoverRewinds() {
+    return this.checkpoints.recover()
+  }
+
   transfer(id: string, input: TransferInput): LiveSnapshot {
+    if (this.require(id).rewinding)
+      throw new Error(
+        "Wait for the workspace rewind to finish before switching providers"
+      )
     return this.transfers.accept(id, input)
   }
 
@@ -861,17 +983,103 @@ export class LiveConversations {
 
   private updateBinding(resident: Resident, session: LiveSessionState): void {
     const control = this.control(resident)
+    const path =
+      session.nativePath ??
+      resident.snapshot.threadPath ??
+      this.dependencies.nativePath?.(session)
     resident.snapshot = {
       ...resident.snapshot,
+      threadPath: path,
       control: {
         ...control,
         bindings: control.bindings.map((binding) =>
           binding.id === control.activeBindingId
-            ? { ...binding, nativeId: session.nativeId ?? binding.nativeId }
+            ? {
+                ...binding,
+                nativeId: session.nativeId ?? binding.nativeId,
+                path: path ?? binding.path,
+              }
             : binding
         ),
       },
     }
+  }
+
+  /** Native identity belongs to the host, including sessions never opened in a renderer. */
+  discoverNativePaths(): void {
+    for (const resident of this.records.values()) {
+      if (!resident.driver || resident.snapshot.threadPath) continue
+      this.updateBinding(resident, resident.snapshot.session)
+      if (!resident.snapshot.threadPath) continue
+      this.flush(resident)
+      this.checkpointIdle(resident)
+    }
+  }
+
+  editQueued(id: string, input: QueuedPromptEdit): LiveSnapshot {
+    const command = QueuedPromptEditSchema.parse(input)
+    const resident = this.require(id)
+    const request = resident.snapshot.requests.find(
+      (item) => item.id === command.requestId
+    )
+    if (!request) throw new Error("This queued message is no longer available.")
+    if (command.change.kind === "remove" && request.status === "canceled")
+      return resident.snapshot
+    if (request.status !== "queued" && request.status !== "held")
+      throw new Error(
+        "This message has already started. Your queued edit was not applied."
+      )
+    if (request.text !== command.expectedText) {
+      if (
+        command.change.kind === "edit" &&
+        request.text === command.change.text
+      )
+        return resident.snapshot
+      throw new Error(
+        "This queued message changed. Review its latest text before editing."
+      )
+    }
+    if (
+      command.change.kind === "edit" &&
+      !command.change.text.trim() &&
+      !request.attachments.length
+    )
+      throw new Error("A message cannot be empty.")
+    let next: LiveRequest
+    switch (command.change.kind) {
+      case "remove":
+        next = { ...request, status: "canceled" }
+        break
+      case "pause":
+        next = { ...request, status: "held" }
+        break
+      case "resume":
+        next = { ...request, status: "queued" }
+        break
+      case "edit":
+        next = {
+          ...request,
+          status: "queued",
+          text: command.change.text,
+          displayText: undefined,
+        }
+        break
+    }
+    const previous = resident.snapshot
+    resident.snapshot = {
+      ...previous,
+      requests: previous.requests.map((item) =>
+        item.id === request.id ? next : item
+      ),
+    }
+    try {
+      this.flush(resident)
+    } catch (error) {
+      resident.snapshot = previous
+      throw error
+    }
+    if (command.change.kind !== "pause") this.drain(resident)
+    return resident.snapshot
   }
 
   clearQueue(id: string): LiveSnapshot {
@@ -879,11 +1087,10 @@ export class LiveConversations {
     resident.snapshot = {
       ...resident.snapshot,
       requests: resident.snapshot.requests.map((request) =>
-        request.status === "queued"
+        request.status === "queued" || request.status === "held"
           ? {
               ...request,
-              status: "failed",
-              error: "Removed from the queue by the user",
+              status: "canceled",
             }
           : request
       ),
@@ -1046,6 +1253,7 @@ export class LiveConversations {
 
   async cancelRequest(id: string, requestId: string): Promise<void> {
     const resident = this.require(id)
+    if (this.checkpoints.cancelBeforeDispatch(resident, requestId)) return
     const request = resident.snapshot.requests.find(
       (request) => request.id === requestId
     )
@@ -1081,6 +1289,7 @@ export class LiveConversations {
 
   async cancel(id: string): Promise<void> {
     const resident = this.require(id)
+    if (this.checkpoints.cancelBeforeDispatch(resident)) return
     for (const child of this.control(resident).children)
       if (child.delivery === "pending" || child.delivery === "queued")
         this.children.cancelChild(id, child.id)
@@ -1094,7 +1303,7 @@ export class LiveConversations {
       modeId
     )
   }
-  close(id: string): void {
+  async close(id: string): Promise<void> {
     const resident = this.require(id)
     for (const child of this.control(resident).children)
       if (child.delivery === "pending" || child.delivery === "queued")
@@ -1109,13 +1318,22 @@ export class LiveConversations {
           error: "The conversation was closed before the switch completed",
         },
       })
-    for (const [bindingId, connection] of resident.connections)
+    const idle = resident.snapshot.session.status === "ready"
+    const generation = resident.generation
+    resident.closing = true
+    const closed = [...resident.connections].map(([bindingId, connection]) =>
       connection.driver.close(bindingId)
+    )
     resident.connections.clear()
     resident.driver = null
     resident.snapshot = {
       ...resident.snapshot,
-      session: { ...resident.snapshot.session, status: "closed" },
+      session: {
+        ...resident.snapshot.session,
+        status: "closed",
+        connection: "disconnected",
+      },
+      nativeAgents: disconnectNativeAgents(resident.snapshot.nativeAgents),
       permissions: [],
       requests: resident.snapshot.requests.map((request) =>
         request.status === "queued" || request.status === "dispatching"
@@ -1128,6 +1346,43 @@ export class LiveConversations {
       ),
     }
     this.flush(resident)
+    try {
+      await Promise.all(closed)
+      if (
+        idle &&
+        this.dependencies.checkpoint &&
+        resident.generation === generation
+      ) {
+        const control = this.control(resident)
+        const bindings = await Promise.all(
+          control.bindings.map(async (binding) => {
+            if (!binding.path || binding.id !== control.activeBindingId)
+              return binding
+            const checkpoint = await this.dependencies.checkpoint?.(
+              binding.path
+            )
+            return {
+              ...binding,
+              checkpoint,
+              coveredBlocks: resident.snapshot.blocks.length,
+            }
+          })
+        )
+        if (
+          resident.generation === generation &&
+          this.records.get(id) === resident
+        ) {
+          resident.snapshot = {
+            ...resident.snapshot,
+            control: { ...this.control(resident), bindings },
+          }
+          this.flush(resident)
+        }
+      }
+    } finally {
+      resident.closing = false
+      this.drain(resident)
+    }
   }
 
   stop(): void {
@@ -1146,6 +1401,8 @@ export class LiveConversations {
   }
 
   private drain(resident: Resident): void {
+    if (this.actions.blocks(resident)) return
+    if (resident.checkpointing || resident.rewinding || resident.closing) return
     this.children.deliver(resident)
     if (this.transfers.pending(resident)) {
       void this.transfers.perform(resident)
@@ -1163,11 +1420,11 @@ export class LiveConversations {
       return
     // Failure does not silently drain old queued work. A new explicit submission can retry.
     const queued = resident.snapshot.requests.filter(
-      (request) => request.status === "queued"
+      (request) => request.status === "queued" || request.status === "held"
     )
     const request =
       resident.snapshot.session.status === "failed" ? queued.at(-1) : queued[0]
-    if (!request) return
+    if (!request || request.status === "held") return
     const previousSnapshot = resident.snapshot
     const previousUpdates = [...resident.updates]
     const previousCharacters = resident.pendingCharacters
@@ -1235,15 +1492,18 @@ export class LiveConversations {
       return
     }
     const generation = resident.generation
-    void resident.driver
-      .prompt(
-        this.control(resident).activeBindingId,
-        current.context.reduce(
-          (text, manifest) => contextPrompt(manifest, text),
-          request.text
-        ),
-        request.attachments,
-        request.tuning
+    const driver = resident.driver
+    void this.checkpoints
+      .prompt(resident, current, () =>
+        driver.prompt(
+          this.control(resident).activeBindingId,
+          current.context.reduce(
+            (text, manifest) => contextPrompt(manifest, text),
+            request.text
+          ),
+          request.attachments,
+          request.tuning
+        )
       )
       .catch((error) => {
         if (
@@ -1271,6 +1531,7 @@ export class LiveConversations {
               : candidate
           ),
         }
+        this.checkpoints.settle(resident, request.id)
         this.flush(resident)
       })
   }
@@ -1312,6 +1573,10 @@ export class LiveConversations {
         id: snapshot.session.id,
         revision: snapshot.revision,
         updates,
+        nativeAgents:
+          previous.nativeAgents !== snapshot.nativeAgents
+            ? snapshot.nativeAgents
+            : undefined,
         control:
           previous.control !== snapshot.control ? snapshot.control : undefined,
         base: previous.base !== snapshot.base ? snapshot.base : undefined,
@@ -1375,9 +1640,24 @@ export class LiveConversations {
     }
     const snapshot: LiveSnapshot = {
       ...previous,
+      nativeAgents: disconnectNativeAgents(previous.nativeAgents),
       control: previous.control
         ? {
             ...previous.control,
+            actions: previous.control.actions?.map((action) =>
+              action.state.kind === "dispatching" ||
+              (action.input.kind === "compact" &&
+                action.state.kind === "accepted")
+                ? {
+                    ...action,
+                    state: {
+                      kind: "uncertain" as const,
+                      reason:
+                        "The host restarted before this provider action was confirmed. It will not be retried automatically.",
+                    },
+                  }
+                : action
+            ),
             transfers: previous.control.transfers.map((transfer) =>
               transfer.state.kind === "preparing" ||
               transfer.state.kind === "queued"

@@ -252,12 +252,14 @@ export async function liveStart(
   child.stderr.on("data", (chunk: Buffer) => {
     stderr = (stderr + chunk.toString()).slice(-4000)
   })
-  child.on("exit", () => {
+  child.on("exit", (code, signal) => {
     if (live.state.status === "closed") return
     update(live, {
       status: "failed",
       connection: "disconnected",
-      error: lastLine(stderr) || `${spec.command} exited`,
+      error:
+        stderrDetail(stderr) ||
+        `${spec.command} exited${signal ? ` on ${signal}` : code === null ? "" : ` with code ${code}`}`,
     })
   })
 
@@ -310,6 +312,7 @@ export async function liveStart(
           fs: { readTextFile: false, writeTextFile: false },
           session: { configOptions: { boolean: {} } },
           elicitation: { form: {} },
+          ...providerHost.acpSources.get(harness)?.clientCapabilities,
         },
       }),
       harness
@@ -378,16 +381,16 @@ export async function liveStart(
     })
     return live.state
   } catch (error) {
+    // The agent's stderr explains a death; it does not explain a refusal
+    // raised on this side. Devin traces every dispatch to stderr at INFO, so
+    // preferring stderr here once replaced "cannot change effort" with a
+    // timing line and the real cause was invisible.
+    const died = child.exitCode !== null || child.signalCode !== null
     child.kill()
     sessions.delete(id)
-    const detail = lastLine(stderr)
-    throw new Error(
-      detail ||
-        (error instanceof Error
-          ? error.message
-          : `The ${harness} agent failed to start`),
-      { cause: error }
-    )
+    const message =
+      error instanceof Error ? error.message : `The ${harness} agent failed to start`
+    throw new Error((died && stderrDetail(stderr)) || message, { cause: error })
   }
 }
 
@@ -446,11 +449,12 @@ async function applyTuning(live: Live, tuning?: AcpTuning, initial = false) {
   const connection = live.connection
   const sessionId = live.sessionId
   if (!connection || !sessionId) throw new Error("This provider session is not connected")
+  const source = providerHost.acpSources.get(live.harness)
   const result = await applyAcpSettings({
     settings: tuning ?? {},
     observed: live.state.settings ?? {},
     options: live.configOptions,
-    launchOptionIds: initial ? providerHost.acpSources.get(live.harness)?.launchOptionIds : undefined,
+    launchOptionIds: initial ? source?.launchOptionIds : undefined,
     setModel: (model) => setLegacySessionModel(live, model),
     setOption: async (option, value) => {
       const response = value === true || value === false
@@ -583,7 +587,13 @@ function updateState(live: Live, patch: Partial<LiveSessionState>): void {
   emit({ type: "acp-session", session: live.state })
 }
 
-function lastLine(text: string): string {
-  const lines = text.trim().split("\n").filter(Boolean)
-  return (lines[lines.length - 1] ?? "").slice(0, 300)
+/** Structured tracing at INFO and below is narration, not a failure reason. */
+const TRACE_LINE = /^\d{4}-\d\d-\d\dT\S+\s+(?:TRACE|DEBUG|INFO)\b/
+
+function stderrDetail(text: string): string {
+  const lines = text
+    .trim()
+    .split("\n")
+    .filter((line) => line.trim() && !TRACE_LINE.test(line))
+  return (lines[lines.length - 1] ?? "").trim().slice(0, 300)
 }

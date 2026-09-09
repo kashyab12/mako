@@ -1,3 +1,4 @@
+import type { QueuedPromptEdit } from "./contracts/live-queue.js"
 import type { SessionSettings } from "@mako/sessions/settings"
 import { resolveExecutable } from "./executable.js"
 import { Appshots } from "./appshots.js"
@@ -17,6 +18,9 @@ import { WorkspaceFiles } from "./host-workspace.js"
 import { WorkspaceGit } from "./host-git.js"
 import { resolveFilePreview } from "./file-previews.js"
 import { providerHost } from "./providers/index.js"
+import { WorkspaceSnapshots } from "./workspace-snapshots.js"
+import type { RewindInput } from "./contracts/workspace-snapshots.js"
+import type { LiveActionInput } from "./contracts/live-actions.js"
 import { LiveConversations } from "./live-conversations.js"
 import type { LiveStartOptions } from "./shared.js"
 import {
@@ -105,7 +109,10 @@ import {
 } from "./drivers.js"
 import {
   harnessProfile,
+  harnessProfileForSend,
   harnessProfiles,
+  harnessProfilesNow,
+  onHarnessProfile,
   resolveHarnessTuning,
 } from "./harnesses.js"
 import { bindLineageDirect, chainOf } from "./lineage.js"
@@ -174,6 +181,17 @@ protocol.registerSchemesAsPrivileged([
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const isDev = !app.isPackaged && !process.env.MAKO_PROD
+/**
+ * One data directory per instance. The single-instance lock lives in
+ * userData, so a source checkout that shared the installed app's directory
+ * could never run beside it — and developing Mako from inside Mako needs
+ * exactly that: the desk you work in stays up while the build under test
+ * comes and goes. Dev defaults to its own profile; `MAKO_PROFILE` names any
+ * other, for a second checkout or a throwaway test instance.
+ */
+const instanceProfile = process.env.MAKO_PROFILE || (isDev ? "dev" : "")
+if (instanceProfile)
+  app.setPath("userData", `${app.getPath("userData")}-${instanceProfile}`)
 if (!app.requestSingleInstanceLock()) {
   console.error(
     "Mako is already running. Close the existing desk host before starting another desktop or web host."
@@ -267,6 +285,7 @@ function emitTerminalWake() {
 }
 
 function emit(event: HostEvent) {
+  if (event.type === "threads") liveConversations?.discoverNativePaths()
   if (event.type === "thread-run" && event.run.status !== "running")
     nativeRequests?.ready(event.run.path)
   // Git status is recomputed after every turn and on focus, which is exactly
@@ -276,6 +295,22 @@ function emit(event: HostEvent) {
   webHost?.event(event)
   if (window?.isDestroyed()) return
   window?.webContents.send("mako:event", event)
+}
+
+/**
+ * Come back with the current build. Conversations are journaled as they run,
+ * so they reopen on the other side; only the provider processes end. In dev
+ * the launcher keeps Vite alive and respawns Electron when it exits with
+ * this code, because `app.relaunch()` would return to a dev server that the
+ * launcher had already torn down with the old process.
+ */
+const RELAUNCH_EXIT_CODE = 75
+let relaunching = false
+
+function relaunch(): void {
+  relaunching = true
+  if (!isDev) app.relaunch()
+  app.quit()
 }
 
 /** Start the first tab once, however many callers race for it. */
@@ -385,7 +420,7 @@ async function createWindow() {
             type: "notice",
             level: "info",
             message:
-              "Mako's engine was rebuilt — restart the app to run the new version.",
+              "Mako's engine was rebuilt — run Restart Mako from the palette to load it.",
           })
         }, 500)
       })
@@ -605,8 +640,13 @@ function bindIpc() {
     accountUsage(harness, name)
   )
 
+  // The picker opens on what is known; each provider's discovery arrives as
+  // its own event, so the slowest CLI no longer hides the rest.
   handle("mako:harness-profiles", (_event, force?: boolean) =>
-    harnessProfiles(force === true)
+    force === true ? harnessProfiles(true) : harnessProfilesNow()
+  )
+  onHarnessProfile(({ profile, cwd }) =>
+    emit({ type: "harness-profile", profile, cwd })
   )
   handle("mako:harness-availability", async () =>
     Object.fromEntries(
@@ -649,7 +689,9 @@ function bindIpc() {
     }
   )
   handle("mako:browser-control-status", () => browserControl.refresh())
-  handle("mako:browser-extension-setup", () => prepareBrowserExtension(app.getAppPath(), process.execPath))
+  handle("mako:browser-extension-setup", () =>
+    prepareBrowserExtension(app.getAppPath(), process.execPath)
+  )
   handle("mako:browser-control-connect", async (_event, browser: string) => {
     await browserControl.connect(browser)
     return browserControl.status()
@@ -764,13 +806,16 @@ function bindIpc() {
       .map((driver) => ({
         provider: driver.provider,
         canResume: driver.canResume,
+        observesNativeAgents: driver.observesNativeAgents === true,
+        canSteer: Boolean(driver.steer),
+        canCompact: Boolean(driver.compact),
       }))
   )
   handle(
     "mako:live-start",
     async (_event, harness: string, cwd: string, options: LiveStartOptions) => {
       await ensureMakoLocalControl().catch(() => null)
-      const profile = await harnessProfile(harness, false, cwd)
+      const profile = await harnessProfileForSend(harness, cwd)
       await liveConversations.start(harness, cwd, {
         ...options,
         tuning: resolveHarnessTuning(profile, options.tuning),
@@ -785,6 +830,11 @@ function bindIpc() {
   handle("mako:native-dismiss", (_event, id: string) =>
     nativeRequests?.dismiss(id)
   )
+  handle("mako:native-edit-queued", (_event, input: QueuedPromptEdit) => {
+    if (!nativeRequests)
+      throw new Error("The native command service is not ready")
+    return nativeRequests.editQueued(input)
+  })
   handle("mako:native-requests", () => nativeRequests?.list() ?? [])
   handle("mako:native-submit", (_event, input: NativeRequestInput) => {
     if (!nativeRequests)
@@ -800,6 +850,23 @@ function bindIpc() {
   handle("mako:live-merge-fork", (_event, id: string, mergeId: string) =>
     liveConversations.mergeFork(id, mergeId)
   )
+  handle(
+    "mako:live-rewind-preview",
+    (_event, id: string, requestId: string, position?: "before" | "after") =>
+      liveConversations.previewRewind(id, requestId, position)
+  )
+  handle("mako:live-rewind", (_event, id: string, input: RewindInput) =>
+    liveConversations.rewind(id, input)
+  )
+  handle("mako:live-rewind-recover", () => liveConversations.recoverRewinds())
+  handle("mako:live-action", (_event, id: string, input: LiveActionInput) =>
+    liveConversations.act(id, input)
+  )
+  handle(
+    "mako:live-action-acknowledge",
+    (_event, id: string, actionId: string) =>
+      liveConversations.acknowledgeAction(id, actionId)
+  )
   handle("mako:live-fork", (_event, id: string, input: ForkInput) =>
     liveConversations.fork(id, input)
   )
@@ -809,12 +876,20 @@ function bindIpc() {
   handle(
     "mako:live-transfer",
     async (_event, id: string, input: TransferInput) => {
-      const profile = await harnessProfile(input.provider)
+      const profile = await harnessProfileForSend(
+        input.provider,
+        liveConversations.snapshot(id)?.session.cwd
+      )
       return liveConversations.transfer(id, {
         ...input,
         tuning: resolveHarnessTuning(profile, input.tuning),
       })
     }
+  )
+  handle(
+    "mako:live-edit-queued",
+    (_event, id: string, input: QueuedPromptEdit) =>
+      liveConversations.editQueued(id, input)
   )
   handle("mako:live-clear-queue", (_event, id: string) =>
     liveConversations.clearQueue(id)
@@ -877,8 +952,14 @@ function bindIpc() {
     ) => {
       const session = liveConversations.snapshot(id)?.session
       if (!session) throw new Error("This conversation is no longer available")
-      const profile = await harnessProfile(session.harness, false, session.cwd)
-      return liveConversations.submit(id, requestId, text, attachments, resolveHarnessTuning(profile, tuning))
+      const profile = await harnessProfileForSend(session.harness, session.cwd)
+      return liveConversations.submit(
+        id,
+        requestId,
+        text,
+        attachments,
+        resolveHarnessTuning(profile, tuning)
+      )
     }
   )
   handle(
@@ -897,15 +978,10 @@ function bindIpc() {
   /** A new conversation on another harness, from the main composer. */
   handle(
     "mako:harness-start",
-    async (
-      _e,
-      harness: string,
-      prompt: string,
-      options?: SessionSettings
-    ) => {
+    async (_e, harness: string, prompt: string, options?: SessionSettings) => {
       const live = await ready()
       const cwd = live.active.workspace
-      const profile = await harnessProfile(harness, false, cwd)
+      const profile = await harnessProfileForSend(harness, cwd)
       return {
         run: await startFresh(
           harness,
@@ -918,8 +994,10 @@ function bindIpc() {
     }
   )
 
-  handle("mako:harness-tuning", async (_e, harness: string, cwd?: string, force?: boolean) =>
-    harnessProfile(harness, force, cwd ?? (await ready()).active.workspace)
+  handle(
+    "mako:harness-tuning",
+    async (_e, harness: string, cwd?: string, force?: boolean) =>
+      harnessProfile(harness, force, cwd ?? (await ready()).active.workspace)
   )
 
   handle("mako:thread-run", (_e, path: string) => threadRun(path))
@@ -994,6 +1072,7 @@ function bindIpc() {
   handle("mako:update-state", () => updateState())
   handle("mako:check-updates", () => check())
   handle("mako:install-update", () => installNow())
+  handle("mako:relaunch", () => relaunch())
 
   handle("mako:crashes", () => listCrashes())
   handle("mako:crashes-dir", () => crashesDir())
@@ -1078,7 +1157,16 @@ app.whenReady().then(async () => {
   powerMonitor.on("resume", emitTerminalWake)
   powerMonitor.on("unlock-screen", emitTerminalWake)
   liveConversations = new LiveConversations({
+    mcpSnapshot: (cwd) => discoverMcpRegistry(cwd, app.getAppPath()),
+    workspaceSnapshots: new WorkspaceSnapshots(
+      join(app.getPath("userData"), "workspace-snapshots")
+    ),
     checkpoint: nativeCheckpoint,
+    nativePath: (session) =>
+      listThreads().find(
+        (ref) =>
+          ref.harness === session.harness && ref.nativeId === session.nativeId
+      )?.path,
     canResume: (binding) =>
       canResumeBinding(
         binding,
@@ -1098,13 +1186,20 @@ app.whenReady().then(async () => {
     history: pageThread,
     emit,
   })
+  await liveConversations.recoverRewinds().catch((error) =>
+    emit({
+      type: "notice",
+      level: "error",
+      message: `Workspace rewind recovery needs attention: ${error instanceof Error ? error.message : String(error)}`,
+    })
+  )
   nativeRequests = new NativeRequests(
     join(app.getPath("userData"), "native-requests"),
     {
       read: async (path) => (await openThread(path))?.ref ?? null,
       running: (path) => threadRun(path)?.status === "running",
       execute: async (ref, text, tuning) => {
-        const profile = await harnessProfile(ref.harness, false, ref.cwd)
+        const profile = await harnessProfileForSend(ref.harness, ref.cwd)
         await resumeNative(ref, text, {
           ...resolveHarnessTuning(profile, tuning),
           captureOutput: true,
@@ -1194,4 +1289,6 @@ app.on("before-quit", () => {
   conversationMcp?.close()
   liveConversations?.stop()
   void pool.dispose()
+  // After the ordinary shutdown, tell the dev launcher to bring us back.
+  if (relaunching && isDev) app.exit(RELAUNCH_EXIT_CODE)
 })

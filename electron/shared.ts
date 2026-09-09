@@ -25,6 +25,8 @@ export * from "./contracts/renderer-bridge.js"
 export * from "./contracts/control-preview.js"
 
 export * from "./contracts/appshots.js"
+export * from "./contracts/workspace-snapshots.js"
+export * from "./contracts/live-actions.js"
 
 export type {
   AccountCatalog,
@@ -34,3 +36,5 @@ export type {
   AccountUsage,
   HarnessAccount,
 } from "./account-types.js"
+
+export * from "./contracts/native-agents.js"

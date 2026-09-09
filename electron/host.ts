@@ -25,7 +25,9 @@ import type {
 const EMPTY_CAPABILITIES: Capabilities = { tools: [], commands: [], skills: [] }
 
 function unavailable(operation: string): never {
-  throw new Error(`${operation} belongs to the removed built-in runtime. Choose a provider session instead.`)
+  throw new Error(
+    `${operation} belongs to the removed built-in runtime. Choose a provider session instead.`
+  )
 }
 
 export class AgentHost {
@@ -264,11 +266,28 @@ export class AgentHost {
     return this.workspaceFiles.stagePath(sourcePath)
   }
 
-  async search(query: string, options: SearchOptions = {}): Promise<SearchResults> {
-    return searchWorkspace(this.workspace, this.workspaceGit, async () => [], query, {
-      ...options,
-      threads: false,
-    })
+  async search(
+    query: string,
+    options: SearchOptions = {}
+  ): Promise<SearchResults> {
+    return searchWorkspace(
+      this.workspace,
+      this.workspaceGit,
+      async () => [],
+      query,
+      {
+        ...options,
+        threads: false,
+      }
+    )
+  }
+
+  async createWorkspaceText(
+    cwd: string,
+    path: string,
+    text: string
+  ): Promise<string> {
+    return this.workspaceFiles.createText(cwd, path, text)
   }
 
   async readWorkspaceFile(path: string): Promise<FileContents> {
@@ -289,11 +308,21 @@ export class AgentHost {
 
   async gitCommitFiles(
     hash: string
-  ): Promise<Array<{ path: string; status: GitFileStatus; insertions: number; deletions: number; binary: boolean }>> {
+  ): Promise<
+    Array<{
+      path: string
+      status: GitFileStatus
+      insertions: number
+      deletions: number
+      binary: boolean
+    }>
+  > {
     return this.workspaceGit.commitFiles(hash)
   }
 
-  async gitCommitDiffAll(hash: string): Promise<{ diffs: GitDiff[]; truncated: number }> {
+  async gitCommitDiffAll(
+    hash: string
+  ): Promise<{ diffs: GitDiff[]; truncated: number }> {
     return this.workspaceGit.commitDiffAll(hash)
   }
 
@@ -333,7 +362,10 @@ export class AgentHost {
     unavailable("Built-in commit message generation")
   }
 
-  async gitCommit(message: string, options: { amend?: boolean } = {}): Promise<void> {
+  async gitCommit(
+    message: string,
+    options: { amend?: boolean } = {}
+  ): Promise<void> {
     await this.workspaceGit.commit(message, options)
     await this.pushGit()
     this.emit({ type: "notice", level: "success", message: "Committed" })

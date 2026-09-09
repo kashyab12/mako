@@ -29,6 +29,7 @@ const SONNET_LONG_CONTEXT = {
 
 /** Standard API prices in USD per million tokens. */
 const CLAUDE_PRICES = new Map<string, ModelPrice>([
+  ["claude-fable-5-1", { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 }],
   ["claude-fable-5", { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 }],
   ["claude-opus-5", { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }],
   ["claude-sonnet-5", { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }],
@@ -150,7 +151,9 @@ function pricingKey(model: string | undefined): string | null {
     .replace(/\((minimal|low|medium|high|xhigh|auto|none)\)$/, "")
     .replace(/-(minimal|low|medium|high|xhigh|auto|none)$/, "")
 
-  if (value.includes("fable-5")) return "claude-fable-5"
+  if (value.includes("fable-5-1")) return "claude-fable-5-1"
+  if (value.includes("fable-5") || value.includes("5-fable"))
+    return "claude-fable-5"
   if (value.includes("opus-5")) return "claude-opus-5"
   if (value.includes("sonnet-5")) return "claude-sonnet-5"
   if (value.includes("opus-4-1")) return "claude-opus-4-legacy"

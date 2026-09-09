@@ -12,7 +12,16 @@ import {
   writeFile,
 } from "node:fs/promises"
 import { homedir } from "node:os"
-import { extname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path"
 import type { FileContents, StagedFile, WorkspaceFile } from "./shared.js"
 import type { WorkspaceGit } from "./host-git.js"
 
@@ -136,6 +145,55 @@ export class WorkspaceFiles {
     }
   }
 
+  /** Create a user-named text artifact without overwriting any existing path. */
+  async createText(
+    expectedCwd: string,
+    path: string,
+    text: string
+  ): Promise<string> {
+    const cwd = this.cwdValue
+    if (expectedCwd !== cwd)
+      throw new Error(
+        "The active workspace changed. Open the plan's workspace and try again."
+      )
+    if (!path.trim() || isAbsolute(path))
+      throw new Error("Use a path relative to this workspace.")
+    if (Buffer.byteLength(text, "utf8") > 1_000_000)
+      throw new Error("The text exceeds the 1 MB save limit.")
+    const root = await realpath(cwd)
+    const requested = resolve(root, path)
+    const parent = await realpath(dirname(requested))
+    const relativeParent = relative(root, parent)
+    if (
+      relativeParent === ".." ||
+      relativeParent.startsWith(`..${sep}`) ||
+      isAbsolute(relativeParent)
+    )
+      throw new Error("The file must stay inside this workspace.")
+    if (this.cwdValue !== cwd)
+      throw new Error(
+        "The active workspace changed. Try again in the original workspace."
+      )
+    const target = join(parent, basename(requested))
+    try {
+      const file = await open(target, "wx", 0o600)
+      try {
+        await file.writeFile(text, "utf8")
+      } finally {
+        await file.close()
+      }
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "EEXIST")
+        throw new Error(
+          "A file already exists at this path. Choose another name.",
+          { cause: error }
+        )
+      throw error
+    }
+    this.fileCache = null
+    return target
+  }
+
   /**
    * Write an attachment the model cannot take inline into a scratch directory
    * inside the agent dir, and return its path. Engine-owned tools can then reach
@@ -227,16 +285,32 @@ export class WorkspaceFiles {
         }
       }
       const contents = buffer.toString("utf8")
-      const preview = providerHost.artifactPreviews.list().find((reader) => reader.matches(path))
+      const preview = providerHost.artifactPreviews
+        .list()
+        .find((reader) => reader.matches(path))
       const artifactPreview: FileContents["artifactPreview"] = preview
         ? info.size > FILE_VIEW_LIMIT
-          ? {kind: "unavailable", reason: "This file exceeds the preview size limit"}
+          ? {
+              kind: "unavailable",
+              reason: "This file exceeds the preview size limit",
+            }
           : await preview.render(contents).then(
-              (html) => ({kind: "html" as const, html}),
-              () => ({kind: "unavailable" as const, reason: "This artifact uses content or components the preview cannot render. Its source is available."})
+              (html) => ({ kind: "html" as const, html }),
+              () => ({
+                kind: "unavailable" as const,
+                reason:
+                  "This artifact uses content or components the preview cannot render. Its source is available.",
+              })
             )
         : undefined
-      return { path, contents, size: info.size, binary: false, truncated: info.size > FILE_VIEW_LIMIT, artifactPreview }
+      return {
+        path,
+        contents,
+        size: info.size,
+        binary: false,
+        truncated: info.size > FILE_VIEW_LIMIT,
+        artifactPreview,
+      }
     } finally {
       await handle.close()
     }

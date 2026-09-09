@@ -1,4 +1,8 @@
-import { codexPresentation, codexPrompt, codexPromptImages } from "@mako/sessions/codex-presentation"
+import {
+  codexPresentation,
+  codexPrompt,
+  codexPromptImages,
+} from "@mako/sessions/codex-presentation"
 import {
   boundedText,
   isNumber,
@@ -13,6 +17,7 @@ import {
   parseObjectResult,
   parseThreadResponse,
   parseTurnResponse,
+  parseSteerResponse,
   type JsonRpcEnvelope,
   type PatchNotification,
   type ProtocolNotification,
@@ -152,6 +157,20 @@ function handleNotification(
     case "item/agentMessage/delta":
       streamDelta(context, notification, "text")
       return
+    case "item/plan/delta": {
+      const tracker = itemTracker(
+        context,
+        notification.turnId,
+        notification.itemId
+      )
+      context.protocol.emitUpdate({
+        kind: "proposed-plan",
+        id: tracker.acpId,
+        text: notification.delta,
+        status: "drafting",
+      })
+      return
+    }
     case "item/reasoning/summaryTextDelta":
     case "item/reasoning/textDelta":
       streamDelta(context, notification, "thinking")
@@ -270,7 +289,8 @@ function handleItem(
           part.attachment ? [part.attachment] : []
         )
         const text = codexPrompt(originalText) ?? ""
-        if (!attachments.length) attachments.push(...codexPromptImages(originalText))
+        if (!attachments.length)
+          attachments.push(...codexPromptImages(originalText))
         if (text || attachments.length)
           context.protocol.emitUpdate({ kind: "user", text, attachments })
       }
@@ -298,8 +318,9 @@ function handleItem(
         context,
         tracker,
         item.command || "Command",
-        "execute",
-        item.status
+        "exec_command",
+        item.status,
+        { command: item.command }
       )
       if (completed) {
         const output = item.aggregatedOutput ?? tracker.output
@@ -314,8 +335,9 @@ function handleItem(
         context,
         tracker,
         paths.length ? `Edit ${paths.join(", ")}` : "File changes",
-        "edit",
-        item.status
+        "apply_patch",
+        item.status,
+        paths.length ? { path: paths[0], paths } : undefined
       )
       if (completed)
         finishTool(context, tracker, item.status, boundedJson(item.changes))
@@ -326,7 +348,7 @@ function handleItem(
         context,
         tracker,
         `${item.server}: ${item.tool}`,
-        "fetch",
+        item.tool,
         item.status
       )
       if (completed) {
@@ -341,7 +363,7 @@ function handleItem(
         context,
         tracker,
         `${item.namespace ? `${item.namespace}.` : ""}${item.tool}`,
-        "other",
+        item.tool,
         item.status
       )
       if (completed)
@@ -352,18 +374,36 @@ function handleItem(
           item.contentItems ? boundedJson(item.contentItems) : undefined
         )
       return
+    case "collabAgentToolCall":
+    case "subAgentActivity":
+      context.protocol.observeAgents(item, replay)
+      return
     case "plan":
+      context.protocol.emitUpdate({
+        kind: "proposed-plan",
+        id: tracker.acpId,
+        text: item.text,
+        status: completed ? "proposed" : "drafting",
+        replace: true,
+      })
+      return
     case "unsupported":
       return
   }
 }
 
+/**
+ * Codex names its items by shape, so the tool name and the argument the row
+ * shows (the command, the file) are supplied here. Without the input the
+ * shell row had no command on it at all, live or expanded.
+ */
 function startTool(
   context: ProtocolContext,
   tracker: ItemTracker,
   title: string,
   toolKind: string,
-  status: string
+  status: string,
+  input?: JsonObject
 ): void {
   if (tracker.started) return
   tracker.started = true
@@ -373,6 +413,7 @@ function startTool(
     title: boundedText(title, 500),
     toolKind,
     status: toolStatus(status),
+    input: input === undefined ? undefined : boundedJson(input),
   })
 }
 
@@ -465,6 +506,9 @@ export function rpcRequest(
       return beginRpcRequest(context, method, params, parseThreadResponse)
     case "turn/start":
       return beginRpcRequest(context, method, params, parseTurnResponse)
+    case "turn/steer":
+      return beginRpcRequest(context, method, params, parseSteerResponse)
+    case "thread/compact/start":
     case "turn/interrupt":
       return beginRpcRequest(context, method, params, parseObjectResult)
   }
@@ -473,7 +517,7 @@ export function rpcRequest(
 function beginRpcRequest<M extends RpcMethod>(
   context: ProtocolContext,
   method: M,
-  params: JsonObject,
+  params: RpcParams[RpcMethod],
   parseResult: RpcResultParser<M>
 ): Promise<RpcResults[M]> {
   if (context.exited || context.child.stdin.destroyed)
@@ -507,7 +551,14 @@ function beginRpcRequest<M extends RpcMethod>(
 
 export function sendRpc(
   context: ProtocolContext,
-  message: JsonObject
+  message:
+    | JsonObject
+    | {
+        jsonrpc: "2.0"
+        id: number
+        method: RpcMethod
+        params: RpcParams[RpcMethod]
+      }
 ): boolean {
   if (
     context.exited ||

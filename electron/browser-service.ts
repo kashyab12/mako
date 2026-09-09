@@ -7,6 +7,10 @@ import {
   type BrowserProtocolEvent,
 } from "./browser-connection.js"
 import { navigatePage, screenshotGeometry } from "./browser-page.js"
+import {
+  AccessibilityNodeSchema,
+  browserObservation,
+} from "./browser-observation.js"
 import { localBrowsers, type LocalBrowser } from "./browser-discovery.js"
 import {
   BrowserFault,
@@ -24,15 +28,6 @@ const targetInfo = z.object({
 })
 const targetsResult = z.object({ targetInfos: z.array(targetInfo) })
 const sessionResult = z.object({ sessionId: z.string() })
-const axNode = z.object({
-  nodeId: z.string(),
-  parentId: z.string().optional(),
-  ignored: z.boolean(),
-  backendDOMNodeId: z.number().optional(),
-  role: z.object({ value: z.json().optional() }).optional(),
-  name: z.object({ value: z.json().optional() }).optional(),
-  value: z.object({ value: z.json().optional() }).optional(),
-})
 interface Binding {
   owner: string
   target: BrowserTarget
@@ -124,7 +119,11 @@ export class BrowserService {
         this.browsers.set(definition.id, {
           definition,
           selections: Promise.resolve(),
-          status: { id: definition.id, name: definition.name, connection: { status: "disconnected" } },
+          status: {
+            id: definition.id,
+            name: definition.name,
+            connection: { status: "disconnected" },
+          },
         })
         changed = true
       }
@@ -176,9 +175,10 @@ export class BrowserService {
       abort.signal.throwIfAborted()
       entry.status = {
         ...entry.status,
-        connection: entry.definition.requiresApproval === false
-          ? { status: "connecting" }
-          : { status: "awaiting-approval", startedAt: Date.now() },
+        connection:
+          entry.definition.requiresApproval === false
+            ? { status: "connecting" }
+            : { status: "awaiting-approval", startedAt: Date.now() },
       }
       this.changed()
       const connection = await BrowserConnection.connect(endpoint, abort.signal)
@@ -604,29 +604,16 @@ export class BrowserService {
           targetId: binding.target.tab,
         })
         const result = z
-          .object({ nodes: z.array(axNode) })
+          .object({ nodes: z.array(AccessibilityNodeSchema) })
           .parse(await send("Accessibility.getFullAXTree"))
-        binding.refs.clear()
-        const visible = result.nodes.filter((node) => !node.ignored)
-        const nodes = visible.slice(0, command.maxNodes).map((node) => {
-          const ref = node.backendDOMNodeId ? randomUUID() : null
-          if (ref && node.backendDOMNodeId)
-            binding.refs.set(ref, node.backendDOMNodeId)
-          return {
-            id: node.nodeId,
-            parent: node.parentId ?? null,
-            ref,
-            role: node.role?.value ?? null,
-            name: node.name?.value ?? null,
-            value: node.value?.value ?? null,
-          }
-        })
-        return {
-          target: { ...binding.target },
+        const observation = browserObservation({
+          target: binding.target,
           info,
-          nodes,
-          omitted: Math.max(0, visible.length - nodes.length),
-        }
+          nodes: result.nodes,
+          maxNodes: command.maxNodes,
+        })
+        binding.refs = observation.refs
+        return observation.value
       }
       case "screenshot": {
         const geometry = await screenshotGeometry(

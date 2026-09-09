@@ -1,3 +1,7 @@
+import {
+  QueuedPromptEditSchema,
+  type QueuedPromptEdit,
+} from "./contracts/live-queue.js"
 import { createHash } from "node:crypto"
 import { mkdirSync } from "node:fs"
 import { copyFile, stat, writeFile } from "node:fs/promises"
@@ -82,6 +86,56 @@ export class NativeRequests {
       throw new Error("Stop the running task before dismissing it")
     this.update({ ...request, status: "dismissed" })
   }
+  editQueued(input: QueuedPromptEdit): NativeRequest[] {
+    const command = QueuedPromptEditSchema.parse(input)
+    const request = this.receipt(command.requestId)
+    if (!request) throw new Error("This queued message is no longer available.")
+    if (command.change.kind === "remove" && request.status === "dismissed")
+      return this.list()
+    if (request.status !== "queued" && request.status !== "held")
+      throw new Error(
+        "This message has already started. Your queued edit was not applied."
+      )
+    if (request.input.text !== command.expectedText) {
+      if (
+        command.change.kind === "edit" &&
+        request.input.text === command.change.text
+      )
+        return this.list()
+      throw new Error(
+        "This queued message changed. Review its latest text before editing."
+      )
+    }
+    if (
+      command.change.kind === "edit" &&
+      !command.change.text.trim() &&
+      !request.input.attachments.length
+    )
+      throw new Error("A message cannot be empty.")
+    switch (command.change.kind) {
+      case "remove":
+        this.update({ ...request, status: "dismissed" })
+        break
+      case "pause":
+        this.update({ ...request, status: "held" })
+        break
+      case "resume":
+        this.update({ ...request, status: "queued" })
+        break
+      case "edit":
+        this.update({
+          ...request,
+          status: "queued",
+          input: NativeRequestInputSchema.parse({
+            ...request.input,
+            text: command.change.text,
+          }),
+        })
+        break
+    }
+    if (command.change.kind !== "pause") this.ready(request.input.path)
+    return this.list()
+  }
   submit(input: NativeRequestInput): Promise<NativeRequest> {
     const command = NativeRequestInputSchema.parse(input)
     const fingerprint = createHash("sha256")
@@ -124,8 +178,12 @@ export class NativeRequests {
         attachments.push({ ...attachment, data: undefined, path })
       } else if (attachment.path) {
         const size = (await stat(attachment.path)).size
-        if (size > 256 * 1024 * 1024) throw new Error("An attachment exceeds the 256 MB limit")
-        const path = join(this.root, `${input.id}-${index}-${attachment.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80)}`)
+        if (size > 256 * 1024 * 1024)
+          throw new Error("An attachment exceeds the 256 MB limit")
+        const path = join(
+          this.root,
+          `${input.id}-${index}-${attachment.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80)}`
+        )
         await copyFile(attachment.path, path)
         attachments.push({ ...attachment, path, size })
       } else throw new Error("An attachment has no retained content")
@@ -146,16 +204,18 @@ export class NativeRequests {
   }
   ready(path: string): void {
     if (
-      this.stopped || this.faulted ||
+      this.stopped ||
+      this.faulted ||
       this.running.has(path) ||
       this.dependencies.running(path)
     )
       return
     const request = this.list().find(
       (candidate) =>
-        candidate.input.path === path && candidate.status === "queued"
+        candidate.input.path === path &&
+        (candidate.status === "queued" || candidate.status === "held")
     )
-    if (!request) return
+    if (!request || request.status === "held") return
     this.running.add(path)
     void this.execute(request)
       .catch((error) => {

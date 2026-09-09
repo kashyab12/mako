@@ -1,3 +1,7 @@
+import {
+  CodexAgentItemSchema,
+  CodexAgentActivitySchema,
+} from "./providers/codex/agents.js"
 import { attachmentFromCodexContent } from "./providers/codex/content.js"
 import {
   booleanValue,
@@ -59,6 +63,7 @@ type ItemNotification = {
 export type StreamDeltaNotification = {
   method:
     | "item/agentMessage/delta"
+    | "item/plan/delta"
     | "item/reasoning/summaryTextDelta"
     | "item/reasoning/textDelta"
   threadId: string
@@ -175,6 +180,7 @@ export function parseNotification(
         : null
     }
     case "item/agentMessage/delta":
+    case "item/plan/delta":
     case "item/reasoning/summaryTextDelta":
     case "item/reasoning/textDelta": {
       const turnId = stringValue(params.turnId)
@@ -289,6 +295,16 @@ export function parseTurnResponse(
   return root && turn
     ? { valid: true, value: { turn } }
     : invalidResult("Codex app-server returned an invalid turn result")
+}
+
+export function parseSteerResponse(
+  value: JsonValue | undefined
+): ParseResult<{ turnId: string }> {
+  const root = objectValue(value)
+  const turnId = stringValue(root?.turnId)
+  return turnId
+    ? { valid: true, value: { turnId } }
+    : invalidResult("Codex returned an invalid steering receipt")
 }
 
 function parseTurn(value: JsonValue | undefined): Turn | null {
@@ -421,6 +437,14 @@ function parseThreadItem(value: JsonValue | undefined): ThreadItem | null {
         id,
         attachment: attachmentFromCodexContent(root),
       }
+    }
+    case "collabAgentToolCall": {
+      const parsed = CodexAgentItemSchema.safeParse(root)
+      return parsed.success ? parsed.data : null
+    }
+    case "subAgentActivity": {
+      const parsed = CodexAgentActivitySchema.safeParse(root)
+      return parsed.success ? parsed.data : null
     }
     case "plan": {
       const text = stringValue(root.text)

@@ -1,3 +1,4 @@
+import { disconnectNativeAgents } from "./contracts/native-agents.js"
 import { createHash, randomUUID } from "node:crypto"
 import { join } from "node:path"
 import { TransferInputSchema } from "./contracts/conversation-control.js"
@@ -115,6 +116,9 @@ export class LiveTransfers {
     if (
       !transfer ||
       resident.transferring ||
+      resident.closing ||
+      resident.checkpointing ||
+      resident.rewinding ||
       resident.opening ||
       resident.snapshot.session.status === "running" ||
       resident.snapshot.requests.some(
@@ -167,7 +171,7 @@ export class LiveTransfers {
       const nativeFork =
         !bindings.length &&
         control.ancestry?.nativeFork?.provider === transfer.input.provider &&
-        this.host.dependencies.driver(transfer.input.provider)?.canForkAtRun
+        this.host.dependencies.driver(transfer.input.provider)?.forkPoint
           ? control.ancestry.nativeFork
           : undefined
       const manifest = await prepareLiveContext({
@@ -186,6 +190,10 @@ export class LiveTransfers {
         preparedId = bindingId
         this.host.bindingOwners.set(bindingId, source.session.id)
         const session = await driver.start(source.session.cwd, {
+          emit: (event) => this.host.observe(event),
+          mcpSnapshot: this.host.dependencies.mcpSnapshot
+            ? () => this.host.dependencies.mcpSnapshot!(source.session.cwd)
+            : undefined,
           conversationId: bindingId,
           resume: prior?.nativeId,
           fork: nativeFork,
@@ -245,6 +253,7 @@ export class LiveTransfers {
       resident.driver = prepared.driver
       resident.snapshot = {
         ...previous,
+        nativeAgents: disconnectNativeAgents(previous.nativeAgents),
         session: {
           ...prepared.session,
           id: source.session.id,
@@ -260,7 +269,10 @@ export class LiveTransfers {
             text: transfer.input.text,
             displayText: transfer.input.text,
             attachments: transfer.input.attachments,
-            context: [manifest],
+            context:
+              manifest.includesBase || manifest.toBlock > manifest.fromBlock
+                ? [manifest]
+                : [],
             status: "queued",
           }),
         ],

@@ -14,6 +14,7 @@ export function liveEntries(blocks: LiveBlock[]): ThreadEntry[] {
       entries.push({
         kind: "user",
         id: block.requestId,
+        steeringFor: block.steeringFor,
         text: block.contextFiles?.length
           ? `${block.text}\n\nContext supplied with this request:\n${block.contextFiles.join("\n")}`
           : block.text,
@@ -23,7 +24,17 @@ export function liveEntries(blocks: LiveBlock[]): ThreadEntry[] {
     }
     if (block.type === "thinking") continue
     if (block.type === "plan") {
-      entries.push({kind: "assistant", blocks: [{type: "tool", name: "Plan", output: "", details: [{type: "plan", entries: block.entries}]}]})
+      entries.push({
+        kind: "assistant",
+        blocks: [
+          {
+            type: "tool",
+            name: "Plan",
+            output: "",
+            details: [{ type: "plan", entries: block.entries }],
+          },
+        ],
+      })
       continue
     }
     const previous = entries.at(-1)
@@ -33,6 +44,9 @@ export function liveEntries(blocks: LiveBlock[]): ThreadEntry[] {
         : { kind: "assistant" as const, blocks: [] }
     if (assistant !== previous) entries.push(assistant)
     switch (block.type) {
+      case "proposed-plan":
+        assistant.blocks.push(block)
+        break
       case "text":
         assistant.blocks.push({ type: "text", text: block.text })
         break
@@ -87,7 +101,10 @@ export async function prepareLiveContext(
     thread,
     join(root, "attachments")
   )
-  const bundle = renderTranscriptBundle(retained, { mainBudget: Infinity, totalBudget: Infinity })
+  const bundle = renderTranscriptBundle(retained, {
+    mainBudget: Infinity,
+    totalBudget: Infinity,
+  })
   const digest = createHash("sha256").update(bundle.markdown)
   for (const asset of bundle.assets)
     digest.update(asset.path).update("\0").update(asset.content)

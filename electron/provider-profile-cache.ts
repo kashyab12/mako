@@ -13,7 +13,7 @@ const profileSchema = z.object({
   id: z.string(),
   label: z.string(),
   available: z.boolean(),
-  transport: z.enum(["acp", "app-server", "remote"]),
+  transport: z.enum(["acp", "app-server", "sdk", "remote"]),
   models: z.array(SessionModelSchema),
   defaultModel: z.string().optional(),
   configuredModel: z.string().optional(),

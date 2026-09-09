@@ -1,4 +1,8 @@
-import { ModelOptionSchema, SessionSettingsSchema } from "@mako/sessions/settings"
+import { NativeAgentRosterSchema } from "./contracts/native-agents.js"
+import {
+  ModelOptionSchema,
+  SessionSettingsSchema,
+} from "@mako/sessions/settings"
 import {
   ContextManifestSchema,
   ConversationControlSchema,
@@ -10,6 +14,7 @@ import { DatabaseSync } from "node:sqlite"
 import { z } from "zod"
 import { ThreadEntrySchema, ThreadRefSchema } from "@mako/sessions"
 import { LiveBlockSchema } from "./contracts/live-content.js"
+import { RunSnapshotsSchema } from "./contracts/workspace-snapshots.js"
 import type { LiveSnapshot } from "./contracts/live-conversations.js"
 
 const question = z.object({
@@ -32,9 +37,16 @@ const question = z.object({
   defaultValues: z.array(z.string()).optional(),
 })
 export const LiveRequestSchema = z.object({
+  snapshots: RunSnapshotsSchema.optional(),
   tuning: SessionSettingsSchema.optional(),
   inputDigest: z.string().optional(),
-  nativeRun: z.object({ bindingId: z.string(), runId: z.string() }).optional(),
+  nativeRun: z
+    .object({
+      bindingId: z.string(),
+      runId: z.string(),
+      forkId: z.string().optional(),
+    })
+    .optional(),
   id: z.string().uuid(),
   text: z.string().max(1_000_000),
   attachments: z.array(PromptAttachmentSchema),
@@ -42,6 +54,8 @@ export const LiveRequestSchema = z.object({
   context: z.array(ContextManifestSchema).optional(),
   status: z.enum([
     "queued",
+    "held",
+    "canceled",
     "dispatching",
     "completed",
     "failed",
@@ -51,6 +65,7 @@ export const LiveRequestSchema = z.object({
   error: z.string().optional(),
 })
 const MetadataSchema = z.object({
+  nativeAgents: NativeAgentRosterSchema.optional(),
   control: ConversationControlSchema.optional(),
   session: z.object({
     connection: z.enum(["starting", "connected", "disconnected"]),
