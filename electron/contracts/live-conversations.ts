@@ -1,3 +1,7 @@
+import type {
+  NativeAgentObservation,
+  NativeAgentRoster,
+} from "./native-agents.js"
 import type { SessionSettings } from "@mako/sessions/settings"
 import type {
   ContextManifest,
@@ -11,6 +15,7 @@ import type {
   LiveUpdate,
 } from "./providers-acp.js"
 import type { LiveBlock } from "./live-content.js"
+import type { RunSnapshots } from "./workspace-snapshots.js"
 
 export interface LiveStartOptions {
   initialRequest?: { id: string; text: string; attachments: PromptAttachment[] }
@@ -23,14 +28,17 @@ export interface LiveStartOptions {
 }
 
 export interface LiveRequest {
+  snapshots?: RunSnapshots
   tuning?: SessionSettings
   inputDigest?: string
-  nativeRun?: { bindingId: string; runId: string }
+  nativeRun?: { bindingId: string; runId: string; forkId?: string }
   id: string
   text: string
   attachments: PromptAttachment[]
   status:
     | "queued"
+    | "held"
+    | "canceled"
     | "dispatching"
     | "completed"
     | "failed"
@@ -50,6 +58,7 @@ export interface LiveSummary {
 }
 
 export interface LiveSnapshot extends LiveSummary {
+  nativeAgents?: NativeAgentRoster
   control?: ConversationControl
   blocks: LiveBlock[]
   base: ThreadPage | null
@@ -58,6 +67,7 @@ export interface LiveSnapshot extends LiveSummary {
 }
 
 export interface LiveBatch {
+  nativeAgents?: NativeAgentRoster
   control?: ConversationControl
   base?: ThreadPage | null
   threadPath?: string | null
@@ -70,6 +80,7 @@ export interface LiveBatch {
 }
 
 export type LiveDriverEvent =
+  | { type: "acp-agent"; id: string; agent: NativeAgentObservation }
   | { type: "acp-session"; session: LiveSessionState }
   | { type: "acp-update"; id: string; update: LiveUpdate }
   | { type: "acp-updates"; id: string; updates: LiveUpdate[] }

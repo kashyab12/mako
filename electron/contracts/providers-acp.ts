@@ -1,6 +1,9 @@
 export interface LiveCapability {
   provider: string
   canResume: boolean
+  observesNativeAgents?: boolean
+  canSteer?: boolean
+  canCompact?: boolean
 }
 
 import type { SessionModel, SessionSettings } from "@mako/sessions/settings"
@@ -15,7 +18,7 @@ export interface HarnessProfile {
   id: string
   label: string
   available: boolean
-  transport: "acp" | "app-server" | "remote"
+  transport: "acp" | "app-server" | "sdk" | "remote"
   models: SessionModel[]
   defaultModel?: string
   configuredModel?: string
@@ -24,6 +27,8 @@ export interface HarnessProfile {
   configurationError?: string
   capabilities: string[]
   error?: string
+  /** Discovery is still running; nothing here is known yet. */
+  pending?: boolean
 }
 
 /* ------------------------------------------------------------------ */
@@ -32,6 +37,8 @@ export interface HarnessProfile {
 
 export interface LiveSessionState {
   nativeRunId?: string
+  nativeForkId?: string
+  nativePath?: string
   connection: "starting" | "connected" | "disconnected"
   id: string
   nativeId?: string

@@ -21,6 +21,7 @@ import type {
 } from "./conversation-session.js"
 import type { GitStatus } from "./git-workspace-search.js"
 import type { Capabilities } from "./mcp-skills-integrations.js"
+import type { HarnessProfile } from "./providers-acp.js"
 
 /**
  * The wire contract between the Electron host and the renderer.
@@ -46,6 +47,8 @@ export type HostEventBody =
   | { type: "tree"; tree: TreeNode[]; leafId: string | null }
   | { type: "git"; git: GitStatus }
   | { type: "capabilities"; capabilities: Capabilities }
+  /** One provider's discovery finished; window-wide, keyed by the workspace it ran in. */
+  | { type: "harness-profile"; profile: HarnessProfile; cwd?: string }
   | { type: "notice"; level: "info" | "success" | "error"; message: string }
   /** The file open in the viewer changed on disk (any writer). */
   | { type: "file-changed"; path: string }

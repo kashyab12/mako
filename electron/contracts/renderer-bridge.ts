@@ -1,3 +1,6 @@
+import type { QueuedPromptEdit } from "./live-queue.js"
+import type { RewindInput, RewindPreview } from "./workspace-snapshots.js"
+import type { LiveAction, LiveActionInput } from "./live-actions.js"
 import type { SessionSettings } from "@mako/sessions/settings"
 import type { NativeRequest, NativeRequestInput } from "../shared.js"
 import type {
@@ -151,7 +154,12 @@ export function createMakoBridge(transport: BridgeTransport) {
         options
       ),
     harnessTuning: (harness: string, cwd?: string, force?: boolean) =>
-      invokeTrustedHost<HarnessProfile>("mako:harness-tuning", harness, cwd, force),
+      invokeTrustedHost<HarnessProfile>(
+        "mako:harness-tuning",
+        harness,
+        cwd,
+        force
+      ),
     abortThreadRun: (path: string) =>
       invokeTrustedHost<void>("mako:thread-abort-run", path),
 
@@ -164,6 +172,8 @@ export function createMakoBridge(transport: BridgeTransport) {
       invokeTrustedHost<NativeRequest | null>("mako:native-receipt", id),
     nativeDismiss: (id: string) =>
       invokeTrustedHost<void>("mako:native-dismiss", id),
+    nativeEditQueued: (input: QueuedPromptEdit) =>
+      invokeTrustedHost<NativeRequest[]>("mako:native-edit-queued", input),
     nativeRequests: () =>
       invokeTrustedHost<NativeRequest[]>("mako:native-requests"),
     nativeSubmit: (input: NativeRequestInput) =>
@@ -174,12 +184,33 @@ export function createMakoBridge(transport: BridgeTransport) {
       invokeTrustedHost<LiveSnapshot>("mako:live-child-cancel", id, childId),
     liveMergeFork: (id: string, mergeId: string) =>
       invokeTrustedHost<LiveSnapshot>("mako:live-merge-fork", id, mergeId),
+    liveRewindPreview: (
+      id: string,
+      requestId: string,
+      position?: "before" | "after"
+    ) =>
+      invokeTrustedHost<RewindPreview>(
+        "mako:live-rewind-preview",
+        id,
+        requestId,
+        position
+      ),
+    liveAction: (id: string, input: LiveActionInput) =>
+      invokeTrustedHost<LiveAction>("mako:live-action", id, input),
+    liveAcknowledgeAction: (id: string, actionId: string) =>
+      invokeTrustedHost<void>("mako:live-action-acknowledge", id, actionId),
+    liveRewind: (id: string, input: RewindInput) =>
+      invokeTrustedHost<LiveSnapshot>("mako:live-rewind", id, input),
+    liveRecoverRewinds: () =>
+      invokeTrustedHost<LiveSnapshot[]>("mako:live-rewind-recover"),
     liveFork: (id: string, input: ForkInput) =>
       invokeTrustedHost<LiveSnapshot>("mako:live-fork", id, input),
     liveCapture: (id: string, path: string) =>
       invokeTrustedHost<LiveSnapshot>("mako:live-capture", id, path),
     liveTransfer: (id: string, input: TransferInput) =>
       invokeTrustedHost<LiveSnapshot>("mako:live-transfer", id, input),
+    liveEditQueued: (id: string, input: QueuedPromptEdit) =>
+      invokeTrustedHost<LiveSnapshot>("mako:live-edit-queued", id, input),
     liveClearQueue: (id: string) =>
       invokeTrustedHost<LiveSnapshot>("mako:live-clear-queue", id),
     liveEarlier: (id: string) =>
@@ -270,7 +301,9 @@ export function createMakoBridge(transport: BridgeTransport) {
     computerPermissions: () =>
       invokeTrustedHost<MakoComputerPermissions>("mako:computer-permissions"),
     prepareBrowserExtension: () =>
-      invokeTrustedHost<import("../browser-extension-setup.js").BrowserExtensionSetup>("mako:browser-extension-setup"),
+      invokeTrustedHost<
+        import("../browser-extension-setup.js").BrowserExtensionSetup
+      >("mako:browser-extension-setup"),
     browserControlStatus: () =>
       invokeTrustedHost<import("../shared.js").BrowserControlStatus[]>(
         "mako:browser-control-status"
@@ -381,6 +414,8 @@ export function createMakoBridge(transport: BridgeTransport) {
     runCommand: (name: string, args?: string) =>
       invokeTrustedHost<void>("mako:run-command", name, args),
 
+    createWorkspaceText: (cwd: string, path: string, text: string) =>
+      invokeTrustedHost<string>("mako:create-workspace-text", cwd, path, text),
     listFiles: () => invokeTrustedHost<WorkspaceFile[]>("mako:list-files"),
     readFile: (path: string) =>
       invokeTrustedHost<FileContents>("mako:read-file", path),
@@ -500,6 +535,8 @@ export function createMakoBridge(transport: BridgeTransport) {
     updateState: () => invokeTrustedHost<UpdateState>("mako:update-state"),
     checkUpdates: () => invokeTrustedHost<UpdateState>("mako:check-updates"),
     installUpdate: () => invokeTrustedHost<void>("mako:install-update"),
+    /** Quit and come back on the current build; conversations reopen from their journals. */
+    relaunch: () => invokeTrustedHost<void>("mako:relaunch"),
 
     /* Crash reports. Local only — see electron/crash.ts. */
     crashes: () => invokeTrustedHost<CrashReport[]>("mako:crashes"),

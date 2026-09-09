@@ -18,6 +18,7 @@ export const NativeRequestSchema = z.object({
   ref: ThreadRefSchema,
   status: z.enum([
     "queued",
+    "held",
     "dispatching",
     "completed",
     "failed",

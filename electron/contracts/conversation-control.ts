@@ -1,13 +1,9 @@
 import { SessionSettingsSchema } from "@mako/sessions/settings"
 import { z } from "zod"
+import { LiveActionSchema } from "./live-actions.js"
+import { PromptAttachmentSchema } from "./prompt-attachments.js"
+export { PromptAttachmentSchema } from "./prompt-attachments.js"
 
-export const PromptAttachmentSchema = z.object({
-  name: z.string(),
-  mimeType: z.string(),
-  size: z.number().nonnegative(),
-  data: z.string().optional(),
-  path: z.string().optional(),
-})
 export const ProviderSelectionSchema = SessionSettingsSchema
 export const TransferInputSchema = z.object({
   id: z.string().uuid(),
@@ -88,6 +84,7 @@ export const DelegateInputSchema = z.object({
 })
 export type DelegateInput = z.infer<typeof DelegateInputSchema>
 export const ConversationControlSchema = z.object({
+  actions: z.array(LiveActionSchema).optional(),
   merges: z
     .array(
       z.object({
@@ -127,6 +124,7 @@ export const ForkInputSchema = z.object({
   provider: z.string().min(1),
   point: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("run"), requestId: z.string().uuid() }),
+    z.object({ kind: z.literal("before-run"), requestId: z.string().uuid() }),
     z.object({
       kind: z.literal("native"),
       index: z.number().int().nonnegative(),

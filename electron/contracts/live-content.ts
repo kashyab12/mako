@@ -1,10 +1,21 @@
 import { z } from "zod"
-import { AttachmentContentSchema, ToolDetailSchema } from "@mako/sessions/content"
+import {
+  AttachmentContentSchema,
+  ToolDetailSchema,
+  ProposedPlanSchema,
+  MAX_PROPOSED_PLAN_LENGTH,
+} from "@mako/sessions/content"
 
 const plan = z.array(z.object({ content: z.string(), status: z.string() }))
 export const LiveUpdateSchema = z.discriminatedUnion("kind", [
+  ProposedPlanSchema.omit({ type: true }).extend({
+    kind: z.literal("proposed-plan"),
+    text: z.string(),
+    replace: z.boolean().optional(),
+  }),
   z.object({
     kind: z.literal("user"),
+    steeringFor: z.string().optional(),
     provider: z.string().optional(),
     requestId: z.string().optional(),
     contextFiles: z.array(z.string()).optional(),
@@ -52,8 +63,10 @@ export const LiveUpdateSchema = z.discriminatedUnion("kind", [
 ])
 export type LiveUpdate = z.infer<typeof LiveUpdateSchema>
 export const LiveBlockSchema = z.discriminatedUnion("type", [
+  ProposedPlanSchema,
   z.object({
     type: z.literal("user"),
+    steeringFor: z.string().optional(),
     provider: z.string().optional(),
     requestId: z.string().optional(),
     contextFiles: z.array(z.string()).optional(),
@@ -100,7 +113,7 @@ export function reduceLiveUpdates(
   let turnStart = -1
   for (let index = 0; index < next.length; index++) {
     const block = next[index]!
-    if (block.type === "user") {
+    if (block.type === "user" && !block.steeringFor) {
       tools.clear()
       turnStart = index
     }
@@ -110,16 +123,20 @@ export function reduceLiveUpdates(
     const last = next.at(-1)
     switch (update.kind) {
       case "user":
-        tools.clear()
-        turnStart = next.length
-        next.push({
+        if (!update.steeringFor) {
+          tools.clear()
+          turnStart = next.length
+        }
+        const user: LiveBlock = {
           type: "user",
           provider: update.provider,
           requestId: update.requestId,
           contextFiles: update.contextFiles,
           text: update.text,
           attachments: update.attachments,
-        })
+        }
+        if (update.steeringFor) user.steeringFor = update.steeringFor
+        next.push(user)
         break
       case "text":
       case "thinking": {
@@ -139,6 +156,35 @@ export function reduceLiveUpdates(
             ? previous.text + update.text
             : update.text
         const block: LiveBlock = { type: update.kind, text, id: update.id }
+        if (index >= 0) next[index] = block
+        else next.push(block)
+        break
+      }
+      case "proposed-plan": {
+        const index = next.findIndex(
+          (block, index) =>
+            index > turnStart &&
+            block.type === "proposed-plan" &&
+            block.id === update.id
+        )
+        const previous = next[index]
+        const text =
+          previous?.type === "proposed-plan" && !update.replace
+            ? previous.text + update.text
+            : update.text
+        const block: LiveBlock = {
+          type: "proposed-plan",
+          id: update.id,
+          status: update.status,
+          text: text.slice(0, MAX_PROPOSED_PLAN_LENGTH),
+          truncated: Boolean(
+            update.truncated ||
+            text.length > MAX_PROPOSED_PLAN_LENGTH ||
+            (!update.replace &&
+              previous?.type === "proposed-plan" &&
+              previous.truncated)
+          ),
+        }
         if (index >= 0) next[index] = block
         else next.push(block)
         break
@@ -180,7 +226,9 @@ export function reduceLiveUpdates(
         break
       }
       case "plan": {
-        const index = next.findIndex((block, index) => index > turnStart && block.type === "plan")
+        const index = next.findIndex(
+          (block, index) => index > turnStart && block.type === "plan"
+        )
         const block: LiveBlock = { type: "plan", entries: update.entries }
         if (index >= 0) next[index] = block
         else next.push(block)

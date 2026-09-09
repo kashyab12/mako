@@ -1,3 +1,4 @@
+import type { ProposedPlan } from "@mako/sessions/content"
 import type {
   AttachmentContent,
   ToolDetail,
@@ -65,6 +66,7 @@ export const THINKING_LEVELS: ThinkingLevel[] = [
 export type ChatRole = "user" | "assistant" | "tool" | "system"
 
 export type Block =
+  | ProposedPlan
   | { type: "text"; text: string }
   | { type: "thinking"; thinking: string }
   | { type: "toolCall"; id?: string; name?: string; arguments?: unknown }
@@ -84,6 +86,10 @@ export type Block =
 export type BlockType = Block["type"]
 
 export interface ChatMessage {
+  /** Stable identity of a host-owned prompt, including optimistic presentation. */
+  requestId?: string
+  /** Additional user instruction belonging to an existing exchange. */
+  steeringFor?: string
   id: string
   role: ChatRole
   blocks: Block[]

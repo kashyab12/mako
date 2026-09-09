@@ -1,0 +1,29 @@
+import { z } from "zod"
+import { PromptAttachmentSchema } from "./prompt-attachments.js"
+
+export const LiveActionInputSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("steer"),
+    id: z.string().uuid(),
+    requestId: z.string().uuid(),
+    text: z.string().min(1).max(1_000_000),
+    attachments: z.array(PromptAttachmentSchema).max(100),
+  }),
+  z.object({ kind: z.literal("compact"), id: z.string().uuid() }),
+])
+export type LiveActionInput = z.infer<typeof LiveActionInputSchema>
+export const LiveActionSchema = z.object({
+  input: LiveActionInputSchema,
+  digest: z.string(),
+  bindingId: z.string().uuid(),
+  createdAt: z.number(),
+  state: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("dispatching") }),
+    z.object({ kind: z.literal("accepted") }),
+    z.object({ kind: z.literal("completed") }),
+    z.object({ kind: z.literal("not-accepted"), reason: z.string() }),
+    z.object({ kind: z.literal("uncertain"), reason: z.string() }),
+    z.object({ kind: z.literal("acknowledged") }),
+  ]),
+})
+export type LiveAction = z.infer<typeof LiveActionSchema>

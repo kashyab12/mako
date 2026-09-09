@@ -42,6 +42,7 @@ export const hostCallInputs = {
       draft: z.boolean().optional(),
     }),
   ]),
+  "mako:create-workspace-text": z.tuple([z.string(), z.string(), z.string()]),
   "mako:daemon-login": z.tuple([]),
   "mako:daemon-login-set": z.tuple([z.boolean()]),
   "mako:daemon-status": z.tuple([]),
@@ -102,6 +103,28 @@ export const hostCallInputs = {
     z.string().optional(),
     z.union([z.literal("workspace"), z.literal("all")]).optional(),
   ]),
+  "mako:live-action": z.tuple([
+    z.string(),
+    z.union([
+      z.object({
+        kind: z.literal("steer"),
+        id: z.string(),
+        requestId: z.string(),
+        text: z.string(),
+        attachments: z.array(
+          z.object({
+            name: z.string(),
+            mimeType: z.string(),
+            size: z.number(),
+            data: z.string().optional(),
+            path: z.string().optional(),
+          })
+        ),
+      }),
+      z.object({ kind: z.literal("compact"), id: z.string() }),
+    ]),
+  ]),
+  "mako:live-action-acknowledge": z.tuple([z.string(), z.string()]),
   "mako:live-bind": z.tuple([z.string(), z.string()]),
   "mako:live-cancel": z.tuple([z.string()]),
   "mako:live-capabilities": z.tuple([]),
@@ -114,6 +137,19 @@ export const hostCallInputs = {
     z.object({ id: z.string(), provider: z.string(), task: z.string() }),
   ]),
   "mako:live-earlier": z.tuple([z.string()]),
+  "mako:live-edit-queued": z.tuple([
+    z.string(),
+    z.object({
+      requestId: z.string(),
+      expectedText: z.string(),
+      change: z.union([
+        z.object({ kind: z.literal("edit"), text: z.string() }),
+        z.object({ kind: z.literal("remove") }),
+        z.object({ kind: z.literal("pause") }),
+        z.object({ kind: z.literal("resume") }),
+      ]),
+    }),
+  ]),
   "mako:live-fork": z.tuple([
     z.string(),
     z.object({
@@ -121,6 +157,7 @@ export const hostCallInputs = {
       provider: z.string(),
       point: z.union([
         z.object({ kind: z.literal("run"), requestId: z.string() }),
+        z.object({ kind: z.literal("before-run"), requestId: z.string() }),
         z.object({
           kind: z.literal("native"),
           index: z.number(),
@@ -169,6 +206,21 @@ export const hostCallInputs = {
       })
       .optional(),
   ]),
+  "mako:live-rewind": z.tuple([
+    z.string(),
+    z.object({
+      id: z.string(),
+      requestId: z.string(),
+      expectedId: z.string(),
+      position: z.union([z.literal("before"), z.literal("after")]).optional(),
+    }),
+  ]),
+  "mako:live-rewind-preview": z.tuple([
+    z.string(),
+    z.string(),
+    z.union([z.literal("before"), z.literal("after")]).optional(),
+  ]),
+  "mako:live-rewind-recover": z.tuple([]),
   "mako:live-snapshot": z.tuple([z.string()]),
   "mako:live-start": z.tuple([
     z.string(),
@@ -251,6 +303,18 @@ export const hostCallInputs = {
     z.union([z.literal("merge"), z.literal("squash"), z.literal("rebase")]),
   ]),
   "mako:native-dismiss": z.tuple([z.string()]),
+  "mako:native-edit-queued": z.tuple([
+    z.object({
+      requestId: z.string(),
+      expectedText: z.string(),
+      change: z.union([
+        z.object({ kind: z.literal("edit"), text: z.string() }),
+        z.object({ kind: z.literal("remove") }),
+        z.object({ kind: z.literal("pause") }),
+        z.object({ kind: z.literal("resume") }),
+      ]),
+    }),
+  ]),
   "mako:native-receipt": z.tuple([z.string()]),
   "mako:native-requests": z.tuple([]),
   "mako:native-submit": z.tuple([
@@ -302,6 +366,7 @@ export const hostCallInputs = {
   "mako:pull-requests": z.tuple([z.number().optional()]),
   "mako:read-file": z.tuple([z.string()]),
   "mako:read-live-file": z.tuple([z.string(), z.string()]),
+  "mako:relaunch": z.tuple([]),
   "mako:reload-automations": z.tuple([]),
   "mako:repo-avatar": z.tuple([z.string()]),
   "mako:report-crash": z.tuple([
