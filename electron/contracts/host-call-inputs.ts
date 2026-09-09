@@ -53,6 +53,7 @@ export const hostCallInputs = {
     z.string(),
     z.union([z.literal("before"), z.literal("at")]).optional(),
   ]),
+  "mako:git-cancel-generation": z.tuple([z.string()]),
   "mako:git-commit": z.tuple([
     z.string(),
     z.object({ amend: z.boolean().optional() }).optional(),
@@ -63,9 +64,12 @@ export const hostCallInputs = {
   "mako:git-diff": z.tuple([z.string()]),
   "mako:git-diff-all": z.tuple([]),
   "mako:git-generate-message": z.tuple([
-    z
-      .object({ prompt: z.string().optional(), model: z.string().optional() })
-      .optional(),
+    z.object({
+      requestId: z.string(),
+      cwd: z.string(),
+      prompt: z.string().optional(),
+      model: z.string().optional(),
+    }),
   ]),
   "mako:git-log": z.tuple([z.number().optional()]),
   "mako:git-push": z.tuple([]),
@@ -246,6 +250,7 @@ export const hostCallInputs = {
       title: z.string().optional(),
       threadPath: z.string().optional(),
       displayPrompt: z.string().optional(),
+      modeId: z.string().optional(),
       tuning: z
         .object({
           model: z.string().optional(),
@@ -344,6 +349,7 @@ export const hostCallInputs = {
   "mako:navigate-tree": z.tuple([z.string()]),
   "mako:new-session": z.tuple([]),
   "mako:open-in-editor": z.tuple([z.string(), z.string().optional()]),
+  "mako:open-preview-window": z.tuple([]),
   "mako:open-session": z.tuple([z.string()]),
   "mako:open-tab": z.tuple([
     z
@@ -534,6 +540,56 @@ export const hostCallInputs = {
   "mako:update-state": z.tuple([]),
   "mako:usage": z.tuple([]),
   "mako:user-avatar": z.tuple([]),
+  "mako:utility-model-catalog": z.tuple([
+    z.union([
+      z.object({
+        source: z.literal("catalog"),
+        provider: z.union([
+          z.literal("google"),
+          z.literal("openai"),
+          z.literal("anthropic"),
+          z.literal("openai-compatible"),
+        ]),
+        refresh: z.boolean().optional(),
+      }),
+      z.intersection(
+        z.object({ source: z.literal("provider") }),
+        z.object({
+          provider: z.union([
+            z.literal("google"),
+            z.literal("openai"),
+            z.literal("anthropic"),
+            z.literal("openai-compatible"),
+          ]),
+          baseUrl: z.string().optional(),
+          apiKey: z.string().optional(),
+        })
+      ),
+    ]),
+  ]),
+  "mako:utility-model-connect": z.tuple([
+    z.object({
+      apiKey: z.string().optional(),
+      provider: z.union([
+        z.literal("google"),
+        z.literal("openai"),
+        z.literal("anthropic"),
+        z.literal("openai-compatible"),
+      ]),
+      model: z.string(),
+      baseUrl: z.string().optional(),
+      contextTokens: z.number(),
+    }),
+  ]),
+  "mako:utility-model-disconnect": z.tuple([
+    z.union([
+      z.literal("google"),
+      z.literal("openai"),
+      z.literal("anthropic"),
+      z.literal("openai-compatible"),
+    ]),
+  ]),
+  "mako:utility-model-settings": z.tuple([]),
   "mako:watch-file": z.tuple([z.string()]),
   "mako:write-plugin": z.tuple([z.string(), z.string()]),
 }

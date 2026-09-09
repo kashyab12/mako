@@ -24,6 +24,7 @@ export interface LiveStartOptions {
   title?: string
   threadPath?: string
   displayPrompt?: string
+  modeId?: string
   tuning?: SessionSettings
 }
 

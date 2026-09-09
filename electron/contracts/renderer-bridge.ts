@@ -1,4 +1,5 @@
 import type { QueuedPromptEdit } from "./live-queue.js"
+import type { CommitGenerationInput, CommitGenerationResult, UtilityConnection, UtilityConnectionInput, UtilityModelSettings, UtilityProvider, UtilityCatalogInput, UtilityCatalog } from "./utility-models.js"
 import type { RewindInput, RewindPreview } from "./workspace-snapshots.js"
 import type { LiveAction, LiveActionInput } from "./live-actions.js"
 import type { SessionSettings } from "@mako/sessions/settings"
@@ -460,8 +461,14 @@ export function createMakoBridge(transport: BridgeTransport) {
         "mako:git-commit-diff-all",
         hash
       ),
-    generateCommitMessage: (options?: { prompt?: string; model?: string }) =>
-      invokeTrustedHost<string>("mako:git-generate-message", options),
+    generateCommitMessage: (input: CommitGenerationInput) =>
+      invokeTrustedHost<CommitGenerationResult>("mako:git-generate-message", input),
+    cancelCommitGeneration: (requestId: string) =>
+      invokeTrustedHost<void>("mako:git-cancel-generation", requestId),
+    utilityModelSettings: () => invokeTrustedHost<UtilityModelSettings>("mako:utility-model-settings"),
+    utilityModelCatalog: (input: UtilityCatalogInput) => invokeTrustedHost<UtilityCatalog>("mako:utility-model-catalog", input),
+    connectUtilityModel: (input: UtilityConnectionInput) => invokeTrustedHost<UtilityConnection>("mako:utility-model-connect", input),
+    disconnectUtilityModel: (provider: UtilityProvider) => invokeTrustedHost<void>("mako:utility-model-disconnect", provider),
     stageFile: (name: string, base64: string) =>
       invokeTrustedHost<StagedFile>("mako:stage-file", name, base64),
     stageFilePath: (sourcePath: string) =>
@@ -537,6 +544,7 @@ export function createMakoBridge(transport: BridgeTransport) {
     installUpdate: () => invokeTrustedHost<void>("mako:install-update"),
     /** Quit and come back on the current build; conversations reopen from their journals. */
     relaunch: () => invokeTrustedHost<void>("mako:relaunch"),
+    openPreviewWindow: () => invokeTrustedHost<void>("mako:open-preview-window"),
 
     /* Crash reports. Local only — see electron/crash.ts. */
     crashes: () => invokeTrustedHost<CrashReport[]>("mako:crashes"),
