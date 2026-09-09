@@ -885,23 +885,30 @@
   .ocean-scene { animation: none; }
 }
 
-.ocean-light {
+.ocean-water {
   position: absolute;
   inset: 0;
-  /* Reveal brighter copies of the actual etched lines. The vertical mask
-   * confines the reflection to the foreground water; the diagonal mask travels. */
-  mask-image:
-    linear-gradient(to bottom, transparent 57%, black 76%),
-    linear-gradient(110deg, transparent 34%, black 50%, transparent 66%);
-  mask-size: 100% 100%, 250% 100%;
-  mask-composite: intersect;
-  pointer-events: none;
-  animation: ocean-water 6s ease-in-out infinite alternate;
-  animation-delay: -1.5s;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, transparent 57%, black 76%);
+}
+
+.ocean-light {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 250%;
+  /* Move a cached diagonal mask and counter-move the engraving so its lines
+   * stay aligned. Animating mask-position repaints the pane every frame. */
+  mask-image: linear-gradient(110deg, transparent 34%, black 50%, transparent 66%);
+  will-change: transform;
+  animation: ocean-water 6s ease-in-out -1.5s infinite alternate;
   animation-play-state: paused;
 }
 
 .ocean-light .ocean-engraving {
+  width: 40%;
+  will-change: transform;
+  animation: ocean-water-image 6s ease-in-out -1.5s infinite alternate;
+  animation-play-state: paused;
   filter: invert(1) var(--ocean-filter) brightness(4);
 }
 
@@ -929,6 +936,7 @@
 }
 
 .ocean-scene[data-water-moving] .ocean-light,
+.ocean-scene[data-water-moving] .ocean-light .ocean-engraving,
 .ocean-scene[data-water-moving] .ocean-grain,
 .ocean-scene[data-water-moving] .ocean-fin-glint {
   animation-play-state: running;
@@ -939,17 +947,24 @@
 }
 
 .agent-surface:has(.composer-input:focus) .ocean-light,
+.agent-surface:has(.composer-input:focus) .ocean-light .ocean-engraving,
 .agent-surface:has(.composer-input:focus) .ocean-grain,
 .agent-surface:has(.composer-input:focus) .ocean-fin-glint,
 .ocean-preview:has(textarea:focus) .ocean-light,
+.ocean-preview:has(textarea:focus) .ocean-light .ocean-engraving,
 .ocean-preview:has(textarea:focus) .ocean-grain,
 .ocean-preview:has(textarea:focus) .ocean-fin-glint {
   animation-play-state: paused;
 }
 
 @keyframes ocean-water {
-  from { mask-position: 0 0, 100% 0; }
-  to { mask-position: 0 0, 0% 0; }
+  from { transform: translate3d(-60%, 0, 0); }
+  to { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes ocean-water-image {
+  from { transform: translate3d(150%, 0, 0); }
+  to { transform: translate3d(0, 0, 0); }
 }
 
 .ocean-fin {
@@ -957,26 +972,31 @@
   bottom: -16%;
   width: 100%;
   height: 100%;
-  color: var(--foreground);
+  container-type: size;
+  mask: url("/artwork/ocean-fin-dither.svg") center bottom / cover no-repeat;
   opacity: 0.9;
   pointer-events: none;
 }
 
-.ocean-fin-mask { mask-type: alpha; }
-
 .ocean-fin-glint {
+  --ocean-unit: max(calc(100cqw / 1536), calc(100cqh / 1024));
+  position: absolute;
+  inset: 0;
+  background: var(--foreground);
+  mask: url("/artwork/ocean-fin-light.svg") center bottom / cover no-repeat;
+  will-change: transform, opacity;
   animation: ocean-fin-shimmer 4.5s ease-in-out infinite alternate;
   animation-delay: -0.8s;
   animation-play-state: paused;
 }
 
 @keyframes ocean-fin-shimmer {
-  from { transform: translate3d(-10px, 38px, 0); opacity: 0.55; }
-  to { transform: translate3d(10px, -38px, 0); opacity: 1; }
+  from { transform: translate3d(calc(-10 * var(--ocean-unit)), calc(38 * var(--ocean-unit)), 0); opacity: 0.55; }
+  to { transform: translate3d(calc(10 * var(--ocean-unit)), calc(-38 * var(--ocean-unit)), 0); opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ocean-light, .ocean-grain, .ocean-fin-glint { animation: none; }
+  .ocean-light, .ocean-light .ocean-engraving, .ocean-grain, .ocean-fin-glint { animation: none; }
 }
 
 .ocean-preview {
