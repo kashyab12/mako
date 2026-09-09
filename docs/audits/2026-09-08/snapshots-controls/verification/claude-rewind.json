@@ -1,0 +1,32 @@
+{
+  "url": "http://127.0.0.1:5185/",
+  "root": "/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-rewind-e2e-bHzI1l",
+  "cwd": "/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-rewind-e2e-bHzI1l/workspace",
+  "provider": "claude",
+  "sourceId": "dca08a8f-6528-49b8-96e5-662fe24aef4b",
+  "forkId": "58f78999-f357-422e-bed0-befe15006264",
+  "requestIds": [
+    "98b650db-d7cf-49ac-a27d-03cdf155fbfa",
+    "1cf45d01-42f2-4655-864d-d7e20f3339e4"
+  ],
+  "preview": {
+    "target": {
+      "id": "cf6d0718-c5a3-4664-beed-eec1ec93d131",
+      "scope": "/private/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-rewind-e2e-bHzI1l/workspace",
+      "createdAt": 1788898248710,
+      "files": 1
+    },
+    "current": {
+      "id": "95159461-01a4-4e0b-8616-a151c734d7a3",
+      "scope": "/private/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-rewind-e2e-bHzI1l/workspace",
+      "createdAt": 1788898257056,
+      "files": 1
+    },
+    "changedFiles": [
+      "checkpoint.txt"
+    ],
+    "changedFileCount": 1,
+    "stagingChanged": false
+  },
+  "checkedAt": "2026-09-08T20:10:59.046Z"
+}

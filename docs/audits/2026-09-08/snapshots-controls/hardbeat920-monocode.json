@@ -1,0 +1,56 @@
+{
+  "repository": "hardbeat920/monocode",
+  "checkedAt": "2026-09-08T19:22:27.710Z",
+  "queries": [
+    {
+      "query": "repo:hardbeat920/monocode snapshot in:title",
+      "total": 0,
+      "received": 0,
+      "truncated": false
+    },
+    {
+      "query": "repo:hardbeat920/monocode checkpoint in:title",
+      "total": 0,
+      "received": 0,
+      "truncated": false
+    },
+    {
+      "query": "repo:hardbeat920/monocode rewind in:title",
+      "total": 0,
+      "received": 0,
+      "truncated": false
+    },
+    {
+      "query": "repo:hardbeat920/monocode rollback in:title",
+      "total": 0,
+      "received": 0,
+      "truncated": false
+    },
+    {
+      "query": "repo:hardbeat920/monocode browser in:title",
+      "total": 1,
+      "received": 1,
+      "truncated": false
+    },
+    {
+      "query": "repo:hardbeat920/monocode \"computer use\" in:title",
+      "total": 0,
+      "received": 0,
+      "truncated": false
+    }
+  ],
+  "records": [
+    {
+      "number": 48,
+      "title": "Add browser remote access",
+      "url": "https://github.com/hardbeat920/monocode/pull/48",
+      "kind": "pull-request",
+      "state": "closed",
+      "createdAt": "2026-09-02T07:01:51Z",
+      "updatedAt": "2026-09-02T15:16:37Z",
+      "closedAt": "2026-09-02T15:16:36Z",
+      "body": "## Summary\n\n- Add a token-authenticated HTTP/WebSocket remote server in the Tauri backend so the desktop app can be controlled over the network\n- Introduce a web bridge layer (`src/bridge/*`) that lets the existing UI run in a browser when connected remotely\n- Add Settings UI to enable/disable remote access, manage the access token, and copy connection URLs\n\n## Test plan\n\n- [ ] Build and run the desktop app locally\n- [ ] Enable remote access in Settings and verify a token + URL are shown\n- [ ] Open the remote URL in a browser with the token and confirm the UI loads\n- [ ] Exercise core flows over remote (PTY, invoke commands, events) and confirm blocked window-only commands stay unavailable\n- [ ] Disable remote access and confirm the server stops and browser sessions disconnect\n\n\nMade with [Cursor](https://cursor.com)",
+      "comments": 1
+    }
+  ]
+}
