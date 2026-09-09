@@ -1,4 +1,5 @@
 import type { SessionSettings } from "@mako/sessions/settings"
+import type { ProviderBinding } from "../contracts/conversation-control.js"
 import type {
   LivePermissionResponse,
   PromptAttachment,
@@ -30,6 +31,8 @@ export interface ProviderLiveDriver extends ProviderCapability {
   compact?(id: string): Promise<void>
   forkPoint?: "run" | "checkpoint"
   canResume: boolean
+  checkpoint?(path: string): Promise<string | undefined>
+  canResumeBinding?(binding: ProviderBinding): Promise<boolean>
   available(appPath: string): boolean
   start(cwd: string, options: ProviderStartOptions): Promise<LiveSessionState>
   prompt(

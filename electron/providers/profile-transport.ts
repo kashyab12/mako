@@ -1,23 +1,8 @@
-import { spawn } from "node:child_process"
 import { readFile } from "node:fs/promises"
-import { StringDecoder } from "node:string_decoder"
-import type { JsonObject } from "../codex-app-json.js"
-import {
-  environmentForExecutable,
-  resolveExecutable,
-} from "../executable.js"
-
-interface RpcOutbound {
-  id?: number
-  method: string
-  params: object
-}
-
-interface RpcInbound<TResult> {
-  id?: number
-  result: TResult
-  error?: { message?: string }
-}
+import { createInterface } from "node:readline"
+import { z } from "zod"
+import type { JsonObject, JsonValue } from "../codex-app-json.js"
+import { withDiscoveryProcess } from "./discovery-process.js"
 
 export async function readJson<TResult>(path: string): Promise<TResult | null> {
   try {
@@ -34,98 +19,79 @@ export function runDiscovery(
   input?: string,
   cwd?: string
 ): Promise<string> {
-  const executable = resolveExecutable(command, env)
-  if (!executable) return Promise.reject(new Error(`${command} is not installed`))
-  return new Promise((resolve, reject) => {
-    const child = spawn(executable, args, {
-      cwd,
-      env: environmentForExecutable(executable, env),
-      stdio: ["pipe", "pipe", "pipe"],
-    })
-    const stdoutDecoder = new StringDecoder("utf8")
-    const stderrDecoder = new StringDecoder("utf8")
-    let stdout = ""
-    let stderr = ""
-    const timer = setTimeout(() => {
-      child.kill("SIGTERM")
-      reject(new Error(`${command} discovery timed out`))
-    }, 10_000)
-    child.stdout?.on("data", (chunk: Buffer) => {
-      stdout = (stdout + stdoutDecoder.write(chunk)).slice(-8_000_000)
-    })
-    child.stderr?.on("data", (chunk: Buffer) => {
-      stderr = (stderr + stderrDecoder.write(chunk)).slice(-4_000)
-    })
-    child.on("error", reject)
-    child.on("close", (code) => {
-      clearTimeout(timer)
-      stdout = (stdout + stdoutDecoder.end()).slice(-8_000_000)
-      stderr = (stderr + stderrDecoder.end()).slice(-4_000)
-      if (code === 0) resolve(stdout)
-      else
-        reject(
-          new Error(
-            stderr.trim().split("\n").at(-1) ||
-              `${command} exited with ${code}`
-          )
+  return withDiscoveryProcess(
+    { command, args, env, cwd },
+    async ({ child, exited }) => {
+      const chunks: Buffer[] = []
+      child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk))
+      child.stdin.end(input)
+      const result = await exited
+      if (result.code !== 0)
+        throw new Error(
+          `${command} discovery exited with ${result.signal ?? result.code}`
         )
-    })
-    child.stdin?.end(input)
-  })
+      return Buffer.concat(chunks).toString("utf8")
+    }
+  )
 }
 
-export function streamRequest<TMessage, TResult>(
+export function streamRequest<TResult>(
   command: string,
   args: string[],
   request: JsonObject,
   env: NodeJS.ProcessEnv,
-  pick: (value: TMessage) => TResult | undefined,
+  pick: (value: JsonValue) => TResult | undefined,
   cwd?: string
 ): Promise<TResult> {
-  const executable = resolveExecutable(command, env)
-  if (!executable) return Promise.reject(new Error(`${command} is not installed`))
-  return new Promise((resolve, reject) => {
-    const child = spawn(executable, args, {
-      cwd,
-      env: environmentForExecutable(executable, env),
-      stdio: ["pipe", "pipe", "pipe"],
-    })
-    const decoder = new StringDecoder("utf8")
-    let buffer = ""
-    let settled = false
-    const finish = (value: TResult) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      child.kill("SIGTERM")
-      resolve(value)
-    }
-    const timer = setTimeout(() => {
-      if (settled) return
-      settled = true
-      child.kill("SIGTERM")
-      reject(new Error(`${command} discovery timed out`))
-    }, 10_000)
-    child.stdout?.on("data", (chunk: Buffer) => {
-      buffer += decoder.write(chunk)
-      const lines = buffer.split("\n")
-      buffer = lines.pop() ?? ""
-      for (const line of lines) {
-        try {
-          const message: TMessage = JSON.parse(line)
-          const selected = pick(message)
-          if (selected !== undefined) finish(selected)
-        } catch {
-          continue
-        }
+  return withDiscoveryProcess(
+    { command, args, env, cwd },
+    async ({ child, exited, phase }) => {
+      const lines = createInterface({
+        input: child.stdout,
+        crlfDelay: Infinity,
+      })
+      try {
+        return await new Promise<TResult>((resolve, reject) => {
+          lines.on("line", (line) => {
+            let message: JsonValue
+            try {
+              message = z.json().parse(JSON.parse(line))
+            } catch {
+              return
+            }
+            try {
+              const selected = pick(message)
+              if (selected !== undefined) resolve(selected)
+            } catch {
+              reject(
+                new Error(`${command} returned an invalid discovery response`)
+              )
+            }
+          })
+          phase("control response")
+          child.stdin.end(`${JSON.stringify(request)}\n`)
+          void exited.then(({ code, signal }) =>
+            reject(
+              new Error(
+                `${command} exited with ${signal ?? code} before discovery completed`
+              )
+            )
+          )
+        })
+      } finally {
+        lines.close()
       }
-    })
-    child.on("error", reject)
-    child.stdin?.end(`${JSON.stringify(request)}\n`)
-  })
+    }
+  )
 }
 
-export function rpcRequest<TResult>(
+const RpcResponseSchema = z.object({
+  id: z.number(),
+  result: z.json().optional(),
+  error: z.object({ code: z.number().optional() }).optional(),
+})
+
+export function rpcRequest(
   command: string,
   args: string[],
   method: string,
@@ -133,70 +99,83 @@ export function rpcRequest<TResult>(
   jsonrpc: boolean,
   params: JsonObject = {},
   cwd?: string
-): Promise<TResult> {
-  const executable = resolveExecutable(command, env)
-  if (!executable) return Promise.reject(new Error(`${command} is not installed`))
-  return new Promise((resolve, reject) => {
-    const child = spawn(executable, args, {
-      cwd,
-      env: environmentForExecutable(executable, env),
-      stdio: ["pipe", "pipe", "pipe"],
-    })
-    const decoder = new StringDecoder("utf8")
-    let buffer = ""
-    let initialized = false
-    let settled = false
-    const envelope = (value: RpcOutbound) =>
-      jsonrpc ? { jsonrpc: "2.0", ...value } : value
-    const timer = setTimeout(() => {
-      if (settled) return
-      settled = true
-      child.kill("SIGTERM")
-      reject(new Error(`${command} protocol discovery timed out`))
-    }, 10_000)
-    const send = (value: RpcOutbound) =>
-      child.stdin?.write(`${JSON.stringify(envelope(value))}\n`)
-    child.stdout?.on("data", (chunk: Buffer) => {
-      buffer += decoder.write(chunk)
-      const lines = buffer.split("\n")
-      buffer = lines.pop() ?? ""
-      for (const line of lines) {
-        try {
-          const message: RpcInbound<TResult> = JSON.parse(line)
-          if (message.id === 1 && !initialized) {
-            if (message.error)
-              throw new Error(message.error.message ?? "initialize failed")
-            initialized = true
-            send({ method: "initialized", params: {} })
-            send({ id: 2, method, params })
-          } else if (message.id === 2) {
-            settled = true
-            clearTimeout(timer)
-            child.kill("SIGTERM")
-            if (message.error)
-              reject(new Error(message.error.message ?? `${method} failed`))
-            else resolve(message.result)
+): Promise<JsonValue> {
+  return withDiscoveryProcess(
+    { command, args, env, cwd },
+    async ({ child, exited, phase }) => {
+      const lines = createInterface({
+        input: child.stdout,
+        crlfDelay: Infinity,
+      })
+      try {
+        return await new Promise<JsonValue>((resolve, reject) => {
+          let initialized = false
+          const send = (message: {
+            id?: number
+            method: string
+            params: object
+          }) => {
+            child.stdin.write(
+              `${JSON.stringify(jsonrpc ? { jsonrpc: "2.0", ...message } : message)}\n`
+            )
           }
-        } catch (error) {
-          if (
-            !settled &&
-            error instanceof Error &&
-            error.message.includes("failed")
+          lines.on("line", (line) => {
+            let value: unknown
+            try {
+              value = JSON.parse(line)
+            } catch {
+              return
+            }
+            const parsed = RpcResponseSchema.safeParse(value)
+            if (!parsed.success || ![1, 2].includes(parsed.data.id)) return
+            const message = parsed.data
+            if (message.error) {
+              reject(
+                new Error(
+                  `${command} ${message.id === 1 ? "initialize" : method} failed (RPC ${message.error.code ?? "error"})`
+                )
+              )
+              return
+            }
+            if (message.result === undefined) {
+              reject(
+                new Error(
+                  `${command} returned a discovery response without a result`
+                )
+              )
+              return
+            }
+            if (message.id === 1 && !initialized) {
+              initialized = true
+              phase(method)
+              send({ method: "initialized", params: {} })
+              send({ id: 2, method, params })
+            } else if (message.id === 2 && initialized) resolve(message.result)
+          })
+          phase("initialize")
+          send({
+            id: 1,
+            method: "initialize",
+            params: {
+              protocolVersion: 1,
+              clientInfo: { name: "mako", title: "Mako", version: "0.0.1" },
+              clientCapabilities: {
+                session: { configOptions: { boolean: {} } },
+              },
+              capabilities: { experimentalApi: true },
+            },
+          })
+          void exited.then(({ code, signal }) =>
+            reject(
+              new Error(
+                `${command} exited with ${signal ?? code} before ${method} discovery completed`
+              )
+            )
           )
-            reject(error)
-        }
+        })
+      } finally {
+        lines.close()
       }
-    })
-    child.on("error", reject)
-    send({
-      id: 1,
-      method: "initialize",
-      params: {
-        protocolVersion: 1,
-        clientInfo: { name: "mako", title: "Mako", version: "0.0.1" },
-        clientCapabilities: { session: { configOptions: { boolean: {} } } },
-        capabilities: { experimentalApi: true },
-      },
-    })
-  })
+    }
+  )
 }

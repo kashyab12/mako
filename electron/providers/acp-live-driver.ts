@@ -6,10 +6,15 @@ export function acpLiveDriver(source: ProviderAcpSource): ProviderLiveDriver {
   return {
     provider: source.provider,
     canResume: source.canResume,
+    checkpoint: source.checkpoint,
+    canResumeBinding: source.canResumeBinding,
     available: (appPath) => source.available(appPath),
     start: async (cwd, options) =>
       (await import("../acp.js")).liveStart(source.provider, cwd, options),
     prompt: async (...args) => (await import("../acp.js")).livePrompt(...args),
+    steer: source.steering === "concurrent-prompt"
+      ? async (...args) => (await import("../acp.js")).liveSteer(...args)
+      : undefined,
     permission: async (...args) => {
       ;(await import("../acp.js")).acpRespondPermission(...args)
     },

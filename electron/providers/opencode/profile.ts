@@ -82,7 +82,11 @@ const ConfigSchema = z.object({
     .optional(),
 })
 const DefaultModelSchema = z.object({
-  data: z.object({ id: z.string(), providerID: z.string() }),
+  data: z.object({
+    id: z.string().min(1),
+    providerID: z.string().min(1),
+    variants: z.array(z.object({ id: z.string().min(1) })).optional(),
+  }),
 })
 
 export const openCodeProfileLoader: ProviderProfileLoader = {
@@ -94,7 +98,6 @@ export const openCodeProfileLoader: ProviderProfileLoader = {
     "resume",
     "fork",
     "stream",
-    "steer",
     "interrupt",
     "permissions",
     "images",
@@ -160,8 +163,33 @@ export const openCodeProfileLoader: ProviderProfileLoader = {
           )
         )
         const identity = `${response.data.providerID}/${response.data.id}`
+        const model = catalog.models.find((model) => model.id === identity)
+        if (!model)
+          throw new Error(
+            "OpenCode's default model is missing from its catalog"
+          )
+        if (response.data.variants) {
+          const variants = response.data.variants.map((variant) => variant.id)
+          model.options = normalizeOpenCodeModels([
+            {
+              id: response.data.id,
+              providerID: response.data.providerID,
+              variants: Object.fromEntries(variants.map((id) => [id, {}])),
+              defaultVariant: variants.includes("default")
+                ? "default"
+                : variants[0],
+            },
+          ]).models.flatMap((entry) => entry.options)
+        }
         catalog.defaultModel = identity
-        catalog.settings = { model: identity }
+        catalog.settings = {
+          model: identity,
+          options: Object.fromEntries(
+            model.options.flatMap((option) =>
+              option.current === undefined ? [] : [[option.id, option.current]]
+            )
+          ),
+        }
         return availableProviderProfile(openCodeProfileLoader, catalog)
       }
       const config = ConfigSchema.parse(
@@ -238,6 +266,9 @@ async function v2Models(output: string): Promise<OpenCodeModelRow[]> {
         name,
         family: model?.family,
         status: model?.status,
+        defaultVariant: reasoning.includes("default")
+          ? "default"
+          : reasoning[0],
         variants:
           reasoning.length > 0
             ? Object.fromEntries(reasoning.map((value) => [value, {}]))

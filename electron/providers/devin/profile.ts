@@ -20,6 +20,7 @@ export const devinProfileLoader: ProviderProfileLoader = {
     "resume",
     "stream",
     "interrupt",
+    "steer",
     "permissions",
     "images",
     "commands",

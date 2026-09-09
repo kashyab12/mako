@@ -14,7 +14,7 @@ export async function claudeResolvedSettings(
   cwd: string | undefined,
   model: string
 ) {
-  return streamRequest<unknown, { effort?: string; fast?: boolean }>(
+  return streamRequest(
     env.CLAUDE_CODE_EXECUTABLE ?? "claude",
     [
       "-p",

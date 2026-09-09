@@ -1,4 +1,16 @@
+import { app, safeStorage } from "electron"
+import { join } from "node:path"
 import { COMMIT_PROMPT, type AgentHost } from "../host.js"
+import { hostClient } from "../host-client.js"
+import { CommitGeneration } from "../commit-generation.js"
+import { UtilityModelStore } from "../utility-model-store.js"
+import { UtilityModelCatalog } from "../utility-model-catalog.js"
+import type {
+  CommitGenerationInput,
+  UtilityCatalogInput,
+  UtilityConnectionInput,
+  UtilityProvider,
+} from "../shared.js"
 import { registerIpc } from "./register.js"
 
 export interface GitIpcContext {
@@ -13,9 +25,7 @@ export function installGitIpc(context: GitIpcContext): void {
   registerIpc("mako:git-diff", (_event, path: string) =>
     withHost((host) => host.gitDiff(path))
   )
-  registerIpc("mako:git-diff-all", () =>
-    withHost((host) => host.gitDiffAll())
-  )
+  registerIpc("mako:git-diff-all", () => withHost((host) => host.gitDiffAll()))
   registerIpc("mako:git-stage", (_event, paths: string[]) =>
     withHost((host) => host.gitStage(paths))
   )
@@ -48,10 +58,45 @@ export function installGitIpc(context: GitIpcContext): void {
   registerIpc("mako:git-commit-diff-all", (_event, hash: string) =>
     withHost((host) => host.gitCommitDiffAll(hash))
   )
+  const models = new UtilityModelStore(
+    join(app.getPath("userData"), "utility-models"),
+    {
+      available: () =>
+        safeStorage.isEncryptionAvailable() &&
+        (process.platform !== "linux" ||
+          safeStorage.getSelectedStorageBackend() !== "basic_text"),
+      encrypt: (value) => safeStorage.encryptString(value),
+      decrypt: (value) => safeStorage.decryptString(value),
+    }
+  )
+  const generation = new CommitGeneration(models)
+  const catalog = new UtilityModelCatalog(models)
+  registerIpc("mako:utility-model-settings", () => models.settings())
+  registerIpc(
+    "mako:utility-model-catalog",
+    (_event, input: UtilityCatalogInput) => catalog.list(input)
+  )
+  registerIpc(
+    "mako:utility-model-connect",
+    (_event, input: UtilityConnectionInput) => models.connect(input)
+  )
+  registerIpc(
+    "mako:utility-model-disconnect",
+    (_event, provider: UtilityProvider) => models.disconnect(provider)
+  )
+  registerIpc("mako:git-cancel-generation", (_event, requestId: string) =>
+    generation.cancel(hostClient(), requestId)
+  )
   registerIpc(
     "mako:git-generate-message",
-    (_event, options?: { prompt?: string; model?: string }) =>
-      withHost((host) => host.generateCommitMessage(options))
+    (_event, input: CommitGenerationInput) =>
+      withHost((host) => {
+        if (host.workspace !== input.cwd)
+          throw new Error(
+            "The workspace changed. Refresh Changes before drafting a message."
+          )
+        return generation.generate(hostClient(), input)
+      })
   )
   registerIpc("mako:default-commit-prompt", () => COMMIT_PROMPT)
 }

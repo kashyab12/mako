@@ -1,4 +1,5 @@
 import { ipcMain } from "electron"
+import { withHostClient } from "../host-client.js"
 import { breadcrumb, record } from "../crash.js"
 import { hostCallInputs } from "../contracts/host-call-inputs.js"
 
@@ -8,10 +9,10 @@ type HostArguments<Channel extends HostChannel> =
 const calls = new Map<string, (args: unknown[]) => Promise<string>>()
 
 /** Web replies are encoded here so Electron keeps its original structured values. */
-export function invokeHost(channel: string, args: unknown[]): Promise<string> {
+export function invokeHost(channel: string, args: unknown[], client = "web"): Promise<string> {
   const call = calls.get(channel)
   if (!call) throw new Error("Unknown Mako host method")
-  return call(args)
+  return withHostClient(client, () => call(args))
 }
 
 /** Both transports validate arguments against the generated handler contract. */
@@ -33,5 +34,5 @@ export function registerIpc<Channel extends HostChannel, Result>(
   calls.set(channel, async (args) =>
     JSON.stringify({ ok: true, value: await call(args) })
   )
-  ipcMain.handle(channel, (_event, ...args) => call(args))
+  ipcMain.handle(channel, (event, ...args) => withHostClient(`renderer:${event.sender.id}`, () => call(args)))
 }

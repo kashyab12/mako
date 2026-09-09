@@ -1,22 +1,31 @@
 import { claudeResolvedSettings } from "./settings.js"
 import type { SessionSettings } from "@mako/sessions/settings"
-import {
-  normalizeClaudeModels,
-  type ClaudeModelRow,
-} from "@mako/sessions/model-catalog"
+import { normalizeClaudeModels } from "@mako/sessions/model-catalog"
 import {
   availableProviderProfile,
   type ProviderProfileLoader,
 } from "../profile-loader.js"
 import { streamRequest } from "../profile-transport.js"
 
-interface ClaudeControlMessage {
-  type?: string
-  response?: {
-    subtype?: string
-    response?: { models?: ClaudeModelRow[] }
-  }
-}
+import { z } from "zod"
+
+const ControlResponseSchema = z.object({
+  type: z.literal("control_response"),
+  response: z.object({ subtype: z.string(), response: z.unknown().optional() }),
+})
+const ModelsSchema = z.object({
+  models: z.array(
+    z.object({
+      value: z.string(),
+      resolvedModel: z.string().optional(),
+      displayName: z.string().optional(),
+      description: z.string().optional(),
+      supportsEffort: z.boolean().optional(),
+      supportedEffortLevels: z.array(z.string()).optional(),
+      supportsFastMode: z.boolean().optional(),
+    })
+  ),
+})
 
 export const claudeProfileLoader: ProviderProfileLoader = {
   provider: "claude",
@@ -39,10 +48,7 @@ export const claudeProfileLoader: ProviderProfileLoader = {
   ],
   cacheKey: (env) => env.CLAUDE_CONFIG_DIR ?? "",
   async load(env, cwd) {
-    const response = await streamRequest<
-      ClaudeControlMessage,
-      ClaudeModelRow[]
-    >(
+    const response = await streamRequest(
       env.CLAUDE_CODE_EXECUTABLE ?? "claude",
       [
         "-p",
@@ -59,11 +65,13 @@ export const claudeProfileLoader: ProviderProfileLoader = {
         request: { subtype: "list_models" },
       },
       env,
-      (message) =>
-        message.type === "control_response" &&
-        message.response?.subtype === "success"
-          ? message.response.response?.models
-          : undefined,
+      (message) => {
+        const parsed = ControlResponseSchema.safeParse(message)
+        if (!parsed.success) return undefined
+        if (parsed.data.response.subtype !== "success")
+          throw new Error("Claude model discovery was rejected")
+        return ModelsSchema.parse(parsed.data.response.response).models
+      },
       cwd
     )
     const catalog = normalizeClaudeModels(response)

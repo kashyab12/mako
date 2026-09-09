@@ -18,6 +18,7 @@ export const grokProfileLoader: ProviderProfileLoader = {
     "fork",
     "stream",
     "interrupt",
+    "steer",
     "permissions",
     "images",
     "commands",

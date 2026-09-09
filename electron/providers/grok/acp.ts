@@ -5,6 +5,7 @@ import type { ProviderAcpSource } from "../acp-source.js"
 export const grokAcpSource: ProviderAcpSource = {
   provider: "grok",
   canResume: true,
+  steering: "concurrent-prompt",
   launchOptionIds: ["effort"],
   available: () => resolveExecutable("grok") !== null,
   async launch(options) {
