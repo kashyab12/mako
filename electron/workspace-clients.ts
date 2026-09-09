@@ -4,9 +4,9 @@ import type { HostEvent } from "./shared.js"
 export class WorkspaceClients {
   private readonly pools = new Map<string, HostPool>()
   private readonly starting = new Map<string, Promise<void>>()
-  private readonly emit: (event: HostEvent) => void
+  private readonly emit: (event: HostEvent, client?: string) => void
 
-  constructor(emit: (event: HostEvent) => void) {
+  constructor(emit: (event: HostEvent, client?: string) => void) {
     this.emit = emit
   }
 
@@ -14,7 +14,7 @@ export class WorkspaceClients {
     let pool = this.pools.get(id)
     if (!pool) {
       if (this.pools.size >= 128) throw new Error("Too many workspace clients are open")
-      pool = new HostPool(this.emit)
+      pool = new HostPool((event) => this.emit(event, id))
       this.pools.set(id, pool)
     }
     let starting = this.starting.get(id)

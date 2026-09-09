@@ -7,6 +7,7 @@ import { once } from "node:events"
 import { chmod } from "node:fs/promises"
 import { z } from "zod"
 import type { HostEvent, TerminalEvent } from "./shared.js"
+import type { RuntimeInfo } from "./contracts/runtime.js"
 
 const argument = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("absent") }),
@@ -36,11 +37,16 @@ export async function startWebHost(
   socket: string,
   invoke: (channel: string, args: unknown[], client?: string) => Promise<string>,
   file: (request: Request) => Promise<Response>,
-  disconnected?: (client: string) => void
+  disconnected?: (client: string) => void,
+  runtime?: RuntimeInfo
 ) {
   const streams = new Set<ServerResponse>()
   const server = createServer((request, response) => {
     response.setHeader("cache-control", "no-store")
+    if (request.method === "GET" && request.url === "/health" && runtime) {
+      response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(runtime))
+      return
+    }
     if (request.method === "GET" && request.url?.startsWith("/file/")) {
       const abort = new AbortController()
       response.once("close", () => abort.abort())
