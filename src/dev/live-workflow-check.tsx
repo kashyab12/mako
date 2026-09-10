@@ -6,6 +6,8 @@ import {
 import { useState } from "react"
 import { createRoot } from "react-dom/client"
 import { Composer } from "@/components/composer/composer"
+import { AppshotButton } from "@/components/composer/appshot-button"
+import { registerSlot } from "@/extend/slots"
 import { HotIndicator } from "@/components/shell/hot-indicator"
 import { AcpPanel } from "@/components/viewer/acp-panel"
 import { Exchange } from "@/components/transcript/exchange"
@@ -24,6 +26,7 @@ import { installMockBridge } from "./mock-bridge"
 import "../index.css"
 
 const mock = installMockBridge()
+registerSlot("appshot", "composer.controls", AppshotButton, -10)
 const id = "11111111-1111-4111-8111-111111111111"
 const requestId = "22222222-2222-4222-8222-222222222222"
 const cwd = "/fixture/project"
@@ -148,7 +151,8 @@ snapshot.blocks.push({
 })
 mock.setLiveSnapshot(snapshot)
 applyLiveSnapshot(snapshot)
-function publishQueue(starting: boolean) {
+function publishQueue(phase: "starting" | "reasoning" | "responding") {
+  const starting = phase === "starting"
   const next: LiveSnapshot = {
     ...snapshot,
     revision: (acpStore.get().conversations[id]?.revision ?? 0) + 1,
@@ -157,7 +161,7 @@ function publishQueue(starting: boolean) {
       status: starting ? "starting" : "running",
       connection: starting ? "starting" : "connected",
     },
-    blocks: starting ? [] : snapshot.blocks,
+    blocks: starting ? [] : [...snapshot.blocks, phase === "reasoning" ? { type: "thinking", text: "Checking the route guard before changing session recovery." } : { type: "text", text: "Here is the final routing summary." }],
     requests: [
       {
         ...snapshot.requests[0]!,
@@ -251,7 +255,7 @@ export function Fixture() {
             <HotIndicator />
             <button
               className="pressable rounded border border-hairline px-2 py-1"
-              onClick={() => publishQueue(true)}
+              onClick={() => publishQueue("starting")}
             >
               First message startup
             </button>
@@ -271,10 +275,11 @@ export function Fixture() {
             <button
               className="pressable rounded border border-hairline px-2 py-1"
               data-fixture="running"
-              onClick={() => publishQueue(false)}
+              onClick={() => publishQueue("reasoning")}
             >
               Working with queue
             </button>
+            <button className="pressable rounded border border-hairline px-2 py-1" data-fixture="responding" onClick={() => publishQueue("responding")}>Streaming reply</button>
             <button
               className="pressable rounded border border-hairline px-2 py-1"
               onClick={() => setNarrow((value) => !value)}

@@ -135,8 +135,22 @@ export function installMockBridge() {
     capabilities,
   })
 
+  const archivedThreads = new Set<string>()
+  let archiveRevision = 0
   window.mako = {
     boot: async () => boot,
+    threadArchives: async () => ({ revision: archiveRevision, keys: [...archivedThreads] }),
+    threadControls: async () => ({ archived: false, stop: null, external: false }),
+    archiveThread: async (command) => {
+      const { threadArchiveKey } = await import("../../electron/contracts/thread-lifecycle")
+      const key = threadArchiveKey(command.target)
+      if (command.archived) archivedThreads.add(key)
+      else archivedThreads.delete(key)
+      const snapshot = { revision: ++archiveRevision, keys: [...archivedThreads] }
+      emit({ type: "thread-archives", snapshot })
+      return snapshot
+    },
+    stopThread: async () => false,
     openTab: async () => mockTab(`tab-${++tabCount}`),
     closeTab: async (id: string) => ({ tabs: [id], activeId: "tab-1" }),
     activateTab: async () => true,
@@ -1511,6 +1525,13 @@ export function installMockBridge() {
       queueMicrotask(() => listener({ type: "connection", state: "ready" }))
       return () => terminalListeners.delete(listener)
     },
+    lifecycleState: async () => ({ work: [], revision: "fixture", operation: { kind: "idle" as const } }),
+    lifecycleCommand: async () => ({ work: [], revision: "fixture", operation: { kind: "idle" as const } }),
+    quitClient: async () => {},
+    acknowledgeShutdown: async () => {},
+    installationState: async () => ({ distribution: "development" as const, build: null, source: null, local: { kind: "idle" as const } }),
+    selectUpdateSource: async () => ({ distribution: "development" as const, build: null, source: null, local: { kind: "idle" as const } }),
+    buildUpdate: async () => {},
     updateState: async () => ({
       status: "unsupported" as const,
       version: "0.0.0-mock",
