@@ -14,7 +14,7 @@ export function computerPermissions(): MakoComputerPermissions {
   return {
     supported: true,
     persistentAcrossUpdates:
-      !app.isPackaged || packagedDistribution(app.getAppPath()) === "signed",
+      app.isPackaged && packagedDistribution(app.getAppPath()) !== "unsigned",
     accessibility: systemPreferences.isTrustedAccessibilityClient(false),
     screenRecording: systemPreferences.getMediaAccessStatus("screen"),
   }

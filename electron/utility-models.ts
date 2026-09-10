@@ -132,7 +132,9 @@ export async function completeUtilityText(
   instructions: string,
   prompt: string,
   signal: AbortSignal,
-  maxOutputTokens = 2_048
+  maxOutputTokens = 2_048,
+  outputSchema?: z.ZodType,
+  reasoning: "low" | "high" = "low"
 ): Promise<string> {
   try {
     const result = await generateText({
@@ -140,7 +142,7 @@ export async function completeUtilityText(
       instructions,
       prompt,
       maxOutputTokens,
-      reasoning: "low",
+      reasoning,
       maxRetries: 1,
       abortSignal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]),
       telemetry: {
@@ -166,6 +168,10 @@ export async function completeUtilityText(
         "output",
         "The model returned no text. Check that this is a text-generation model and try again."
       )
+    if (outputSchema) {
+      try { outputSchema.parse(JSON.parse(text)) }
+      catch { throw new UtilityModelError("output", "The model returned an invalid structured response. No partial draft was accepted.") }
+    }
     return text
   } catch (caught) {
     if (signal.aborted)

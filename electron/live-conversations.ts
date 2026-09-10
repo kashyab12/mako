@@ -1,3 +1,5 @@
+import { assertLifecycleAdmission, lifecycleBlocked } from "./application-lifecycle.js"
+import type { LifecycleWork } from "./contracts/app-lifecycle.js"
 import {
   QueuedPromptEditSchema,
   type QueuedPromptEdit,
@@ -45,17 +47,19 @@ import type {
   LiveStartOptions,
   LiveSummary,
 } from "./shared.js"
-import { reduceLiveUpdates } from "./contracts/live-content.js"
+import { reduceLiveUpdates, mergeLiveUpdates } from "./contracts/live-content.js"
 
 import { LiveJournal, LiveRequestSchema, journalIds } from "./live-journal.js"
 
 /** Owns durable conversation intent and observation. Providers still own execution. */
 export class LiveConversations {
+  private readonly stops = new Map<string, { requestId: string; result: Promise<boolean> }>()
   private readonly checkpoints: LiveCheckpoints
   private readonly actions: LiveActions
   private readonly transfers: LiveTransfers
   private readonly children: LiveChildren
   private readonly records = new Map<string, Resident>()
+  private readonly closedCache = new Map<string, { bytes: number; revision: number }>()
   private readonly bindingOwners = new Map<string, string>()
   private readonly captures = new Map<string, Promise<LiveSnapshot>>()
   private readonly starts = new Map<string, Promise<LiveSessionState>>()
@@ -122,12 +126,36 @@ export class LiveConversations {
     }
   }
 
-  hasActiveWork(): boolean {
-    return [...this.records.values()].some((resident) => resident.transferring || resident.opening || resident.checkpointing || resident.rewinding || (resident.driver && (
-      resident.snapshot.session.status === "running" ||
-      resident.snapshot.requests.some((request) => request.status === "dispatching" || request.status === "queued") ||
-      resident.snapshot.nativeAgents?.agents.some((agent) => agent.state.kind === "working" || agent.state.kind === "waiting")
-    )))
+  hasActiveWork(): boolean { return this.lifecycleWork().length > 0 }
+
+  lifecycleWork(): LifecycleWork[] {
+    const work: LifecycleWork[] = [...this.records.values()].flatMap((resident) => {
+      const { snapshot } = resident
+      const finishing = resident.transferring || resident.opening || resident.checkpointing || resident.rewinding || resident.closing
+      const requests = snapshot.requests.filter((request) => request.status === "dispatching" || request.status === "queued")
+      const native = snapshot.nativeAgents?.agents.filter((agent) => agent.state.kind === "working" || agent.state.kind === "waiting") ?? []
+      if (!finishing && (!resident.driver || (snapshot.session.status !== "running" && !requests.length && !native.length && !snapshot.permissions.length))) return []
+      const status = finishing ? "finishing" : snapshot.permissions.length || native.some((agent) => agent.state.kind === "waiting") ? "waiting" : snapshot.session.status === "running" ? "running" : "queued"
+      return [{ id: snapshot.session.id, token: `${resident.generation}:${requests.map((request) => request.id).join(":")}`, title: snapshot.session.title || "Untitled conversation", provider: snapshot.session.harness, cwd: snapshot.session.cwd, status, stoppable: !finishing }]
+    })
+    for (const id of this.starts.keys()) if (!work.some((item) => item.id === id)) work.push({ id, token: id, title: "Starting an agent", provider: "", cwd: "", status: "finishing", stoppable: false })
+    for (const path of this.captures.keys()) work.push({ id: `capture:${path}`, token: path, title: "Saving a conversation", provider: "", cwd: path, status: "finishing", stoppable: false })
+    return work
+  }
+
+  async closeForExit(ids = [...this.records.keys()]): Promise<void> {
+    const results = await Promise.allSettled(ids.map(async (id) => {
+      const resident = this.records.get(id)
+      if (!resident || resident.snapshot.session.status === "closed") return
+      resident.snapshot = { ...resident.snapshot, requests: resident.snapshot.requests.map((request) => request.status === "queued" ? { ...request, status: "held" } : request) }
+      this.flush(resident)
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try {
+        await Promise.race([this.close(id), new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error("A provider did not finish closing. Mako stayed open; wait for it to settle before trying again.")), 30_000) })])
+      } finally { clearTimeout(timer) }
+    }))
+    const failure = results.find((result) => result.status === "rejected")
+    if (failure?.status === "rejected") throw failure.reason
   }
 
   summaries(): LiveSummary[] {
@@ -153,6 +181,7 @@ export class LiveConversations {
   }
 
   capture(id: string, path: string): Promise<LiveSnapshot> {
+    assertLifecycleAdmission()
     z.string().uuid().parse(id)
     const owned = this.summaries().find(
       (summary) =>
@@ -252,6 +281,7 @@ export class LiveConversations {
     cwd: string,
     options: LiveStartOptions
   ): Promise<LiveSessionState> {
+    assertLifecycleAdmission()
     z.string().uuid().parse(options.conversationId)
     const pending = this.starts.get(options.conversationId)
     if (pending) return pending
@@ -582,6 +612,16 @@ export class LiveConversations {
       })
       for (const update of prepared) {
         if (dispatching && update.kind === "user") continue
+        const last = resident.updates.at(-1)
+        const merged = mergeLiveUpdates(last, update)
+        if (last && merged) {
+          const characters = resident.pendingCharacters - JSON.stringify(last).length + JSON.stringify(merged).length
+          if (characters <= 256_000) {
+            resident.updates[resident.updates.length - 1] = merged
+            resident.pendingCharacters = characters
+            continue
+          }
+        }
         const characters = JSON.stringify(update).length
         if (
           resident.updates.length >= 128 ||
@@ -607,6 +647,7 @@ export class LiveConversations {
     attachments: PromptAttachment[] = [],
     tuning?: SessionSettings
   ): LiveRequest {
+    assertLifecycleAdmission()
     const resident = this.require(id)
     if (resident.rewinding)
       throw new Error("Wait for the workspace rewind to finish before sending")
@@ -708,6 +749,7 @@ export class LiveConversations {
   }
 
   delegate(id: string, input: DelegateInput): Promise<LiveSnapshot> {
+    assertLifecycleAdmission()
     return this.children.delegate(id, input)
   }
   cancelChild(id: string, childId: string): LiveSnapshot {
@@ -961,12 +1003,14 @@ export class LiveConversations {
   }
 
   rewind(id: string, input: RewindInput) {
+    assertLifecycleAdmission()
     if (this.actions.blocks(this.require(id)))
       throw new Error("Resolve the pending provider action before rewinding")
     return this.checkpoints.rewind(id, input)
   }
 
   act(id: string, input: LiveActionInput) {
+    assertLifecycleAdmission()
     return this.actions.submit(id, input)
   }
 
@@ -979,6 +1023,7 @@ export class LiveConversations {
   }
 
   transfer(id: string, input: TransferInput): LiveSnapshot {
+    assertLifecycleAdmission()
     if (this.require(id).rewinding)
       throw new Error(
         "Wait for the workspace rewind to finish before switching providers"
@@ -1277,6 +1322,28 @@ export class LiveConversations {
     this.flush(resident)
   }
 
+  activeRequest(id: string): string | null {
+    const resident = this.records.get(id)
+    if (!resident?.driver) return null
+    return resident.snapshot.requests.find((request) => request.status === "dispatching" || (resident.opening && request.status === "queued"))?.id ?? null
+  }
+
+  stopRequest(id: string, requestId: string): Promise<boolean> {
+    const previous = this.stops.get(id)
+    if (previous?.requestId === requestId) return previous.result
+    if (this.activeRequest(id) !== requestId) return Promise.resolve(false)
+    const resident = this.require(id)
+    const snapshot = resident.snapshot
+    resident.snapshot = { ...snapshot, requests: snapshot.requests.map((request) => request.status === "queued" && request.id !== requestId ? { ...request, status: "held" } : request) }
+    try { this.flush(resident) } catch (error) { resident.snapshot = snapshot; return Promise.reject(error) }
+    for (const child of this.control(resident).children)
+      if (child.delivery === "pending" || child.delivery === "queued") this.children.cancelChild(id, child.id)
+    const opening = resident.opening
+    const result = this.cancelRequest(id, requestId).then(async () => { if (opening) await this.close(id); return true }).catch((error) => { this.stops.delete(id); throw error })
+    this.stops.set(id, { requestId, result })
+    return result
+  }
+
   async cancelRequest(id: string, requestId: string): Promise<void> {
     const resident = this.require(id)
     if (this.checkpoints.cancelBeforeDispatch(resident, requestId)) return
@@ -1314,6 +1381,8 @@ export class LiveConversations {
   }
 
   async cancel(id: string): Promise<void> {
+    const requestId = this.activeRequest(id)
+    if (requestId) { await this.stopRequest(id, requestId); return }
     const resident = this.require(id)
     if (this.checkpoints.cancelBeforeDispatch(resident)) return
     for (const child of this.control(resident).children)
@@ -1350,6 +1419,8 @@ export class LiveConversations {
     const closed = [...resident.connections].map(([bindingId, connection]) =>
       connection.driver.close(bindingId)
     )
+    if (resident.opening && resident.driver && !resident.connections.has(this.control(resident).activeBindingId)) closed.push(resident.driver.close(this.control(resident).activeBindingId))
+    resident.opening = false
     resident.connections.clear()
     resident.driver = null
     resident.snapshot = {
@@ -1408,7 +1479,35 @@ export class LiveConversations {
     } finally {
       resident.closing = false
       this.drain(resident)
+      this.cacheClosed(resident)
     }
+  }
+
+  private cacheClosed(resident: Resident): void {
+    if (!this.closedLeaf(resident)) return
+    const id = resident.snapshot.session.id
+    const cached = this.closedCache.get(id)
+    const size = cached?.revision === resident.snapshot.revision ? cached.bytes : JSON.stringify(resident.snapshot).length * 2
+    this.closedCache.delete(id)
+    this.closedCache.set(id, { bytes: size, revision: resident.snapshot.revision })
+    let bytes = [...this.closedCache.values()].reduce((total, entry) => total + entry.bytes, 0)
+    for (const [key, entry] of this.closedCache) {
+      if (key === id || (this.closedCache.size <= 8 && bytes <= 64 * 1024 * 1024)) break
+      this.closedCache.delete(key)
+      bytes -= entry.bytes
+      const held = this.records.get(key)
+      if (!held || !this.closedLeaf(held)) continue
+      this.flush(held)
+      const snapshot = held.snapshot
+      this.recovered.set(key, { session: snapshot.session, revision: snapshot.revision, createdAt: snapshot.createdAt, threadPath: snapshot.threadPath, nativePaths: snapshot.control?.bindings.flatMap((binding) => binding.path ? [binding.path] : []) })
+      held.journal.close()
+      this.records.delete(key)
+      for (const binding of snapshot.control?.bindings ?? []) if (this.bindingOwners.get(binding.id) === key) this.bindingOwners.delete(binding.id)
+    }
+  }
+
+  private closedLeaf(resident: Resident): boolean {
+    return resident.snapshot.session.status === "closed" && !resident.driver && !resident.connections.size && !resident.closing && !resident.opening && !resident.transferring && !resident.checkpointing && !resident.rewinding && !resident.snapshot.control?.children.length
   }
 
   stop(): void {
@@ -1427,6 +1526,7 @@ export class LiveConversations {
   }
 
   private drain(resident: Resident): void {
+    if (lifecycleBlocked()) return
     if (this.actions.blocks(resident)) return
     if (resident.checkpointing || resident.rewinding || resident.closing) return
     this.children.deliver(resident)
@@ -1656,7 +1756,7 @@ export class LiveConversations {
 
   private load(id: string): Resident | undefined {
     const existing = this.records.get(id)
-    if (existing) return existing
+    if (existing) { this.cacheClosed(existing); return existing }
     if (!this.recovered.has(id)) return undefined
     const journal = new LiveJournal(this.dependencies.root, id)
     const previous = journal.read()
@@ -1741,6 +1841,7 @@ export class LiveConversations {
     this.records.set(id, resident)
     this.recovered.delete(id)
     this.children.recover(resident)
+    this.cacheClosed(resident)
     return resident
   }
 }

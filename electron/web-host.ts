@@ -7,18 +7,8 @@ import { once } from "node:events"
 import { chmod } from "node:fs/promises"
 import { z } from "zod"
 import type { HostEvent, TerminalEvent } from "./shared.js"
-import type { RuntimeInfo } from "./contracts/runtime.js"
+import { RuntimeCallSchema, type RuntimeInfo } from "./contracts/runtime.js"
 
-const argument = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("absent") }),
-  z.object({ kind: z.literal("value"), value: z.json() }),
-])
-const requestSchema = z
-  .object({
-    channel: z.string().regex(/^mako:[a-z0-9-]+$/),
-    args: z.array(argument).max(32),
-  })
-  .strict()
 async function readRequest(request: IncomingMessage) {
   const chunks: Buffer[] = []
   let bytes = 0
@@ -29,7 +19,7 @@ async function readRequest(request: IncomingMessage) {
       throw new Error("Mako web request exceeds 32 MB")
     chunks.push(buffer)
   }
-  return requestSchema.parse(JSON.parse(Buffer.concat(chunks).toString("utf8")))
+  return RuntimeCallSchema.parse(JSON.parse(Buffer.concat(chunks).toString("utf8")))
 }
 
 /** Development-only host transport on a private Unix socket, never a public TCP listener. */
@@ -42,9 +32,11 @@ export async function startWebHost(
 ) {
   const streams = new Map<ServerResponse, string>()
   const releases = new Map<string, ReturnType<typeof setTimeout>>()
+  let closed = false
   const server = createServer((request, response) => {
     response.setHeader("cache-control", "no-store")
     if (request.method === "GET" && request.url === "/health" && runtime) {
+      if (process.env.MAKO_RUNTIME_TRACE === "1") console.info("[mako-runtime] health requested")
       response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(runtime))
       return
     }
@@ -83,21 +75,15 @@ export async function startWebHost(
       response.writeHead(405).end()
       return
     }
-    const client = z.string().uuid().optional().safeParse(request.headers["x-mako-window"])
-    if (!client.success) {
-      response.writeHead(400).end("Invalid workspace client")
-      return
-    }
-    const clientId = client.data ? `web:${client.data}` : "web"
     if (request.url === "/events") {
       response.writeHead(200, { "content-type": "application/x-ndjson" })
-      response.write(JSON.stringify({ channel: "ready" }) + "\n")
+      response.write(JSON.stringify({ channel: "ready", runtime }) + "\n")
       clearTimeout(releases.get(clientId))
       releases.delete(clientId)
       streams.set(response, clientId)
       response.once("close", () => {
         streams.delete(response)
-        if (client.data && ![...streams.values()].includes(clientId)) {
+        if (!closed && client.data && ![...streams.values()].includes(clientId)) {
           const timer = setTimeout(() => { releases.delete(clientId); disconnected?.(clientId) }, 5_000)
           timer.unref()
           releases.set(clientId, timer)
@@ -156,9 +142,11 @@ export async function startWebHost(
     }
   }
   return {
+    clients: () => [...new Set(streams.values())],
     event: (event: HostEvent, client?: string) => send("event", event, client),
     terminal: (event: TerminalEvent) => send("terminal", event),
     close() {
+      closed = true
       clearInterval(heartbeat)
       for (const stream of streams.keys()) stream.end()
       streams.clear()

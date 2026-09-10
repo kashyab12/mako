@@ -27,6 +27,10 @@ import { WorkspaceSnapshots } from "./workspace-snapshots.js"
 import type { RewindInput } from "./contracts/workspace-snapshots.js"
 import type { LiveActionInput } from "./contracts/live-actions.js"
 import { LiveConversations } from "./live-conversations.js"
+import { ThreadArchives } from "./thread-archives.js"
+import { ThreadLifecycle } from "./thread-lifecycle.js"
+import { installThreadLifecycleIpc } from "./ipc/thread-lifecycle.js"
+import { nativeStopToken } from "./drivers.js"
 import type { LiveStartOptions } from "./shared.js"
 import {
   app,
@@ -58,7 +62,8 @@ import {
   computerPermissions,
   requestComputerPermissions,
 } from "./computer-permissions.js"
-import { check, installNow, installUpdates, updateState } from "./updates.js"
+import { check, installUpdates, updateState } from "./updates.js"
+import { installApplicationIpc } from "./ipc/application.js"
 import { usageSummary } from "./usage.js"
 import {
   automationList,
@@ -85,7 +90,7 @@ import {
 } from "./github.js"
 import type { HostPool } from "./pool.js"
 import { WorkspaceClients } from "./workspace-clients.js"
-import { hostClient } from "./host-client.js"
+import { hostClient, withHostClient } from "./host-client.js"
 import { listExternalEditors, openInExternalEditor } from "./editors.js"
 import { workspacePreviewPath } from "./workspace-preview.js"
 import {
@@ -267,6 +272,8 @@ const controlPreviews = new ControlPreviews(
 let controlService: Awaited<ReturnType<typeof startControlService>> | null =
   null
 let liveConversations: LiveConversations
+let threadArchives: ThreadArchives
+let threadLifecycle: ThreadLifecycle
 let window: BrowserWindow | null = null
 const rendererWindows = new Set<BrowserWindow>()
 let webHost: Awaited<ReturnType<typeof startWebHost>> | undefined
@@ -318,9 +325,11 @@ function emit(event: HostEvent, client?: string) {
 const RELAUNCH_EXIT_CODE = 75
 let relaunching = false
 let shuttingDown = false
+let application: ReturnType<typeof installApplicationIpc> | undefined
+if (persistentHost) process.once("SIGTERM", () => { shuttingDown = true; app.quit() })
 
 function hasActiveWork(): boolean {
-  return Boolean(liveConversations?.hasActiveWork() || nativeRequests?.list().some((request) => request.status === "dispatching" || request.status === "queued"))
+  return application ? application.lifecycle.snapshot().work.length > 0 : Boolean(liveConversations?.hasActiveWork() || nativeRequests?.list().some((request) => request.status === "dispatching" || request.status === "queued"))
 }
 
 async function reopenWindow(): Promise<void> {
@@ -331,14 +340,9 @@ async function reopenWindow(): Promise<void> {
   else if (!webOnly) await createWindow()
 }
 
-function relaunch(): void {
-  if (hasActiveWork()) {
-    emit({ type: "notice", level: "info", message: "Agents are still running. Reload the interface or open a preview; restart the host after they finish." })
-    return
-  }
-  relaunching = true
-  if (!isDev || persistentHost) app.relaunch()
-  app.quit()
+function relaunch() {
+  if (!application) throw new Error("Mako is still starting. Try again once it is ready.")
+  return application.lifecycle.command({ kind: "wait", action: "restart" })
 }
 
 /** Start the first tab once, however many callers race for it. */
@@ -520,6 +524,7 @@ async function openPreviewWindow(): Promise<void> {
 function bindIpc() {
   installSessionIpc({
     liveSummaries: () => liveConversations.summaries(),
+    archives: () => threadArchives.snapshot(),
     ready,
     withHost,
     platform: process.platform,
@@ -1041,7 +1046,10 @@ function bindIpc() {
   )
 
   handle("mako:thread-run", (_e, path: string) => threadRun(path))
-  handle("mako:thread-abort-run", (_e, path: string) => abortNative(path))
+  handle("mako:thread-abort-run", async (_e, path: string) => {
+    const token = nativeStopToken(path)
+    if (token) await threadLifecycle.stop({ kind: "native", path, token })
+  })
   /**
    * Fork at an answer: the conversation up to that turn becomes a NEW
    * native session on the chosen harness — both lines stay open, and the
@@ -1112,11 +1120,8 @@ function bindIpc() {
   handle("mako:update-state", () => updateState())
   handle("mako:check-updates", () => check())
   handle("mako:install-update", () => {
-    if (hasActiveWork()) {
-      emit({ type: "notice", level: "info", message: "The update is ready. Finish or stop active agents before installing it." })
-      return
-    }
-    return installNow()
+    if (!application) throw new Error("Mako is still starting. Try again once it is ready.")
+    return application.lifecycle.command({ kind: "wait", action: "install" })
   })
   handle("mako:relaunch", () => relaunch())
   handle("mako:open-preview-window", () => openPreviewWindow())
@@ -1182,6 +1187,8 @@ async function readFilePreview(request: Request): Promise<Response> {
 installCrashReporting()
 
 app.whenReady().then(async () => {
+  const trace = (stage: string) => { if (process.env.MAKO_RUNTIME_TRACE === "1") console.info("[mako-runtime]", stage) }
+  trace("electron ready")
   if (persistentHost) app.dock?.hide()
   app.setAboutPanelOptions({
     applicationName: "Mako",
@@ -1192,6 +1199,7 @@ app.whenReady().then(async () => {
       "Desktop app for Claude Code, Codex, Cursor, Grok, Devin, and OpenCode.",
   })
   await ensureBackendConnectionEnvironment()
+  trace("backend configured")
   protocol.handle("mako-file", readFilePreview)
   terminalClient = new TerminalDaemonClient(
     join(__dirname, "terminal-daemon.js"),
@@ -1267,7 +1275,9 @@ app.whenReady().then(async () => {
       failed: (message) => emit({ type: "notice", level: "error", message }),
     }
   )
+  trace("journals ready")
   conversationMcp = await startConversationMcp(liveConversations)
+  trace("conversation tools ready")
   controlService = await startControlService(
     browserControl,
     (conversationId, bindingId) => {
@@ -1278,6 +1288,28 @@ app.whenReady().then(async () => {
   browserControl.subscribe((browsers) =>
     emit({ type: "browser-control", browsers })
   )
+  threadArchives = new ThreadArchives(join(app.getPath("userData"), "thread-archives.sqlite"))
+  threadLifecycle = new ThreadLifecycle({ live: liveConversations, archives: threadArchives, native: nativeRequests, threads: listThreads, nativeToken: nativeStopToken, abortNative, external: (path) => Boolean(threadActivitySnapshot()[path]) })
+  installThreadLifecycleIpc(threadLifecycle, threadArchives, emit)
+  application = installApplicationIpc({
+    live: liveConversations,
+    native: nativeRequests,
+    emit,
+    clients: () => [...webHost?.clients() ?? [], ...[...rendererWindows].map((renderer) => `renderer:${renderer.webContents.id}`)],
+    quitClient: () => {
+      for (const renderer of rendererWindows) renderer.hide()
+      app.dock?.hide()
+    },
+    finish: (action, install) => {
+      shuttingDown = true
+      relaunching = action === "restart"
+      try {
+        install?.()
+        if (relaunching && (!isDev || persistentHost)) app.relaunch()
+      } catch (error) { shuttingDown = false; relaunching = false; throw error }
+      setImmediate(() => app.quit())
+    },
+  })
   bindIpc()
   bindAcp((event) => liveConversations.observe(event))
   bindCodexApp((event) => liveConversations.observe(event))
@@ -1290,14 +1322,18 @@ app.whenReady().then(async () => {
         await unlink(webSocket)
       }
     }
-    webHost = await startWebHost(webSocket, invokeHost, readFilePreview, (client) => {
+    webHost = await startWebHost(webSocket, invokeHost, (request, client = "web") => withHostClient(client, () => readFilePreview(request)), (client) => {
       void workspaceClients.release(client)
     }, { protocol: RUNTIME_PROTOCOL, instanceId: crypto.randomUUID(), pid: process.pid, version: app.getVersion(), methods: Object.keys(hostCallInputs) })
   }
+  trace("host listening")
   if (!webOnly) await createWindow()
   installUpdates(emit)
+  trace("updates ready")
   installThreads(emit)
+  trace("catalog starting")
   bindDrivers(emit)
+  trace("drivers ready")
   bindAutomations(emit, async (cwd, prompt) => {
     const resumable = new Set(resumableHarnesses())
     const profile = (await harnessProfiles()).find(
@@ -1340,6 +1376,7 @@ app.on("before-quit", (event) => handleQuit(event, {
     app.dock?.hide()
   },
   cleanup: () => {
+  application?.dispose()
   webHost?.close()
   powerMonitor.removeListener("resume", emitTerminalWake)
   powerMonitor.removeListener("unlock-screen", emitTerminalWake)
@@ -1357,6 +1394,7 @@ app.on("before-quit", (event) => handleQuit(event, {
   nativeRequests?.stop()
   conversationMcp?.close()
   liveConversations?.stop()
+  threadArchives?.close()
   void workspaceClients.dispose()
   // After the ordinary shutdown, tell the dev launcher to bring us back.
   if (relaunching && isDev && !persistentHost) app.exit(RELAUNCH_EXIT_CODE)

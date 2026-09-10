@@ -8,7 +8,7 @@ import type {
   FileContents,
   GitCommitEntry,
   GitDiff,
-  GitFileStatus,
+  GitCommitFile,
   GitStatus,
   HostEvent,
   ModelInfo,
@@ -38,6 +38,7 @@ export class AgentHost {
   private foreground = true
   private workspaceWatcher: FSWatcher | null = null
   private workspaceWatcherGeneration = 0
+  private gitPushGeneration = 0
   private gitRefreshTimer: NodeJS.Timeout | null = null
   private sessionId = crypto.randomUUID()
   private sessionName: string | undefined
@@ -306,17 +307,7 @@ export class AgentHost {
     return this.workspaceGit.diffAll()
   }
 
-  async gitCommitFiles(
-    hash: string
-  ): Promise<
-    Array<{
-      path: string
-      status: GitFileStatus
-      insertions: number
-      deletions: number
-      binary: boolean
-    }>
-  > {
+  async gitCommitFiles(hash: string): Promise<GitCommitFile[]> {
     return this.workspaceGit.commitFiles(hash)
   }
 
@@ -332,26 +323,22 @@ export class AgentHost {
 
   async gitStage(paths: string[]): Promise<void> {
     await this.workspaceGit.stage(paths)
-    await this.pushGit()
+    await this.pushGit("index")
   }
 
   async gitUnstage(paths: string[]): Promise<void> {
     await this.workspaceGit.unstage(paths)
-    await this.pushGit()
+    await this.pushGit("index")
   }
 
   async gitStageAll(): Promise<void> {
     await this.workspaceGit.stageAll()
-    await this.pushGit()
+    await this.pushGit("index")
   }
 
   async gitUnstageAll(): Promise<void> {
     await this.workspaceGit.unstageAll()
-    await this.pushGit()
-  }
-
-  async gitPatch(staged: boolean): Promise<string> {
-    return this.workspaceGit.patch(staged)
+    await this.pushGit("index")
   }
 
   async gitCommit(
@@ -363,9 +350,9 @@ export class AgentHost {
     this.emit({ type: "notice", level: "success", message: "Committed" })
   }
 
-  async gitPush(): Promise<void> {
-    const { branch, output } = await this.workspaceGit.push()
-    await this.pushGit()
+  async gitPush(expectedBranch?: string): Promise<void> {
+    const { branch, output } = await this.workspaceGit.push(expectedBranch)
+    await this.pushGit("index")
     this.emit({
       type: "notice",
       level: "success",
@@ -377,11 +364,15 @@ export class AgentHost {
     return this.workspaceGit.log(limit)
   }
 
-  async pushGit(): Promise<void> {
+  async pushGit(cause: "index" | "workspace" = "workspace"): Promise<void> {
     if (!this.foreground) return
+    const generation = ++this.gitPushGeneration
+    const workspace = this.workspace
     try {
-      this.emit({ type: "git", git: await this.gitStatus() })
+      const git = await this.gitStatus()
+      if (generation === this.gitPushGeneration && this.workspace === workspace && this.foreground) this.emit({ type: "git", git, cause })
     } catch (error) {
+      if (generation !== this.gitPushGeneration || this.workspace !== workspace || !this.foreground) return
       this.emit({
         type: "notice",
         level: "error",

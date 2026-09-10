@@ -21,6 +21,9 @@
  * file should be readable in ten seconds.
  */
 
+import { assertLifecycleAdmission } from "./application-lifecycle.js"
+import type { LifecycleWork } from "./contracts/app-lifecycle.js"
+import { randomUUID } from "node:crypto"
 import { spawn, type ChildProcess } from "node:child_process"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
@@ -61,6 +64,8 @@ export interface NativeRunResult {
 }
 
 interface Run {
+  cwd: string
+  token: string
   child: ChildProcess
   completed?: Promise<NativeRunResult>
   outputSubscribers: Set<(chunk: string) => void>
@@ -70,6 +75,7 @@ interface Run {
 }
 
 const runs = new Map<string, Run>()
+const preparingRuns = new Map<string, LifecycleWork>()
 const MAX_REMEMBERED_RUNS = 600
 let emit: (event: HostEvent) => void = () => {}
 
@@ -189,9 +195,12 @@ async function launch(
   const { command, args } = resume
   const cwd = workingDir && existsSync(workingDir) ? workingDir : homedir()
   // The selected account decides who pays for this run.
-  const env = await accountEnv(harness, process.env)
+  assertLifecycleAdmission()
+  preparingRuns.set(key, { id: `preparing:${key}`, token: key, title: "Starting a native agent", provider: harness, cwd, status: "finishing", stoppable: false })
+  const env = await accountEnv(harness, process.env).finally(() => preparingRuns.delete(key))
   const executable = resolveExecutable(command, env)
   if (!executable) throw new Error(`${harness} is not installed`)
+  assertLifecycleAdmission()
   const child = spawn(executable, args, {
     cwd,
     stdio: ["ignore", "pipe", "pipe"],
@@ -206,6 +215,8 @@ async function launch(
       })
     : undefined
   const run: Run = {
+    cwd,
+    token: randomUUID(),
     child,
     completed,
     outputSubscribers: new Set(),
@@ -267,9 +278,18 @@ async function launch(
   return state
 }
 
-export function abortNative(path: string): void {
+export function nativeLifecycleWork(): LifecycleWork[] {
+  return [...preparingRuns.values(), ...[...runs.values()].filter((run) => run.state.status === "running").map((run): LifecycleWork => ({ id: `native:${run.state.path}`, token: run.token, provider: run.state.harness, title: "Native agent", cwd: run.cwd, status: "running", stoppable: true }))]
+}
+
+export function nativeStopToken(path: string): string | null {
   const run = runs.get(path)
-  if (run && run.state.status === "running") run.child.kill("SIGTERM")
+  return run?.state.status === "running" ? run.token : null
+}
+
+export function abortNative(path: string, expectedToken?: string): void {
+  const run = runs.get(path)
+  if (run && run.state.status === "running" && (expectedToken === undefined || expectedToken === run.token)) run.child.kill("SIGTERM")
 }
 
 export function stopDrivers(): void {

@@ -1,3 +1,4 @@
+if (process.env.MAKO_RUNTIME_TRACE === "1") console.info("[mako-entry]", process.env.MAKO_HOST_ONLY === "1" ? "host" : "client")
 if (process.env.MAKO_HOST_ONLY === "1" || process.env.MAKO_STANDALONE === "1") {
   if (process.env.MAKO_DATA_ROOT) {
     const { app } = await import("electron")

@@ -8,7 +8,7 @@ import type {
   ProviderSteerResult,
 } from "./providers/live-driver.js"
 import { resolveCodexExecutable } from "./providers/codex/executable.js"
-import type { ConversationTools } from "./providers/live-driver.js"
+import type { ConversationTools, ProviderStartOptions } from "./providers/live-driver.js"
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
@@ -100,18 +100,11 @@ export function codexAppState(id: string): LiveSessionState | null {
 
 export async function codexAppStart(
   cwd: string,
-  options: {
-    conversationId: string
-    conversationTools?: ConversationTools
-    fork?: { nativeId: string; runId: string }
-    resume?: string
-    title?: string
-    tuning?: Tuning
-  }
+  options: ProviderStartOptions
 ): Promise<LiveSessionState> {
   const id = options.conversationId
   const workingDir = cwd && existsSync(cwd) ? cwd : homedir()
-  const mcpSnapshot = await discoverMcpRegistry(workingDir, app.getAppPath())
+  const mcpSnapshot = await (options.mcpSnapshot?.() ?? discoverMcpRegistry(workingDir, app.getAppPath()))
   const env = await accountEnv("codex", process.env)
   if (options.conversationTools)
     env.MAKO_CONVERSATIONS_TOKEN = options.conversationTools.token

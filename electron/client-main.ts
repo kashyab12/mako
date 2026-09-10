@@ -1,6 +1,7 @@
-import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, protocol, shell } from "electron"
+import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, powerMonitor, protocol, shell } from "electron"
+import { WindowShutdown } from "./window-shutdown.js"
 import { createHash, randomUUID } from "node:crypto"
-import { cp, mkdir, access } from "node:fs/promises"
+import { cp, mkdir, access, mkdtemp, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { z } from "zod"
@@ -21,6 +22,19 @@ const launch = { dataRoot, executable: process.execPath, args: app.isPackaged ? 
 const clients = new Map<number, { id: string; connected: boolean; dispose(): void }>()
 let runtime: Awaited<ReturnType<typeof ensureRuntime>>
 let shuttingDown = false
+let pendingCommand: "app.quit" | "app.updates" | null = null
+let shutdownAction: "quit" | "install" | "restart" | null = null
+const draftShutdown = new WindowShutdown()
+let closingLocally = false
+
+function requestCommand(command: "app.quit" | "app.updates"): void {
+  const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  if (window && !window.webContents.isLoadingMainFrame()) { window.show(); window.webContents.send("mako:event", { type: "app-command", command }) }
+  else {
+    pendingCommand = command
+    if (!window) void openWindow().catch((error) => dialog.showErrorBox("Mako could not open", error instanceof Error ? error.message : "Try opening Mako again."))
+  }
+}
 
 async function openWindow(preview = false) {
   const id = randomUUID()
@@ -34,35 +48,47 @@ async function openWindow(preview = false) {
   let seen = false
   let closed = false
   const client = { id, connected: false, dispose() { closed = true; clearTimeout(timer); subscription?.() } }
-  clients.set(window.webContents.id, client)
+  const rendererId = window.webContents.id
+  clients.set(rendererId, client)
   const connect = () => {
-    if (closed || shuttingDown) return
+    if (closed || shuttingDown || shutdownAction) return
     subscription?.()
     subscription = subscribeRuntime(runtime.socket, id, (packet) => {
       if (window.isDestroyed()) return
       if (packet.channel === "ready") {
+        if (packet.runtime) runtime = { ...runtime, info: packet.runtime }
         client.connected = true
         if (seen) window.webContents.send("mako:event", { type: "host-reconnected" })
         seen = true
-      } else window.webContents.send(packet.channel === "event" ? "mako:event" : "mako:terminal-event", packet.payload)
+      } else {
+        if (packet.payload instanceof Object && "type" in packet.payload) {
+          if (packet.payload.type === "app-shutdown") shutdownAction = z.object({ action: z.enum(["quit", "install", "restart"]) }).parse(packet.payload).action
+          if (packet.payload.type === "application-lifecycle" && z.object({ lifecycle: z.object({ operation: z.object({ kind: z.literal("error") }) }) }).safeParse(packet.payload).success) shutdownAction = null
+        }
+        window.webContents.send(packet.channel === "event" ? "mako:event" : "mako:terminal-event", packet.payload)
+      }
     }, () => {
       client.connected = false
       if (closed || window.isDestroyed()) return
       window.webContents.send("mako:event", { type: "host-disconnected", message: "Reconnecting to the shared Mako host. Unconfirmed messages will not be resent automatically." })
-      timer = setTimeout(() => {
-        void ensureRuntime(launch).then((next) => { runtime = next; connect() }).catch(() => { if (!closed) timer = setTimeout(connect, 2_000) })
-      }, 500)
+      const retry = () => {
+        if (closed || shuttingDown || shutdownAction) return
+        void ensureRuntime(launch).then((next) => { runtime = next; connect() }).catch(() => { if (!closed) timer = setTimeout(retry, 2_000) })
+      }
+      timer = setTimeout(retry, 500)
     })
   }
   connect()
-  window.once("closed", () => { client.dispose(); clients.delete(window.webContents.id) })
+  window.once("closed", () => { client.dispose(); clients.delete(rendererId) })
   window.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//i.test(url)) void shell.openExternal(url); return { action: "deny" } })
-  const query = { runtime: "shared", ...(preview ? { preview: id } : {}) }
+  const query = new URLSearchParams({ runtime: "shared" })
+  if (process.env.MAKO_PROFILE) query.set("profile", process.env.MAKO_PROFILE)
+  if (preview) query.set("preview", id)
   if (isDev) {
     const url = new URL(process.env.VITE_DEV_SERVER_URL ?? "http://127.0.0.1:5173")
-    for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value)
+    for (const [key, value] of query) url.searchParams.set(key, value)
     await window.loadURL(url.href)
-  } else await window.loadFile(join(directory, "../dist/index.html"), { query })
+  } else await window.loadFile(join(directory, "../dist/index.html"), { query: Object.fromEntries(query) })
   if (!app.commandLine.hasSwitch("background")) { window.show(); window.maximize() }
   return window
 }
@@ -76,16 +102,42 @@ async function start() {
     const exists = await access(target).then(() => true, () => false)
     if (!exists) {
       await mkdir(uiRoot, { recursive: true })
-      await cp(join(dataRoot, "Local Storage"), target, { recursive: true, errorOnExist: true, force: false }).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error })
+      const staging = await mkdtemp(join(uiRoot, ".storage-migration-"))
+      try {
+        await cp(join(dataRoot, "Local Storage"), join(staging, "Local Storage"), { recursive: true, errorOnExist: true, force: false })
+        await rename(join(staging, "Local Storage"), target)
+      } catch (error) {
+        if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error
+      } finally { await rm(staging, { recursive: true, force: true }) }
     }
   }
   await app.whenReady()
+  powerMonitor.on("shutdown", () => { shuttingDown = true })
   protocol.handle("mako-file", (request) => runtimeFile(runtime.socket, request))
   for (const [channel, schema] of Object.entries(hostCallInputs)) {
     ipcMain.handle(channel, async (event, ...raw: unknown[]) => {
       const args = schema.parse(raw)
       const client = clients.get(event.sender.id)
       if (!client) throw new Error("This Mako client has closed")
+      if (channel === "mako:shutdown-ack" && draftShutdown.acknowledge(z.string().parse(args[0]), String(event.sender.id))) return
+      if (channel === "mako:quit-client") {
+        if (shutdownAction) {
+          BrowserWindow.fromWebContents(event.sender)?.close()
+          if (BrowserWindow.getAllWindows().length) return
+          if (shutdownAction === "restart") app.relaunch()
+          shuttingDown = true
+          app.quit()
+        } else if (!closingLocally) {
+          closingLocally = true
+          void draftShutdown.request([...clients.keys()].map(String), (requestId) => {
+            for (const window of BrowserWindow.getAllWindows()) window.webContents.send("mako:event", { type: "app-shutdown", requestId, action: "quit" })
+          }).then(() => { shuttingDown = true; app.quit() }).catch((error) => {
+            closingLocally = false
+            for (const window of BrowserWindow.getAllWindows()) window.webContents.send("mako:event", { type: "notice", level: "error", message: error instanceof Error ? error.message : "A draft could not be saved. Mako stayed open." })
+          })
+        }
+        return
+      }
       if (channel === "mako:open-preview-window") { await openWindow(true); return }
       if (channel === "mako:copy") { clipboard.writeText(z.string().parse(args[0])); return }
       if (channel === "mako:open-url") {
@@ -101,19 +153,29 @@ async function start() {
       }
       if (!runtime.info.methods.includes(channel)) throw new Error("This action requires a newer shared host. Existing agents have not been restarted.")
       const result = await invokeRuntime(runtime.socket, client.id, channel, args)
-      if (channel === "mako:boot") return { ...z.record(z.string(), z.json()).parse(result), sourceRoot: isDev ? app.getAppPath() : undefined }
+      if (channel === "mako:boot") {
+        if (pendingCommand) { event.sender.send("mako:event", { type: "app-command", command: pendingCommand }); pendingCommand = null }
+        return { ...z.record(z.string(), z.json()).parse(result), sourceRoot: isDev ? app.getAppPath() : undefined }
+      }
       return result
     })
   }
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: "Mako", submenu: [{ role: "about" }, { type: "separator" }, { role: "hide" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" }, { role: "quit" }] },
+    { label: "Mako", submenu: [{ role: "about" }, { label: "Updates…", click: () => requestCommand("app.updates") }, { type: "separator" }, { role: "hide" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" }, { role: "quit" }] },
     { role: "editMenu" }, { role: "viewMenu" }, { role: "windowMenu" },
   ]))
   await openWindow()
   app.on("activate", () => { if (!BrowserWindow.getAllWindows().length) void openWindow() })
 }
 
-app.on("before-quit", () => { shuttingDown = true; for (const client of clients.values()) client.dispose() })
+app.on("before-quit", (event) => {
+  if (!shuttingDown) {
+    event.preventDefault()
+    requestCommand("app.quit")
+    return
+  }
+  for (const client of clients.values()) client.dispose()
+})
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit() })
 void start().catch(async (error) => {
   await app.whenReady()

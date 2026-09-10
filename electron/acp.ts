@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { stripVTControlCharacters } from "node:util"
-import type { ConversationTools, ProviderSteerInput, ProviderSteerResult } from "./providers/live-driver.js"
+import type { ProviderStartOptions, ProviderSteerInput, ProviderSteerResult } from "./providers/live-driver.js"
 import { AcpPromptTurn } from "./acp-prompt-turn.js"
 /**
  * Interactive foreign agents, over ACP.
@@ -173,13 +173,7 @@ export function acpState(id: string): LiveSessionState | null {
 export async function liveStart(
   harness: string,
   cwd: string,
-  options: {
-    conversationId: string
-    conversationTools?: ConversationTools
-    resume?: string
-    title?: string
-    tuning?: AcpTuning
-  }
+  options: ProviderStartOptions
 ): Promise<LiveSessionState> {
   const source = providerHost.acpSources.get(harness)
   const spec = await source?.launch({
@@ -192,7 +186,7 @@ export async function liveStart(
 
   const id = options.conversationId
   const workingDir = cwd && existsSync(cwd) ? cwd : homedir()
-  const mcpSnapshot = await discoverMcpRegistry(workingDir, app.getAppPath())
+  const mcpSnapshot = await (options.mcpSnapshot?.() ?? discoverMcpRegistry(workingDir, app.getAppPath()))
 
   // The nested-session guard: Claude Code refuses to start inside another
   // Claude Code. Mako is not one, but it may have been *launched from* one,

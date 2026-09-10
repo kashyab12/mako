@@ -598,29 +598,36 @@ function providerStatus(
   }
 }
 
-export async function discoverMcpRegistry(
-  cwd: string,
-  appPath: string
-): Promise<McpRegistrySnapshot> {
+async function discoverProviderDefinitions(cwd: string) {
   const routes = await Promise.all(
     providerHost.mcpSources
       .list()
       .map((source) => mcpDiscoveryRoute(source.provider, cwd))
   )
-  const available = await Promise.all(
-    routes.map((route) =>
-      route.command ? canExecute(route.command, route.env) : false
-    )
-  )
-  const discovered = (
-    await Promise.all(
+  const [available, groups] = await Promise.all([
+    Promise.all(
+      routes.map((route) =>
+        route.command ? canExecute(route.command, route.env) : false
+      )
+    ),
+    Promise.all(
       routes.map(async (route) => [
         ...(await readJsonDefinitions(route)),
         ...(await readCliDefinitions(route)),
       ])
-    )
-  ).flat()
-  const managed = await managedMcpDefinitions(appPath)
+    ),
+  ])
+  return { routes, available, discovered: groups.flat() }
+}
+
+export async function discoverMcpRegistry(
+  cwd: string,
+  appPath: string
+): Promise<McpRegistrySnapshot> {
+  const [{ routes, available, discovered }, managed] = await Promise.all([
+    discoverProviderDefinitions(cwd),
+    managedMcpDefinitions(appPath),
+  ])
   const servers = mergeMcpDefinitions([...discovered, ...managed])
   await Promise.all(
     servers.map(async (server) => {

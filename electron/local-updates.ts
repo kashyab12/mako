@@ -1,0 +1,366 @@
+import { constants } from "node:fs"
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises"
+import { join } from "node:path"
+import { spawn, execFile } from "node:child_process"
+import { promisify } from "node:util"
+import { z } from "zod"
+import {
+  BuildIdentitySchema,
+  type LocalBuildState,
+} from "./contracts/app-lifecycle.js"
+import { environmentForExecutable, resolveExecutable } from "./executable.js"
+
+const execute = promisify(execFile)
+const localPackage = z.object({
+  makoDistribution: z.literal("local"),
+  makoLocalSigningIdentity: z.string().regex(/^[A-Fa-f0-9]{40}$/),
+  makoBuild: BuildIdentitySchema,
+})
+const sourcePackage = z.object({
+  name: z.literal("mako"),
+  scripts: z.object({
+    "package:mac:local": z.string(),
+    "test:performance": z.string(),
+    lint: z.string(),
+    build: z.string(),
+  }),
+})
+const excluded = new Set([
+  "node_modules",
+  "ignore",
+  "release",
+  "dist",
+  "dist-electron",
+  "dist-browser-extension",
+])
+
+export async function verifyLocalCandidate(app: string, identity: string) {
+  const metadata = localPackage.parse(
+    JSON.parse(
+      await readFile(
+        join(app, "Contents/Resources/app.asar/package.json"),
+        "utf8"
+      )
+    )
+  )
+  if (
+    metadata.makoLocalSigningIdentity.toUpperCase() !== identity.toUpperCase()
+  )
+    throw new Error(
+      "The update was signed with a different identity. Nothing was installed."
+    )
+  await execute(
+    "codesign",
+    [
+      "--verify",
+      "--deep",
+      "--strict",
+      "--test-requirement",
+      `=identifier "dev.mako.app" and certificate leaf = H"${identity}"`,
+      app,
+    ],
+    { timeout: 60_000, maxBuffer: 1024 * 1024 }
+  )
+  return metadata.makoBuild
+}
+
+export class LocalUpdates {
+  private source: string | null = null
+  private state: LocalBuildState = { kind: "idle" }
+  private candidate: string | null = null
+  private preparedRoot: string | null = null
+  private job: Promise<void> | null = null
+  private readonly root: string
+  private readonly identity: string
+  private readonly changed: () => void
+  constructor(root: string, identity: string, changed: () => void) {
+    this.root = root
+    this.identity = identity
+    this.changed = changed
+  }
+
+  async load(): Promise<void> {
+    try {
+      this.source = z
+        .string()
+        .parse(
+          JSON.parse(await readFile(join(this.root, "source.json"), "utf8"))
+        )
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !("code" in error) ||
+        error.code !== "ENOENT"
+      )
+        this.state = {
+          kind: "error",
+          message:
+            "The saved source selection could not be read. Choose the checkout again.",
+        }
+    }
+    const receipt = await readFile(
+      join(this.root, "install-result.json"),
+      "utf8"
+    ).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null
+      throw error
+    })
+    if (receipt) {
+      const result = z
+        .object({ ok: z.boolean(), message: z.string().optional() })
+        .parse(JSON.parse(receipt))
+      if (!result.ok)
+        this.state = {
+          kind: "error",
+          message:
+            result.message ??
+            "The previous update could not be installed. Your previous app was retained.",
+        }
+    }
+  }
+
+  snapshot() {
+    return { source: this.source, local: this.state }
+  }
+  get building(): boolean {
+    return this.job !== null
+  }
+  get ready(): boolean {
+    return this.state.kind === "ready" && this.candidate !== null
+  }
+
+  async select(path: string): Promise<void> {
+    if (this.job)
+      throw new Error("Wait for the current build before changing its source.")
+    const source = await realpath(path)
+    sourcePackage.parse(
+      JSON.parse(await readFile(join(source, "package.json"), "utf8"))
+    )
+    await mkdir(this.root, { recursive: true, mode: 0o700 })
+    await writeFile(join(this.root, "source.json"), JSON.stringify(source), {
+      mode: 0o600,
+    })
+    this.source = source
+    this.candidate = null
+    this.state = { kind: "idle" }
+    this.changed()
+  }
+
+  start(): void {
+    if (this.job) return
+    if (!this.source)
+      throw new Error("Choose a trusted Mako source checkout first.")
+    const source = this.source
+    this.state = { kind: "building", phase: "copying" }
+    this.candidate = null
+    this.job = this.build(source)
+      .catch(() => {
+        const phase =
+          this.state.kind === "building" ? this.state.phase : "verification"
+        this.state = {
+          kind: "error",
+          message: `The update failed during ${phase}. Your installed app and agents were not changed. Check the selected checkout's build and lint, then try again.`,
+        }
+      })
+      .finally(() => {
+        this.job = null
+        this.changed()
+      })
+    this.changed()
+  }
+
+  async prepared(): Promise<{ app: string; identity: string }> {
+    if (!this.ready || !this.candidate)
+      throw new Error("Build and verify an update before installing it.")
+    const build = await verifyLocalCandidate(this.candidate, this.identity)
+    if (this.state.kind !== "ready" || build.id !== this.state.build.id)
+      throw new Error(
+        "The prepared update changed. Build it again before installing."
+      )
+    return { app: this.candidate, identity: this.identity }
+  }
+
+  private phase(
+    phase: Extract<LocalBuildState, { kind: "building" }>["phase"]
+  ): void {
+    this.state = { kind: "building", phase }
+    this.changed()
+  }
+
+  private async build(source: string): Promise<void> {
+    const node = resolveExecutable("node")
+    const npm = resolveExecutable("npm")
+    if (!node || !npm)
+      throw new Error("Node.js and npm are required to build Mako.")
+    await mkdir(this.root, { recursive: true, mode: 0o700 })
+    const job = await mkdtemp(join(this.root, "build-"))
+    const checkout = join(job, "source")
+    const output = join(job, "output")
+    await mkdir(checkout)
+    try {
+      const revision = await execute(
+        "git",
+        ["-C", source, "rev-parse", "HEAD"],
+        { timeout: 10_000 }
+      ).then(({ stdout }) => stdout.trim())
+      await copyBuildSource(source, checkout)
+      const dirty = await execute(
+        "git",
+        ["-C", source, "status", "--porcelain"],
+        { timeout: 10_000 }
+      ).then(({ stdout }) => Boolean(stdout.trim()))
+      const inherited = Object.fromEntries(
+        [
+          "HOME",
+          "PATH",
+          "TMPDIR",
+          "USER",
+          "LOGNAME",
+          "SHELL",
+          "LANG",
+          "LC_ALL",
+        ].flatMap((key) =>
+          process.env[key] === undefined ? [] : [[key, process.env[key]]]
+        )
+      )
+      const env = environmentForExecutable(node, {
+        ...inherited,
+        MAKO_LOCAL_SIGNING_IDENTITY: this.identity,
+        MAKO_BUILD_REVISION: revision,
+        MAKO_BUILD_DIRTY: dirty ? "1" : "0",
+      })
+      this.phase("compiling")
+      await runBuild(npm, ["run", "build"], checkout, env)
+      this.phase("checking")
+      for (const script of [
+        "lint",
+        "test:performance",
+        "test:application",
+        "test:renderer-assets",
+      ])
+        await runBuild(npm, ["run", script], checkout, env)
+      this.phase("packaging")
+      await runBuild(
+        node,
+        ["scripts/package-mac.mjs", "--local", "--dir", `--output=${output}`],
+        checkout,
+        env
+      )
+      this.phase("verifying")
+      const candidate = join(output, "mac-arm64/Mako.app")
+      const build = await verifyLocalCandidate(candidate, this.identity)
+      if (this.preparedRoot)
+        await rm(this.preparedRoot, { recursive: true, force: true })
+      this.preparedRoot = job
+      this.candidate = candidate
+      this.state = { kind: "ready", build }
+    } finally {
+      await rm(this.preparedRoot === job ? checkout : job, {
+        recursive: true,
+        force: true,
+      })
+    }
+  }
+}
+
+export async function copyBuildSource(
+  source: string,
+  checkout: string
+): Promise<void> {
+  const entries = await readdir(source, { withFileTypes: true })
+  for (const entry of entries) {
+    const config = entry.name === ".npmrc" || entry.name.startsWith(".prettier")
+    if ((!config && entry.name.startsWith(".")) || excluded.has(entry.name))
+      continue
+    if (entry.isSymbolicLink())
+      throw new Error("Build source entries must not be symbolic links.")
+    await cp(join(source, entry.name), join(checkout, entry.name), {
+      recursive: true,
+      verbatimSymlinks: true,
+      mode: constants.COPYFILE_FICLONE,
+    })
+  }
+  await cp(join(source, "node_modules"), join(checkout, "node_modules"), {
+    recursive: true,
+    verbatimSymlinks: true,
+    mode: constants.COPYFILE_FICLONE,
+  })
+  const root = await realpath(checkout)
+  const pending = [root]
+  while (pending.length) {
+    const directory = pending.pop()!
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name)
+      if (entry.isSymbolicLink()) {
+        const resolved = await realpath(path)
+        if (!resolved.startsWith(`${root}/`))
+          throw new Error(
+            "A dependency link leaves the private build copy. Reinstall dependencies in the source checkout before building."
+          )
+      } else if (entry.isDirectory()) pending.push(path)
+    }
+  }
+}
+
+async function runBuild(
+  command: string,
+  args: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      env,
+      stdio: "ignore",
+      detached: true,
+    })
+    let timedOut = false
+    let force: ReturnType<typeof setTimeout> | undefined
+    const kill = (signal: NodeJS.Signals) => {
+      if (!child.pid) return
+      try {
+        process.kill(-child.pid, signal)
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          !("code" in error) ||
+          error.code !== "ESRCH"
+        )
+          reject(error)
+      }
+    }
+    const timer = setTimeout(() => {
+      timedOut = true
+      kill("SIGTERM")
+      force = setTimeout(() => kill("SIGKILL"), 5000)
+    }, 20 * 60_000)
+    child.once("error", (error) => {
+      clearTimeout(timer)
+      clearTimeout(force)
+      reject(error)
+    })
+    child.once("exit", (code) => {
+      clearTimeout(timer)
+      clearTimeout(force)
+      if (code === 0 && !timedOut) resolve()
+      else
+        reject(
+          new Error(
+            timedOut
+              ? "The build step exceeded its time limit."
+              : `Build step exited with ${code ?? "a signal"}`
+          )
+        )
+    })
+  })
+}

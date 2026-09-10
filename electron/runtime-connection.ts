@@ -1,11 +1,22 @@
 import { request } from "node:http"
 import { StringDecoder } from "node:string_decoder"
-import { RuntimeInfoSchema, RuntimePacketSchema, RuntimeReplySchema } from "./contracts/runtime.js"
+import { RuntimeCallSchema, RuntimeInfoSchema, RuntimePacketSchema, RuntimeReplySchema, type RuntimeCall } from "./contracts/runtime.js"
 import type { z } from "zod"
 
-export async function runtimeRequest(socket: string, path: string, body?: unknown, client?: string): Promise<unknown> {
+interface RuntimeRequest<Schema extends z.ZodType> {
+  socket: string
+  path: string
+  schema: Schema
+  body?: RuntimeCall
+  client?: string
+  timeoutMs?: number
+}
+
+export async function runtimeRequest<Schema extends z.ZodType>({ socket, path, schema, body, client, timeoutMs = 45_000 }: RuntimeRequest<Schema>): Promise<z.output<Schema>> {
   return new Promise((resolve, reject) => {
-    const req = request({ socketPath: socket, path, method: body === undefined ? "GET" : "POST", headers: { "content-type": "application/json", ...(client ? { "x-mako-window": client } : {}) } }, (response) => {
+    const headers = new Map([["content-type", "application/json"]])
+    if (client) headers.set("x-mako-window", client)
+    const req = request({ socketPath: socket, path, method: body === undefined ? "GET" : "POST", headers: Object.fromEntries(headers) }, (response) => {
       const chunks: Buffer[] = []
       let bytes = 0
       response.on("data", (chunk: Buffer) => {
@@ -17,18 +28,18 @@ export async function runtimeRequest(socket: string, path: string, body?: unknow
       response.on("end", () => {
         try {
           if (response.statusCode !== 200) throw new Error(`Mako host returned ${response.statusCode}`)
-          resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")))
+          resolve(schema.parse(JSON.parse(Buffer.concat(chunks).toString("utf8"))))
         } catch (error) { reject(error) }
       })
     })
-    req.setTimeout(45_000, () => req.destroy(new Error("Mako host request timed out")))
+    req.setTimeout(timeoutMs, () => req.destroy(new Error("Mako host request timed out")))
     req.on("error", reject)
     req.end(body === undefined ? undefined : JSON.stringify(body))
   })
 }
 
 export async function runtimeInfo(socket: string) {
-  try { return RuntimeInfoSchema.parse(await runtimeRequest(socket, "/health")) }
+  try { return await runtimeRequest({ socket, path: "/health", schema: RuntimeInfoSchema, timeoutMs: 10_000 }) }
   catch (error) {
     if (error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ECONNREFUSED")) return null
     throw error
@@ -36,9 +47,8 @@ export async function runtimeInfo(socket: string) {
 }
 
 export async function invokeRuntime(socket: string, client: string, channel: string, args: unknown[]) {
-  const reply = RuntimeReplySchema.parse(await runtimeRequest(socket, "/rpc", {
-    channel, args: args.map((value) => value === undefined ? { kind: "absent" } : { kind: "value", value }),
-  }, client))
+  const body = RuntimeCallSchema.parse({ channel, args: args.map((value) => value === undefined ? { kind: "absent" } : { kind: "value", value }) })
+  const reply = await runtimeRequest({ socket, path: "/rpc", schema: RuntimeReplySchema, body, client, timeoutMs: 5 * 60_000 })
   if (!reply.ok) throw new Error(reply.error)
   return reply.value
 }

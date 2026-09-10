@@ -1,4 +1,5 @@
 import { accountEnv } from "./accounts.js"
+import { realpath } from "node:fs/promises"
 import { resolveHarnessTuning } from "./harness-models.js"
 import type { SessionSettings } from "@mako/sessions/settings"
 import { providerHost } from "./providers/index.js"
@@ -70,6 +71,11 @@ export async function resolveHarnessLaunch(
   tuning: SessionSettings | undefined
 ): Promise<SessionSettings | undefined> {
   if (!tuning?.model) return tuning
+  if (
+    providerHost.profiles.get(harness)?.nativeModelIds &&
+    !Object.keys(tuning.options ?? {}).length
+  )
+    return tuning
   return resolveHarnessTuning(await harnessProfileForSend(harness, cwd), tuning)
 }
 
@@ -81,7 +87,21 @@ async function loadProfile(
   const loader = providerHost.profiles.get(harness)
   if (!loader) return unknownProviderProfile(harness, "Unknown provider")
   const env = await accountEnv(harness, process.env)
-  const key = `${harness}:${loader.cacheKey(env)}:${cwd ?? ""}`
+  const accountKey = loader.cacheKey(env)
+  let scope = cwd
+  if (cwd) {
+    try {
+      scope = await realpath(cwd)
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !("code" in error) ||
+        (error.code !== "ENOENT" && error.code !== "ENOTDIR")
+      )
+        throw error
+    }
+  }
+  const key = `${harness}:${accountKey}:${scope ?? ""}`
   const held = cache.get(key)
   if (mode !== "refresh" && held) {
     const fresh = Date.now() - held.loadedAt < DISPLAY_TTL_MS
@@ -92,12 +112,12 @@ async function loadProfile(
     const pending = launching.get(key)
     if (pending) return pending
     const request = loader
-      .loadForSend(env, cwd)
+      .loadForSend(env, scope)
       .finally(() => launching.delete(key))
     launching.set(key, request)
     return request
   }
-  const request = loading.get(key) ?? startLoad(loader, key, env, cwd)
+  const request = loading.get(key) ?? startLoad(loader, key, env, scope, cwd)
   if (mode === "display" || mode === "now") {
     // Stale beats blank: the refresh lands as an event moments later.
     const snapshot = held?.profile ?? (await providerProfileCache.get(key))
@@ -111,7 +131,8 @@ function startLoad(
   loader: ProviderProfileLoader,
   key: string,
   env: NodeJS.ProcessEnv,
-  cwd: string | undefined
+  cwd: string | undefined,
+  reportedCwd: string | undefined
 ): Promise<HarnessProfile> {
   const request = (async () => {
     let profile: HarnessProfile
@@ -129,7 +150,7 @@ function startLoad(
     if (profile.available)
       await providerProfileCache.put(key, profile).catch(() => {})
     const event: HarnessProfileEvent = { profile }
-    if (cwd !== undefined) event.cwd = cwd
+    if (reportedCwd !== undefined) event.cwd = reportedCwd
     for (const listener of listeners) listener(event)
     return profile
   })().finally(() => loading.delete(key))

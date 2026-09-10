@@ -1,3 +1,5 @@
+import { assertLifecycleAdmission, lifecycleBlocked } from "./application-lifecycle.js"
+import type { LifecycleWork } from "./contracts/app-lifecycle.js"
 import {
   QueuedPromptEditSchema,
   type QueuedPromptEdit,
@@ -70,6 +72,16 @@ export class NativeRequests {
         NativeRequestSchema.parse(JSON.parse(row.parse(value).payload))
       )
   }
+  lifecycleWork(): LifecycleWork[] {
+    const requests: LifecycleWork[] = this.list().filter((request) => request.status === "queued" || (request.status === "dispatching" && !this.dependencies.running(request.input.path))).map((request) => ({ id: `request:${request.input.id}`, token: request.input.id, provider: request.ref.harness, title: request.ref.title || "Queued native message", cwd: request.ref.cwd ?? "", status: request.status === "queued" ? "queued" : "finishing", stoppable: request.status === "queued" }))
+    for (const id of this.preparing.keys()) requests.push({ id: `preparing:${id}`, token: id, provider: "", title: "Preparing a native request", cwd: "", status: "finishing", stoppable: false })
+    return requests
+  }
+
+  pauseQueued(): void {
+    for (const request of this.list()) if (request.status === "queued") this.editQueued({ requestId: request.input.id, expectedText: request.input.text, change: { kind: "pause" } })
+  }
+
   receipt(id: string): NativeRequest | null {
     z.string().uuid().parse(id)
     const saved = this.db
@@ -137,6 +149,7 @@ export class NativeRequests {
     return this.list()
   }
   submit(input: NativeRequestInput): Promise<NativeRequest> {
+    assertLifecycleAdmission()
     const command = NativeRequestInputSchema.parse(input)
     const fingerprint = createHash("sha256")
       .update(JSON.stringify(command))
@@ -204,6 +217,7 @@ export class NativeRequests {
   }
   ready(path: string): void {
     if (
+      lifecycleBlocked() ||
       this.stopped ||
       this.faulted ||
       this.running.has(path) ||

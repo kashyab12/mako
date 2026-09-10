@@ -68,11 +68,19 @@ const providerActivity = new Map<string, ProviderActivitySession[]>()
 let emittedActivity = new Map<string, ExternalThreadActivity>()
 /** Daemon mode's synchronous view: filled once, patched by events. */
 const mirror = new Map<string, ThreadRef>()
+let activityIndex: { refs: ThreadRef[]; byPath: Map<string, ThreadRef>; byIdentity: Map<string, ThreadRef> } | null = null
+
+function invalidateActivityRef(ref: ThreadRef): void {
+  const old = activityIndex?.byPath.get(ref.path)
+  if (!old || old.harness !== ref.harness || old.nativeId !== ref.nativeId) activityIndex = null
+}
 let sendEvent: (event: HostEvent) => void = () => {}
 const threadEventSubscribers = new Set<(event: HostEvent) => void>()
 let recoveringDaemon: Promise<void> | null = null
 
 function emit(event: HostEvent): void {
+  if (event.type === "thread-ref") invalidateActivityRef(event.ref)
+  if (event.type === "threads" || event.type === "thread-removed") activityIndex = null
   sendEvent(event)
   for (const subscriber of threadEventSubscribers) subscriber(event)
 }
@@ -118,11 +126,11 @@ function refForNativeId(
 }
 
 function reconcileProviderActivity(): void {
-  const refs = daemon ? [...mirror.values()] : (catalog?.list() ?? [])
-  const byPath = new Map(refs.map((ref) => [ref.path, ref]))
-  const byIdentity = new Map(
-    refs.map((ref) => [`${ref.harness}:${ref.nativeId}`, ref])
-  )
+  if (!activityIndex) {
+    const refs = (daemon ? [...mirror.values()] : (catalog?.list() ?? [])).map((ref) => ({ path: ref.path, harness: ref.harness, nativeId: ref.nativeId }))
+    activityIndex = { refs, byPath: new Map(refs.map((ref) => [ref.path, ref])), byIdentity: new Map(refs.map((ref) => [`${ref.harness}:${ref.nativeId}`, ref])) }
+  }
+  const { refs, byPath, byIdentity } = activityIndex
   const next = new Map<string, ExternalThreadActivity>()
   for (const [provider, sessions] of providerActivity) {
     for (const session of sessions) {
@@ -220,10 +228,12 @@ export function installThreads(send: (event: HostEvent) => void): void {
 
 function applyDaemonEvent(event: DaemonEvent, announce: boolean): void {
   if (event.event === "added" || event.event === "updated") {
+    invalidateActivityRef(event.ref)
     mirror.set(event.ref.path, event.ref)
     if (announce) emit({ type: "thread-ref", ref: annotate(event.ref) })
     reconcileProviderActivity()
   } else if (event.event === "removed") {
+    activityIndex = null
     mirror.delete(event.path)
     if (announce) emit({ type: "thread-removed", path: event.path })
     reconcileProviderActivity()
@@ -315,6 +325,7 @@ async function connectViaDaemon(): Promise<boolean> {
     })
     const refs = await client.list()
     mirror.clear()
+    activityIndex = null
     for (const ref of refs) mirror.set(ref.path, ref)
     for (const event of pending) applyDaemonEvent(event, false)
     if (stopping) {
@@ -438,6 +449,7 @@ export function stopThreads(): void {
   daemon?.close()
   daemon = null
   mirror.clear()
+  activityIndex = null
   transcriptArtifacts.clear()
 }
 

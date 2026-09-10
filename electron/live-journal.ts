@@ -13,7 +13,10 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { z } from "zod"
 import { ThreadEntrySchema, ThreadRefSchema } from "@mako/sessions"
-import { LiveBlockSchema } from "./contracts/live-content.js"
+import {
+  LiveBlockSchema,
+  changedLiveBlockStart,
+} from "./contracts/live-content.js"
 import { RunSnapshotsSchema } from "./contracts/workspace-snapshots.js"
 import type { LiveSnapshot } from "./contracts/live-conversations.js"
 
@@ -113,10 +116,19 @@ const BaseSchema = z
   })
   .nullable()
 const RowSchema = z.object({ value: z.string() })
+const AppendRowSchema = z.object({
+  block_id: z.number().int().nonnegative(),
+  value: z.string(),
+})
+const AppendCountSchema = z.object({
+  block_id: z.number().int().nonnegative(),
+  count: z.number().int().nonnegative(),
+})
 
 /** One independent journal per conversation. Only changed blocks and requests are written. */
 export class LiveJournal {
   private readonly db: DatabaseSync
+  private readonly appends = new Map<number, number>()
   constructor(root: string, id: string) {
     z.string().uuid().parse(id)
     mkdirSync(root, { recursive: true })
@@ -127,7 +139,16 @@ export class LiveJournal {
       CREATE TABLE IF NOT EXISTS metadata (id INTEGER PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS base (id INTEGER PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS blocks (id INTEGER PRIMARY KEY, value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS requests (id TEXT PRIMARY KEY, value TEXT NOT NULL);`)
+      CREATE TABLE IF NOT EXISTS requests (id TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS block_appends (block_id INTEGER NOT NULL, sequence INTEGER NOT NULL, value TEXT NOT NULL, PRIMARY KEY (block_id, sequence));`)
+      for (const value of this.db
+        .prepare(
+          "SELECT block_id, count(*) AS count FROM block_appends GROUP BY block_id"
+        )
+        .all()) {
+        const row = AppendCountSchema.parse(value)
+        this.appends.set(row.block_id, row.count)
+      }
     } catch (error) {
       this.db.close()
       throw error
@@ -157,17 +178,35 @@ export class LiveJournal {
       JSON.parse(RowSchema.parse(row).value)
     )
     const base = this.db.prepare("SELECT value FROM base WHERE id=1").get()
+    const blocks = this.db
+      .prepare("SELECT value FROM blocks ORDER BY id")
+      .all()
+      .map((row) =>
+        LiveBlockSchema.parse(JSON.parse(RowSchema.parse(row).value))
+      )
+    const tails = new Map<number, string[]>()
+    for (const value of this.db
+      .prepare(
+        "SELECT block_id, value FROM block_appends ORDER BY block_id, sequence"
+      )
+      .all()) {
+      const row = AppendRowSchema.parse(value)
+      const parts = tails.get(row.block_id) ?? []
+      parts.push(z.string().parse(JSON.parse(row.value)))
+      tails.set(row.block_id, parts)
+    }
+    for (const [index, parts] of tails) {
+      const block = blocks[index]
+      if (block?.type !== "text" && block?.type !== "thinking")
+        throw new Error("Journal text append has no matching block")
+      blocks[index] = { ...block, text: block.text + parts.join("") }
+    }
     return {
       ...metadata,
       base: base
         ? BaseSchema.parse(JSON.parse(RowSchema.parse(base).value))
         : null,
-      blocks: this.db
-        .prepare("SELECT value FROM blocks ORDER BY id")
-        .all()
-        .map((row) =>
-          LiveBlockSchema.parse(JSON.parse(RowSchema.parse(row).value))
-        ),
+      blocks,
       requests: this.db
         .prepare("SELECT value FROM requests ORDER BY rowid")
         .all()
@@ -191,22 +230,69 @@ export class LiveJournal {
       const upsertBlock = this.db.prepare(
         "INSERT OR REPLACE INTO blocks VALUES (?, ?)"
       )
-      for (let index = 0; index < blocks.length; index++) {
-        if (blocks[index] !== previous?.blocks[index])
-          upsertBlock.run(index, JSON.stringify(blocks[index]))
+      const counts = new Map<number, number>()
+      const append = this.db.prepare(
+        "INSERT INTO block_appends VALUES (?, ?, ?)"
+      )
+      const clear = this.db.prepare(
+        "DELETE FROM block_appends WHERE block_id=?"
+      )
+      const writeBlock = (index: number) => {
+        upsertBlock.run(index, JSON.stringify(blocks[index]))
+        clear.run(index)
+        counts.set(index, 0)
       }
-      if (previous && blocks.length < previous.blocks.length)
+      const from = previous ? changedLiveBlockStart(previous.blocks, blocks) : 0
+      for (let index = from; index < blocks.length; index++) {
+        const block = blocks[index]!
+        const before = previous?.blocks[index]
+        if (block === before) continue
+        const count = this.appends.get(index) ?? 0
+        if (
+          next.session.status === "running" &&
+          count < 128 &&
+          (block.type === "text" || block.type === "thinking") &&
+          before?.type === block.type &&
+          before.id === block.id &&
+          block.text.length > before.text.length &&
+          block.text.startsWith(before.text)
+        ) {
+          append.run(
+            index,
+            count,
+            JSON.stringify(block.text.slice(before.text.length))
+          )
+          counts.set(index, count + 1)
+        } else writeBlock(index)
+      }
+      if (next.session.status !== "running")
+        for (const index of this.appends.keys()) {
+          if (index < blocks.length && !counts.has(index)) writeBlock(index)
+        }
+      if (!previous || blocks.length < previous.blocks.length) {
         this.db.prepare("DELETE FROM blocks WHERE id>=?").run(blocks.length)
-      const oldRequests = new Map(
-        previous?.requests.map((request) => [request.id, request])
-      )
-      const upsertRequest = this.db.prepare(
-        "INSERT INTO requests VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value"
-      )
-      for (const request of requests)
-        if (request !== oldRequests.get(request.id))
-          upsertRequest.run(request.id, JSON.stringify(request))
+        this.db
+          .prepare("DELETE FROM block_appends WHERE block_id>=?")
+          .run(blocks.length)
+        for (const index of this.appends.keys())
+          if (index >= blocks.length) counts.set(index, 0)
+      }
+      if (requests !== previous?.requests) {
+        const oldRequests = new Map(
+          previous?.requests.map((request) => [request.id, request])
+        )
+        const upsertRequest = this.db.prepare(
+          "INSERT INTO requests VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value"
+        )
+        for (const request of requests)
+          if (request !== oldRequests.get(request.id))
+            upsertRequest.run(request.id, JSON.stringify(request))
+      }
       this.db.exec("COMMIT")
+      for (const [index, count] of counts) {
+        if (count) this.appends.set(index, count)
+        else this.appends.delete(index)
+      }
     } catch (error) {
       this.db.exec("ROLLBACK")
       throw error

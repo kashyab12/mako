@@ -1,4 +1,10 @@
 import { app } from "electron"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
+import { z } from "zod"
+import { BuildIdentitySchema, type UpdateInstallation } from "./contracts/app-lifecycle.js"
+import { LocalUpdates } from "./local-updates.js"
+import { prepareLocalInstall } from "./local-update-install.js"
 import type { HostEvent, UpdateState } from "./shared.js"
 import { record } from "./crash.js"
 import { packagedDistribution } from "./distribution.js"
@@ -35,6 +41,38 @@ interface UpdaterModule {
 let updater: Updater | null = null
 let state: UpdateState = { status: "idle", version: app.getVersion() }
 let emit: (event: HostEvent) => void = () => {}
+let local: LocalUpdates | null = null
+const metadataSchema = z.object({ makoBuild: BuildIdentitySchema.optional(), makoLocalSigningIdentity: z.string().regex(/^[a-fA-F0-9]{40}$/).optional() })
+const metadata = metadataSchema.parse(JSON.parse(readFileSync(join(app.getAppPath(), "package.json"), "utf8")))
+
+export function installationState(): UpdateInstallation {
+  return { distribution: app.isPackaged ? packagedDistribution(app.getAppPath()) : "development", build: metadata.makoBuild ?? null, ...local?.snapshot() ?? { source: null, local: { kind: "idle" } } }
+}
+
+export async function selectUpdateSource(path: string): Promise<UpdateInstallation> {
+  if (!local) throw new Error("Building updates is available in locally signed macOS installations.")
+  await local.select(path)
+  return installationState()
+}
+
+export function buildUpdate(): void {
+  if (!local) throw new Error("Building updates is available in locally signed macOS installations.")
+  local.start()
+}
+
+export function assertUpdateReady(): void {
+  if (!local?.ready && state.status !== "ready") throw new Error("Prepare and verify an update before installing it.")
+}
+
+export function updateBuilding(): boolean { return local?.building ?? false }
+
+export async function prepareUpdateInstall() {
+  assertUpdateReady()
+  if (local) return prepareLocalInstall(await local.prepared(), join(app.getPath("userData"), "updates/install-result.json"))
+  const auto = await load()
+  if (!auto || state.status !== "ready") throw new Error("The downloaded update is no longer available.")
+  return { install: () => installNow(auto), cancel: () => {} }
+}
 
 function updatesSupported(): boolean {
   return (
@@ -138,6 +176,10 @@ function isString(
 
 export function installUpdates(send: (event: HostEvent) => void) {
   emit = send
+  if (app.isPackaged && process.platform === "darwin" && packagedDistribution(app.getAppPath()) === "local" && metadata.makoLocalSigningIdentity) {
+    local = new LocalUpdates(join(app.getPath("userData"), "updates"), metadata.makoLocalSigningIdentity, () => emit({ type: "installation", installation: installationState() }))
+    void local.load().then(() => emit({ type: "installation", installation: installationState() })).catch(() => emit({ type: "notice", level: "error", message: "The saved update state could not be read. Choose the source checkout again in Settings > Updates." }))
+  }
   if (!updatesSupported()) {
     state = { status: "unsupported", version: app.getVersion() }
     return
@@ -149,6 +191,7 @@ export function installUpdates(send: (event: HostEvent) => void) {
 }
 
 export async function check(): Promise<UpdateState> {
+  if (state.status === "ready" || state.status === "checking" || state.status === "downloading") return state
   const auto = await load()
   if (!auto) {
     publish({ status: updatesSupported() ? "current" : "unsupported" })
@@ -166,9 +209,8 @@ export async function check(): Promise<UpdateState> {
 }
 
 /** Relaunch into the downloaded version. Only ever called from a click. */
-export async function installNow() {
-  const auto = await load()
-  if (!auto || state.status !== "ready") return
+function installNow(auto: Updater) {
+  if (state.status !== "ready") throw new Error("The downloaded update is no longer available.")
   // `isSilent: true, isForceRunAfter: true` — no installer UI, and the app
   // comes back rather than leaving the user staring at a closed window.
   auto.quitAndInstall(true, true)

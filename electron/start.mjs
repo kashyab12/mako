@@ -3,8 +3,9 @@ import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { dirname, resolve } from "node:path"
 import { createServer } from "vite"
-import { mkdtemp, chmod, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir, homedir } from "node:os"
+import { ensureRuntime, runtimeDataRoot } from "../dist-electron/runtime-service.js"
 import { join } from "node:path"
 import { webHostProxy } from "./web-dev-proxy.mjs"
 import { manualDevUpdates } from "./dev-updates.mjs"
@@ -22,13 +23,15 @@ const electronPath = require("electron")
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const web = process.argv.includes("--web")
 const hot = process.argv.includes("--hot")
+const profile = process.env.MAKO_PROFILE || (process.argv.includes("--sandbox") ? `sandbox-${createHash("sha256").update(root).digest("hex").slice(0, 8)}` : undefined)
+const appData = process.platform === "darwin" ? join(homedir(), "Library", "Application Support") : process.platform === "win32" ? process.env.APPDATA ?? join(homedir(), "AppData", "Roaming") : process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config")
+const dataRoot = runtimeDataRoot(appData, { ...process.env, MAKO_PROFILE: profile })
+const runtime = await ensureRuntime({ dataRoot, executable: electronPath, args: [root], cwd: root, env: { ...process.env, MAKO_PROFILE: profile } })
+const socket = runtime.socket
 const cacheDirectory = await mkdtemp(join(tmpdir(), "mako-vite-"))
-const socketDirectory = await mkdtemp(join(tmpdir(), "mako-web-"))
-await chmod(socketDirectory, 0o700)
-const socket = join(socketDirectory, "host.sock")
 const server = await createServer({
   cacheDir: cacheDirectory,
-  define: { "import.meta.env.MAKO_MANUAL_RELOAD": JSON.stringify(!hot) },
+  define: { "import.meta.env.MAKO_MANUAL_RELOAD": JSON.stringify(!hot), "import.meta.env.MAKO_SHARED_RUNTIME": "true", "import.meta.env.MAKO_CLIENT_PROFILE": JSON.stringify(profile ?? ""), "import.meta.env.MAKO_SOURCE_ROOT": JSON.stringify(root) },
   plugins: [webHostProxy(socket), ...(!hot ? [manualDevUpdates()] : [])],
   root,
   server: {
@@ -61,15 +64,15 @@ const compiler = spawn(
   { stdio: "inherit", cwd: root }
 )
 
-const profile = process.env.MAKO_PROFILE || `dev-${createHash("sha256").update(root).digest("hex").slice(0, 8)}`
 const hostEnvironment = {
   ...process.env,
   VITE_DEV_SERVER_URL: url,
   MAKO_PROFILE: profile,
+  MAKO_DATA_ROOT: dataRoot,
   MAKO_WEB_SOCKET: socket,
   MAKO_WEB_ONLY: web ? "1" : "0",
 }
-console.log(`[mako-dev] ${profile} · ${hot ? "automatic hot updates" : "manual reload"} · ${url}`)
+console.log(`[mako-client] ${profile ? `Sandbox ${profile}` : "Shared host"} · host ${runtime.info.pid} · ${hot ? "automatic hot updates" : "manual reload"} · ${url}`)
 let child
 let stopping = false
 
@@ -91,19 +94,17 @@ function launch() {
 async function stop(code, signal) {
   if (stopping) return
   stopping = true
-  if (child.exitCode === null && child.signalCode === null) {
+  if (child && child.exitCode === null && child.signalCode === null) {
     child.kill(signal ?? "SIGTERM")
   }
   if (compiler.exitCode === null && compiler.signalCode === null) {
     compiler.kill("SIGTERM")
   }
   await server.close()
-  if (socketDirectory)
-    await rm(socketDirectory, { recursive: true, force: true })
   await rm(cacheDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   process.exitCode = code
 }
 
-launch()
+if (!web) launch()
 process.once("SIGINT", () => void stop(130, "SIGINT"))
 process.once("SIGTERM", () => void stop(143, "SIGTERM"))
