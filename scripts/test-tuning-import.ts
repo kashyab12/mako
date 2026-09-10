@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { mock } from "node:test"
 import { resolveSessionSettings } from "@mako/sessions/settings"
 
 const storage = new Map<string, string>()
@@ -21,7 +22,7 @@ storage.set(
   })
 )
 const { prefsStore } = await import("../src/state/prefs.ts")
-const { providerStore, providerProfileKey } =
+const { providerStore, providerProfileKey, providers } =
   await import("../src/state/providers.ts")
 const { threadsStore } = await import("../src/state/thread-store.ts")
 const {
@@ -71,6 +72,29 @@ assert.equal(migrated.model.kind === "known" && migrated.model.value, "a")
 assert.equal(migrated.settings.options?.serviceTier, "priority")
 assert.equal(migrated.settings.options?.fast, undefined)
 assert.deepEqual(await settingsForSend(draft), migrated.settings)
+
+providerStore.set({ contexts: {} })
+const legacyGate = Promise.withResolvers<void>()
+const legacyDiscovery = mock.method(providers, "load", async () => {
+  await legacyGate.promise
+  providerStore.set({
+    contexts: { [providerProfileKey("codex", "/workspace")]: profile },
+  })
+})
+let legacyResolved = false
+const migrating = settingsForSend(draft).then((settings) => {
+  legacyResolved = true
+  return settings
+})
+await Promise.resolve()
+assert.equal(
+  legacyResolved,
+  false,
+  "Legacy option names still require authoritative migration metadata"
+)
+legacyGate.resolve()
+assert.deepEqual(await migrating, migrated.settings)
+legacyDiscovery.mock.restore()
 
 resetComposerSettings(draft)
 assert.equal(resolveComposerSettings(draft).settings.model, "b")
@@ -235,16 +259,27 @@ assert.deepEqual(
   { model: "claude-fable-5-1[1m]", options: { effort: "high" } }
 )
 
-const { normalizeClaudeModels, claudeVersionedLabel } = await import(
-  "@mako/sessions/model-catalog"
-)
+const { normalizeClaudeModels, claudeVersionedLabel } =
+  await import("@mako/sessions/model-catalog")
 // Claude Code names the Fable row by family alone; the id knows the version.
 assert.equal(claudeVersionedLabel("claude-fable-5-1", "Fable"), "Fable 5.1")
-assert.equal(claudeVersionedLabel("claude-opus-5[1m]", "Opus (1M context)"), "Opus 5 (1M context)")
-assert.equal(claudeVersionedLabel("claude-haiku-4-5-20251001", "Haiku"), "Haiku 4.5")
-assert.equal(claudeVersionedLabel("claude-sonnet-4-6[1m]", "Sonnet 4.6 (1M context)"), "Sonnet 4.6 (1M context)")
+assert.equal(
+  claudeVersionedLabel("claude-opus-5[1m]", "Opus (1M context)"),
+  "Opus 5 (1M context)"
+)
+assert.equal(
+  claudeVersionedLabel("claude-haiku-4-5-20251001", "Haiku"),
+  "Haiku 4.5"
+)
+assert.equal(
+  claudeVersionedLabel("claude-sonnet-4-6[1m]", "Sonnet 4.6 (1M context)"),
+  "Sonnet 4.6 (1M context)"
+)
 assert.equal(claudeVersionedLabel("fable", "Fable"), "Fable")
-assert.equal(claudeVersionedLabel("claude-fable-5-1", undefined), "claude-fable-5-1")
+assert.equal(
+  claudeVersionedLabel("claude-fable-5-1", undefined),
+  "claude-fable-5-1"
+)
 const fixedSpeed = normalizeClaudeModels([
   {
     value: "fable",

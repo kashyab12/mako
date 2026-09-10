@@ -118,6 +118,10 @@ const motionLayers = new Set([
   ".ocean-grain",
   ".ocean-fin-glint",
 ])
+const stateFeedback = new Map([
+  ["[data-commit-box][data-busy] .commit-editor::after", "git-progress"],
+  ['[data-push-state="pushing"] > svg', "git-upload"],
+])
 const cssWithoutComments = css.replace(/\/\*[\s\S]*?\*\//g, "")
 const rules = [...cssWithoutComments.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
 for (const [, selector, declarations] of rules) {
@@ -125,6 +129,11 @@ for (const [, selector, declarations] of rules) {
     !/\banimation(?:-iteration-count)?\s*:[^;]*\binfinite\b/.test(declarations!)
   )
     continue
+  const feedback = stateFeedback.get(selector!.trim())
+  if (feedback) {
+    assert.ok(declarations!.includes(`animation: ${feedback} `))
+    continue
+  }
   assert.ok(
     motionLayers.has(selector!.trim()),
     `Unexpected looping animation: ${selector!.trim()}`
@@ -136,6 +145,9 @@ const reducedMotion = [
     /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/g
   ),
 ]
+for (const selector of stateFeedback.keys()) {
+  assert.ok(reducedMotion.some(([, body]) => body!.includes(selector) && /animation:\s*none\s*;/.test(body!)), `${selector} respects reduced motion`)
+}
 for (const layer of motionLayers) {
   assert.ok(
     rules.some(

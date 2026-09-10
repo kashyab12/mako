@@ -98,29 +98,77 @@ await assert.rejects(
   ),
   /fixture request after 200 ms/
 )
-assert.ok(timedPid)
-assert.throws(() => process.kill(timedPid, 0), { code: "ESRCH" })
-let running = 0
-let peak = 0
-await Promise.all(
-  Array.from({ length: 8 }, () =>
-    withDiscoveryProcess(
-      {
-        command: process.execPath,
-        args: ["-e", "setTimeout(()=>{},100)"],
-        env: process.env,
-      },
-      async ({ exited }) => {
-        running++
-        peak = Math.max(peak, running)
-        await exited
-        running--
-      }
+const expiredPid = timedPid
+assert.ok(expiredPid)
+assert.throws(() => process.kill(expiredPid, 0), { code: "ESRCH" })
+for (const priority of ["background", "launch"] satisfies NonNullable<
+  Parameters<typeof withDiscoveryProcess>[0]["priority"]
+>[]) {
+  let running = 0
+  let peak = 0
+  await Promise.all(
+    Array.from({ length: 8 }, () =>
+      withDiscoveryProcess(
+        {
+          command: process.execPath,
+          args: ["-e", "setTimeout(()=>{},100)"],
+          env: process.env,
+          priority,
+        },
+        async ({ exited }) => {
+          running++
+          peak = Math.max(peak, running)
+          await exited
+          running--
+        }
+      )
     )
   )
+  assert.equal(peak, priority === "launch" ? 4 : 3)
+  assert.equal(running, 0)
+}
+const held = Promise.withResolvers<void>()
+const ready = Promise.withResolvers<void>()
+let backgroundStarted = 0
+const work = {
+  command: process.execPath,
+  args: ["-e", "setInterval(()=>{},1000)"],
+  env: process.env,
+}
+const backgroundJobs = Array.from({ length: 3 }, () =>
+  withDiscoveryProcess(work, async () => {
+    if (++backgroundStarted === 3) ready.resolve()
+    await held.promise
+  })
 )
-assert.equal(peak, 4)
-assert.equal(running, 0)
+await ready.promise
+let queuedBackgroundStarted = false
+const queuedBackground = withDiscoveryProcess(work, async () => {
+  queuedBackgroundStarted = true
+  await held.promise
+})
+try {
+  await Promise.race([
+    withDiscoveryProcess({ ...work, priority: "launch" }, async () => {}),
+    new Promise((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error("A launch query waited behind background discovery")
+          ),
+        2000
+      )
+    ),
+  ])
+  assert.equal(
+    queuedBackgroundStarted,
+    false,
+    "The reserved slot cannot be consumed by display enrichment"
+  )
+} finally {
+  held.resolve()
+  await Promise.all([...backgroundJobs, queuedBackground])
+}
 console.log(
   "Profile transport: early exits, closed stdin, stderr backpressure, complete final frames, invalid responses, output limits, bounded concurrency, deadlines, and confirmed process termination verified"
 )

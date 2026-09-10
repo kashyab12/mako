@@ -40,6 +40,11 @@ assert.deepEqual(canonicalThreadRefs([alias, original], selectAcpPresence(acpSto
 assert.deepEqual(canonicalThreadRefs([alias, original], selectAcpPresence(acpStore.get()), [alias.path]), [alias], "Pinned aliases remain usable without duplicate rows")
 applyLiveBatch({ id, revision: 3, updates: [], threadPath: "/next/session.jsonl", session: { ...snapshot.session, nativeId: "next", status: "running" } })
 assert.equal(threadsStore.get().working[original.path], undefined, "Moving a live binding retires the previous path's working flag")
+assert.equal(acpForThread(acpStore.get(), { harness: "claude", nativeId: "next", path: "/next/session.jsonl" })?.key, id)
+applyLiveBatch({ id, revision: 4, updates: [{ kind: "text", text: "streamed" }] })
+assert.equal(acpForThread(acpStore.get(), { path: "/next/session.jsonl" }), acpStore.get().conversations[id], "An indexed lookup returns the current conversation, not its previous stream snapshot")
+applyLiveBatch({ id, revision: 5, updates: [], session: { ...snapshot.session, status: "closed" } })
+assert.equal(acpForThread(acpStore.get(), alias), null, "Closed indexed bindings are not activatable")
 const root = await mkdtemp(join(tmpdir(), "mako-identity-"))
 const owner = new LiveConversations({
   root, appPath: root, driver: () => undefined, emit: () => {},

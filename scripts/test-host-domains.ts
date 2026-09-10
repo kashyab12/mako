@@ -28,6 +28,10 @@ assert.equal(
   distributionFromMetadata('{"makoDistribution":"signed"}'),
   "signed"
 )
+assert.equal(distributionFromMetadata('{"makoDistribution":"local"}'), "local")
+assert.equal(distributionFromMetadata('{"description":"makoDistribution signed"}'), "unsigned")
+assert.equal(distributionFromMetadata('{"nested":{"makoDistribution":"signed"}}'), "unsigned")
+assert.equal(distributionFromMetadata("not json"), "unsigned")
 assert.equal(distributionFromMetadata("{}"), "unsigned")
 assert.equal(existsSync(join(process.cwd(), "electron", "preload.js")), false)
 const directory = await mkdtemp(join(tmpdir(), "mako-host-domains-"))

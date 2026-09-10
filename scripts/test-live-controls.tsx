@@ -4,6 +4,7 @@ import { Prose } from "../src/components/transcript/markdown"
 import { RetainedRequests } from "../src/components/viewer/acp-panel"
 import { recoverableRequests } from "../src/state/prompt-delivery"
 import { agentActivity } from "../src/state/agent-activity"
+import { cn } from "../src/lib/utils"
 import { ActivityMark } from "../src/components/ui/activity-mark"
 import { FolderActivity } from "../src/components/rail/rail-activity"
 import { ThreadStatusMark } from "../src/components/rail/thread-status"
@@ -333,7 +334,11 @@ const recoveries = renderToStaticMarkup(<RetainedRequests />)
 assert.match(recoveries, /Do not lose a pre-dispatch stop/)
 assert.match(recoveries, /Failed input remains recoverable/)
 assert.doesNotMatch(recoveries, /<details[^>]+open|Keep this original question|Message interrupted/)
+for (const size of ["label", "ui", "title", "prose", "welcome"]) assert.equal(cn(`text-${size}`, "text-foreground"), `text-${size} text-foreground`)
+assert.equal(cn("text-ui", "text-prose", "text-transparent"), "text-prose text-transparent")
 const activityBase = {waiting:false,connecting:false,preparing:false}
+assert.equal(agentActivity({...activityBase,blocks:[{type:"text",text:""}]}).kind,"working")
+assert.equal(agentActivity({...activityBase,blocks:[{type:"thinking",text:""}]}).kind,"working")
 assert.equal(agentActivity({...activityBase,blocks:[{type:"thinking",text:"Reasoning"}]}).kind,"reasoning")
 assert.equal(agentActivity({...activityBase,blocks:[{type:"text",text:"Answer"}]}).kind,"responding")
 for (const [toolKind, expected] of [["search","searching"],["execute","executing"],["edit","editing"]] as const) {

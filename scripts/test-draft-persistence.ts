@@ -4,6 +4,7 @@ import {
   writeAttachmentDrafts,
   readDraftStorage,
   writeDraftStorage,
+  assertDraftsSaved,
 } from "../src/lib/draft-persistence.ts"
 const saved = new Map<string, string>()
 Object.assign(globalThis, {
@@ -101,3 +102,14 @@ assert.equal(readDraftStorage("preview-proof"), "preview draft")
 Object.assign(globalThis, { location: { search: "" } })
 assert.equal(readDraftStorage("preview-proof"), "main draft")
 console.log("Side-by-side preview drafts persist independently and cannot overwrite the working interface's draft")
+const save = globalThis.localStorage.setItem
+Object.assign(globalThis.localStorage, { setItem: () => { throw new Error("Storage full") } })
+Object.assign(globalThis, { location: { search: "?preview=unsaved" } })
+assert.equal(writeDraftStorage("quit-proof", "Do not lose this paragraph"), false)
+assert.throws(assertDraftsSaved, /Mako stayed open/)
+Object.assign(globalThis, { location: { search: "" } })
+Object.assign(globalThis.localStorage, { setItem: save })
+assertDraftsSaved()
+assert.equal(readDraftStorage("quit-proof"), null)
+assert.equal(saved.get("mako.preview.unsaved.quit-proof"), "Do not lose this paragraph")
+console.log("Quit and update refuse unsaved drafts; retry preserves the original window's storage namespace")

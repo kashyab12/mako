@@ -398,6 +398,48 @@ async function failureIsolationAndAssets() {
   }
 }
 
+async function coalescedToolBursts() {
+  const f = fixture()
+  try {
+    await f.owner.start("test-provider", "/tmp", { conversationId: f.id })
+    f.started.resolve(f.state)
+    await tick()
+    f.owner.observe({
+      type: "acp-update",
+      id: f.id,
+      update: { kind: "tool", id: "input", title: "Write", status: "running" },
+    })
+    f.owner.snapshot(f.id)
+    f.events.length = 0
+    for (let index = 1; index <= 64; index++)
+      f.owner.observe({
+        type: "acp-update",
+        id: f.id,
+        update: {
+          kind: "tool-update",
+          id: "input",
+          input: "x".repeat(index * 256),
+        },
+      })
+    const snapshot = f.owner.snapshot(f.id)
+    const updates = f.events.flatMap((event) =>
+      event.type === "live-batch" ? event.batch.updates : []
+    )
+    assert.equal(
+      updates.length,
+      1,
+      "One frame must not contain every accumulated tool prefix"
+    )
+    assert.equal(
+      snapshot?.blocks.find((block) => block.type === "tool")?.input?.length,
+      16_384
+    )
+  } finally {
+    f.cleanup()
+  }
+}
+
+await coalescedToolBursts()
 await failureIsolationAndAssets()
 
 await queuedSettings()

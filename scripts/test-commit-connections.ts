@@ -73,7 +73,7 @@ const server = createServer(async (request, response) => {
                 index: 0,
                 message: {
                   role: "assistant",
-                  content: "fix: keep drafts intact",
+                  content: JSON.stringify({ action: "finish", result: { message: "fix: keep drafts intact" }, requests: [], notes: "" }),
                 },
                 finish_reason: "stop",
               },

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { execFileSync } from "node:child_process"
 import { constants, createReadStream } from "node:fs"
 import { createHash } from "node:crypto"
 import {
@@ -16,16 +17,21 @@ import { fileURLToPath } from "node:url"
 import { build, Platform, Arch } from "electron-builder"
 import { extractFile } from "@electron/asar"
 import { assertPackagedImports } from "./test-packaged-imports.mjs"
+import { localMacConfig, resolveLocalIdentity, verifyLocalSignature } from "./mac-local-signing.mjs"
 
 const project = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const args = process.argv.slice(2)
 assert.ok(
-  args.every((arg) => arg === "--dir" || arg.startsWith("--output=")),
-  "Use --dir and/or --output=<directory>"
+  args.every((arg) => arg === "--dir" || arg === "--local" || arg.startsWith("--output=")),
+  "Use --dir, --local, and/or --output=<directory>"
 )
+assert.ok(!args.includes("--local") || args.includes("--dir"), "Local signing produces an app directory, not public release archives")
+const localIdentity = args.includes("--local")
+  ? await resolveLocalIdentity(process.env.MAKO_LOCAL_SIGNING_IDENTITY)
+  : null
 const output = resolve(
   args.find((arg) => arg.startsWith("--output="))?.slice(9) ??
-    join(project, "release")
+    join(project, "release", localIdentity ? "local" : ".")
 )
 const stage = await mkdtemp(join(tmpdir(), "mako-package-inputs-"))
 const inputs = [
@@ -41,6 +47,7 @@ const inputs = [
   "mako-icons/_masters/desktop-dark.png",
   "build/Mako.icns",
   "build/entitlements.mac.plist",
+  "vendor/kiri",
 ]
 async function digest(path) {
   const hash = createHash("sha256")
@@ -88,13 +95,23 @@ try {
     "Build output changed while being copied; finish compilation and retry packaging"
   )
   const pkg = JSON.parse(await readFile(join(stage, "package.json"), "utf8"))
+  const revision = process.env.MAKO_BUILD_REVISION ?? execFileSync("git", ["rev-parse", "HEAD"], { cwd: project, encoding: "utf8" }).trim()
+  assert.match(revision, /^[a-f0-9]{40}$/)
+  const dirty = process.env.MAKO_BUILD_DIRTY === undefined
+    ? Boolean(execFileSync("git", ["status", "--porcelain"], { cwd: project, encoding: "utf8" }).trim())
+    : process.env.MAKO_BUILD_DIRTY === "1"
+  const makoBuild = { id: createHash("sha256").update(JSON.stringify(before)).digest("hex").slice(0, 16), builtAt: new Date().toISOString(), revision, dirty }
+  const configuration = { ...pkg.build, extraMetadata: { ...pkg.build.extraMetadata, makoBuild } }
+  const buildConfig = localIdentity ? localMacConfig(configuration, localIdentity) : configuration
+  const packagedMetadata = { ...pkg, ...buildConfig.extraMetadata }
+  await writeFile(join(stage, "package.json"), JSON.stringify(packagedMetadata))
   const config = join(stage, "electron-builder.json")
   await writeFile(
     config,
     JSON.stringify({
-      ...pkg.build,
+      ...buildConfig,
       directories: {
-        ...pkg.build.directories,
+        ...buildConfig.directories,
         output,
         buildResources: join(stage, "build"),
       },
@@ -117,8 +134,10 @@ try {
           filter: ["package.json", "dist/**", "!**/*.map"],
         })),
       ],
+      extraResources: [...(buildConfig.extraResources ?? []), { from: join(stage, "vendor/kiri"), to: "kiri" }],
       mac: {
-        ...pkg.build.mac,
+        ...buildConfig.mac,
+        binaries: [...(buildConfig.mac?.binaries ?? []), "Contents/Resources/kiri/darwin-arm64/kiri-engine"],
         icon: join(stage, "build/Mako.icns"),
         entitlements: join(stage, "build/entitlements.mac.plist"),
         entitlementsInherit: join(stage, "build/entitlements.mac.plist"),
@@ -136,8 +155,21 @@ try {
   })
   const app = join(output, "mac-arm64", `${pkg.build.productName}.app`)
   const archive = join(app, "Contents/Resources/app.asar")
+  const metadata = JSON.parse(extractFile(archive, "package.json").toString("utf8"))
+  for (const [key, value] of Object.entries(buildConfig.extraMetadata ?? {}))
+    assert.deepEqual(metadata[key], value, `Packaged metadata differs from the frozen configuration: ${key}`)
   const verified = []
   for (const file of before) {
+    if (file.path.startsWith("vendor/kiri/")) {
+      const target = join(app, "Contents/Resources", file.path.slice("vendor/".length))
+      if (file.path.endsWith("/kiri-engine")) {
+        const schema = JSON.parse(execFileSync(target, ["--schema"], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 }))
+        const expected = JSON.parse(await readFile(join(stage, "vendor/kiri/darwin-arm64/manifest.json"), "utf8"))
+        assert.equal(schema.version, expected.protocol, "Packaged Kiri protocol differs from the client build")
+      } else assert.equal(await digest(target), file.sha256, `Packaged Kiri resource differs: ${file.path}`)
+      verified.push({ path: target, sha256: await digest(target) })
+      continue
+    }
     if (
       file.path === "package.json" ||
       file.path.startsWith("build/") ||
@@ -156,9 +188,10 @@ try {
     verified.push({ path: target, sha256: file.sha256 })
   }
   const imports = assertPackagedImports(app)
+  const signature = localIdentity ? await verifyLocalSignature(app, localIdentity) : null
   await writeFile(
     join(output, "package-inputs.json"),
-    JSON.stringify({ app, imports, files: verified }, null, 2)
+    JSON.stringify({ app, imports, signature, files: verified }, null, 2)
   )
   console.log(
     `Packaged ${verified.length} verified build files with ${imports} resolved host imports`

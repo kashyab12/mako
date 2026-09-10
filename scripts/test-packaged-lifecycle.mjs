@@ -1,28 +1,61 @@
 import assert from "node:assert/strict"
 import { spawn, execFileSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises"
+import {
+  mkdtemp,
+  mkdir,
+  writeFile,
+  readFile,
+  realpath,
+  rm,
+} from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import WebSocket from "ws"
 import { z } from "zod"
+import { extractFile } from "@electron/asar"
 import { assertPackagedImports } from "./test-packaged-imports.mjs"
 
 const StartupTraceSchema = z.object({
-  stage: z.enum(["local-control", "profile", "accepted"]),
+  stage: z.enum(["local-control", "profile", "accepted", "discovery"]),
   elapsedMs: z.number().nonnegative(),
+  command: z.string().optional(),
+  queuedMs: z.number().nonnegative().optional(),
+  resolveMs: z.number().nonnegative().optional(),
 })
 const rendererOnly = process.argv.includes("--renderer-only")
 const warmStart = process.argv.includes("--warm")
+const uiStart = process.argv.includes("--ui-start")
 const modelFlag = process.argv.find((arg) => arg.startsWith("--model="))
 const selectedModel = modelFlag?.slice(8)
-const args = process.argv.slice(2).filter((arg) => arg !== "--renderer-only" && arg !== "--warm" && arg !== modelFlag)
-assert.ok(args.length <= 2, "Use [Mako.app] [provider] [--renderer-only] [--warm] [--model=id]")
-const acceptanceBudget = process.env.MAKO_STARTUP_BUDGET_MS === undefined ? null : Number(process.env.MAKO_STARTUP_BUDGET_MS)
-assert.ok(acceptanceBudget === null || (Number.isFinite(acceptanceBudget) && acceptanceBudget > 0))
+const args = process.argv
+  .slice(2)
+  .filter(
+    (arg) =>
+      arg !== "--renderer-only" &&
+      arg !== "--warm" &&
+      arg !== "--ui-start" &&
+      arg !== modelFlag
+  )
+assert.ok(
+  args.length <= 2,
+  "Use [Mako.app] [provider] [--renderer-only] [--warm] [--model=id] [--ui-start]"
+)
+const acceptanceBudget =
+  process.env.MAKO_STARTUP_BUDGET_MS === undefined
+    ? null
+    : Number(process.env.MAKO_STARTUP_BUDGET_MS)
+assert.ok(
+  acceptanceBudget === null ||
+    (Number.isFinite(acceptanceBudget) && acceptanceBudget > 0)
+)
 const app = resolve(args[0] ?? "/tmp/mako-parity-package/mac-arm64/Mako.app")
 const provider = args[1] ?? "claude"
+assert.ok(
+  !uiStart || (provider === "claude" && !selectedModel && !rendererOnly),
+  "UI startup checks the fresh profile's Claude defaults"
+)
 const root = await mkdtemp(join(tmpdir(), "mako-packaged-lifecycle-"))
 const workspace = join(root, "workspace")
 await mkdir(workspace)
@@ -31,13 +64,14 @@ await writeFile(
   "Disposable package verification workspace.\n"
 )
 const executable = join(app, "Contents/MacOS/Mako")
-const conversationId = randomUUID()
+let conversationId = randomUUID()
 const marker = `PACKAGE_${randomUUID().replaceAll("-", "")}`
 const report = {
   app,
   provider: rendererOnly ? null : provider,
   root,
   outcome: "running",
+  hostMode: "isolated-standalone",
   phases: [],
 }
 const soakMs = Number(
@@ -107,10 +141,14 @@ async function startPackage() {
     ...process.env,
     MAKO_BACKEND_URL: "http://127.0.0.1:9/api/mcp",
     MAKO_BACKEND_TOKEN: "",
+    MAKO_STANDALONE: "1",
+    MAKO_DATA_ROOT: join(root, "profile"),
   }
   delete env.ELECTRON_RUN_AS_NODE
   delete env.VITE_DEV_SERVER_URL
   delete env.MAKO_WEB_SOCKET
+  delete env.MAKO_HOST_ONLY
+  delete env.MAKO_WEB_ONLY
   child = spawn(
     executable,
     [
@@ -413,6 +451,7 @@ async function soak() {
 }
 async function completed(requestId, { startedAt, id = conversationId } = {}) {
   let observedContent = false
+  let observedDispatch = false
   return waitFor(
     () => bridge("liveSnapshot", [id]),
     (snapshot) => {
@@ -429,9 +468,30 @@ async function completed(requestId, { startedAt, id = conversationId } = {}) {
         throw new Error(request.error ?? request.status)
       if (snapshot?.permissions.length)
         throw new Error("Unexpected permission in a no-tools fixture")
-      if (startedAt !== undefined && !observedContent && snapshot?.blocks.some((block) => block.type === "user" && block.requestId === requestId) && answer(snapshot, requestId).trim()) {
+      if (
+        startedAt !== undefined &&
+        !observedDispatch &&
+        request?.status === "dispatching"
+      ) {
+        observedDispatch = true
+        report.phases.push({
+          phase: "provider-dispatch",
+          elapsedMs: Date.now() - startedAt,
+        })
+      }
+      if (
+        startedAt !== undefined &&
+        !observedContent &&
+        snapshot?.blocks.some(
+          (block) => block.type === "user" && block.requestId === requestId
+        ) &&
+        answer(snapshot, requestId).trim()
+      ) {
         observedContent = true
-        report.phases.push({ phase: "first-provider-content", elapsedMs: Date.now() - startedAt })
+        report.phases.push({
+          phase: "first-provider-content",
+          elapsedMs: Date.now() - startedAt,
+        })
       }
       return request?.status === "completed"
     },
@@ -450,6 +510,69 @@ function answer(snapshot, requestId) {
     .map((block) => block.text)
     .join("\n")
 }
+async function startFromComposer(text) {
+  await waitFor(
+    () =>
+      evaluate(
+        "Boolean(document.querySelector('.composer-input:not([readonly])'))"
+      ),
+    Boolean,
+    "workspace draft target"
+  )
+  const boot = await bridge("boot", [])
+  const active = boot.tabs.find((tab) => tab.id === boot.activeTabId)
+  assert.ok(active)
+  assert.equal(
+    await realpath(active.session.meta.cwd),
+    await realpath(workspace)
+  )
+  assert.equal(
+    await evaluate(
+      "Boolean(document.querySelector('[data-live-conversation]'))"
+    ),
+    false
+  )
+  await evaluate("document.querySelector('.composer-input').focus()")
+  await command("Input.insertText", { text })
+  await waitFor(
+    () =>
+      evaluate(
+        `document.querySelector('.composer-input')?.value === ${JSON.stringify(text)}`
+      ),
+    Boolean,
+    "composer input"
+  )
+  const point = await evaluate(
+    `(() => { const button = document.querySelector('button[aria-label="Send"]'); if (!button || button.disabled) throw new Error('Send is unavailable'); const rect = button.getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }; })()`
+  )
+  const startedAt = Date.now()
+  await command("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    button: "left",
+    clickCount: 1,
+    ...point,
+  })
+  await command("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    button: "left",
+    clickCount: 1,
+    ...point,
+  })
+  const id = await waitFor(
+    () =>
+      evaluate(
+        "document.querySelector('[data-live-conversation]')?.getAttribute('data-live-conversation')"
+      ),
+    Boolean,
+    "UI prompt acknowledgement"
+  )
+  const snapshot = await bridge("liveSnapshot", [id])
+  assert.equal(snapshot.session.harness, provider)
+  const request = snapshot.requests.find((item) => item.text.includes(marker))
+  assert.ok(request)
+  return { id, requestId: request.id, startedAt }
+}
+
 try {
   report.phases.push({
     phase: "packaged-imports",
@@ -460,31 +583,44 @@ try {
   })
   const launch = await startPackage()
   report.phases.push({ phase: "packaged-launch", ...launch })
-  console.log("Packaged renderer and preload ready in an isolated profile")
+  const permissions = await bridge("computerPermissions", [])
+  const metadata = JSON.parse(extractFile(join(app, "Contents/Resources/app.asar"), "package.json").toString("utf8"))
+  assert.equal(permissions.persistentAcrossUpdates, metadata.makoDistribution === "signed" || metadata.makoDistribution === "local")
+  report.phases.push({ phase: "permission-status", ...permissions })
+  console.log("Packaged renderer, preload, and read-only permission status ready in an isolated profile")
   if (!rendererOnly) {
-    const requestId = randomUUID()
-    const sentAt = Date.now()
-    await bridge("liveStart", [
-      provider,
-      workspace,
-      {
-        conversationId,
-        title: "Mako package verification",
-        tuning: selectedModel ? { model: selectedModel } : undefined,
-        initialRequest: {
-          id: requestId,
-          text: `Remember this marker for the next turn: ${marker}. Reply with just the marker. Do not use tools or modify files.`,
-          attachments: [],
+    const text = `Remember this marker for the next turn: ${marker}. Reply with just the marker. Do not use tools or modify files.`
+    let requestId = randomUUID(),
+      sentAt = Date.now()
+    if (uiStart) {
+      const started = await startFromComposer(text)
+      conversationId = started.id
+      requestId = started.requestId
+      sentAt = started.startedAt
+    } else {
+      await bridge("liveStart", [
+        provider,
+        workspace,
+        {
+          conversationId,
+          title: "Mako package verification",
+          tuning: selectedModel ? { model: selectedModel } : undefined,
+          initialRequest: { id: requestId, text, attachments: [] },
         },
-      },
-    ])
+      ])
+    }
     const acceptedMs = Date.now() - sentAt
-    if (acceptanceBudget !== null) assert.ok(acceptedMs <= acceptanceBudget, `Prompt acceptance took ${acceptedMs} ms, above ${acceptanceBudget} ms`)
+    if (acceptanceBudget !== null)
+      assert.ok(
+        acceptedMs <= acceptanceBudget,
+        `Prompt acceptance took ${acceptedMs} ms, above ${acceptanceBudget} ms`
+      )
     const first = await completed(requestId, { startedAt: sentAt })
     assert.ok(answer(first, requestId).includes(marker))
     const nativeId = first.session.nativeId
     report.phases.push({
       phase: "provider-completion",
+      submittedThrough: uiStart ? "composer" : "bridge",
       elapsedMs: Date.now() - sentAt,
       acceptedMs,
       model: first.session.settings?.model,
@@ -501,6 +637,45 @@ try {
         ),
       "native session discovery and durable checkpoint"
     )
+    if (warmStart) {
+      const model = first.session.settings?.model
+      assert.ok(
+        model,
+        "The provider did not report a model for the warm-start check"
+      )
+      const id = randomUUID(),
+        requestId = randomUUID(),
+        startedAt = Date.now()
+      await bridge("liveStart", [
+        provider,
+        workspace,
+        {
+          conversationId: id,
+          title: "Warm startup verification",
+          tuning: { model },
+          initialRequest: {
+            id: requestId,
+            text: "Reply exactly WARM_READY. Do not use tools or modify files.",
+            attachments: [],
+          },
+        },
+      ])
+      const acceptedMs = Date.now() - startedAt
+      if (acceptanceBudget !== null)
+        assert.ok(
+          acceptedMs <= acceptanceBudget,
+          `Warm prompt acceptance took ${acceptedMs} ms`
+        )
+      const warm = await completed(requestId, { startedAt, id })
+      assert.ok(answer(warm, requestId).includes("WARM_READY"))
+      report.phases.push({
+        phase: "warm-explicit-model-start",
+        acceptedMs,
+        elapsedMs: Date.now() - startedAt,
+        model,
+      })
+      await bridge("liveClose", [id])
+    }
     await stopPackage()
     // The same profile must recover its journal; the second prompt does not include the marker.
     await startPackage()

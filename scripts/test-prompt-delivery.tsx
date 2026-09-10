@@ -154,7 +154,21 @@ assert.equal(
 )
 assert.equal(renderToStaticMarkup(<PromptQueue />), "")
 const visibleId = current().projection?.messages.at(-1)?.id
+assert.equal(
+  await Promise.race([
+    sent,
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error("Sending waited for display-only discovery")),
+        1000
+      )
+    ),
+  ]),
+  true
+)
 gate.resolve()
+const discovery = delayed.mock.calls[0]
+if (discovery) await discovery.result
 assert.equal(await sent, true)
 assert.equal(
   current().projection?.messages.filter((message) => message.role === "user")
@@ -173,9 +187,10 @@ assert.equal(
   await sendTo(id, "Use the settings already shown in the composer"),
   true
 )
+assert.equal(cachedDiscovery.mock.callCount(), 0)
 cachedDiscovery.mock.restore()
 stopEvents()
 Reflect.deleteProperty(globalThis, "window")
 console.log(
-  "Production send path paints before awaited discovery and reconciles the acknowledged message without duplicates"
+  "Production send reaches the host before display discovery completes and reconciles the acknowledged message without duplicates"
 )

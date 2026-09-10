@@ -64,6 +64,9 @@ async function check() {
     join(repository, ".env"),
     "SYNTHETIC_SECRET=not-for-the-model\n"
   )
+  await mkdir(join(repository, "nested"))
+  await writeFile(join(repository, "nested", "a.ts"), "export const a = 1\n")
+  await writeFile(join(repository, "nested", "b.ts"), "export const b = 2\n")
   let requests = 0
   let catalogRequests = 0
   let delay = 0
@@ -113,7 +116,7 @@ async function check() {
             index: 0,
             message: {
               role: "assistant",
-              content: "fix: preserve commit drafts",
+              content: JSON.stringify({ action: "finish", result: { message: "fix: preserve commit drafts" }, requests: [], notes: "" }),
             },
             finish_reason: "stop",
           },
@@ -155,12 +158,12 @@ async function check() {
       await new Promise((resolve) => setTimeout(resolve, 40))
     }
   }
-  const click = async (selector, text = "") => {
+  const click = async (selector, text = "", exact = false) => {
     await evaluate(
       "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))"
     )
     const point = await evaluate(
-      `(() => { const node = [...document.querySelectorAll(${JSON.stringify(selector)})].find(node => node.textContent.startsWith(${JSON.stringify(text)})); if (!node) throw new Error('Missing click target'); node.scrollIntoView({block:'center'}); const r = node.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; })()`
+      `(() => { const node = [...document.querySelectorAll(${JSON.stringify(selector)})].find(node => ${exact} ? node.textContent.trim() === ${JSON.stringify(text)} : node.textContent.startsWith(${JSON.stringify(text)})); if (!node) throw new Error('Missing click target'); node.scrollIntoView({block:'center'}); const r = node.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; })()`
     )
     for (const type of ["mousePressed", "mouseReleased"])
       await page.debugger.sendCommand("Input.dispatchMouseEvent", {
@@ -186,6 +189,29 @@ async function check() {
         windowsVirtualKeyCode: 27,
       })
   }
+  const setTheme = async (theme) => {
+    await click('[aria-label="Settings"]')
+    await until(
+      "[...document.querySelectorAll('[role=dialog] button')].some(node => node.textContent.trim() === 'Appearance')"
+    )
+    await click('[role="dialog"] button', "Appearance", true)
+    await evaluate(
+      "window.themeDiffNodes = [...document.querySelectorAll('diffs-container')]; void 0"
+    )
+    await click(
+      '[role="dialog"] button',
+      theme === "system" ? "Auto" : theme === "light" ? "Light" : "Dark",
+      true
+    )
+    if (theme !== "system")
+      await until(`document.documentElement.style.colorScheme === '${theme}'`)
+    assert.ok(
+      await evaluate("window.themeDiffNodes.every(node => node.isConnected)"),
+      "Changing theme must not remount a diff"
+    )
+    for (const type of ["mousePressed", "mouseReleased"]) await page.debugger.sendCommand("Input.dispatchMouseEvent", { type, button: "left", clickCount: 1, x: 8, y: 8 })
+    await until("!document.querySelector('[role=dialog]')")
+  }
   const watchdog = setTimeout(() => app.exit(1), 150_000)
   let connected = false
   try {
@@ -201,15 +227,143 @@ async function check() {
     await evaluate(
       `import('/src/state/session.ts').then(({actions}) => actions.openWorkspace(${JSON.stringify(repository)}))`
     )
-    await evaluate(
-      "import('/src/state/stage.ts').then(({stage}) => stage.open('changes'))"
+    if (
+      await evaluate(
+        "Boolean(document.querySelector('[aria-label=\"Show the right sidebar\"]'))"
+      )
     )
+      await click('[aria-label="Show the right sidebar"]')
+    await click('[data-surface-id="changes"]')
     await until(
       "Boolean(document.querySelector('[aria-label=\"Commit message\"]'))"
     )
-    await evaluate(
-      "import('/src/state/prefs.ts').then(({setPref}) => { setPref('theme', 'dark'); setPref('autoOpenDiff', true); })"
+    const stageTarget =
+      '[role="checkbox"][aria-label="Stage feature.ts"], [role="checkbox"][title="Stage feature.ts"]'
+    await until(
+      `Boolean(document.querySelector(${JSON.stringify(stageTarget)}))`
     )
+    const checkbox = await evaluate(
+      `(() => { const node = document.querySelector(${JSON.stringify(stageTarget)}); window.stagingBox = node; const r = node.getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height}; })()`
+    )
+    assert.ok(
+      checkbox.width >= 24 && checkbox.height >= 24,
+      "Staging needs a stable 24px hit target, not a 14px glyph"
+    )
+    for (const x of [1, checkbox.width / 2, checkbox.width - 1])
+      for (const y of [1, checkbox.height / 2, checkbox.height - 1]) {
+        await page.debugger.sendCommand("Input.dispatchMouseEvent", {
+          type: "mouseMoved",
+          x: checkbox.x + x,
+          y: checkbox.y + y,
+        })
+        const hit = await evaluate(
+          `(() => { const node = document.elementFromPoint(${checkbox.x + x}, ${checkbox.y + y}); return {same:node?.closest('[role=checkbox]') === window.stagingBox,cursor:getComputedStyle(node).cursor}; })()`
+        )
+        assert.equal(
+          hit.same,
+          true,
+          `Checkbox hit target missing at ${x}, ${y}`
+        )
+        assert.equal(
+          hit.cursor,
+          "pointer",
+          `Checkbox cursor changed at ${x}, ${y}`
+        )
+      }
+    const edge = { x: checkbox.x + 1, y: checkbox.y + 1 }
+    await page.debugger.sendCommand("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      button: "left",
+      clickCount: 1,
+      ...edge,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 160))
+    const held = await evaluate(
+      "(() => { const r = window.stagingBox.getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height}; })()"
+    )
+    assert.deepEqual(
+      held,
+      checkbox,
+      "Press feedback must not shrink or move the hit target"
+    )
+    await page.debugger.sendCommand("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      button: "left",
+      clickCount: 1,
+      ...edge,
+    })
+    await until(
+      "window.stagingBox.isConnected && window.stagingBox.getAttribute('aria-checked') === 'true' && window.stagingBox.getAttribute('aria-busy') !== 'true'"
+    )
+    assert.ok(
+      (
+        await promisify(execFile)("git", ["diff", "--cached", "--name-only"], {
+          cwd: repository,
+        })
+      ).stdout.includes("feature.ts")
+    )
+    for (const type of ["mousePressed", "mouseReleased"])
+      await page.debugger.sendCommand("Input.dispatchMouseEvent", {
+        type,
+        button: "left",
+        clickCount: 1,
+        ...edge,
+      })
+    await until(
+      "window.stagingBox.getAttribute('aria-checked') === 'false' && window.stagingBox.getAttribute('aria-busy') !== 'true'"
+    )
+    for (const type of ["keyDown", "keyUp"])
+      await page.debugger.sendCommand("Input.dispatchKeyEvent", {
+        type,
+        key: " ",
+        code: "Space",
+        windowsVirtualKeyCode: 32,
+      })
+    await until(
+      "window.stagingBox.getAttribute('aria-checked') === 'true' && window.stagingBox.getAttribute('aria-busy') !== 'true'"
+    )
+    await click('[role="checkbox"][aria-label="Unstage feature.ts"]')
+    await until(
+      "window.stagingBox.getAttribute('aria-checked') === 'false' && window.stagingBox.getAttribute('aria-busy') !== 'true'"
+    )
+    await click('[role="checkbox"][aria-label="Stage a.ts"]')
+    await until(
+      "document.querySelector('[role=checkbox][aria-label=\"Stage all of nested\"]')?.getAttribute('aria-checked') === 'mixed'"
+    )
+    await click('[role="checkbox"][aria-label="Stage all of nested"]')
+    await until(
+      "document.querySelector('[role=checkbox][aria-label=\"Unstage nested\"]')?.getAttribute('aria-checked') === 'true' && document.querySelector('[role=checkbox][aria-label=\"Unstage nested\"]')?.getAttribute('aria-busy') !== 'true'"
+    )
+    await click('[role="checkbox"][aria-label="Unstage nested"]')
+    await until(
+      "document.querySelector('[role=checkbox][aria-label=\"Stage all of nested\"]')?.getAttribute('aria-checked') === 'false' && document.querySelector('[role=checkbox][aria-label=\"Stage all of nested\"]')?.getAttribute('aria-busy') !== 'true'"
+    )
+    for (let clickIndex = 0; clickIndex < 3; clickIndex += 1) {
+      for (const type of ["mousePressed", "mouseReleased"])
+        await page.debugger.sendCommand("Input.dispatchMouseEvent", {
+          type,
+          button: "left",
+          clickCount: 1,
+          ...edge,
+        })
+    }
+    await until(
+      "window.stagingBox.getAttribute('aria-checked') === 'true' && window.stagingBox.getAttribute('aria-busy') !== 'true'"
+    )
+    await click('[role="checkbox"][aria-label="Unstage feature.ts"]')
+    await until(
+      "window.stagingBox.getAttribute('aria-checked') === 'false' && window.stagingBox.getAttribute('aria-busy') !== 'true'"
+    )
+    await capture("staging-hit-targets.png")
+    await setTheme("dark")
+    await click('button[title="feature.ts"]')
+    await until("Boolean(document.querySelector('[aria-label=\"Show the diff\"]'))")
+    if (
+      await evaluate(
+        "Boolean(document.querySelector('[aria-label=\"Show the diff\"]'))"
+      )
+    )
+      await click('[aria-label="Show the diff"]')
     await until(
       "[...document.querySelectorAll('diffs-container')].some(node => node.shadowRoot?.querySelector('pre')?.getBoundingClientRect().height > 0)"
     )
@@ -245,30 +399,24 @@ async function check() {
       }
     }
     await assertPalette("dark")
-    await evaluate(
-      "(async () => { const {viewer} = await import('/src/state/viewer.ts'); const {git} = await import('/src/state/git.ts'); await viewer.openDiff('Theme verification', async () => ({diffs:[await git.diff('feature.ts')]})); })()"
+    await click('button[title="feature.ts"]')
+    await until(
+      "Boolean(document.querySelector('[aria-label=\"Show the diff\"]'))"
     )
+    await click('[aria-label="Show the diff"]')
     await until(
       "[...document.querySelectorAll('diffs-container')].filter(node => node.shadowRoot?.querySelector('pre')?.getBoundingClientRect().height > 0).length >= 2"
     )
-    await evaluate(
-      "window.themeDiffNodes = [...document.querySelectorAll('diffs-container')]; void 0"
-    )
     for (const scheme of ["light", "dark"]) {
-      await evaluate(
-        `import('/src/state/prefs.ts').then(({setPref}) => setPref('theme', '${scheme}'))`
+      await setTheme(scheme)
+      await until(
+        "[...document.querySelectorAll('diffs-container')].filter(node => node.shadowRoot?.querySelector('pre')?.getBoundingClientRect().height > 0).length >= 2"
       )
       await until(`document.documentElement.style.colorScheme === '${scheme}'`)
       await assertPalette(scheme)
-      assert.ok(
-        await evaluate("window.themeDiffNodes.every(node => node.isConnected)"),
-        "Theme changes should not remount the diff"
-      )
       await capture(`diff-${scheme}.png`)
     }
-    await evaluate(
-      "import('/src/state/prefs.ts').then(({setPref}) => setPref('theme', 'system'))"
-    )
+    await setTheme("system")
     for (const scheme of ["light", "dark"]) {
       await page.debugger.sendCommand("Emulation.setEmulatedMedia", {
         features: [{ name: "prefers-color-scheme", value: scheme }],
@@ -276,22 +424,31 @@ async function check() {
       await until(`document.documentElement.style.colorScheme === '${scheme}'`)
       await assertPalette(scheme)
     }
-    await evaluate(
-      "import('/src/state/viewer.ts').then(({viewer}) => viewer.open('feature.ts'))"
+    await click('[data-surface-id="files"]')
+    await until(
+      "Boolean(document.querySelector('input[placeholder=\"Find a file\"]'))"
     )
+    await fill('input[placeholder="Find a file"]', "feature.ts")
+    await until(
+      "Boolean(document.querySelector('button[title=\"feature.ts\"]'))"
+    )
+    for (const type of ["keyDown", "keyUp"])
+      await page.debugger.sendCommand("Input.dispatchKeyEvent", {
+        type,
+        key: "Enter",
+        code: "Enter",
+        windowsVirtualKeyCode: 13,
+      })
     await until(
       "[...document.querySelectorAll('diffs-container')].some(node => node.shadowRoot?.querySelector('[data-file]'))"
     )
+    await click('[data-surface-id="changes"]')
     await assertPalette("dark")
-    await evaluate(
-      "import('/src/state/prefs.ts').then(({setPref}) => setPref('theme', 'light'))"
-    )
+    await setTheme("light")
     await until("document.documentElement.style.colorScheme === 'light'")
     await assertPalette("light")
     await capture("file-light.png")
-    await evaluate(
-      "import('/src/state/prefs.ts').then(({setPref}) => setPref('theme', 'dark'))"
-    )
+    await setTheme("dark")
     const layout = await evaluate(`(() => {
       const field = document.querySelector('[aria-label="Commit message"]');
       const button = [...field.parentElement.querySelectorAll('button')].find(button => /Connect.*model/.test(button.textContent));
@@ -489,9 +646,7 @@ async function check() {
     await capture("connected-model.png")
     await escape()
     await until("!document.querySelector('[role=dialog]')")
-    await evaluate(
-      "import('/src/state/stage.ts').then(({stage}) => stage.close())"
-    )
+    await click('[aria-label="Hide the right sidebar"]')
     await until("!document.querySelector('[aria-label=\"Commit message\"]')")
     for (const type of ["keyDown", "keyUp"])
       await page.debugger.sendCommand("Input.dispatchKeyEvent", {
@@ -506,10 +661,13 @@ async function check() {
     )
     assert.ok(
       await evaluate(
-        "document.body.textContent.includes('Some file content was omitted')"
+        "document.body.textContent.includes('Sensitive file contents excluded')"
       )
     )
     await capture("generated-commit.png")
+    assert.equal(await evaluate(`document.querySelector('[aria-label="Commit analysis mode"] button[aria-pressed="true"]')?.textContent.trim()`), "Fast")
+    await click('[aria-label="Commit analysis mode"] button', "Deep")
+    assert.equal(await evaluate(`document.querySelector('[aria-label="Commit analysis mode"] button[aria-pressed="true"]')?.textContent.trim()`), "Deep")
     delay = 1_000
     await click('[aria-label="Draft a message from the diff"]')
     await fill('[aria-label="Commit message"]', "My handwritten message")
