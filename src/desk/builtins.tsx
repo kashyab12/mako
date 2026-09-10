@@ -20,7 +20,6 @@ import { FileTree } from "@/components/rail/file-tree"
 import { ContextPanel } from "@/components/inspector/context-panel"
 import { HistoryPanel } from "@/components/inspector/history-panel"
 import { TerminalPanel } from "@/components/inspector/terminal-lazy"
-import { TerminalDockToggle } from "@/components/stage/terminal-dock-toggle"
 import {
   BashBody,
   EditBody,
@@ -103,7 +102,6 @@ export function installBuiltins(): () => void {
     registerSlot("identity", "rail.footer", IdentityRow, -10),
     registerSlot("control-preview", "transcript.overlay", ControlPreviewOverlay),
     registerSlot("appshot", "composer.controls", AppshotButton, -10),
-    registerSlot("terminal-dock", "composer.trailing", TerminalDockToggle, -10),
 
     ...["bash", "Bash", "shell", "Shell", "exec_command"].map((name) =>
       registerToolView(name, {

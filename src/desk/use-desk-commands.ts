@@ -12,7 +12,8 @@ import { actions, currentTurnRunning, store } from "@/state/session"
 import { git } from "@/state/git"
 import { commitDrafts } from "@/state/commit-drafts"
 import { prefsStore, setPref, togglePref } from "@/state/prefs"
-import { updates } from "@/state/updates"
+import { updates, updatesStore } from "@/state/updates"
+import { application, applicationStore } from "@/state/application"
 import { openInterfacePreview, reloadInterface } from "@/state/development"
 import { stage } from "@/state/stage"
 import { surfaces } from "@/extend/surfaces"
@@ -381,6 +382,51 @@ const DESK_COMMANDS: DeskCommand[] = [
     title: "Open shared-host preview window",
     section: "View",
     run: openInterfacePreview,
+  },
+  {
+    id: "app.updates",
+    title: "Updates and build information",
+    section: "View",
+    keywords: "version production installed release local build",
+    run: application.openUpdates,
+  },
+  {
+    id: "app.build-update",
+    title: "Build a local Mako update",
+    section: "View",
+    hint: "Build and verify separately; agents keep running",
+    when: () => applicationStore.get().installation?.distribution === "local",
+    run: () => applicationStore.get().installation?.source ? application.build() : application.openUpdates(),
+  },
+  {
+    id: "app.check-updates",
+    title: "Check for Mako updates",
+    section: "View",
+    when: () => applicationStore.get().installation?.distribution === "signed",
+    run: async () => { application.openUpdates(); await updates.check() },
+  },
+  {
+    id: "app.install-update",
+    title: "Install prepared Mako update…",
+    section: "View",
+    hint: "Choose when to install without interrupting agents",
+    when: () => applicationStore.get().installation?.local.kind === "ready" || updatesStore.get().status === "ready",
+    run: () => application.request("install"),
+  },
+  {
+    id: "app.cancel-update",
+    title: "Cancel pending update or restart",
+    section: "View",
+    when: () => applicationStore.get().lifecycle?.operation.kind === "waiting",
+    run: application.cancel,
+  },
+  {
+    id: "app.quit",
+    title: "Quit Mako…",
+    section: "View",
+    keys: "mod+q",
+    hint: "Keep agents running, or stop them before quitting",
+    run: () => application.request("quit"),
   },
   {
     id: "app.restart",
