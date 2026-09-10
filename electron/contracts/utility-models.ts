@@ -50,7 +50,10 @@ export interface UtilityModelSettings {
   secureStorage: boolean
 }
 
+export type CommitAnalysisMode = "fast" | "deep"
+
 export interface CommitGenerationInput {
+  mode?: CommitAnalysisMode
   requestId: string
   cwd: string
   prompt?: string

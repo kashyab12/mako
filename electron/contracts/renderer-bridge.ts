@@ -1,3 +1,5 @@
+import type { ThreadTarget, ThreadControls, ThreadArchiveSnapshot, ArchiveCommand, StopTarget } from "./thread-lifecycle.js"
+import type { LifecycleState, LifecycleCommand, UpdateInstallation } from "./app-lifecycle.js"
 import type { QueuedPromptEdit } from "./live-queue.js"
 import type { CommitGenerationInput, CommitGenerationResult, UtilityConnection, UtilityConnectionInput, UtilityModelSettings, UtilityProvider, UtilityCatalogInput, UtilityCatalog } from "./utility-models.js"
 import type { RewindInput, RewindPreview } from "./workspace-snapshots.js"
@@ -19,10 +21,12 @@ import type {
   ExternalThreadActivity,
   FileContents,
   GitCommitEntry,
+  GitCommitFile,
   GitDiff,
   GitHubStatus,
   IntegrationCatalogSnapshot,
   GitStatus,
+  GitPushInput,
   HostEvent,
   HarnessProfile,
   ModelInfo,
@@ -97,6 +101,10 @@ export function createMakoBridge(transport: BridgeTransport) {
   const api = {
     nativeWindowVideo: transport.nativeWindowVideo === true,
     boot: () => invokeTrustedHost<BootPayload>("mako:boot"),
+    threadArchives: () => invokeTrustedHost<ThreadArchiveSnapshot>("mako:thread-archives"),
+    threadControls: (target: ThreadTarget) => invokeTrustedHost<ThreadControls>("mako:thread-controls", target),
+    archiveThread: (command: ArchiveCommand) => invokeTrustedHost<ThreadArchiveSnapshot>("mako:thread-archive", command),
+    stopThread: (target: StopTarget) => invokeTrustedHost<boolean>("mako:thread-stop", target),
 
     /* Cross-harness threads: every coding agent's sessions on this machine. */
     threads: (filter?: { cwd?: string; harness?: string }) =>
@@ -441,19 +449,11 @@ export function createMakoBridge(transport: BridgeTransport) {
     gitUnstageAll: () => invokeTrustedHost<void>("mako:git-unstage-all"),
     gitCommit: (message: string, options?: { amend?: boolean }) =>
       invokeTrustedHost<void>("mako:git-commit", message, options),
-    gitPush: () => invokeTrustedHost<void>("mako:git-push"),
+    gitPush: (input: GitPushInput) => invokeTrustedHost<void>("mako:git-push", input),
     gitLog: (limit?: number) =>
       invokeTrustedHost<GitCommitEntry[]>("mako:git-log", limit),
     gitCommitFiles: (hash: string) =>
-      invokeTrustedHost<
-        Array<{
-          path: string
-          status: import("../shared.js").GitFileStatus
-          insertions: number
-          deletions: number
-          binary: boolean
-        }>
-      >("mako:git-commit-files", hash),
+      invokeTrustedHost<GitCommitFile[]>("mako:git-commit-files", hash),
     gitCommitFileDiff: (hash: string, path: string) =>
       invokeTrustedHost<GitDiff>("mako:git-commit-file-diff", hash, path),
     gitCommitDiffAll: (hash: string) =>
@@ -539,6 +539,13 @@ export function createMakoBridge(transport: BridgeTransport) {
       invokeTrustedHost<void>("mako:terminal-kill", sessionId),
     onTerminalEvent: transport.onTerminalEvent,
 
+    lifecycleState: () => invokeTrustedHost<LifecycleState>("mako:lifecycle-state"),
+    lifecycleCommand: (command: LifecycleCommand) => invokeTrustedHost<LifecycleState>("mako:lifecycle-command", command),
+    quitClient: () => invokeTrustedHost<void>("mako:quit-client"),
+    acknowledgeShutdown: (requestId: string) => invokeTrustedHost<void>("mako:shutdown-ack", requestId),
+    installationState: () => invokeTrustedHost<UpdateInstallation>("mako:installation-state"),
+    selectUpdateSource: (path: string) => invokeTrustedHost<UpdateInstallation>("mako:select-update-source", path),
+    buildUpdate: () => invokeTrustedHost<void>("mako:build-update"),
     updateState: () => invokeTrustedHost<UpdateState>("mako:update-state"),
     checkUpdates: () => invokeTrustedHost<UpdateState>("mako:check-updates"),
     installUpdate: () => invokeTrustedHost<void>("mako:install-update"),

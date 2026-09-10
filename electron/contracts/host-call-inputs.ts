@@ -21,6 +21,7 @@ export const hostCallInputs = {
   "mako:browser-control-disconnect": z.tuple([z.string()]),
   "mako:browser-control-status": z.tuple([]),
   "mako:browser-extension-setup": z.tuple([]),
+  "mako:build-update": z.tuple([]),
   "mako:capabilities": z.tuple([]),
   "mako:check-updates": z.tuple([]),
   "mako:clear-crashes": z.tuple([]),
@@ -65,6 +66,7 @@ export const hostCallInputs = {
   "mako:git-diff-all": z.tuple([]),
   "mako:git-generate-message": z.tuple([
     z.object({
+      mode: z.union([z.literal("fast"), z.literal("deep")]).optional(),
       requestId: z.string(),
       cwd: z.string(),
       prompt: z.string().optional(),
@@ -72,7 +74,7 @@ export const hostCallInputs = {
     }),
   ]),
   "mako:git-log": z.tuple([z.number().optional()]),
-  "mako:git-push": z.tuple([]),
+  "mako:git-push": z.tuple([z.object({ cwd: z.string(), branch: z.string() })]),
   "mako:git-stage": z.tuple([z.array(z.string())]),
   "mako:git-stage-all": z.tuple([]),
   "mako:git-status": z.tuple([]),
@@ -99,7 +101,31 @@ export const hostCallInputs = {
     z.boolean().optional(),
   ]),
   "mako:install-update": z.tuple([]),
+  "mako:installation-state": z.tuple([]),
   "mako:integrations": z.tuple([]),
+  "mako:lifecycle-command": z.tuple([
+    z.union([
+      z.object({ kind: z.literal("cancel") }),
+      z.object({
+        kind: z.literal("wait"),
+        action: z.union([
+          z.literal("quit"),
+          z.literal("install"),
+          z.literal("restart"),
+        ]),
+      }),
+      z.object({
+        kind: z.literal("stop"),
+        action: z.union([
+          z.literal("quit"),
+          z.literal("install"),
+          z.literal("restart"),
+        ]),
+        revision: z.string(),
+      }),
+    ]),
+  ]),
+  "mako:lifecycle-state": z.tuple([]),
   "mako:list-files": z.tuple([]),
   "mako:list-models": z.tuple([]),
   "mako:list-plugins": z.tuple([]),
@@ -370,6 +396,7 @@ export const hostCallInputs = {
   "mako:pull-branches": z.tuple([]),
   "mako:pull-request": z.tuple([]),
   "mako:pull-requests": z.tuple([z.number().optional()]),
+  "mako:quit-client": z.tuple([]),
   "mako:read-file": z.tuple([z.string()]),
   "mako:read-live-file": z.tuple([z.string(), z.string()]),
   "mako:relaunch": z.tuple([]),
@@ -447,6 +474,7 @@ export const hostCallInputs = {
       })
       .optional(),
   ]),
+  "mako:select-update-source": z.tuple([z.string()]),
   "mako:set-active-tools": z.tuple([z.array(z.string())]),
   "mako:set-auto-compaction": z.tuple([z.boolean()]),
   "mako:set-cwd": z.tuple([z.string()]),
@@ -463,6 +491,7 @@ export const hostCallInputs = {
       z.literal("max"),
     ]),
   ]),
+  "mako:shutdown-ack": z.tuple([z.string()]),
   "mako:skills-discover": z.tuple([]),
   "mako:skills-remove-preview": z.tuple([
     z.string(),
@@ -508,6 +537,22 @@ export const hostCallInputs = {
   "mako:terminal-resize": z.tuple([z.string(), z.number(), z.number()]),
   "mako:terminal-write": z.tuple([z.string(), z.string()]),
   "mako:thread-abort-run": z.tuple([z.string()]),
+  "mako:thread-archive": z.tuple([
+    z.object({
+      id: z.string(),
+      target: z.union([
+        z.object({ kind: z.literal("live"), id: z.string() }),
+        z.object({ kind: z.literal("file"), path: z.string() }),
+        z.object({
+          kind: z.literal("native"),
+          provider: z.string(),
+          nativeId: z.string(),
+        }),
+      ]),
+      archived: z.boolean(),
+    }),
+  ]),
+  "mako:thread-archives": z.tuple([]),
   "mako:thread-contexts": z.tuple([
     z.array(z.string()),
     z.object({ inline: z.boolean().optional() }).optional(),
@@ -518,6 +563,17 @@ export const hostCallInputs = {
     z.string(),
     z.string().optional(),
     z.union([z.literal("native"), z.literal("transcript")]).optional(),
+  ]),
+  "mako:thread-controls": z.tuple([
+    z.union([
+      z.object({ kind: z.literal("live"), id: z.string() }),
+      z.object({ kind: z.literal("file"), path: z.string() }),
+      z.object({
+        kind: z.literal("native"),
+        provider: z.string(),
+        nativeId: z.string(),
+      }),
+    ]),
   ]),
   "mako:thread-file": z.tuple([z.string(), z.string()]),
   "mako:thread-follow": z.tuple([z.string(), z.number()]),
@@ -530,6 +586,20 @@ export const hostCallInputs = {
   ]),
   "mako:thread-resumable": z.tuple([]),
   "mako:thread-run": z.tuple([z.string()]),
+  "mako:thread-stop": z.tuple([
+    z.union([
+      z.object({
+        kind: z.literal("live"),
+        id: z.string(),
+        requestId: z.string(),
+      }),
+      z.object({
+        kind: z.literal("native"),
+        path: z.string(),
+        token: z.string(),
+      }),
+    ]),
+  ]),
   "mako:thread-unfollow": z.tuple([]),
   "mako:threads": z.tuple([
     z

@@ -1,3 +1,5 @@
+import type { LifecycleState, LifecycleAction, UpdateInstallation } from "./app-lifecycle.js"
+import type { ThreadArchiveSnapshot } from "./thread-lifecycle.js"
 import type { ControlActivity } from "./control-preview.js"
 import type { NativeRequest } from "./native-requests.js"
 import type { BrowserControlStatus } from "./browser-control.js"
@@ -38,14 +40,20 @@ export interface ExternalThreadActivity {
 }
 
 export type HostEventBody =
+  | { type: "application-lifecycle"; lifecycle: LifecycleState }
+  | { type: "installation"; installation: UpdateInstallation }
+  | { type: "app-command"; command: "app.quit" | "app.updates" }
+  | { type: "app-shutdown"; requestId: string; action: LifecycleAction }
   | { type: "host-disconnected"; message: string }
+  | { type: "host-reconnected" }
+  | { type: "thread-archives"; snapshot: ThreadArchiveSnapshot }
   | { type: "live-batch"; batch: LiveBatch }
   | { type: "session"; session: SessionState }
   | { type: "meta"; meta: SessionMeta }
   | { type: "messages"; messages: ChatMessage[] }
   | { type: "stream"; message: ChatMessage | null }
   | { type: "tree"; tree: TreeNode[]; leafId: string | null }
-  | { type: "git"; git: GitStatus }
+  | { type: "git"; git: GitStatus; cause?: "index" | "workspace" }
   | { type: "capabilities"; capabilities: Capabilities }
   /** One provider's discovery finished; window-wide, keyed by the workspace it ran in. */
   | { type: "harness-profile"; profile: HarnessProfile; cwd?: string }
@@ -102,6 +110,7 @@ export interface TabSnapshot {
 }
 
 export interface BootPayload {
+  archives?: ThreadArchiveSnapshot
   live: LiveSummary[]
   /** Open tabs, in strip order. Always at least one. */
   tabs: TabSnapshot[]

@@ -8,10 +8,17 @@ export interface GitFile {
   path: string
   status: GitFileStatus
   oldName?: string
-  insertions: number
-  deletions: number
+  insertions: number | null
+  deletions: number | null
   binary: boolean
   staged: boolean
+}
+
+export type GitCommitFile = Pick<GitFile, "path" | "status" | "insertions" | "deletions" | "binary">
+
+export interface GitPushInput {
+  cwd: string
+  branch: string
 }
 
 export interface GitStatus {
@@ -36,17 +43,19 @@ export interface GitCommitEntry {
   /** ISO timestamp. */
   date: string
   /** Files touched, for the summary line. */
-  files: number
-  insertions: number
-  deletions: number
+  files: number | null
+  insertions: number | null
+  deletions: number | null
 }
 
-export interface GitDiff {
-  path: string
-  binary: boolean
-  oldFile: { name: string; contents: string } | null
-  newFile: { name: string; contents: string } | null
-}
+export type GitDiffPreview =
+  | { kind: "patch"; contents: string; limited: boolean }
+  | { kind: "unavailable"; reason: string }
+
+export type GitDiff = { path: string } & (
+  | { binary: boolean; oldFile: { name: string; contents: string } | null; newFile: { name: string; contents: string } | null; preview?: never }
+  | { binary: false; oldFile: null; newFile: null; preview: GitDiffPreview }
+)
 
 /** One workspace file, for the composer's `@` picker. */
 export interface WorkspaceFile {

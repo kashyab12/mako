@@ -102,6 +102,62 @@ export const LiveBlockSchema = z.discriminatedUnion("type", [
 ])
 export type LiveBlock = z.infer<typeof LiveBlockSchema>
 
+const changes = new WeakMap<
+  LiveBlock[],
+  { source: WeakRef<LiveBlock[]>; from: number }
+>()
+
+export function changedLiveBlockStart(
+  previous: LiveBlock[],
+  next: LiveBlock[]
+): number {
+  if (previous === next) return next.length
+  const change = changes.get(next)
+  if (change?.source.deref() === previous) return change.from
+  let index = 0
+  while (
+    index < previous.length &&
+    index < next.length &&
+    previous[index] === next[index]
+  )
+    index++
+  return index
+}
+
+export function mergeLiveUpdates(
+  previous: LiveUpdate | undefined,
+  next: LiveUpdate
+): LiveUpdate | undefined {
+  if (!previous || previous.kind !== next.kind) return undefined
+  if (
+    (next.kind === "text" || next.kind === "thinking") &&
+    (previous.kind === "text" || previous.kind === "thinking") &&
+    previous.id === next.id
+  ) {
+    return {
+      ...next,
+      text: next.replace ? next.text : previous.text + next.text,
+      replace: next.replace || previous.replace,
+    }
+  }
+  if (
+    previous.kind === "tool-update" &&
+    next.kind === "tool-update" &&
+    previous.id === next.id
+  ) {
+    return {
+      ...previous,
+      title: next.title ?? previous.title,
+      status: next.status ?? previous.status,
+      input: next.input ?? previous.input,
+      output: next.output ?? previous.output,
+      details: next.details ?? previous.details,
+      attachments: next.attachments ?? previous.attachments,
+    }
+  }
+  return undefined
+}
+
 /** The host and renderer use the same pure projection. One allocation per delivered batch. */
 export function reduceLiveUpdates(
   blocks: LiveBlock[],
@@ -109,15 +165,27 @@ export function reduceLiveUpdates(
 ): LiveBlock[] {
   if (!updates.length) return blocks
   const next = [...blocks]
+  let from = blocks.length
+  const replace = (index: number, block: LiveBlock) => {
+    const at = index < 0 ? next.length : index
+    from = Math.min(from, at)
+    next[at] = block
+  }
   const tools = new Map<string, number>()
-  let turnStart = -1
-  for (let index = 0; index < next.length; index++) {
+  let turnStart = next.length - 1
+  while (turnStart >= 0) {
+    const block = next[turnStart]!
+    if (block.type === "user" && !block.steeringFor) break
+    turnStart--
+  }
+  for (let index = turnStart + 1; index < next.length; index++) {
     const block = next[index]!
-    if (block.type === "user" && !block.steeringFor) {
-      tools.clear()
-      turnStart = index
-    }
     if (block.type === "tool") tools.set(block.id, index)
+  }
+  const findCurrent = (matches: (block: LiveBlock) => boolean) => {
+    for (let index = turnStart + 1; index < next.length; index++)
+      if (matches(next[index]!)) return index
+    return -1
   }
   for (const update of updates) {
     const last = next.at(-1)
@@ -136,17 +204,14 @@ export function reduceLiveUpdates(
           attachments: update.attachments,
         }
         if (update.steeringFor) user.steeringFor = update.steeringFor
-        next.push(user)
+        replace(-1, user)
         break
       }
       case "text":
       case "thinking": {
         const index = update.id
-          ? next.findIndex(
-              (block, index) =>
-                index > turnStart &&
-                block.type === update.kind &&
-                block.id === update.id
+          ? findCurrent(
+              (block) => block.type === update.kind && block.id === update.id
             )
           : last?.type === update.kind
             ? next.length - 1
@@ -157,16 +222,12 @@ export function reduceLiveUpdates(
             ? previous.text + update.text
             : update.text
         const block: LiveBlock = { type: update.kind, text, id: update.id }
-        if (index >= 0) next[index] = block
-        else next.push(block)
+        replace(index, block)
         break
       }
       case "proposed-plan": {
-        const index = next.findIndex(
-          (block, index) =>
-            index > turnStart &&
-            block.type === "proposed-plan" &&
-            block.id === update.id
+        const index = findCurrent(
+          (block) => block.type === "proposed-plan" && block.id === update.id
         )
         const previous = next[index]
         const text =
@@ -186,12 +247,11 @@ export function reduceLiveUpdates(
               previous.truncated)
           ),
         }
-        if (index >= 0) next[index] = block
-        else next.push(block)
+        replace(index, block)
         break
       }
       case "attachment":
-        next.push({ type: "attachment", attachment: update.attachment })
+        replace(-1, { type: "attachment", attachment: update.attachment })
         break
       case "tool": {
         const index = tools.get(update.id) ?? -1
@@ -207,15 +267,14 @@ export function reduceLiveUpdates(
           attachments: update.attachments,
         }
         tools.set(update.id, index >= 0 ? index : next.length)
-        if (index >= 0) next[index] = block
-        else next.push(block)
+        replace(index, block)
         break
       }
       case "tool-update": {
         const index = tools.get(update.id) ?? -1
         const block = next[index]
         if (block?.type !== "tool") break
-        next[index] = {
+        replace(index, {
           ...block,
           title: update.title ?? block.title,
           status: update.status ?? block.status,
@@ -223,19 +282,18 @@ export function reduceLiveUpdates(
           output: update.output ?? block.output,
           details: update.details ?? block.details,
           attachments: update.attachments ?? block.attachments,
-        }
+        })
         break
       }
       case "plan": {
-        const index = next.findIndex(
-          (block, index) => index > turnStart && block.type === "plan"
-        )
+        const index = findCurrent((block) => block.type === "plan")
         const block: LiveBlock = { type: "plan", entries: update.entries }
-        if (index >= 0) next[index] = block
-        else next.push(block)
+        replace(index, block)
         break
       }
     }
   }
+  if (from === blocks.length && next.length === blocks.length) return blocks
+  changes.set(next, { source: new WeakRef(blocks), from })
   return next
 }
