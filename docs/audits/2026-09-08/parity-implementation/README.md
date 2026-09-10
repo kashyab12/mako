@@ -113,3 +113,74 @@ A quota-full regression exposed unnecessary duplicate restore backups. Restore n
 The final isolated package is `/tmp/mako-reliability-verified-20260909/mac-arm64/Mako.app`. Its 865 compiled files were compared with frozen inputs and 396 relative host imports resolved. Ad-hoc signature verification, launch, real Claude completion, restart, same-native-session resume, and marker recall passed. Report: `/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-packaged-lifecycle-IkM1QT/result.json`. Cold acceptance was still slow in that run, about 53.6 seconds; this is not a startup-speed claim. A separate real Claude workflow passed two file-writing turns, checkpoint preview, file restore, and an idle conversation fork: `/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-rewind-e2e-t8SvyP/result.json`.
 
 The approved non-privileged memory run passed 54 reloads over 611,146 ms with the draft intact. Median measured physical footprint declined from 2,081,073,304 to 1,878,781,184 bytes. Whole-tree RSS and measured physical footprint stayed within their 4 GiB test limits, and the system-memory-free floor held. macOS denies physical reads for setuid-root `ps`; those readings remain explicitly unavailable, not successful zeroes. Report: `/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-packaged-lifecycle-VDwTrJ/result.json`. This verifies the recorded ten-minute workload and coverage, not a multi-hour or all-workload stability guarantee.
+
+## Send startup latency, September 9
+
+An instrumented package reproduced 35,119 ms from request to acknowledgement: local control consumed 1,416 ms, full provider discovery another 33,578 ms, and host acceptance itself about 8 ms. The request contained no model overrides, yet it waited for every model's defaults. The production composer had another display-discovery await before the host call.
+
+Native defaults no longer require model discovery. Providers can declare that their native model IDs need no translation; Claude model-only requests preserve the exact requested ID and leave its acceptance to the native provider, as unknown IDs already did. Option-bearing requests still use catalogue validation. Claude shares the launch catalogue with background discovery without waiting for per-model default probes, and background enrichment cannot mutate that catalogue. Legacy preference migration still obtains the metadata needed to translate old option names.
+
+Profiles remain account/workspace scoped, with real-path keys so workspace aliases reuse the same validated profile. Discovery retains the four-process maximum, reserving capacity for launch catalogues rather than allowing background enrichment to occupy every slot. Read-only Claude discovery excludes MCP startup; actual agent MCP configuration is unchanged. Local-control readiness is awaited where the provider consumes its MCP snapshot, including ACP and app-server starts. Independent provider MCP discovery and managed diagnostics run concurrently, retaining both results.
+
+Measured packaged runs:
+
+| Run | Acknowledgement | First observed reply text | Completion |
+| --- | ---: | ---: | ---: |
+| Before, cold native defaults through the bridge | 35,119 ms | Not recorded | 80,248 ms |
+| After, cold explicit native model through the bridge | 150 ms | 34,246 ms | 36,067 ms |
+| After, cold real composer input and Send click | 183 ms | 43,955 ms | 46,241 ms |
+| After, warm explicit-model start | 12 ms | 26,138 ms | 27,159 ms |
+
+The final package is `/tmp/mako-startup-finalized-20260909/mac-arm64/Mako.app`. Archive bytes were checked against 876 frozen build files, and 419 relative host imports resolved. Both final reports passed a real Claude completion, full standalone-host restart, same-native-session resume, and marker recall without replaying the marker into the second prompt:
+
+- Before: `/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-packaged-lifecycle-22TvqD/result.json`.
+- Cold explicit model: `/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-packaged-lifecycle-D8If1P/result.json`.
+- Real composer and warm start: `/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-packaged-lifecycle-CBhOUx/result.json`.
+
+Rerun with `MAKO_STARTUP_TRACE=1 MAKO_STARTUP_BUDGET_MS=5000 npm run test:packaged-lifecycle -- /path/to/Mako.app claude --ui-start --warm`, or replace the last two switches with `--model=<native-model-id>`. The test explicitly selects `MAKO_STANDALONE=1` and a private `MAKO_DATA_ROOT`, so it exercises a full host restart instead of merely closing a shared-host client. These measurements do not establish default shared-host launch latency. Discovery traces retain executable-resolution, queue, and execution durations without recording arguments or credentials.
+
+Regression coverage includes dispatch while display discovery is held unresolved; legacy option migration; rejected options; native-ID pass-through; account/workspace isolation and aliases; reserved launch capacity; metadata redaction; and ACP/app-server refusal to launch before host MCP readiness. Existing queue, transfer, permission, native-history and MCP-control checks remain in place.
+
+The final verification also reran `test:workspace-ui`, `test:workspace-snapshots`, `test:web`, `test:message-queue`, `test:mcp`, `test:conversation-control`, `test:live-actions`, `test:background-lifecycle`, `test:renderer-assets`, and settings migration checks. Project typechecking passed. Full lint passed with zero Oxlint warnings/errors and the two known isolated-virtualizer ESLint warnings. UI evidence: `/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-workspace-ui-a6hHBZ`. The snapshot benchmark also passed; its separate observations are in `/var/folders/hp/kb3x97w90sv7967ldlym822w0000gn/T/mako-snapshot-benchmark-pYDRTM/results.json`.
+
+A concurrent build also produced an archive whose runtime connection imported `RuntimeCallSchema` from an older module without that export. Packaging now checks statically known local named/default imports and re-exports as well as file paths. `test-packaged-import-guards.mjs` reproduces this failure before app launch; it does not claim to resolve arbitrary external wildcard exports.
+
+These are individual observations on an active development machine, not latency percentiles, an SLA, or matched T3 results. Provider dispatch and first reply still take seconds; the acknowledgement reduction is not a claim of instant model output. One later restart attempt hit the unchanged Claude SDK initialization deadline and was retained in `mako-packaged-lifecycle-AkMs0z/result.json`; the subsequent complete run above passed. No SDK deadline, permission check, or option-validation rule was relaxed. The earlier retention, rewind and memory evidence remains historical evidence for those workloads, not new multi-hour or all-provider proof.
+
+## Streaming and large-history performance, September 9–10
+
+The renderer now reuses settled history and rebuilds the affected live tail. Reducer dirty ranges use weak references rather than retaining every previous array. Tool-derived Context data keeps its identity through prose-only updates. Sidebar lookups use maintained native/path indexes while preserving provider scope, alias behavior and current conversation values. Unseen background summaries no longer eagerly hydrate entire transcripts; selecting a conversation rebuilds or hydrates current content before display.
+
+Large timelines window measured rows above 200 turns, and navigator lists above 100 prompts. Small threads keep their existing progressive mounting. Trusted-input browser checks cover oldest-turn jumps, keyboard End/Enter, following live output, preserving a reader's position during tail growth, and anchor preservation while prepending native history. Programmatic virtualizer adjustments cannot release follow mode. Complete answer-copy data remains independent of mounted rows.
+
+Streaming Markdown now memoizes the actual subtree. Answers above 16 KiB can parse in a single coalescing worker, retaining exact initial/settled rendering and a safe local fallback. Worker and local paths share GFM/citation plugin composition and still use React Markdown's component and URL handling. Postprocessing receives a clone, so it cannot mutate the cached tree. The DOM-free entity decoder is resolved explicitly for both development and worker builds. Production HTTP and file-URL audits assert worker use and compare final HTML hashes.
+
+Claude final text/thinking no longer shrinks at 128 KiB. Completed tool input/output reaches the host intact for bounded previews plus durable full-content artifacts. The partial tool-input preview stays bounded and does not repeatedly emit the same capped prefix. Consecutive compatible updates coalesce without changing the wire schema or crossing tool/user boundaries.
+
+Journal text growth uses bounded append records in the same FULL-synchronous transaction as metadata. It compacts at 128 appends and at settlement, handles authoritative replacement and truncation, and preserves split UTF-16 characters. Rollback/retry and reopened-journal tests verify exact content. Closed leaf journals use an 8-entry/64 MiB estimated warm cache; active operations and parents remain protected. Eviction closes resident handles, not persisted history. Native-view cache accounting measures loaded entries rather than undercounting large entries from file-size heuristics.
+
+The daemon caches unfiltered catalogue ordering and exposes a cheap count. Filtered queries preserve filtering-before-alias-deduplication semantics, and returned lists cannot mutate the cache. Host activity joins rebuild on identity changes rather than each file-size update. Cursor Desktop now emits changed suffixes instead of resending unchanged prefixes, with equal-length edits covered. Devin/OpenCode retain their existing safe revision/branch-diff fallbacks; these changes do not claim all native database reads are O(delta).
+
+Observed production-component fixtures on this Apple M3 Max:
+
+| Workload | Before | After | Measurement boundary |
+| --- | ---: | ---: | --- |
+| 5,000-turn text batch, median | 14.2 ms | 2.4 ms | Renderer batch application |
+| Inactive 5,000-turn batch, median | 7.2 ms | 0.1 ms | Renderer state application |
+| 300-turn oldest jump | 226 ms | 41 ms | Trusted click through visible target |
+| 64 KiB rich Markdown, renderer work median | 70 ms | 13.4 ms | React Markdown call; worker CPU is separate |
+| Half-MiB block plus 24 small deltas | 12,589,032 bytes | 432 bytes | Full-prefix serialization equivalent versus persisted append payload, not filesystem allocation |
+
+Before: `mako-render-performance-XOlIQs/result.json`; worker comparison: `mako-render-performance-76J9wh/result.json`; expanded navigation audit: `mako-render-performance-ePRbgT/result.json`; production file loading: `mako-render-performance-75DIHc/result.json`. These directories are under the printed macOS temporary root. The 4/32/64 KiB final Markdown HTML hashes match their pre-offload counterparts. Runtime audit: `mako-runtime-performance-px9nwq/result.json`.
+
+Reference revisions: T3 Code `cd096b9ad5a4156ffeab85de617cbb219057007f`, Comet/Zeron `6a46ea53d9943fd636b16b23a40427e9d649788e`, OpenCode `101ff6d1a2e55c57419aaeaeebf466a180c95011`, Monocode `568f246cfc200dcb57377dfad8fe2c5700b07465`. References under `ignore/` were not changed. T3 and Comet were cloned to independent temporary directories for execution.
+
+T3's real development client opened seeded 10/1,000/5,000-turn histories, retaining roughly 645–655 DOM nodes. Evidence: `mako-reference-ui-yi3Hak/result.json`. Its development/server-fetch timings are not comparable to Mako's preloaded production fixtures and are not a speed ranking. T3 uses LegendList/stable timeline rows; Comet uses block-level virtual rows and incremental Markdown; OpenCode offloads Markdown and caches sanitized output; Monocode uses Streamdown. These are architectural comparisons, not whole-product parity percentages.
+
+Comet built successfully with side-by-side Rust 1.95 (the default toolchain was unchanged). Its isolated native resource profiler refused to proceed without Accessibility access for `/tmp/mako-comet-resource-20260909/macos-profile-window`. No native CPU/frame success is claimed for that blocked run. T3's isolated server was stopped after its checks. Neither application used the user's live app data directory.
+
+Concurrent 1/4/8-stream checks preserve exact journals and exercise reduction, JSON validation and projection together, but their latency tails were contaminated by severe system contention: load averages reached about 27/97/119 and swap use about 20 GiB. The outliers affect pure projection as well as persistence; they are not clean attribution of disk or host latency. A clean concurrent soak and matched native-client profiling remain necessary before universal latency or parity claims. The new source changes are not an update to the earlier packaged startup artifact, and the running Mako host was not restarted.
+
+Final focused checks passed: performance regressions, native session/daemon/content suites, live controls/transfers/SDK behavior, snapshot recovery, stage/provider identity, and workspace/Git UI. The current file-URL audit (`mako-render-performance-qLqoQl/result.json`) also passes follow mode, keyboard navigation, prepend anchors, worker use and exact final markup with no ResizeObserver warnings in that run. The latest workspace UI evidence is `mako-workspace-ui-Dwb8PQ`. Full lint passes with zero errors, four isolated-virtualizer React Compiler warnings, and zero Oxlint warnings/errors. The audit scripts were separately typechecked.
+
+Full project typechecking and build passed earlier in this implementation pass. Subsequent concurrent Kiri integration now references `Comparison`, `RepoPath`, `discover`, and new Git operations that the installed `@kiri/client` tarball does not expose. That SDK synchronization is an unresolved full-tree verification gate; no casts or compiler-rule relaxations were introduced to hide it. Mechanical constructor-field and catch-boundary syntax fixes preserve the integration's behavior. Comet native profiling remains pending actual Accessibility approval; the repeated denied attempt is not a successful native benchmark.
