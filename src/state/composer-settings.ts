@@ -240,8 +240,15 @@ export async function settingsForSend(
       : undefined
   const cached =
     providerStore.get().contexts[providerProfileKey(target.harness, target.cwd)]
-  if (!cached?.available || cached.configurationError)
-    await providers.load(target.harness, false, target.cwd)
+  if (!cached?.available || cached.configurationError) {
+    const discovery = providers.load(target.harness, false, target.cwd)
+    if (
+      target.kind === "new" &&
+      prefs.providerSettings[target.harness]?.source === "legacy"
+    )
+      await discovery
+    else void discovery.catch(() => {})
+  }
   const profile =
     providerStore.get().contexts[providerProfileKey(target.harness, target.cwd)]
   const { resolved } = resolveComposerSettingsInput({
@@ -254,9 +261,10 @@ export async function settingsForSend(
   })
   if (resolved.issues.length)
     throw new Error(resolved.issues.map((issue) => issue.message).join(" "))
-  const mode = conversation?.kind === "live"
-    ? conversation.session.currentMode
-    : prefs.providerModes[target.harness]
+  const mode =
+    conversation?.kind === "live"
+      ? conversation.session.currentMode
+      : prefs.providerModes[target.harness]
   return mode && resolved.settings.options?.mode !== undefined
     ? { ...resolved.settings, options: { ...resolved.settings.options, mode } }
     : resolved.settings

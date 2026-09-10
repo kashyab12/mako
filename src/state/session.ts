@@ -1,8 +1,12 @@
 import { playFeedback } from "@/state/feedback"
+import { workspaceTransitionStore } from "@/state/workspace-transition"
+import { promptClipboard } from "@/lib/prompt-clipboard"
+import type { Attachment } from "@/lib/attachments"
+import { applyThreadArchives, threadLifecycle } from "@/state/thread-lifecycle"
 import { receiveControlActivity } from "@/state/control-preview"
 import { hostConnectionStore } from "@/state/host-connection"
 import { admitProfile, providers } from "@/state/providers"
-import { applyLiveBatch, hydrateLiveSummaries } from "@/state/live-recovery"
+import { applyLiveBatch, hydrateLiveSummaries, hydrateLive } from "@/state/live-recovery"
 import { createHook, createStore, shallowEqual } from "@/state/store"
 import type {
   Capabilities,
@@ -33,6 +37,8 @@ import {
 import { viewer, viewerStore } from "@/state/viewer"
 import { stage } from "@/state/stage"
 import { applyUpdate, updates } from "@/state/updates"
+import { application, applicationStore } from "@/state/application"
+import { runCommand } from "@/extend/commands"
 import {
   applyAutomations,
   automations,
@@ -73,6 +79,7 @@ export interface SessionStore {
 
 const empty: Capabilities = { tools: [], commands: [], skills: [] }
 let workspaceGeneration = 0
+let gitRefreshGeneration = 0
 
 export const store = createStore<SessionStore>({
   phase: "booting",
@@ -115,8 +122,18 @@ export function currentTurnRunning(): boolean {
  * strip — a conversation you are not looking at costs one small object write,
  * not a render.
  */
+let connectionEpoch = 0
 function apply(event: HostEvent) {
+  if (event.type === "thread-archives") {
+    applyThreadArchives(event.snapshot)
+    return
+  }
+  if (event.type === "host-reconnected") {
+    void actions.reconnect()
+    return
+  }
   if (event.type === "host-disconnected") {
+    connectionEpoch++
     hostConnectionStore.set({ kind: "disconnected", message: event.message })
     return
   }
@@ -168,7 +185,7 @@ function absorb(id: string, event: HostEvent) {
       })
       break
     case "meta":
-      writeCache(id, { meta: event.meta })
+      writeCache(id, { meta: event.meta, git: entry.git?.cwd === event.meta.cwd ? entry.git : undefined })
       break
     case "messages":
       writeCache(id, { messages: event.messages })
@@ -213,6 +230,7 @@ function applyToActive(event: HostEvent) {
     case "session":
       store.set({
         meta: event.session.meta,
+        git: store.get().git?.cwd === event.session.meta.cwd ? store.get().git : undefined,
         messages: reconcileMessages(
           store.get().messages,
           event.session.messages
@@ -222,7 +240,7 @@ function applyToActive(event: HostEvent) {
       })
       break
     case "meta":
-      store.set({ meta: event.meta })
+      store.set({ meta: event.meta, git: store.get().git?.cwd === event.meta.cwd ? store.get().git : undefined })
       break
     case "messages":
       // Reuse the objects for turns that did not change, so a tool result
@@ -243,10 +261,22 @@ function applyToActive(event: HostEvent) {
       // The agent just wrote something. If it wrote the file you happen to be
       // reading, the version on screen is now wrong — and a stale file is
       // worse than no file, because nothing about it looks stale.
-      followEdits(event.git)
+      if (event.cause !== "index") followEdits(event.git)
       break
     case "capabilities":
       store.set({ capabilities: event.capabilities })
+      break
+    case "application-lifecycle":
+      applicationStore.set({ lifecycle: event.lifecycle })
+      break
+    case "installation":
+      applicationStore.set({ installation: event.installation })
+      break
+    case "app-command":
+      runCommand(event.command)
+      break
+    case "app-shutdown":
+      void application.shutdown(event.requestId)
       break
     case "update":
       applyUpdate(event.update)
@@ -364,6 +394,7 @@ function sessionFileOf(id: string): string | undefined {
 function adoptState(next: SessionState) {
   store.set({
     meta: next.meta,
+    git: store.get().git?.cwd === next.meta.cwd ? store.get().git : undefined,
     messages: reconcileMessages(store.get().messages, next.messages),
     tree: next.tree,
     stream: null,
@@ -399,6 +430,32 @@ function adoptSnapshot(next: TabSnapshot) {
 }
 
 export const actions = {
+  async reconnect() {
+    const epoch = ++connectionEpoch
+    const cwd = store.get().meta?.cwd
+    try {
+      const bridge = getMako()
+      if (cwd) await bridge.setCwd(cwd)
+      const boot = await bridge.boot()
+      if (epoch !== connectionEpoch) return
+      if (boot.archives) applyThreadArchives(boot.archives)
+      hydrateLiveSummaries(boot.live, true)
+      const conversation = acpStore.get().activeKey
+      if (conversation) await hydrateLive(conversation)
+      if (epoch !== connectionEpoch) return
+      if (store.get().meta?.cwd === cwd) {
+        hydrate(boot.tabs, boot.activeTabId)
+        const active = boot.tabs.find((tab) => tab.id === boot.activeTabId)
+        if (active) store.set({ meta: active.session.meta, git: active.git, capabilities: active.capabilities, models: boot.models })
+      }
+      hostConnectionStore.set({ kind: "connected" })
+      void providers.loadAll()
+      void threads.load()
+      if (!boot.archives) void threadLifecycle.load()
+    } catch (error) {
+      if (epoch === connectionEpoch) hostConnectionStore.set({ kind: "disconnected", message: error instanceof Error ? error.message : "The shared host could not be restored" })
+    }
+  },
   async boot() {
     if (!hasBridge()) {
       store.set({
@@ -430,6 +487,7 @@ export const actions = {
         "The agent host did not answer within 45 seconds. Check the terminal it was launched from, then restart."
       )
       hydrate(boot.tabs, boot.activeTabId)
+      if (boot.archives) applyThreadArchives(boot.archives)
       hydrateLiveSummaries(boot.live)
       const active =
         boot.tabs.find((tab) => tab.id === boot.activeTabId) ?? boot.tabs[0]
@@ -447,8 +505,10 @@ export const actions = {
         sourceRoot: boot.sourceRoot,
       })
       void updates.load()
+      void application.load()
       void automations.load()
       void threads.load()
+      if (!boot.archives) void threadLifecycle.load()
       threads.watchFocus()
       watchOnboarding()
     } catch (error) {
@@ -474,6 +534,8 @@ export const actions = {
   async switchTab(id: string) {
     const { activeId } = tabsStore.get()
     if (id === activeId) return
+    workspaceGeneration += 1
+    workspaceTransitionStore.set({ kind: "ready" })
     const current = store.get()
     if (activeId) {
       writeCache(activeId, {
@@ -506,6 +568,8 @@ export const actions = {
 
   /** Open another conversation beside this one. */
   async openTab(options: { cwd?: string; sessionPath?: string } = {}) {
+    workspaceGeneration += 1
+    workspaceTransitionStore.set({ kind: "ready" })
     const current = store.get()
     const { activeId } = tabsStore.get()
     if (activeId) {
@@ -676,9 +740,18 @@ export const actions = {
   /** Point the agent at a folder by path, without a dialog. */
   async openWorkspace(folder: string) {
     const mine = ++workspaceGeneration
-    const next = await guard(() => getMako().setCwd(folder))
-    if (!next || mine !== workspaceGeneration) return
+    workspaceTransitionStore.set({ kind: "loading", cwd: folder })
+    store.set({ git: undefined })
+    let next: TabSnapshot
+    try {
+      next = await getMako().setCwd(folder)
+    } catch (error) {
+      if (mine === workspaceGeneration) workspaceTransitionStore.set({ kind: "failed", cwd: folder, message: error instanceof Error ? error.message : "The project could not be opened." })
+      return
+    }
+    if (mine !== workspaceGeneration) return
     adoptSnapshot(next)
+    workspaceTransitionStore.set({ kind: "ready" })
     viewer.close()
     void actions.refreshModels()
   },
@@ -759,17 +832,28 @@ export const actions = {
   },
 
   async refreshGit() {
+    const generation = ++gitRefreshGeneration
     const workspace = store.get().meta?.cwd
     const git = await guard(() => getMako().gitStatus())
-    if (git && store.get().meta?.cwd === workspace) store.set({ git })
+    if (git && generation === gitRefreshGeneration && store.get().meta?.cwd === workspace) store.set({ git })
   },
 
   async copy(
     text: string,
-    { notify = true }: { notify?: boolean } = {}
+    { notify = true, attachments = [] }: { notify?: boolean; attachments?: readonly Attachment[] } = {}
   ): Promise<boolean> {
     try {
-      await getMako().copy(text)
+      if (attachments.length) {
+        const payload = promptClipboard(text, attachments)
+        try {
+          await navigator.clipboard.write([new ClipboardItem({
+            "text/plain": new Blob([payload.text], { type: "text/plain" }),
+            "text/html": new Blob([payload.html], { type: "text/html" }),
+          })])
+        } catch {
+          await getMako().copy(payload.text)
+        }
+      } else await getMako().copy(text)
       toast.dismiss("clipboard-error")
       if (notify)
         toast.success("Copied", { id: "clipboard-success", duration: 1600 })
@@ -780,7 +864,7 @@ export const actions = {
       toast.error("Could not copy", {
         id: "clipboard-error",
         duration: Infinity,
-        action: { label: "Retry", onClick: () => void actions.copy(text) },
+        action: { label: "Retry", onClick: () => void actions.copy(text, { notify, attachments }) },
       })
       return false
     }

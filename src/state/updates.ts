@@ -1,4 +1,5 @@
 import { createHook, createStore } from "@/state/store"
+import { application } from "@/state/application"
 import { getMako, hasBridge } from "@/lib/bridge"
 import type { UpdateState } from "@/lib/types"
 
@@ -25,20 +26,20 @@ export const updates = {
   },
 
   async check() {
-    if (!hasBridge()) return
-    updatesStore.set({ status: "checking" })
-    const state = await getMako().checkUpdates().catch(() => null)
-    if (state) updatesStore.set(state)
+    if (!hasBridge() || updatesStore.get().status === "checking" || updatesStore.get().status === "downloading") return
+    updatesStore.set({ status: "checking", error: undefined })
+    try { updatesStore.set(await getMako().checkUpdates()) }
+    catch (error) { updatesStore.set({ status: "error", error: error instanceof Error ? error.message : "Could not check for updates. Try again." }) }
   },
 
   install() {
     if (!hasBridge()) return
-    void getMako().installUpdate()
+    void application.request("install")
   },
 
   /** Quit and come back on the current build. Conversations reopen from their journals. */
   relaunch() {
     if (!hasBridge()) return
-    void getMako().relaunch()
+    void application.request("restart")
   },
 }

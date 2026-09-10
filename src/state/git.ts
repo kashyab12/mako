@@ -1,18 +1,13 @@
 import { getMako } from "@/lib/bridge"
+import { pushCurrentBranch } from "@/state/git-push"
 import type {
   CommitGenerationInput,
   GitCommitEntry,
   GitDiff,
-  GitFileStatus,
+  GitCommitFile,
 } from "@/lib/types"
 
-export interface GitCommitFile {
-  path: string
-  status: GitFileStatus
-  insertions: number
-  deletions: number
-  binary: boolean
-}
+export type { GitCommitFile } from "@/lib/types"
 
 export const git = {
   diff(path: string): Promise<GitDiff> {
@@ -60,7 +55,7 @@ export const git = {
   },
 
   push(): Promise<void> {
-    return getMako().gitPush()
+    return pushCurrentBranch()
   },
 
   generateMessage(input: CommitGenerationInput) {

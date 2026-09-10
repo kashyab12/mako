@@ -1,4 +1,5 @@
 import { stagePrompt } from "@/state/acp-pending"
+import { projectAcp } from "@/state/live-projection"
 import { prefsStore, setPref } from "@/state/prefs"
 import {
   currentSettingsTarget,
@@ -35,6 +36,7 @@ import {
   liveAcpConversations,
   liveAcpForThread,
   removeAcpConversation,
+  replaceAcpConversation,
   useAcp,
   type AcpConversation,
   type AcpQueuedPrompt,
@@ -91,7 +93,9 @@ export const acp = {
   async steerQueued(requestId: string): Promise<boolean> {
     const live = activeLiveAcp(acpStore.get())
     const queued = live?.requests?.find(
-      (item) => item.id === requestId && (item.status === "queued" || item.status === "held")
+      (item) =>
+        item.id === requestId &&
+        (item.status === "queued" || item.status === "held")
     )
     if (!live || !queued) return false
     const accepted = await acp.steer(queued.text, queued.attachments)
@@ -134,6 +138,11 @@ export const acp = {
   activate(key: string): boolean {
     const conversation = acpStore.get().conversations[key]
     if (!conversation) return false
+    if (conversation.hydrated && !conversation.projection)
+      replaceAcpConversation(key, {
+        ...conversation,
+        projection: projectAcp(conversation),
+      })
     acpStore.set({ activeKey: key })
     if (conversation.kind === "live" && !conversation.hydrated)
       void hydrateLive(key)
@@ -522,7 +531,10 @@ export const acp = {
     if (!current || !hasBridge()) return
     try {
       await getMako().liveSetMode(current.key, modeId)
-      setPref("providerModes", { ...prefsStore.get().providerModes, [current.harness]: modeId })
+      setPref("providerModes", {
+        ...prefsStore.get().providerModes,
+        [current.harness]: modeId,
+      })
     } catch (error) {
       toast.error(String(error))
     }

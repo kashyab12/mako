@@ -4,6 +4,7 @@ import { getMako, hasBridge } from "@/lib/bridge"
 import type { LiveBatch, LiveSnapshot, LiveSummary } from "@/lib/types"
 import { acpStore, replaceAcpConversation } from "@/state/acp-state"
 import { syncThreadStatus } from "@/state/acp-live"
+import { threadsStore } from "@/state/thread-store"
 import { reduceLiveUpdates } from "../../electron/contracts/live-content"
 import { projectLive } from "@/state/live-projection"
 import { toast } from "sonner"
@@ -93,6 +94,44 @@ export async function hydrateLive(id: string): Promise<void> {
 export function applyLiveBatch(batch: LiveBatch): void {
   const current = acpStore.get().conversations[batch.id]
   if (
+    current?.kind === "live" &&
+    !current.hydrated &&
+    acpStore.get().activeKey !== batch.id &&
+    !fetching.has(batch.id)
+  ) {
+    if (batch.revision <= (current.revision ?? 0)) return
+    const session = batch.session ?? current.session
+    const next = {
+      ...current,
+      session,
+      harness: session.harness,
+      cwd: session.cwd,
+      title: session.title,
+      control: batch.control ?? current.control,
+      nativePaths: batch.control
+        ? batch.control.bindings.flatMap((binding) =>
+            binding.path ? [binding.path] : []
+          )
+        : current.nativePaths,
+      nativeAgents: batch.nativeAgents ?? current.nativeAgents,
+      requests: batch.requests ?? current.requests,
+      permission: batch.permissions
+        ? (batch.permissions[0] ?? null)
+        : current.permission,
+      threadPath:
+        batch.threadPath === undefined
+          ? current.threadPath
+          : (batch.threadPath ?? undefined),
+      revision: batch.revision,
+      updatedAt: Date.now(),
+    }
+    replaceAcpConversation(batch.id, next)
+    notifyCompletion(current.requests, batch.requests)
+    if (batch.session || batch.permissions || batch.requests)
+      syncThreadStatus(next, current.session.status, current.threadPath)
+    return
+  }
+  if (
     !current?.hydrated ||
     current.kind !== "live" ||
     batch.revision > (current.revision ?? 0) + 1
@@ -151,24 +190,16 @@ export function applyLiveBatch(batch: LiveBatch): void {
       session.status === current.session.status &&
       session.harness === current.session.harness
         ? current.projection
-        : projectLive(
-            { blocks, base, session, requests },
-            current.projection,
-            pendingPrompts
-          ),
+        : acpStore.get().activeKey === batch.id
+          ? projectLive(
+              { blocks, base, session, requests },
+              current.projection,
+              pendingPrompts
+            )
+          : undefined,
     updatedAt: Date.now(),
   })
-  if (
-    batch.requests?.some(
-      (request) =>
-        request.status === "completed" &&
-        current.requests?.some(
-          (previous) =>
-            previous.id === request.id && previous.status === "dispatching"
-        )
-    )
-  )
-    playFeedback("complete")
+  notifyCompletion(current.requests, batch.requests)
   const next = acpStore.get().conversations[batch.id]
   if (next && batch.session?.settings) acknowledgeComposerSettings(next)
   if (
@@ -178,9 +209,39 @@ export function applyLiveBatch(batch: LiveBatch): void {
     syncThreadStatus(next, current.session.status, current.threadPath)
 }
 
-export function hydrateLiveSummaries(summaries: LiveSummary[]): void {
+function notifyCompletion(
+  previous: LiveSnapshot["requests"] | undefined,
+  next: LiveSnapshot["requests"] | undefined
+): void {
+  if (
+    next?.some(
+      (request) =>
+        request.status === "completed" &&
+        previous?.some(
+          (old) => old.id === request.id && old.status === "dispatching"
+        )
+    )
+  )
+    playFeedback("complete")
+}
+
+export function hydrateLiveSummaries(
+  summaries: LiveSummary[],
+  reconnect = false
+): void {
   for (const summary of summaries) {
-    if (acpStore.get().conversations[summary.session.id]?.hydrated) continue
+    const previous = acpStore.get().conversations[summary.session.id]
+    if (previous?.hydrated && !reconnect) continue
+    if (reconnect && previous?.kind === "live") {
+      replaceAcpConversation(summary.session.id, {
+        ...previous,
+        session: summary.session,
+        hydrated: false,
+        nativePaths: summary.nativePaths,
+        permission: null,
+      })
+      continue
+    }
     replaceAcpConversation(summary.session.id, {
       kind: "live",
       key: summary.session.id,
@@ -205,12 +266,20 @@ export function hydrateLiveSummaries(summaries: LiveSummary[]): void {
     const restored = acpStore.get().conversations[summary.session.id]
     if (restored?.kind === "live") syncThreadStatus(restored, "starting")
   }
-  const requested = globalThis.sessionStorage?.getItem("mako:reload-conversation")
+  const active = acpStore.get().activeKey
+  if (active && summaries.some((summary) => summary.session.id === active))
+    void hydrateLive(active)
+  if (reconnect) return
+  const requested = globalThis.sessionStorage?.getItem(
+    "mako:reload-conversation"
+  )
   globalThis.sessionStorage?.removeItem("mako:reload-conversation")
-  const selected = summaries.find((summary) => summary.session.id === requested) ??
+  const selected =
+    summaries.find((summary) => summary.session.id === requested) ??
     summaries.toSorted((a, b) => b.createdAt - a.createdAt)[0]
   if (selected && requested !== "new" && !acpStore.get().activeKey) {
     acpStore.set({ activeKey: selected.session.id })
+    threadsStore.set({ composerHarness: selected.session.harness })
     void hydrateLive(selected.session.id)
   }
 }

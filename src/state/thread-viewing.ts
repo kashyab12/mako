@@ -35,8 +35,18 @@ const threadCache = new Map<string, ViewedThread>()
 const THREAD_CACHE_MAX = 4
 const THREAD_CACHE_BYTES = 24 * 1024 * 1024
 
+const entryBytes = new WeakMap<ViewedThreadEntry, number>()
 function estimatedThreadBytes(thread: ViewedThread): number {
-  return Math.min(thread.ref.bytes ?? 0, thread.entries.length * 4096)
+  let bytes = 0
+  for (const entry of thread.entries) {
+    let size = entryBytes.get(entry)
+    if (size === undefined) {
+      size = JSON.stringify(entry).length * 2 + 256
+      entryBytes.set(entry, size)
+    }
+    bytes += size
+  }
+  return bytes
 }
 
 export function viewedThread(thread: Thread): ViewedThread {

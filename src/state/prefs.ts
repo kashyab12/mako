@@ -46,7 +46,7 @@ export interface Prefs {
   railMode: RailMode
   railScope: RailScope
   railSortBy: RailSortBy
-  railGrouping: "project" | "recent"
+  railGrouping: "project" | "recent" | "archived"
   providerModes: PreferenceStringMap
   collapsedGroups: string[]
   collapsedDirs: string[]
@@ -329,7 +329,7 @@ function parsePrefs(value: JsonValue): Prefs | null {
       defaults.agentHarnessFilter
     ),
     composerHarness: readComposerHarness(value.composerHarness),
-    railGrouping: readChoice(value.railGrouping, ["project", "recent"], defaults.railGrouping),
+    railGrouping: readChoice(value.railGrouping, ["project", "recent", "archived"], defaults.railGrouping),
     providerModes: readStringRecord(value.providerModes),
     providerSettings: readProviderSettings(value.providerSettings, value.composerTuning),
     settingsOverrides: readSettingsOverrides(value.settingsOverrides),

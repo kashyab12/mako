@@ -22,7 +22,7 @@ export function agentActivity({ blocks, waiting, connecting, preparing }: { bloc
   const tool = blocks.findLast((block) => block.type === "tool" && block.status === "pending")
   if (tool?.type === "tool") return { kind: toolActivity(liveToolName(tool.toolKind, tool.title)), label: tool.title }
   const last = blocks.at(-1)
-  if (last?.type === "thinking") return { kind: "reasoning", label: "Reasoning" }
-  if (last?.type === "text") return { kind: "responding", label: "Responding" }
+  if (last?.type === "thinking" && last.text.length > 0) return { kind: "reasoning", label: "Reasoning" }
+  if (last?.type === "text" && last.text.length > 0) return { kind: "responding", label: "Responding" }
   return { kind: "working", label: "Working" }
 }

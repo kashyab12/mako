@@ -1,9 +1,10 @@
 import { createHook, createStore } from "./store"
 import { git } from "./git"
 import { prefsStore } from "./prefs"
-import type { CommitGenerationResult } from "@/lib/types"
+import type { CommitAnalysisMode, CommitGenerationResult } from "@/lib/types"
 
 interface CommitDraft {
+  mode: CommitAnalysisMode
   text: string
   revision: number
   requestId: string | null
@@ -12,6 +13,7 @@ interface CommitDraft {
   error: string | null
 }
 const empty: CommitDraft = {
+  mode: "fast",
   text: "",
   revision: 0,
   requestId: null,
@@ -32,6 +34,9 @@ const update = (cwd: string, patch: Partial<CommitDraft>) =>
   }))
 
 export const commitDrafts = {
+  setMode(cwd: string, mode: CommitAnalysisMode) {
+    if (!current(cwd).requestId) update(cwd, { mode })
+  },
   edit(cwd: string, text: string) {
     update(cwd, { text, revision: current(cwd).revision + 1 })
   },
@@ -46,6 +51,7 @@ export const commitDrafts = {
         cwd,
         requestId,
         model: prefs.commitModel,
+        mode: before.mode,
         prompt: prefs.commitPrompt,
       })
       const after = current(cwd)
@@ -101,6 +107,6 @@ export const commitDrafts = {
   },
   committed(cwd: string, revision: number) {
     if (current(cwd).revision === revision)
-      update(cwd, { ...empty, revision: revision + 1 })
+      update(cwd, { ...empty, mode: current(cwd).mode, revision: revision + 1 })
   },
 }
