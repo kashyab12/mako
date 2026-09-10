@@ -70,8 +70,10 @@ Three rules hold this together, and each has a specific failure it prevents:
   turn in the session.
 - **Long lists are virtualized, long content uses `content-visibility`.** The
   rail is windowed with `@tanstack/react-virtual`; transcript turns and
-  surface-panel rows carry `.contain-turn` so offscreen work is skipped
-  without the fragility of windowing variable-height streaming content.
+  surface-panel rows carry `.contain-turn`. Timelines above 200 turns and
+  navigators above 100 prompts additionally window measured rows. Preserve
+  prompt identity, prepend anchors and complete answer-copy data. Only actual
+  user scrolling may release follow mode; virtualizer size adjustments must not.
 
 The rail bounds mounted rows through folder pagination and an explicit search
 result cap; it never renders the full catalog. Components that genuinely use
@@ -209,13 +211,37 @@ test. Existing debt is never a reason to add new debt.
 
 ## Git
 
+Kiri is the normal Git backend, not an opt-in. `kiri-engine.ts` owns the process-lifetime sidecar and leased repository handles; `host-git.ts` and `git-preview.ts` adapt its typed data to Mako's existing host contract. `kiri-commit.ts` binds Mako's model connections and retains reviewed drafts per client/workspace. Do not restore a second Git or analysis implementation as a fallback. Engine/client mismatches are explicit errors checked against the protocol version and canonical schema digest.
+
+`npm run prepare:kiri` builds the sidecar from the sibling Kiri checkout (or `KIRI_SOURCE_DIR`) when available and installs it under `vendor/kiri/<platform>-<arch>/`. `build:electron` runs this step. The macOS packaging configuration includes the engine under Resources and lists it for signing; development resolves the prepared vendor binary automatically. `MAKO_KIRI_BINARY` is a test/development executable override, not a feature flag. `@kiri/client` comes from a pinned, generated SDK tarball in `vendor/`. Update the SDK and engine together. `npm run test:kiri-engine` exercises the sidecar through Mako's AI SDK against a local model endpoint in a disposable repository.
+
 `ChangesPanel` stages, commits, and pushes. Commit drafting uses the host-only
 AI SDK connections in `utility-models.ts`, configured in Settings > Commit
 messages, never a coding-agent session. API keys are encrypted through Electron
 safeStorage in the isolated profile; no key is returned in a settings snapshot.
-Changing a custom endpoint requires re-entering its key. Model calls, retries,
-parallelism, and diff bytes are bounded. Oversized and sensitive-path omissions
-are reported alongside the draft; filename filtering is not a general secret scanner.
+Changing a custom endpoint requires re-entering its key. Non-sensitive text diffs,
+including lockfiles and generated files, are captured completely. Working-tree
+captures use private Git objects and a private index without modifying the real
+index or object database. Reviewed worktree commits verify file fingerprints,
+HEAD, branch, and index state before staging. Model request size bounds do not
+truncate captured evidence. Small captures use one synthesis call; larger captures
+use parallel chunks and recursive reduction with original-source inspection.
+Provider token counters validate candidate requests where available. A typed
+context rejection re-chunks the same immutable capture under one shared call
+budget; authentication errors do not trigger that recovery. Every part must finish
+before final synthesis. Request, time, or output limits fail the draft instead of dropping parts.
+Sensitive-file exclusions remain explicit; filename filtering is not a secret scanner.
+Git index writes are queued per repository across workspace instances, and commit
+diff collection waits for admitted writes. Git uses `--no-optional-locks` so background
+status refreshes cannot contend with staging; mandatory write locks remain intact.
+The UI projects pending checkbox intent
+immediately and clears it only after all writes and the latest reconciliation finish.
+Superseded Git pushes and explicit refresh results are discarded.
+Staging controls keep a stationary 24px hit target around their 14px mark.
+`test-git-staging.ts` covers rapid toggles, parallel clients, reader cancellation,
+root capture, literal filenames, failed writes, and commits queued after staging.
+Commit generation has explicit Fast/Deep modes in the shared input contract and per-workspace draft state. Fast uses complete evidence with direct synthesis and low requested reasoning; Deep adds bounded inspections and higher requested reasoning. Changing this policy must not truncate source or alter Git safeguards. Commit errors must not offer automatic mutation replay; refresh the observed Git state instead.
+
 `commit-drafts.ts` keeps per-workspace edits and offers late results as suggestions
 rather than overwriting a message. `npm run test:commit-generation` exercises real
 Git repositories, AI SDK calls, context recovery, cancellation, and encrypted storage.
@@ -226,6 +252,24 @@ It also checks commit-footer geometry and the computed Shadow DOM colors of side
 diffs, center diffs, and source files across light, dark, and system-theme changes.
 Pierre's `diffs-container` inherits Mako's color scheme and token bindings from
 `src/index.css`; component-level dark/light overrides are unnecessary.
+
+Git browsing is metadata-first. Status attempts rename enrichment only when a
+small inventory contains staged addition/deletion candidates, with a one-second
+budget. Line totals are deferred; unknown totals are `null`, never fabricated zeros. Concurrent readers share
+status work, and index-only events do not reload open file contents. History lists
+read commit metadata without `--shortstat`; per-commit files are paged in the UI.
+`ChangeList` windows fixed 24px rows instead of mounting an entire changeset.
+`git-preview.ts` limits interactive full-text comparison to 64 KiB/2,000 lines;
+larger files use Git-generated previews capped at 128 KiB/1,000 lines, with a clear
+notice. Files above the 32 MiB interactive source budget stay available for staging
+and external-editor review. None of these display limits alter staged content or
+commit generation. Project transitions clear Git views immediately and history
+requests are scoped by project/HEAD. Push feedback is branch/project-owned in
+`git-push.ts`; the commit bar is its only primary Push control.
+`npm run test:git-ui` checks 13,000 rows, staging, project loading, Push feedback,
+and reduced motion using production components and a delayed fixture transport.
+`test:host` includes real temporary-repository preview checks and publishing to a
+local bare remote, never a network remote.
 
 Commit model names and limits come from models.dev or an explicit provider API
 lookup, not a version list in the renderer. Only the public catalog is cached;
@@ -256,11 +300,13 @@ deliberate action and never rides along with a commit.
   pane, one is wrong. Selection and hover are tints of the text colour
   (`--fill-hover` / `--fill-selected`), never the accent. Beyond ember, hue
   appears only where it carries meaning: diff add/remove, error, warning.
-- **Three UI type sizes only** — `text-label` (11), `text-ui` (13),
-  `text-title` (15) — plus prose (14) and code (12). Weights come off
+- **Three UI type sizes only** — `text-label` (12), `text-ui` (14),
+  `text-title` (16) — plus prose (16) and code (12). Weights come off
   Geist's variable axis as 440/530/640 through the standard `font-normal`/
   `font-medium`/`font-semibold` classes. No literal `text-[Npx]` in
-  components; eslint enforces both this and the raw-hue ban.
+  components; eslint enforces both this and the raw-hue ban. Keep semantic size
+  names registered as font sizes in `cn`'s Tailwind merge configuration; otherwise
+  a text-color utility can silently erase the size and fall back to body text.
 - **No uppercase micro-labels.** Section labels are sentence case with no
   letterspacing. Uppercase + tracking at 10px is the most recognisable tell of
   a generated interface and it costs legibility for nothing.
@@ -283,13 +329,24 @@ the composer, next to the send they price. The rail is the vertical thread
 list; horizontal tabs inside the central workbench hold the agent session,
 files, and diffs for that thread, never more sessions.
 
+The composer groups file attachments, screenshots, references, skills, and MCP
+settings under one + popover. `composer.controls` contributions render inside
+that menu and may dismiss it before capture. Terminal remains on Command-J and
+in the command palette, not as an extra composer icon. Context usage is shown
+only with an exact, usable reading; unsupported providers do not get an empty
+ring. Chat activity uses one compact 20px mark and no redundant Responding row
+while answer text streams. Thought-process details remain available without a
+second animated status.
+
 ## Working on the UI
 
-`npm run dev` (or `npm run web`) starts the real Electron host behind a local web
-UI. Open the URL printed by Vite without `?mock`. Use real native threads,
-provider settings, git state, and host events for normal UI verification.
-Opening and inspecting threads does not start an agent; sending a prompt does.
-`npm run desktop` uses the same host through Electron preload.
+`npm run dev` (or `npm run web`) attaches a local web UI to the shared persistent
+host, starting it if absent. `npm run desktop` and the installed app attach desktop
+clients to that same profile. The host owns provider processes and journals;
+closing every client or stopping Vite does not terminate agents. Open Vite's URL
+without `?mock` for normal UI verification. Opening a thread does not start an
+agent; sending a prompt does. `MAKO_PROFILE` or `--sandbox` explicitly selects a
+separate host. Never silently create a second host when attachment fails.
 
 `npm run dev:fixtures` plus `?mock` is an explicit fixture mode for deterministic
 edge cases, not the default UI verification path. Changes to host handler
@@ -300,9 +357,10 @@ and same-origin; the host endpoint is a private local socket.
 Dev launches default to manual renderer updates. Reload UI loads current renderer
 code without restarting provider processes; Open shared-host preview opens a separate
 preview with independently persisted drafts. Host changes still require an explicit
-Restart Mako. `npm run dev:hot` opts into automatic hot updates. The launcher uses a
-checkout-specific profile by default; `MAKO_PROFILE` selects another isolated profile.
-Desktop dev also exposes the same-origin web UI and wears a Dev Dock badge.
+Restart Mako while the shared host is idle. `npm run dev:hot` opts into automatic
+hot updates. Dev UI storage is checkout-specific; agent runtime storage is shared
+by default. Client versions negotiate the runtime protocol and supported methods.
+An incompatible or unreachable host never authorizes an isolated replacement.
 
 `npm run test:workspace-ui` exercises production components with isolated fixtures
 and trusted CDP input, retaining screenshots in its printed temporary directory.
@@ -312,6 +370,12 @@ prompt. `npx tsx scripts/check-harness-models.ts --live` requires fresh defaults
 from every registered provider; a timeout or missing value fails the check.
 `npm run test:tuning` rebuilds the shared session library and checks discovery
 lifecycle failures, defaults, and probe cleanup.
+`npx tsx scripts/test-prompt-clipboard.ts` checks attachment clipboard metadata,
+selection boundaries, and filename collisions. `node scripts/test-clipboard-ui.mjs
+<dev-url>` tests native clipboard copy/cut/paste, transcript copy, undo/redo,
+preview recovery, and real-host screenshot pixels without sending a provider prompt.
+Omit the URL to run only the isolated fixture checks; screenshots stay in the
+printed temporary directory.
 `npx tsx scripts/test-devin-settings.ts --live` repeats native discovery and checks
 for retained probe sessions;
 `npx tsx scripts/test-opencode-settings.ts --live` compares discovery with a fresh
@@ -323,11 +387,12 @@ The installed OpenCode v2 ACP server rejects concurrent prompts. Its free
 `opencode/muse-spark-1.3-contributor-free` model passes normal replies and queueing;
 verify it with `--continuation`, not by advertising unsupported steering.
 
-Normal desktop Quit backgrounds the app while owned work is active. Activation
-reopens its windows without replacing the provider process. Force Quit and system
-shutdown are different: journals recover history, not a running process. Host
-restart and update installation wait for active work to finish. The `--background`
-launch switch keeps test windows hidden until explicitly activated.
+Normal desktop Quit closes the client, leaving the shared host and provider
+processes running. Standalone compatibility hosts still background on Quit while
+work is active. Force Quit of the host and system shutdown are different: journals
+recover history, not a running process. Host restart and update installation wait
+for active work to finish. The `--background` launch switch keeps test windows
+hidden until explicitly activated.
 `npm run test:desktop-continuity` exercises actual Mako with an installed Devin
 process through Quit/reopen, a retained question, and a second native window.
 
@@ -345,10 +410,22 @@ Account roots can expose one Claude session through multiple paths. Capture and
 reply must reuse that owner; external activity must never silently turn a reply
 into a handoff. `scripts/test-session-identity.ts` covers these aliases.
 
-Installed Mako and an isolated dev build are separate hosts. Their live journals
-are not synchronized. Shared-host preview windows receive the same conversation
-events; `test:desktop-continuity` verifies replies and permission answers in both
-directions. Never merge active journals to simulate shared ownership.
+`electron/entry.ts` separates desktop clients from the persistent Electron host.
+A private, user-owned socket identifies each data profile. Only the host takes the
+profile's single-instance lock. Clients own separate Chromium storage and workspace
+contexts. Workspace events are targeted; conversation events fan out. On reconnect,
+clients reload authoritative state and never resend uncertain commands automatically.
+Older installed binaries must finish their work before a one-time upgrade; do not
+merge their active journals or run a new host against an occupied profile.
+
+`test:shared-runtime` runs independent Electron client processes with a real Devin
+session, then verifies reload, all clients closed, offline completion, reopening,
+archive/restore synchronization, and sidebar Stop with a paused queue. It uses a
+private test profile and the actual Electron binary, not the npm CLI wrapper.
+`test:thread-lifecycle` covers idempotent archive receipts, stale Stop targets,
+unrelated runs, and targeted workspace events. Archive is a reversible host-owned
+filter, never native history deletion. Active archived threads remain visible until
+they finish; Restore and explicit queue Resume remain available.
 
 An interrupted request already represented in the transcript needs only a stopped
 marker on its exchange. Recovery details retain failed, uncertain, and otherwise
@@ -403,3 +480,107 @@ warmup. macOS's setuid-root `ps` can deny physical readings; the approved unpriv
 mode records that coverage gap explicitly, never as a successful zero-byte reading.
 Other measurement failures still fail the check. The native sampler is test tooling,
 compiled with the installed Command Line Tools, not an application dependency.
+
+Send must not await display-only discovery. Native defaults need no catalogue;
+a provider's `nativeModelIds` capability permits unchanged model-only selections.
+Option-bearing settings still require the provider's launch catalogue, and legacy
+preferences still need their authoritative option-name migration. Full default
+probes run behind that catalogue without mutating it. Account and real workspace
+paths key the caches. Discovery keeps at most four CLI processes, with no more than
+three background jobs so launch validation retains capacity.
+
+`test:message-queue` covers these boundaries with held discovery promises and real
+fixture subprocesses. ACP and app-server startup must consume the host-provided
+MCP snapshot, including its local-control readiness gate. `test:background-lifecycle`
+checks that no provider process starts before that gate. `test:mcp` verifies provider
+discovery and managed diagnostics overlap without omitting either result.
+
+`MAKO_STARTUP_TRACE=1 MAKO_STARTUP_BUDGET_MS=5000 npm run test:packaged-lifecycle --
+/path/to/Mako.app claude --ui-start --warm` checks the real composer, warm startup,
+and full host restart/recall. `--model=<native-id>` checks a cold explicit model.
+The lifecycle test always uses a temporary `MAKO_DATA_ROOT` and standalone host;
+closing a shared-host client alone would not test host restart. Keep acknowledgement,
+provider dispatch, first content, and completion measurements distinct. Archive checks
+reject missing local named/default exports as well as missing import paths; frozen
+files can still contain an incomplete concurrent compiler emission.
+
+Local installed builds use `npm run package:mac:local`, with
+`MAKO_LOCAL_SIGNING_IDENTITY=<certificate SHA-1>` for the first build. Later
+builds recover the signer from the signature-verified installed local app.
+The certificate must stay in Keychain; never generate a new one per build or
+fall back to ad-hoc signing. Local metadata must not enable public updates.
+`npm run test:local-signing -- --identity=<SHA-1>` checks changed native binaries,
+identity reuse, and rejection of ad-hoc, tampered, and wrong-signer builds.
+`node scripts/test-local-package.mjs <Mako.app> [previous-Mako.app]` checks the
+actual package metadata and cross-build signing requirements. Install with
+`npm run install:mac:local -- <Mako.app> --install`; omit `--install` for a
+read-only readiness check. Installation refuses running Mako processes or a
+running default shared host and retains the previous app. Open the installed
+app before starting a development host after the one-time signing transition.
+
+Performance audit tooling is isolated from application entry points. Run
+`npx tsx --tsconfig tsconfig.app.json scripts/audit-runtime-performance.ts` for
+projection, journal, selector and catalogue scaling, and
+`npx tsx --tsconfig tsconfig.app.json scripts/audit-provider-payloads.ts` for
+SDK/app-server payload amplification and long-answer fidelity. These use synthetic
+fixtures, never real provider prompts. `node scripts/audit-render-performance.mjs
+--production` builds production components into a private temporary directory and
+measures real Electron rendering and trusted input. `--file` checks production
+file-URL loading and its worker assets. `--local-markdown` disables parser offload
+only in the audit build; `--baseline-markdown` additionally restores per-update
+Markdown subtree work. Compare rendered HTML hashes, not just speed. Omit
+`--production` for development Profiler counts, never production frame timings.
+`audit-concurrent-streams.ts` combines real reduction, JSON validation, journaling
+and projection for 1/4/8 synthetic streams; it is not provider-network throughput.
+Record machine load and swap pressure before interpreting its tails. Reports
+retain ResizeObserver delivery warnings rather than treating them as clean rendering.
+React Compiler lint diagnostics do not establish that the build enables React
+Compiler; check the actual Vite plugins before relying on automatic memoization.
+
+`npm run test:performance` covers tail-only projection against a full-rebuild
+oracle, equal-length replacements, tool-derived Context identity, journal
+append/reopen/rollback/compaction/Unicode, lazy background hydration, closed-leaf
+cache eviction, and the exact worker Markdown pipeline. The parser worker uses
+the same GFM/citation transformations and React Markdown postprocessing; cached
+trees must be cloned before that postprocessing mutates them. Resolve the entity
+decoder's DOM-free entry in Vite: its browser export needs `document` and fails
+inside a worker. The browser audit must assert worker use, not accept a silent
+fallback as an offload success.
+
+Journal text appends remain in the same FULL-synchronous SQLite transaction as
+metadata; publish only after commit. Compact bounded append chains and preserve
+authoritative replacements, truncation and split UTF-16 characters. Dirty-range
+metadata uses weak references so it cannot retain every prior block array.
+Closed leaf journals have an 8-entry/64 MiB estimated warm-cache budget; active,
+transferring, checkpointing, rewinding and parent conversations remain protected,
+and the currently accessed oversized entry may exceed the estimate. Eviction
+closes the resident journal, never deletes persisted history.
+
+## Application updates and exit
+
+`application-lifecycle.ts` owns pending install/restart operations and admission
+while the host is stopping. Count native runs, live requests, queued work,
+permission waits, startup, workspace operations, and background builds. A stale
+Stop confirmation must never stop a newer turn. Ordinary Quit detaches the
+client; explicit Stop closes managed agents and holds queued prompts.
+`window-shutdown.ts` requires every affected window to acknowledge draft saving.
+Do not close a window with failed draft persistence or interpret a missing
+acknowledgement as consent.
+
+Settings > Updates and the command palette share the same state actions.
+Local builds use an explicitly selected trusted checkout and a private copy with
+internal workspace links. They preserve npm security configuration, run build,
+lint and regression checks, and verify the existing signing identity. Public
+release updates remain separate from local builds. `package-mac.mjs` stamps the
+actual packaged inputs with a build ID, timestamp and source revision.
+The local installer prepares outside the running bundle, waits for its processes
+to exit, retains the previous app, and rolls back failed replacement verification.
+Never install over a running app or turn Stop into an automatic prompt replay.
+
+`npm run test:application` covers the lifecycle state machine, draft-close
+acknowledgements, source-copy isolation, replacement rollback, real Electron
+private-socket clients, and the production Settings/dialog/palette components.
+Providers and installations are fixtures; these checks do not replace the user's
+app or send provider prompts. `npm run test:application-ui` retains light/dark
+screenshots and checks trusted input, safe focus, cancellation and reduced motion.
+`test-draft-persistence.ts` also checks failed-save exit refusal and retry routing.
