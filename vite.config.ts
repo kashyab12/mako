@@ -1,4 +1,5 @@
 import path from "node:path"
+import { createRequire } from "node:module"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
@@ -10,6 +11,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(root, "./src"),
+      "decode-named-character-reference": createRequire(
+        import.meta.url
+      ).resolve("decode-named-character-reference"),
     },
   },
   server: {
