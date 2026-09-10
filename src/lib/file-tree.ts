@@ -16,8 +16,8 @@ export interface TreeDir {
   label: string
   depth: number
   files: number
-  insertions: number
-  deletions: number
+  insertions: number | null
+  deletions: number | null
   collapsed: boolean
   /** Every file beneath this directory, so it can be staged as a unit. */
   paths: string[]
@@ -114,24 +114,24 @@ export function buildFileTree(files: GitFile[], collapsed: string[]): TreeRow[] 
 
 interface Totals {
   files: number
-  insertions: number
-  deletions: number
+  insertions: number | null
+  deletions: number | null
   paths: string[]
   staged: number
 }
 
 function totals(node: Node): Totals {
   let files = node.files.length
-  let insertions = node.files.reduce((sum, file) => sum + file.insertions, 0)
-  let deletions = node.files.reduce((sum, file) => sum + file.deletions, 0)
+  let insertions = node.files.reduce<number | null>((sum, file) => sum === null || file.insertions === null ? null : sum + file.insertions, 0)
+  let deletions = node.files.reduce<number | null>((sum, file) => sum === null || file.deletions === null ? null : sum + file.deletions, 0)
   let staged = node.files.reduce((sum, file) => sum + (file.staged ? 1 : 0), 0)
   const paths = node.files.map((file) => file.path)
 
   for (const child of node.children.values()) {
     const nested = totals(child)
     files += nested.files
-    insertions += nested.insertions
-    deletions += nested.deletions
+    insertions = insertions === null || nested.insertions === null ? null : insertions + nested.insertions
+    deletions = deletions === null || nested.deletions === null ? null : deletions + nested.deletions
     staged += nested.staged
     paths.push(...nested.paths)
   }

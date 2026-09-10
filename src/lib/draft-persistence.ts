@@ -15,14 +15,28 @@ export const SavedAttachmentSchema = z.object({
   error: z.string().optional(),
 })
 let warned = false
+const unsaved = new Map<string, string>()
+
+export function assertDraftsSaved(): void {
+  for (const [key, value] of unsaved) {
+    try {
+      if (!globalThis.localStorage) throw new Error("Draft storage is unavailable")
+      globalThis.localStorage.setItem(key, value)
+      unsaved.delete(key)
+    } catch { throw new Error("A draft could not be saved. Mako stayed open. Copy your draft somewhere safe or free local storage before closing.") }
+  }
+}
 function storageKey(key: string): string {
   const preview = new URLSearchParams(globalThis.location?.search).get("preview")
   return preview ? `mako.preview.${preview}.${key}` : key
 }
 export function writeDraftStorage(key: string, value: string): boolean {
+  const target = storageKey(key)
+  unsaved.set(target, value)
   try {
     if (!globalThis.localStorage) return false
-    globalThis.localStorage.setItem(storageKey(key), value)
+    globalThis.localStorage.setItem(target, value)
+    unsaved.delete(target)
     return true
   } catch {
     if (!warned) {

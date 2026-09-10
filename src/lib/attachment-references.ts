@@ -1,7 +1,7 @@
 import type { Attachment, AttachmentFileReference } from "./attachments"
 import { tokenize, type Segment } from "./mentions"
 import type { AttachmentContent } from "@mako/sessions"
-import { markdownMedia } from "./transcript-media"
+import { mediaTypeForPath } from "./transcript-media"
 
 export function attachmentReference(
   item: Pick<Attachment, "index" | "reference" | "name">
@@ -210,18 +210,39 @@ export function mergeAttachmentDraft(
   })
 }
 
+export function pasteAttachmentDraft(text: string, incoming: readonly Attachment[], reserved: readonly Attachment[]) {
+  const used = reserved.map(attachmentReference)
+  let nextIndex = Math.max(0, ...reserved.map(item => item.index)) + 1
+  const replacements = new Map<string, Attachment>()
+  const attachments = incoming.map(item => {
+    const index = nextIndex++
+    const reference = namedAttachmentReference(item.name, index, used)
+    used.push(reference)
+    const pasted = { ...item, id: crypto.randomUUID(), index, reference, preview: undefined }
+    replacements.set(item.id, pasted)
+    return pasted
+  })
+  return {
+    text: attachmentRanges(text, incoming).reduceRight((body, range) =>
+      body.slice(0, range.start) + attachmentReference(replacements.get(range.item.id)!) + body.slice(range.end), text),
+    attachments,
+  }
+}
+
 export function reusablePromptAttachments(
   files: readonly AttachmentFileReference[],
   media: readonly AttachmentContent[]
 ): Array<Attachment & { stagedPath: string }> {
-  const paths = new Map(files.map((file) => [file.path, file]))
+  const references = [...files]
+  const paths = new Set(files.map((file) => file.path))
   let nextIndex = Math.max(0, ...files.map((file) => file.index)) + 1
   for (const attachment of media) {
     if (
       attachment.source.kind === "file" &&
       !paths.has(attachment.source.path)
     ) {
-      paths.set(attachment.source.path, {
+      paths.add(attachment.source.path)
+      references.push({
         index: nextIndex++,
         name: attachment.name,
         path: attachment.source.path,
@@ -229,14 +250,14 @@ export function reusablePromptAttachments(
     }
   }
   const result: Array<Attachment & { stagedPath: string }> = []
-  for (const file of paths.values()) {
+  for (const file of references) {
     const original = media.find(
       (attachment) =>
         attachment.source.kind === "file" &&
         attachment.source.path === file.path
     )
     const mimeType =
-      original?.mimeType ?? markdownMedia(file.path, file.name).mimeType
+      original?.mimeType ?? file.mimeType ?? mediaTypeForPath(file.path) ?? "application/octet-stream"
     result.push({
       id: `reuse:${file.index}:${file.path}`,
       index: file.index,
@@ -250,6 +271,7 @@ export function reusablePromptAttachments(
       size: 0,
       kind: mimeType.startsWith("image/") ? "image" : "binary",
       stagedPath: file.path,
+      contextPath: file.contextPath,
     })
   }
   return result

@@ -17,13 +17,14 @@ export interface AcpConversation {
 export function acpBlocksToMessages(
   blocks: AcpBlock[],
   running: boolean,
-  provider?: string
+  provider?: string,
+  cursor?: { start: number; turn: number; plan: AcpPlanEntry[] }
 ): AcpConversation {
   const messages: ChatMessage[] = []
   const prompts = new Map<string, string>()
-  let plan: AcpPlanEntry[] = []
+  let plan: AcpPlanEntry[] = cursor?.plan ?? []
   let assistant: ChatMessage | null = null
-  let turn = 0
+  let turn = cursor?.turn ?? 0
   let turnProvider = provider
 
   const append = (block: Block, index: number) => {
@@ -39,7 +40,7 @@ export function acpBlocksToMessages(
     assistant.blocks.push(block)
   }
 
-  for (let index = 0; index < blocks.length; index += 1) {
+  for (let index = cursor?.start ?? 0; index < blocks.length; index += 1) {
     const block = blocks[index]!
     switch (block.type) {
       case "user":

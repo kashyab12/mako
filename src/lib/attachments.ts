@@ -12,6 +12,7 @@ import {
   attachmentPromptText,
   namedAttachmentReference,
   mergeAttachmentDraft,
+  pasteAttachmentDraft,
 } from "./attachment-references"
 
 /**
@@ -74,6 +75,8 @@ export interface AttachmentFileReference {
   index: number
   name: string
   path: string
+  mimeType?: string
+  contextPath?: string
 }
 
 export interface ParsedAttachmentAppendix {
@@ -393,6 +396,15 @@ export function useAttachments(key = "default") {
     [key, replaceItems]
   )
 
+  const paste = useCallback((text: string, incoming: Attachment[]) => {
+    const pasted = pasteAttachmentDraft(text, incoming, [
+      ...(live.current.get(key) ?? []),
+      ...(removed.current.get(key) ?? []),
+    ])
+    updateItems(current => [...current, ...pasted.attachments])
+    return pasted.text
+  }, [key, updateItems])
+
   const discard = useCallback((taken: Attachment[]) => {
     for (const item of taken)
       if (item.preview) URL.revokeObjectURL(item.preview)
@@ -407,6 +419,7 @@ export function useAttachments(key = "default") {
     clear,
     detach,
     reattach,
+    paste,
     discard,
     settled,
   }
@@ -565,18 +578,12 @@ export function parseAttachmentAppendix(
   if (at === -1) return { body: text, files: [] }
   const appendix = text.slice(at + (separator >= 0 ? 5 : 4))
   const files: AttachmentFileReference[] = []
-  for (const match of appendix.matchAll(
-    /\[Attachment (\d+)\] (.+?) — .*?Saved at (.+?); read it from there/g
-  )) {
-    files.push({ index: Number(match[1]), name: match[2]!, path: match[3]! })
+  const filePattern = /\[Attachment (\d+)\] (.+?) — ([^,\n]+), [^\n]*?Saved at (.+?); read it from there(?: if you need its contents)?\.(?: Window text saved at (.+?); read it alongside the image\.)?/g
+  for (const match of appendix.matchAll(filePattern)) {
+    files.push({ index: Number(match[1]), name: match[2]!, mimeType: match[3]!, path: match[4]!, contextPath: match[5] })
   }
   if (files.length === 0) return { body: text, files: [] }
-  const remaining = appendix
-    .replace(
-      /\[Attachment \d+\] (.+?) — [^\n]*?Saved at (.+?); read it from there(?: if you need its contents)?\./g,
-      ""
-    )
-    .trim()
+  const remaining = appendix.replace(filePattern, "").trim()
   return {
     body: [text.slice(0, at).trimEnd(), remaining].filter(Boolean).join("\n\n"),
     files,
@@ -592,10 +599,10 @@ export function formatBytes(bytes: number) {
 }
 
 /** Reloaded drafts keep disk paths, not stale blob URLs or base64 in localStorage. */
-export function useAttachmentPreview(item: Attachment): string | undefined {
+export function useAttachmentPreview(item: Attachment) {
   const [resolved, setResolved] = useState<{
     path: string
-    url: string
+    preview: { kind: "ready"; url: string } | { kind: "unavailable" }
   } | null>(null)
   useEffect(() => {
     const path = item.stagedPath
@@ -604,18 +611,18 @@ export function useAttachmentPreview(item: Attachment): string | undefined {
     void getMako()
       .readFile(path)
       .then((file) => {
-        if (current && file.previewUrl)
-          setResolved({ path, url: getMako().resolveFileUrl(file.previewUrl) })
+        if (current)
+          setResolved({ path, preview: file.previewUrl ? { kind: "ready", url: getMako().resolveFileUrl(file.previewUrl) } : { kind: "unavailable" } })
       })
-      .catch(() => {})
+      .catch(() => {
+        if (current) setResolved({ path, preview: { kind: "unavailable" } })
+      })
     return () => {
       current = false
     }
   }, [item.mimeType, item.preview, item.stagedPath])
-  return (
-    item.preview ??
-    (resolved?.path === item.stagedPath ? resolved?.url : undefined)
-  )
+  if (item.preview) return { kind: "ready", url: item.preview } as const
+  return resolved?.path === item.stagedPath ? resolved?.preview : undefined
 }
 
 function attachmentMetadata(item: Attachment): Attachment {
