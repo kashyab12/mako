@@ -29,6 +29,7 @@ export interface TranscriptTurnSlotProps {
 export interface ComposerControlSlotProps extends SessionMetaSlotProps {
   disabled: boolean
   attachFiles: (files: AttachmentInput[]) => Promise<void>
+  dismiss?: () => void
 }
 
 export interface HistoryCheckpointSlotProps {
