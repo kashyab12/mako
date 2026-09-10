@@ -1,10 +1,11 @@
-import type { LiveSummary } from "../shared.js"
+import type { LiveSummary, ThreadArchiveSnapshot } from "../shared.js"
 import type { AgentHost } from "../host.js"
 import type { HostPool } from "../pool.js"
 import type { BootPayload, TabSnapshot, ThinkingLevel } from "../shared.js"
 import { registerIpc } from "./register.js"
 
 export interface SessionIpcContext {
+  archives?(): ThreadArchiveSnapshot
   liveSummaries(): LiveSummary[]
   ready(): Promise<HostPool>
   withHost<TResult>(
@@ -25,6 +26,7 @@ export function installSessionIpc(context: SessionIpcContext): void {
     ])
     return {
       live: context.liveSummaries(),
+      archives: context.archives?.(),
       tabs,
       activeTabId: live.activeId,
       models,

@@ -7,11 +7,13 @@ import { UtilityModelStore } from "../utility-model-store.js"
 import { UtilityModelCatalog } from "../utility-model-catalog.js"
 import type {
   CommitGenerationInput,
+  GitPushInput,
   UtilityCatalogInput,
   UtilityConnectionInput,
   UtilityProvider,
 } from "../shared.js"
 import { registerIpc } from "./register.js"
+import { configureKiriCache } from "../kiri-engine.js"
 
 export interface GitIpcContext {
   withHost<TResult>(
@@ -21,6 +23,7 @@ export interface GitIpcContext {
 
 export function installGitIpc(context: GitIpcContext): void {
   const { withHost } = context
+  configureKiriCache(join(app.getPath("userData"), "kiri-analysis-cache"))
   registerIpc("mako:git-status", () => withHost((host) => host.gitStatus()))
   registerIpc("mako:git-diff", (_event, path: string) =>
     withHost((host) => host.gitDiff(path))
@@ -41,9 +44,18 @@ export function installGitIpc(context: GitIpcContext): void {
   registerIpc(
     "mako:git-commit",
     (_event, message: string, options?: { amend?: boolean }) =>
-      withHost((host) => host.gitCommit(message, options))
+      withHost(async (host) => {
+        if (options?.amend) await host.gitCommit(message, options)
+        else {
+          await generation.commit(hostClient(), host.workspace, message)
+          await host.pushGit()
+        }
+      })
   )
-  registerIpc("mako:git-push", () => withHost((host) => host.gitPush()))
+  registerIpc("mako:git-push", (_event, input: GitPushInput) => withHost((host) => {
+    if (host.workspace !== input.cwd) throw new Error("The project changed before pushing. Select the intended project and try again.")
+    return host.gitPush(input.branch)
+  }))
   registerIpc("mako:git-log", (_event, limit?: number) =>
     withHost((host) => host.gitLog(limit))
   )
