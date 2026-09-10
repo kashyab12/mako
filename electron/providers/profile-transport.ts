@@ -41,10 +41,13 @@ export function streamRequest<TResult>(
   request: JsonObject,
   env: NodeJS.ProcessEnv,
   pick: (value: JsonValue) => TResult | undefined,
-  cwd?: string
+  cwd?: string,
+  priority: Parameters<
+    typeof withDiscoveryProcess
+  >[0]["priority"] = "background"
 ): Promise<TResult> {
   return withDiscoveryProcess(
-    { command, args, env, cwd },
+    { command, args, env, cwd, priority },
     async ({ child, exited, phase }) => {
       const lines = createInterface({
         input: child.stdout,

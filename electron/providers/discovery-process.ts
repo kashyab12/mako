@@ -8,6 +8,7 @@ interface DiscoveryOptions {
   env: NodeJS.ProcessEnv
   cwd?: string
   timeoutMs?: number
+  priority?: "launch" | "background"
 }
 
 interface DiscoveryProcess {
@@ -16,22 +17,51 @@ interface DiscoveryProcess {
   phase(name: string): void
 }
 
-const pending: Array<() => void> = []
+type Priority = NonNullable<DiscoveryOptions["priority"]>
+const pending = {
+  launch: new Array<() => void>(),
+  background: new Array<() => void>(),
+} satisfies Record<Priority, Array<() => void>>
 let active = 0
+let background = 0
+
+function available(priority: Priority): boolean {
+  return active < 4 && (priority === "launch" || background < 3)
+}
+function reserve(priority: Priority): void {
+  active++
+  if (priority === "background") background++
+}
+function releaseSlot(priority: Priority): void {
+  active--
+  if (priority === "background") background--
+  for (const next of ["launch", "background"] satisfies Priority[]) {
+    while (available(next)) {
+      const resume = pending[next].shift()
+      if (!resume) break
+      reserve(next)
+      resume()
+    }
+  }
+}
 
 export async function withDiscoveryProcess<T>(
   options: DiscoveryOptions,
   run: (process: DiscoveryProcess) => Promise<T>
 ): Promise<T> {
+  const requestedAt = performance.now()
   const executable = resolveExecutable(options.command, options.env)
   const label = basename(options.command)
   if (!executable) throw new Error(`${label} is not installed`)
-  if (active < 4) active++
+  const queuedAt = performance.now()
+  const priority = options.priority ?? "background"
+  if (available(priority)) reserve(priority)
   else {
-    if (pending.length >= 64)
+    if (pending.launch.length + pending.background.length >= 64)
       throw new Error("Provider discovery queue is full")
-    await new Promise<void>((resolve) => pending.push(resolve))
+    await new Promise<void>((resolve) => pending[priority].push(resolve))
   }
+  const startedAt = performance.now()
   let release: (() => Promise<void>) | undefined
   try {
     const grouped = process.platform !== "win32"
@@ -130,9 +160,18 @@ export async function withDiscoveryProcess<T>(
     try {
       await release?.()
     } finally {
-      const next = pending.shift()
-      if (next) next()
-      else active--
+      releaseSlot(priority)
+      if (options.env.MAKO_STARTUP_TRACE === "1")
+        console.info(
+          "[mako-startup]",
+          JSON.stringify({
+            stage: "discovery",
+            command: label,
+            resolveMs: queuedAt - requestedAt,
+            queuedMs: startedAt - queuedAt,
+            elapsedMs: performance.now() - startedAt,
+          })
+        )
     }
   }
 }

@@ -51,7 +51,8 @@ async function readCatalogue(env: NodeJS.ProcessEnv, cwd?: string) {
         throw new Error("Claude model discovery was rejected")
       return ModelsSchema.parse(parsed.data.response.response).models
     },
-    cwd
+    cwd,
+    "launch"
   )
   return normalizeClaudeModels(response)
 }
@@ -60,6 +61,7 @@ export const claudeProfileLoader: ProviderProfileLoader = {
   provider: "claude",
   label: "Claude Code",
   transport: "sdk",
+  nativeModelIds: true,
   capabilities: [
     "start",
     "resume",

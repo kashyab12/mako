@@ -6,6 +6,7 @@ export interface ProviderProfileLoader extends ProviderCapability {
   label: string
   transport: HarnessProfile["transport"]
   capabilities: string[]
+  nativeModelIds?: true
   cacheKey(env: NodeJS.ProcessEnv): string
   load(env: NodeJS.ProcessEnv, cwd?: string): Promise<HarnessProfile>
   loadForSend?(env: NodeJS.ProcessEnv, cwd?: string): Promise<HarnessProfile>

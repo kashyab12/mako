@@ -3,7 +3,6 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { AttachmentContent } from "@mako/sessions"
 import type { LiveUpdate } from "../../shared.js"
 
-const MAX_TEXT = 128 * 1024
 const MAX_TOOL = 32 * 1024
 interface BlockSlot {
   index: number
@@ -97,7 +96,7 @@ export class ClaudeProjection {
         return [{ kind: "thinking", id, text: event.delta.thinking }]
       if (event.delta.type === "input_json_delta") {
         const tool = this.tools.get(id)
-        if (!tool) return []
+        if (!tool || tool.input.length >= MAX_TOOL) return []
         tool.input = (tool.input + event.delta.partial_json).slice(0, MAX_TOOL)
         return [{ kind: "tool-update", id: tool.id, input: tool.input }]
       }
@@ -131,7 +130,7 @@ export class ClaudeProjection {
             {
               kind: "text",
               id,
-              text: block.text.slice(0, MAX_TEXT),
+              text: block.text,
               replace: true,
             },
           ]
@@ -140,7 +139,7 @@ export class ClaudeProjection {
             {
               kind: "thinking",
               id,
-              text: block.thinking.slice(0, MAX_TEXT),
+              text: block.thinking,
               replace: true,
             },
           ]
@@ -152,7 +151,7 @@ export class ClaudeProjection {
               title: block.name,
               toolKind: block.name,
               status: "running",
-              input: JSON.stringify(block.input).slice(0, MAX_TOOL),
+              input: JSON.stringify(block.input),
             },
             ...claudeProposedPlan(block),
           ]
@@ -166,7 +165,7 @@ export class ClaudeProjection {
         const attachments: AttachmentContent[] = []
         if (Array.isArray(block.content)) {
           for (const part of block.content) {
-            if (part.type === "text") text.push(part.text.slice(0, MAX_TOOL))
+            if (part.type === "text") text.push(part.text)
             if (part.type === "image" && part.source.type === "base64") {
               attachments.push({
                 type: "attachment",
@@ -182,13 +181,13 @@ export class ClaudeProjection {
               })
             }
           }
-        } else if (block.content) text.push(block.content.slice(0, MAX_TOOL))
+        } else if (block.content) text.push(block.content)
         return [
           {
             kind: "tool-update",
             id: block.tool_use_id,
             status: block.is_error ? "failed" : "completed",
-            output: text.join("\n").slice(0, MAX_TOOL),
+            output: text.join("\n"),
             attachments,
           },
         ]
