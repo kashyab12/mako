@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react"
-import { Blank } from "@/components/ui/kit"
+import { Action, Blank } from "@/components/ui/kit"
+import { GitLoading } from "@/components/inspector/git-loading"
+import { useWorkspaceFocus } from "@/components/stage/workspace-focus-context"
+import { useWorkspaceTransition } from "@/state/workspace-transition"
 import { git, type GitCommitFile } from "@/state/git"
 import { formatRelative } from "@/lib/format"
 import { useSession } from "@/state/session"
@@ -29,7 +32,17 @@ const GLYPH = {
   untracked: { glyph: "U", tone: "text-added" },
 } satisfies Record<GitFileStatus, StatusGlyph>
 
-export function GitLog({
+export function GitLog(props: Parameters<typeof WorkspaceGitLog>[0]) {
+  const focus = useWorkspaceFocus()
+  const transition = useWorkspaceTransition((state) => state)
+  const snapshot = useSession((state) => state.git)
+  if (transition.kind === "failed") return <p role="alert" className="p-3 text-ui text-negative">{transition.message}</p>
+  if (transition.kind === "loading" || !focus.ready || !snapshot || (focus.cwd && snapshot.cwd !== focus.cwd)) return <GitLoading kind="history" label="Reading project history" />
+  if (!snapshot.root) return null
+  return <WorkspaceGitLog key={`${snapshot.cwd}:${snapshot.root}`} {...props} />
+}
+
+function WorkspaceGitLog({
   onPickFile,
   onPickCommit,
   picked,
@@ -45,7 +58,11 @@ export function GitLog({
   const root = useSession((state) => state.git?.root)
   const ahead = useSession((state) => state.git?.ahead ?? 0)
 
-  const [commits, setCommits] = useState<GitCommitEntry[] | null>(null)
+  const head = useSession((state) => state.git?.head)
+  const [attempt, setAttempt] = useState(0)
+  const key = JSON.stringify([root, head, branch, attempt])
+  const [history, setHistory] = useState<({ key: string } & ({ kind: "ready"; commits: GitCommitEntry[] } | { kind: "failed"; message: string })) | null>(null)
+  const [page, setPage] = useState(0)
   const [open, setOpen] = useState<string | null>(null)
   const [filesByHash, setFilesByHash] = useState<Record<string, GitCommitFile[]>>({})
 
@@ -55,20 +72,21 @@ export function GitLog({
     void git
       .log(80)
       .then((next) => {
-        if (!cancelled) setCommits(next)
+        if (!cancelled) setHistory({ key, kind: "ready", commits: next })
       })
-      .catch(() => {
-        if (!cancelled) setCommits([])
+      .catch((error) => {
+        if (!cancelled) setHistory({ key, kind: "failed", message: error instanceof Error ? error.message : "History could not be read." })
       })
     return () => {
       cancelled = true
     }
     // `files` participates so the list refreshes after a commit lands.
-  }, [root, files, branch])
+  }, [root, files, branch, key])
 
   const toggle = (hash: string) => {
     const next = open === hash ? null : hash
     setOpen(next)
+    setPage(0)
     if (next && !filesByHash[next]) {
       void git
         .commitFiles(next)
@@ -78,9 +96,9 @@ export function GitLog({
   }
 
   if (!root) return null
-  if (commits === null) {
-    return <p className="shimmer px-2.5 py-2 text-ui">Reading history…</p>
-  }
+  if (!history || history.key !== key) return <GitLoading kind="history" label={`Reading commits${branch ? ` on ${branch}` : ""}`} />
+  if (history.kind === "failed") return <div role="alert" className="p-3 text-ui"><p>{history.message}</p><Action onClick={() => setAttempt((value) => value + 1)}>Retry history</Action></div>
+  const commits = history.commits
   if (commits.length === 0) {
     return (
       <Blank
@@ -172,7 +190,7 @@ export function GitLog({
                   ) : commitFiles.length === 0 ? (
                     <p className="py-1 pl-10 text-label text-faint">Nothing readable in it.</p>
                   ) : (
-                    commitFiles.map((file) => {
+                    <>{commitFiles.slice(page * 100, (page + 1) * 100).map((file) => {
                       const mark = GLYPH[file.status] ?? GLYPH.modified
                       const active = picked?.hash === commit.hash && picked.path === file.path
                       return (
@@ -194,7 +212,7 @@ export function GitLog({
                           <span className="min-w-0 flex-1 truncate font-mono text-label text-foreground/80">
                             {file.path}
                           </span>
-                          {!file.binary ? (
+                          {!file.binary && file.insertions !== null && file.deletions !== null ? (
                             <span className="tabular shrink-0 text-label text-faint">
                               <span className="text-added">+{file.insertions}</span>{" "}
                               <span className="text-removed">−{file.deletions}</span>
@@ -202,7 +220,8 @@ export function GitLog({
                           ) : null}
                         </button>
                       )
-                    })
+                    })}
+                    {commitFiles.length > 100 ? <div className="flex items-center justify-between px-3 py-2 pl-10 text-label text-faint"><Action size="xs" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>Previous</Action><span>{page * 100 + 1}–{Math.min((page + 1) * 100, commitFiles.length)} of {commitFiles.length} files</span><Action size="xs" disabled={(page + 1) * 100 >= commitFiles.length} onClick={() => setPage((value) => value + 1)}>Next</Action></div> : null}</>
                   )
                 ) : null}
               </div>

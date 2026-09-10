@@ -40,10 +40,11 @@ function Thumbnail({
   item: Attachment
   onRemove(id: string): void
 }) {
-  const preview = useAttachmentPreview(item)
+  const loaded = useAttachmentPreview(item)
+  const preview = loaded?.kind === "ready" ? loaded.url : undefined
   const video = item.mimeType.startsWith("video/")
   const audio = item.mimeType.startsWith("audio/")
-  const detail = item.error ?? (item.pending ? "Adding…" : formatBytes(item.size))
+  const detail = item.error ?? (loaded?.kind === "unavailable" ? "Preview unavailable. Remove and reattach the file if it has moved." : item.pending ? "Adding…" : formatBytes(item.size))
   return (
     <div title={`${item.name} · ${detail}`} className={cn("group relative shrink-0", item.pending && "opacity-60")}>
       <Popover>
@@ -61,6 +62,7 @@ function Thumbnail({
               <>
                 {video ? <FilmIcon className="size-5 text-muted-foreground" /> : <FileIcon className="size-5 text-muted-foreground" />}
                 <span className="max-w-full truncate px-2 text-label text-muted-foreground">{item.name}</span>
+                {loaded?.kind === "unavailable" ? <span className="text-label text-muted-foreground">Preview unavailable</span> : null}
               </>
             )}
           </button>

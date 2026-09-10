@@ -1,4 +1,5 @@
-import { memo, useEffect, useState } from "react"
+import { memo, useEffect, useState, useRef, type ReactNode } from "react"
+import { useVirtualizer } from "@tanstack/react-virtual"
 import { cn } from "@/lib/utils"
 import type { Exchange } from "@/lib/exchanges"
 import { promptLabel } from "@/lib/exchanges"
@@ -79,8 +80,12 @@ export const TurnNavigator = memo(function TurnNavigator({
       style={{ width: NAVIGATOR_WIDTH }}
       className="absolute top-[15%] right-0 bottom-[15%] z-10 flex items-center justify-end"
     >
-      <div className="flex max-h-full flex-col gap-0.5 overflow-y-auto py-2 pr-2.5 [scrollbar-width:none]">
-        {exchanges.map((exchange) => {
+      <NavigatorItems
+        exchanges={exchanges}
+        estimate={14}
+        gap={2}
+        className="max-h-full [scrollbar-width:none] overflow-y-auto py-2 pr-2.5"
+        render={(exchange) => {
           const active = exchange.id === activeId
           const isHovered = exchange.id === hovered
           return (
@@ -98,7 +103,7 @@ export const TurnNavigator = memo(function TurnNavigator({
                   "block h-[2px] w-3.5 origin-right rounded-full",
                   // Width is the only channel doing work here: length reads as
                   // position without adding another colour to the window.
-                  "[transition:transform_160ms_var(--ease-out),opacity_120ms_var(--ease-swift)] bg-foreground",
+                  "bg-foreground [transition:transform_160ms_var(--ease-out),opacity_120ms_var(--ease-swift)]",
                   active
                     ? "scale-x-100 opacity-80"
                     : isHovered
@@ -110,17 +115,27 @@ export const TurnNavigator = memo(function TurnNavigator({
               />
             </button>
           )
-        })}
-      </div>
+        }}
+      />
 
       {open ? (
-        <Flyout exchanges={exchanges} activeId={hovered ?? activeId} onJump={onJump} onHover={setHovered} />
+        <Flyout
+          exchanges={exchanges}
+          activeId={hovered ?? activeId}
+          onJump={onJump}
+          onHover={setHovered}
+        />
       ) : null}
     </nav>
   )
 })
 
-function Flyout({ exchanges, activeId, onJump, onHover }: {
+function Flyout({
+  exchanges,
+  activeId,
+  onJump,
+  onHover,
+}: {
   exchanges: Exchange[]
   activeId: string | null
   onJump(id: string): void
@@ -131,25 +146,153 @@ function Flyout({ exchanges, activeId, onJump, onHover }: {
       className={cn(
         // Opens inward, and is clamped so it can never reach past the
         // transcript's own column into the pane beside it.
-        "absolute top-1/2 right-6 max-h-full w-[min(20rem,45vw)] -translate-y-1/2 overflow-y-auto",
+        "absolute top-1/2 right-6 flex max-h-full w-[min(20rem,45vw)] -translate-y-1/2 flex-col overflow-hidden",
         "overlay-panel rounded-lg bg-popover p-1.5"
       )}
     >
-      <div className="px-2 py-1.5 text-label text-faint">{exchanges.length} prompts</div>
-      {exchanges.map((exchange, index) => (
-        <button
-          key={exchange.id}
-          type="button"
-          onMouseEnter={() => onHover(exchange.id)}
-          onFocus={() => onHover(exchange.id)}
-          onClick={() => onJump(exchange.id)}
-          aria-current={exchange.id === activeId ? "true" : undefined}
-          className={cn("pressable flex w-full items-baseline gap-2 rounded px-2 py-2 text-left text-ui hover:bg-fill-hover focus-visible:outline focus-visible:outline-ring", exchange.id === activeId && "bg-fill-selected")}
-        >
-          <span aria-hidden className="tabular w-5 shrink-0 text-label text-faint">{index + 1}</span>
-          <span className="line-clamp-2 min-w-0 leading-snug">{promptLabel(exchange)}</span>
-        </button>
-      ))}
+      <div className="px-2 py-1.5 text-label text-faint">
+        {exchanges.length} prompts
+      </div>
+      <NavigatorItems
+        exchanges={exchanges}
+        estimate={44}
+        className="min-h-0 overflow-y-auto"
+        render={(exchange, index) => (
+          <button
+            key={exchange.id}
+            type="button"
+            onMouseEnter={() => onHover(exchange.id)}
+            onFocus={() => onHover(exchange.id)}
+            onClick={() => onJump(exchange.id)}
+            aria-current={exchange.id === activeId ? "true" : undefined}
+            className={cn(
+              "pressable flex w-full items-baseline gap-2 rounded px-2 py-2 text-left text-ui hover:bg-fill-hover focus-visible:outline focus-visible:outline-ring",
+              exchange.id === activeId && "bg-fill-selected"
+            )}
+          >
+            <span
+              aria-hidden
+              className="tabular w-5 shrink-0 text-label text-faint"
+            >
+              {index + 1}
+            </span>
+            <span className="line-clamp-2 min-w-0 leading-snug">
+              {promptLabel(exchange)}
+            </span>
+          </button>
+        )}
+      />
+    </div>
+  )
+}
+
+function NavigatorItems({
+  exchanges,
+  estimate,
+  gap = 0,
+  className,
+  render,
+}: {
+  exchanges: Exchange[]
+  estimate: number
+  gap?: number
+  className: string
+  render(exchange: Exchange, index: number): ReactNode
+}) {
+  "use no memo"
+  const scroller = useRef<HTMLDivElement>(null)
+  const large = exchanges.length > 100
+  const rows = useVirtualizer({
+    count: exchanges.length,
+    enabled: large,
+    getScrollElement: () => scroller.current,
+    estimateSize: () => estimate,
+    getItemKey: (index) => exchanges[index]!.id,
+    overscan: 6,
+    useAnimationFrameWithResizeObserver: true,
+  })
+  const items = large
+    ? rows.getVirtualItems()
+    : exchanges.map((entry, index) => ({ index, key: entry.id, start: 0 }))
+  return (
+    <div
+      ref={scroller}
+      className={className}
+      onKeyDown={(event) => {
+        const target = event.target
+        if (!(target instanceof HTMLElement)) return
+        const item = target.closest<HTMLElement>("[data-navigator-index]")
+        if (!item) return
+        const index = Number(item.dataset.navigatorIndex)
+        const direction =
+          event.key === "ArrowDown"
+            ? 1
+            : event.key === "ArrowUp"
+              ? -1
+              : event.key === "Tab"
+                ? event.shiftKey
+                  ? -1
+                  : 1
+                : 0
+        const next =
+          event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? exchanges.length - 1
+              : index + direction
+        if (
+          (!direction && event.key !== "Home" && event.key !== "End") ||
+          next < 0 ||
+          next >= exchanges.length
+        )
+          return
+        if (
+          event.key === "Tab" &&
+          (!large ||
+            scroller.current?.querySelector(`[data-navigator-index="${next}"]`))
+        )
+          return
+        event.preventDefault()
+        if (large) rows.scrollToIndex(next, { align: "auto" })
+        requestAnimationFrame(() =>
+          scroller.current
+            ?.querySelector<HTMLButtonElement>(
+              `[data-navigator-index="${next}"] button`
+            )
+            ?.focus()
+        )
+      }}
+    >
+      <div
+        style={
+          large
+            ? { height: rows.getTotalSize(), position: "relative" }
+            : undefined
+        }
+      >
+        {items.map((item) => (
+          <div
+            key={item.key}
+            data-navigator-index={item.index}
+            data-index={item.index}
+            ref={large ? rows.measureElement : undefined}
+            style={
+              large
+                ? {
+                    paddingBottom: item.index < exchanges.length - 1 ? gap : 0,
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${item.start}px)`,
+                  }
+                : { paddingBottom: item.index < exchanges.length - 1 ? gap : 0 }
+            }
+          >
+            {render(exchanges[item.index]!, item.index)}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

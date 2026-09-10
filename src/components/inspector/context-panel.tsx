@@ -258,9 +258,10 @@ function Files() {
   const nativeMessages = useSession((state) => state.messages)
   const changed = useSession((state) => state.git?.files)
   const viewing = useThreads((state) => state.viewing)
-  const projection = useAcp((state) => activeAcp(state)?.projection)
+  const projectedFiles = useAcp((state) => activeAcp(state)?.projection?.files)
   const focus = useWorkspaceFocus()
-  const messages = useMemo(() => {
+  const files = useMemo(() => {
+    if (projectedFiles) return projectedFiles
     const history = viewing
       ? threadToMessages(
           viewing.entries,
@@ -268,13 +269,13 @@ function Files() {
           viewing.ref.harness
         )
       : []
-    return projection?.messages ?? (history.length ? history : nativeMessages)
-  }, [projection, nativeMessages, viewing])
+    return touchedFiles(history.length ? history : nativeMessages)
+  }, [projectedFiles, nativeMessages, viewing])
   const visibleChanges = focus.ready ? changed : undefined
-  const files = useMemo(() => touchedFiles(messages), [messages])
   const stats = useMemo(() => {
     const map = new Map<string, { insertions: number; deletions: number }>()
     for (const file of visibleChanges ?? []) {
+      if (file.insertions === null || file.deletions === null) continue
       map.set(file.path, {
         insertions: file.insertions,
         deletions: file.deletions,

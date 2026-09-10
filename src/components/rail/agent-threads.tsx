@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils"
 import { Blank } from "@/components/ui/kit"
 import { formatChord } from "@/extend/commands"
 import { DraftThreads } from "@/components/rail/draft-threads"
+import { archivedLive, archivedThread, useThreadArchives } from "@/state/thread-lifecycle"
 import { FolderActivity, RailSkeleton } from "@/components/rail/rail-activity"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import {
@@ -168,6 +169,7 @@ export function AgentThreads() {
     return byHarness
   }, [all])
 
+  const archiveKeys = useThreadArchives((state) => state.keys)
   const unboundLiveAgents = useMemo(() => {
     const nativePaths = new Set(all.map((ref) => ref.path))
     const nativeIdentities = new Set(
@@ -175,6 +177,7 @@ export function AgentThreads() {
     )
     return liveAgents.filter(
       (presence) =>
+        (grouping === "archived" ? archivedLive(presence, archiveKeys) : !archivedLive(presence, archiveKeys) || presence.status === "running" || presence.status === "starting" || presence.status === "needs-permission") &&
         (!filter.length || filter.includes(presence.harness)) &&
         (scope !== "workspace" || threadBelongsToWorkspace(presence, cwd)) &&
         (!deferred.trim() || `${presence.title ?? ""} ${presence.cwd} ${presence.harness}`.toLowerCase().includes(deferred.trim().toLowerCase())) &&
@@ -183,13 +186,15 @@ export function AgentThreads() {
         (!presence.nativeId ||
           !nativeIdentities.has(`${presence.harness}:${presence.nativeId}`))
     )
-  }, [all, liveAgents, filter, scope, cwd, deferred])
+  }, [all, liveAgents, filter, scope, cwd, deferred, archiveKeys, grouping])
 
   const matched = useMemo(() => {
     const needle = deferred.trim().toLowerCase()
     const active = filter.length > 0 ? new Set(filter) : null
+    const statusState = { ...threadsStore.get(), attention, working, externalActivity }
     return all.filter(
       (ref) =>
+        (grouping === "archived" ? archivedThread(ref, archiveKeys) : !archivedThread(ref, archiveKeys) || ["working", "external-active", "needs-permission"].includes(threadStatus(ref, statusState).kind)) &&
         (scope !== "workspace" || threadBelongsToWorkspace(ref, cwd)) &&
         (!active || active.has(ref.harness)) &&
         (!needle ||
@@ -197,7 +202,7 @@ export function AgentThreads() {
             .toLowerCase()
             .includes(needle))
     )
-  }, [all, cwd, deferred, filter, scope])
+  }, [all, cwd, deferred, filter, scope, archiveKeys, grouping, attention, working, externalActivity])
 
   const { priorities, threadActivity } = useMemo(() => {
     const state = {
@@ -340,6 +345,8 @@ export function AgentThreads() {
               <p className="px-3 pt-8 text-center text-ui leading-relaxed text-faint">
                 Nothing matches.
               </p>
+            ) : grouping === "archived" ? (
+              <Blank icon={<MessagesSquareIcon />} title="No archived threads" body="Archived threads stay available here. Restore them whenever you need them." hints={[{ label: "Back to projects", onSelect: () => setPref("railGrouping", "project") }]} />
             ) : (
               <Blank
                 icon={<MessagesSquareIcon />}
@@ -362,9 +369,9 @@ export function AgentThreads() {
                 ]}
               />
             )
-          ) : searchActive || grouping === "recent" ? (
+          ) : searchActive || grouping !== "project" ? (
             <div className="pt-1">
-              <DraftThreads />
+              {grouping !== "archived" ? <DraftThreads /> : null}
               {recent.map((row) => row.kind === "native"
                 ? <ThreadRow key={row.key} threadRef={row.ref} showFolder />
                 : <LiveAgentRow key={row.key} presence={row.presence} />)}
@@ -523,7 +530,7 @@ function RailHeader({
   return (
     <div className="flex h-9 shrink-0 items-center px-2 pt-1.5">
       <div className="flex items-center gap-0.5" role="group" aria-label="Thread view">
-        {([ ["project", "Projects"], ["recent", "Recent"] ] as const).map(([value, label]) => (
+        {([ ["project", "Projects"], ["recent", "Recent"], ["archived", "Archived"] ] as const).map(([value, label]) => (
           <button key={value} type="button" aria-pressed={grouping === value} onClick={() => setPref("railGrouping", value)} className={cn("pressable h-6 rounded px-1.5 text-label transition-colors hover:bg-fill-hover", grouping === value ? "bg-fill-selected font-medium text-foreground" : "text-faint")}>{label}</button>
         ))}
       </div>

@@ -49,7 +49,7 @@ export function AcpPanel() {
   if (!session) return null
 
   return (
-    <div className="animate-enter flex min-h-0 flex-1 flex-col bg-surface">
+    <div data-live-conversation={session.id} className="animate-enter flex min-h-0 flex-1 flex-col bg-surface">
       <Blocks />
       <TransferStatus />
       <LiveActionStatus />
@@ -128,9 +128,9 @@ function AcpActivity({
     const live = activeLiveAcp(state)
     return agentActivity({ blocks: live?.blocks ?? EMPTY_QUEUE, waiting: Boolean(live?.permission), connecting: starting, preparing })
   }, shallowEqual)
-  return running ? (
-    <div role="status" data-agent-activity={activity.kind} className="flex min-w-0 items-center gap-2 py-1 text-ui text-muted-foreground">
-      <ActivityMark state={activity.kind} size={64} />
+  return running && activity.kind !== "responding" ? (
+    <div role="status" data-agent-activity={activity.kind} className="flex min-h-8 min-w-0 items-center gap-2 py-1 text-ui text-muted-foreground">
+      <ActivityMark state={activity.kind} size={20} />
       <span className="truncate">{activity.label}</span>
     </div>
   ) : null

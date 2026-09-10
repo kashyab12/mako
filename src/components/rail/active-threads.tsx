@@ -1,6 +1,8 @@
 import { harnessLabel } from "@/components/rail/harness-meta"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { ActivityMark, type ActivityState } from "@/components/ui/activity-mark"
+import { ThreadActions } from "@/components/rail/thread-actions"
+import { archivedLive, useThreadArchives } from "@/state/thread-lifecycle"
 import { workspaceName } from "@/lib/format"
 import { acp } from "@/state/acp"
 import type { AcpPresence } from "@/state/acp-presence"
@@ -13,6 +15,7 @@ export function LiveAgentRow({
   presence: AcpPresence
   indent?: boolean
 }) {
+  const archived = useThreadArchives((state) => archivedLive(presence, state.keys))
   const label =
     presence.status === "needs-permission"
       ? "Needs your approval"
@@ -36,14 +39,17 @@ export function LiveAgentRow({
   const title =
     presence.title ?? `New ${harnessLabel(presence.harness)} conversation`
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); acp.activate(presence.key) } }}
       aria-label={`${title}, ${label}`}
       data-thread-row
+      data-conversation-id={presence.key}
       data-thread-indent={indent || undefined}
       onClick={() => acp.activate(presence.key)}
       className={cn(
-        "pressable group flex h-7 w-full items-center gap-2 rounded-md pr-1.5 text-left transition-colors duration-100 hover:bg-fill-hover",
+        "pressable group flex h-8 w-full items-center gap-2 rounded-md pr-1.5 text-left transition-colors duration-100 hover:bg-fill-hover",
         indent ? "pl-[26px]" : "pl-1.5"
       )}
     >
@@ -56,9 +62,10 @@ export function LiveAgentRow({
           {workspaceName(presence.cwd)}
         </span>
       ) : null}
+      <ThreadActions target={{ kind: "live", id: presence.key }} title={title} archived={archived} running={presence.status === "running" || presence.status === "starting" || presence.status === "needs-permission"} controlled />
       <span title={label} className="flex shrink-0 text-muted-foreground">
         <ActivityMark state={state} size={20} />
       </span>
-    </button>
+    </div>
   )
 }

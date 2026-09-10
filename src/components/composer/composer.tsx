@@ -1,4 +1,5 @@
 import { AttachmentStrip } from "./attachments"
+import { useComposerClipboard } from "./composer-clipboard"
 import { InterruptedSends } from "./interrupted-sends"
 import {
   preserveSendingDraft,
@@ -22,12 +23,12 @@ import {
 import {
   removeAttachmentReference,
   attachmentRanges,
-  editAttachmentReferences,
   restoreAttachmentReferences,
 } from "@/lib/attachment-references"
 import { Banner } from "@/components/composer/banner"
 import { ComposerActionButton } from "@/components/composer/composer-action-button"
 import { ComposerRouting } from "@/components/composer/composer-routing"
+import { ComposerAdditions } from "@/components/composer/composer-additions"
 import { ContextDial } from "@/components/composer/context-dial"
 import { harnessTitle } from "@/components/composer/harness-title"
 import { MentionMenu } from "@/components/composer/mention-menu"
@@ -70,7 +71,7 @@ import {
   useSession,
 } from "@/state/session"
 import { threads, threadsStore, useThreads } from "@/state/threads"
-import { AtSignIcon, PaperclipIcon, XIcon, Maximize2Icon, Minimize2Icon } from "lucide-react"
+import { XIcon, Maximize2Icon, Minimize2Icon } from "lucide-react"
 
 interface CommandMention {
   sigil: "/"
@@ -142,6 +143,7 @@ export function Composer() {
     state.drafts.find((entry) => entry.key === draftKey)
   )
   const attachments = useAttachments(draftKey)
+  const clipboard = useComposerClipboard(attachments)
   const { reattach } = attachments
   const storedDraft = savedDraft?.text ?? ""
   const draft = restoreAttachmentReferences(storedDraft, attachments.items)
@@ -803,10 +805,10 @@ export function Composer() {
               rows={1}
               onChange={(event) => {
                 promptHistory.current = null
-                const edited = editAttachmentReferences(
+                const edited = clipboard.edit(
                   draft,
                   event.target.value,
-                  attachments.items
+                  event.nativeEvent instanceof InputEvent ? event.nativeEvent.inputType : ""
                 )
                 update(edited.text)
                 attachments.restoreRemoved(edited.text)
@@ -828,12 +830,9 @@ export function Composer() {
                 setTimeout(() => setMention(null), 120)
               }}
               onKeyDown={onKeyDown}
-              onPaste={(event) => {
-                const files = [...event.clipboardData.files]
-                if (files.length === 0) return
-                event.preventDefault()
-                void attach(files)
-              }}
+              onCopy={clipboard.onCopy}
+              onCut={clipboard.onCut}
+              onPaste={clipboard.onPaste}
               readOnly={!draftReady}
               placeholder={draftReady ? placeholder : "Opening workspace…"}
               spellCheck={false}
@@ -841,7 +840,7 @@ export function Composer() {
                 // No max-height and no scrolling of its own — the wrapper owns
                 // both, so the painted layer behind it stays in register.
                 "composer-input relative block min-h-20 w-full resize-none overflow-hidden bg-transparent px-4 pt-4 pb-2",
-                "font-sans text-ui leading-[1.55] placeholder:text-faint focus:outline-none",
+                "font-sans text-prose leading-[1.6] placeholder:text-faint focus:outline-none",
                 // Transparent glyphs let the overlay show through; the caret
                 // and selection stay native and visible.
                 "text-transparent caret-ember selection:bg-fill-selected selection:text-transparent"
@@ -850,35 +849,16 @@ export function Composer() {
           </div>
 
           <div className="flex min-h-11 shrink-0 items-center gap-1 px-3 pb-3">
-            <IconAction
-              label="Reference a file"
-              keys={["@"]}
-              side="top"
-              size="xs"
-              onClick={() => {
-                window.dispatchEvent(
-                  new CustomEvent("mako:insert", { detail: "@" })
-                )
+            <ComposerAdditions
+              meta={meta}
+              disabled={!draftReady}
+              attachFiles={attach}
+              onAttach={() => filePicker.current?.click()}
+              onReference={(sigil) => {
+                window.dispatchEvent(new CustomEvent("mako:insert", { detail: sigil }))
                 requestAnimationFrame(syncMention)
               }}
-            >
-              <AtSignIcon />
-            </IconAction>
-            <IconAction
-              label="Attach a file"
-              side="top"
-              size="xs"
-              onClick={() => filePicker.current?.click()}
-            >
-              <PaperclipIcon />
-            </IconAction>
-            <Slot
-              name="composer.controls"
-              meta={meta}
-              disabled={busy}
-              attachFiles={attach}
             />
-            <div className="mx-1 h-4 w-px shrink-0 bg-hairline" />
             <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&>*]:shrink-0 [&::-webkit-scrollbar]:hidden">
               <ComposerRouting />
             </div>
@@ -890,9 +870,9 @@ export function Composer() {
                 disabled={busy}
                 attachFiles={attach}
               />
-              <IconAction label={expanded ? "Collapse draft" : "Expand draft"} size="xs" side="top" onClick={() => { setExpanded((value) => !value); textarea.current?.focus({ preventScroll: true }) }}>
+              {draft.length > 0 || expanded ? <IconAction label={expanded ? "Collapse draft" : "Expand draft"} size="xs" side="top" onClick={() => { setExpanded((value) => !value); textarea.current?.focus({ preventScroll: true }) }}>
                 {expanded ? <Minimize2Icon /> : <Maximize2Icon />}
-              </IconAction>
+              </IconAction> : null}
               <ContextDial />
               {liveOwnsComposer && liveRunning && canSteer ? (
                 <button

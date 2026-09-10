@@ -1,4 +1,5 @@
 import { HostConnectionNotice } from "./host-connection-notice"
+import { ApplicationDialog, ApplicationNotice } from "@/components/settings/application-dialog"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { CommandPalette } from "@/components/palette/command-palette"
@@ -89,6 +90,7 @@ export function AppShell() {
         <div className="relative flex h-svh flex-col overflow-hidden bg-shell text-foreground">
           <TitleBar />
           <HostConnectionNotice />
+          <ApplicationNotice />
           <div className="relative z-10 flex min-h-0 flex-1">
             {railOpen ? (
               <>
@@ -152,6 +154,7 @@ export function AppShell() {
         />
         <Guide />
         <ConversionOverlay />
+        <ApplicationDialog />
       </WorkspaceFocusProvider>
     </TooltipProvider>
   )

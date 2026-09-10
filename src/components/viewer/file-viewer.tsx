@@ -11,6 +11,8 @@ import {
 } from "react"
 import { Action, IconAction } from "@/components/ui/kit"
 import { Divider } from "@/components/shell/divider"
+import { GitDiffPreviewView } from "@/components/inspector/git-diff-preview"
+import { GitLoading } from "@/components/inspector/git-loading"
 import { StageStrip } from "@/components/stage/stage-strip"
 import { desktop } from "@/state/desktop"
 import { prefsStore } from "@/state/prefs"
@@ -310,6 +312,8 @@ function DocumentView({ document }: { document: ViewerDocument }) {
       >
         {document.error ? (
           <p className="p-4 text-ui text-removed">{document.error}</p>
+        ) : document.loading ? (
+          <GitLoading kind="diff" label={`Reading ${document.path}`} />
         ) : document.kind === "diff" && document.diff ? (
           <CenterDiff diffs={document.diff.diffs} note={document.diff.note} />
         ) : document.kind === "file" && document.file ? (
@@ -342,7 +346,7 @@ const LazyDiff = lazy(async () => {
     note?: string
   }) {
     const showable = diffs.filter(
-      (diff) => !diff.binary && (diff.oldFile || diff.newFile)
+      (diff) => !diff.binary && (diff.preview || diff.oldFile || diff.newFile)
     )
     if (showable.length === 0) {
       return (
@@ -351,7 +355,7 @@ const LazyDiff = lazy(async () => {
     }
     return (
       <Virtualizer className="min-h-full">
-        {showable.map((diff) => (
+        {showable.map((diff) => diff.preview ? <GitDiffPreviewView key={diff.path} path={diff.path} preview={diff.preview} /> : (
           <MultiFileDiff
             key={diff.path}
             {...(diff.oldFile && diff.newFile

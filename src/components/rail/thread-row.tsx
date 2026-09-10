@@ -2,6 +2,8 @@ import { memo, useCallback, useState } from "react"
 import { ArchiveIcon, PinIcon, XIcon } from "lucide-react"
 import { harnessLabel } from "@/components/rail/harness-meta"
 import { ThreadStatusMark } from "@/components/rail/thread-status"
+import { ThreadActions } from "@/components/rail/thread-actions"
+import { archivedThread, nativeThreadTarget, useThreadArchives } from "@/state/thread-lifecycle"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { workspaceName } from "@/lib/format"
 import type { ThreadRef } from "@/lib/types"
@@ -83,6 +85,8 @@ export const ThreadRow = memo(function ThreadRow({
   // A thread whose CLI is being driven from here right now wears a pulse —
   // the same promise a tab's dot makes: something is working behind this row.
   const status = useThreads((state) => threadStatus(ref, state))
+  const archived = useThreadArchives((state) => archivedThread(ref, state.keys))
+  const target = nativeThreadTarget(ref)
   const working = status.kind === "working"
   const activeElsewhere = status.kind === "external-active"
   const isPinned = usePrefs((prefs) => prefs.pinnedThreads.includes(ref.path))
@@ -140,9 +144,10 @@ export const ThreadRow = memo(function ThreadRow({
         .join("\n")}
       data-active={lit || undefined}
       data-thread-row
+      data-conversation-id={target.kind === "live" ? target.id : undefined}
       data-thread-indent={indent || undefined}
       className={cn(
-        "group flex h-7 w-full items-center gap-2 rounded-md pr-1.5 text-left",
+        "group flex h-8 w-full items-center gap-2 rounded-md pr-1.5 text-left",
         indent ? "pl-[26px]" : "pl-1.5",
         "transition-colors duration-100 hover:bg-fill-hover data-active:bg-raised"
       )}
@@ -223,11 +228,12 @@ export const ThreadRow = memo(function ThreadRow({
       >
         <PinIcon className={cn("size-3", isPinned && "fill-current")} />
       </button>
+      <ThreadActions target={target} title={override ?? ref.title ?? "Untitled session"} archived={archived} running={working || activeElsewhere || status.kind === "needs-permission"} controlled={target.kind === "live" || working} />
       <Attached path={ref.path} />
       {ref.archived ? (
         <ArchiveIcon
           className="size-3 shrink-0 text-faint/70"
-          aria-label="Archived — the native session is gone; Mako kept the conversation"
+          aria-label="Saved copy: the native session is gone; Mako kept the conversation"
         />
       ) : null}
       <ThreadStatusMark status={status} updatedAt={ref.updatedAt} />

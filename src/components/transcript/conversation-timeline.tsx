@@ -1,4 +1,5 @@
 import { Slot } from "@/extend/slot"
+import { useVirtualizer } from "@tanstack/react-virtual"
 import { registerCommands } from "@/extend/commands"
 import {
   TranscriptSourceContext,
@@ -94,6 +95,7 @@ export function ConversationTimeline({
   loadingEarlier?: boolean
   onLoadEarlier?: () => Promise<void>
 }) {
+  "use no memo"
   const sourceValue = useMemo(
     () => ({ threadPath: source.threadPath, liveId: source.liveId }),
     [source.threadPath, source.liveId]
@@ -102,23 +104,40 @@ export function ConversationTimeline({
   const viewport = useRef<HTMLDivElement>(null)
   const topFade = useRef<HTMLSpanElement>(null)
   const pinned = useRef(true)
+  const userScrolling = useRef(false)
   const lastScrollTop = useRef(0)
   const restore = useRef<ScrollAnchor | null>(null)
   const pendingJump = useRef<string | null>(null)
   const [showJump, setShowJump] = useState(false)
   const [activeTurn, setActiveTurn] = useState<string | null>(null)
   const [limit, setLimit] = useState(INITIAL_TURNS)
-  const hidden = Math.max(0, exchanges.length - limit)
+  const windowed = exchanges.length > 200
+  const hidden = windowed ? 0 : Math.max(0, exchanges.length - limit)
   const shown = hidden > 0 ? exchanges.slice(hidden) : exchanges
   const isEmpty = exchanges.length === 0
+  const rows = useVirtualizer({
+    count: exchanges.length,
+    enabled: windowed,
+    getScrollElement: () => viewport.current,
+    estimateSize: () => 360,
+    getItemKey: (index) => exchanges[index]!.id,
+    overscan: 6,
+    scrollMargin: hasEarlier ? 80 : 24,
+    useAnimationFrameWithResizeObserver: true,
+  })
+  const virtualRows = rows.getVirtualItems()
+  const mountedKeys = windowed
+    ? virtualRows.map((row) => row.key).join("\0")
+    : ""
 
   const scrollToEnd = useCallback((behavior: ScrollBehavior = "auto") => {
     const node = viewport.current
     if (!node) return
     restore.current = null
-    node.scrollTo({ top: node.scrollHeight, behavior })
-    lastScrollTop.current = node.scrollHeight
+    userScrolling.current = false
     pinned.current = true
+    node.scrollTo({ top: node.scrollHeight, behavior })
+    lastScrollTop.current = node.scrollTop
     setShowJump(false)
   }, [])
 
@@ -129,17 +148,20 @@ export function ConversationTimeline({
     const movingUp = node.scrollTop < lastScrollTop.current - 0.5
     const distance = node.scrollHeight - node.scrollTop - node.clientHeight
     const atBottom = distance < NEAR_BOTTOM
-    pinned.current = !movingUp && atBottom
+    if (userScrolling.current) pinned.current = !movingUp && atBottom
     lastScrollTop.current = node.scrollTop
-    setShowJump((current) => (current === !atBottom ? current : !atBottom))
+    const show = !pinned.current && !atBottom
+    setShowJump((current) => (current === show ? current : show))
   }, [])
 
   const onWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
+    userScrolling.current = true
     restore.current = null
     if (event.deltaY < 0) pinned.current = false
   }, [])
 
   const onPointerDown = useCallback(() => {
+    userScrolling.current = true
     restore.current = null
   }, [])
 
@@ -173,11 +195,15 @@ export function ConversationTimeline({
       observer.observe(element)
     }
     return () => observer.disconnect()
-  }, [shown.length])
+  }, [shown.length, mountedKeys])
 
   useLayoutEffect(() => {
     restore.current = null
+    pendingJump.current = null
+    userScrolling.current = false
     pinned.current = true
+    setLimit(INITIAL_TURNS)
+    setShowJump(false)
     const node = viewport.current
     if (!node) return
     node.scrollTop = node.scrollHeight
@@ -199,9 +225,19 @@ export function ConversationTimeline({
       lastScrollTop.current = node.scrollTop
     }
     pin()
-    const grown = new ResizeObserver(pin)
+    let frame: number | null = null
+    const grown = new ResizeObserver(() => {
+      frame ??= requestAnimationFrame(() => {
+        frame = null
+        pin()
+      })
+    })
+    grown.observe(node)
     if (node.firstElementChild) grown.observe(node.firstElementChild)
-    return () => grown.disconnect()
+    return () => {
+      grown.disconnect()
+      if (frame !== null) cancelAnimationFrame(frame)
+    }
   }, [identity, isEmpty])
 
   useLayoutEffect(() => {
@@ -209,10 +245,23 @@ export function ConversationTimeline({
     const node = viewport.current
     if (!snapshot || !node || loadingEarlier) return
     if (snapshot.shown === shown.length) return
+    if (windowed && snapshot.exchangeId) {
+      const index = exchanges.findIndex(
+        (exchange) => exchange.id === snapshot.exchangeId
+      )
+      if (index >= 0) rows.scrollToIndex(index, { align: "start" })
+      requestAnimationFrame(() => {
+        if (restore.current !== snapshot || viewport.current !== node) return
+        preserveScrollAnchor(node, snapshot)
+        lastScrollTop.current = node.scrollTop
+        restore.current = { ...snapshot, shown: shown.length }
+      })
+      return
+    }
     holdPrependedHeights(node, snapshot.exchangeId)
     preserveScrollAnchor(node, snapshot)
     lastScrollTop.current = node.scrollTop
-  }, [loadingEarlier, shown.length])
+  }, [loadingEarlier, shown.length, windowed, exchanges, rows])
 
   const showEarlier = useCallback(async () => {
     const node = viewport.current
@@ -237,27 +286,53 @@ export function ConversationTimeline({
     requestAnimationFrame(() => node.removeAttribute("data-preserve-scroll"))
   }, [hidden, onLoadEarlier, shown.length])
 
-  const jump = useCallback((id: string, behavior: ScrollBehavior = "smooth") => {
-    restore.current = null
-    pinned.current = false
-    const index = exchanges.findIndex((exchange) => exchange.id === id)
-    if (index < 0) return
-    if (index < hidden) {
-      pendingJump.current = id
-      setLimit(exchanges.length - index)
-      return
-    }
-    viewport.current
-      ?.querySelector(`[data-exchange="${CSS.escape(id)}"]`)
-      ?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : behavior, block: "start" })
-  }, [exchanges, hidden])
+  const jump = useCallback(
+    (id: string, behavior: ScrollBehavior = "smooth") => {
+      restore.current = null
+      userScrolling.current = false
+      pinned.current = false
+      const index = exchanges.findIndex((exchange) => exchange.id === id)
+      if (index < 0) return
+      if (windowed) {
+        const element = viewport.current?.querySelector(
+          `[data-exchange="${CSS.escape(id)}"]`
+        )
+        if (element)
+          element.scrollIntoView({ behavior: "auto", block: "start" })
+        else {
+          pendingJump.current = id
+          rows.scrollToIndex(index, { align: "start", behavior: "auto" })
+        }
+        return
+      }
+      if (index < hidden) {
+        pendingJump.current = id
+        setLimit(exchanges.length - index)
+        return
+      }
+      viewport.current
+        ?.querySelector(`[data-exchange="${CSS.escape(id)}"]`)
+        ?.scrollIntoView({
+          behavior: window.matchMedia("(prefers-reduced-motion: reduce)")
+            .matches
+            ? "auto"
+            : behavior,
+          block: "start",
+        })
+    },
+    [exchanges, hidden, windowed, rows]
+  )
 
   useLayoutEffect(() => {
     const id = pendingJump.current
     if (!id) return
+    const element = viewport.current?.querySelector(
+      `[data-exchange="${CSS.escape(id)}"]`
+    )
+    if (!element) return
     pendingJump.current = null
-    jump(id, "auto")
-  }, [jump])
+    element.scrollIntoView({ behavior: "auto", block: "start" })
+  }, [jump, mountedKeys])
 
   useEffect(() => {
     const move = (offset: number) => {
@@ -268,12 +343,37 @@ export function ConversationTimeline({
       jump(exchanges[next]!.id, "auto")
     }
     return registerCommands([
-      { id: "transcript.previous-prompt", title: "Previous prompt", section: "View", keys: "mod+arrowup", run: () => move(-1) },
-      { id: "transcript.next-prompt", title: "Next prompt", section: "View", keys: "mod+arrowdown", run: () => move(1) },
+      {
+        id: "transcript.previous-prompt",
+        title: "Previous prompt",
+        section: "View",
+        keys: "mod+arrowup",
+        run: () => move(-1),
+      },
+      {
+        id: "transcript.next-prompt",
+        title: "Next prompt",
+        section: "View",
+        keys: "mod+arrowdown",
+        run: () => move(1),
+      },
     ])
   }, [activeTurn, exchanges, jump])
 
   const showNavigator = !isEmpty && exchanges.length >= 3
+  const renderExchange = (exchange: ExchangeData) => (
+    <Exchange
+      key={exchange.id}
+      exchange={exchange}
+      streaming={exchange.id === streamingId}
+      interrupted={
+        exchange.id === interruptedId ||
+        (interruptedRequests?.get(exchange.prompt?.requestId ?? "") ??
+          exchangeInterrupted(exchange))
+      }
+      failed={exchange.id === failedId}
+    />
+  )
 
   return (
     <TranscriptSourceContext value={sourceValue}>
@@ -286,7 +386,31 @@ export function ConversationTimeline({
         <div
           ref={viewport}
           onPointerDown={onPointerDown}
+          onPointerUp={(event) => {
+            if (event.pointerType === "mouse") userScrolling.current = false
+          }}
           onScroll={onScroll}
+          onScrollEnd={() => {
+            userScrolling.current = false
+          }}
+          onKeyDown={(event) => {
+            if (
+              [
+                "PageUp",
+                "PageDown",
+                "Home",
+                "End",
+                "ArrowUp",
+                "ArrowDown",
+                " ",
+              ].includes(event.key) &&
+              event.target instanceof HTMLElement &&
+              !event.target.closest(
+                "button,input,textarea,[contenteditable=true]"
+              )
+            )
+              userScrolling.current = true
+          }}
           onWheel={onWheel}
           style={{ paddingInlineEnd: showNavigator ? NAVIGATOR_WIDTH : 0 }}
           className="scroll-fade-scroller group/transcript min-h-0 flex-1 overflow-y-auto overscroll-contain"
@@ -301,6 +425,7 @@ export function ConversationTimeline({
               {hidden > 0 || hasEarlier ? (
                 <button
                   type="button"
+                  data-load-earlier
                   disabled={loadingEarlier}
                   onClick={() => void showEarlier()}
                   className={cn(
@@ -319,18 +444,33 @@ export function ConversationTimeline({
                         : "Show earlier turns"}
                 </button>
               ) : null}
-              {shown.map((exchange) => (
-                <Exchange
-                  key={exchange.id}
-                  exchange={exchange}
-                  streaming={exchange.id === streamingId}
-                  interrupted={
-                    exchange.id === interruptedId ||
-                    (interruptedRequests?.get(exchange.prompt?.requestId ?? "") ?? exchangeInterrupted(exchange))
-                  }
-                  failed={exchange.id === failedId}
-                />
-              ))}
+              {windowed ? (
+                <div
+                  data-virtual-transcript
+                  style={{ height: rows.getTotalSize(), position: "relative" }}
+                >
+                  {virtualRows.map((row) => (
+                    <div
+                      key={row.key}
+                      data-index={row.index}
+                      ref={rows.measureElement}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        transform: `translateY(${row.start - rows.options.scrollMargin}px)`,
+                        paddingBottom:
+                          row.index < exchanges.length - 1 ? 28 : 0,
+                      }}
+                    >
+                      {renderExchange(exchanges[row.index]!)}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                shown.map(renderExchange)
+              )}
               {footer}
             </div>
           )}

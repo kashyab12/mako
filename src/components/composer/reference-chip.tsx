@@ -1,4 +1,4 @@
-import { fileKind } from "@/lib/mentions"
+import { fileKind, threadToken } from "@/lib/mentions"
 import { fileName } from "@/lib/format"
 import { desktop } from "@/state/desktop"
 import { useThreads } from "@/state/threads"
@@ -52,7 +52,7 @@ export function FileChip({
 
   if (!interactive) {
     return (
-      <span className={className} title={path}>
+      <span className={className} title={path} data-copy-file={path} data-copy-reference={`@${path}`}>
         {body}
       </span>
     )
@@ -61,6 +61,8 @@ export function FileChip({
     <button
       type="button"
       title={`Open ${path}`}
+      data-copy-file={path}
+      data-copy-reference={`@${path}`}
       onClick={() => void desktop.revealPath(path)}
       className={cn(
         className,
@@ -88,6 +90,7 @@ export function ThreadChip({
   return (
     <span
       title={thread?.title ?? `${harness} conversation`}
+      data-copy-reference={threadToken(harness, nativeId)}
       className={cn(
         "inline-flex max-w-[18rem] items-baseline gap-1 rounded bg-raised px-1 align-baseline",
         "text-[0.92em] leading-[1.35] text-foreground ring-1 ring-hairline ring-inset",
@@ -106,6 +109,7 @@ export function SkillChip({ name }: { name: string }) {
   return (
     <span
       title={`Skill: ${name}`}
+      data-copy-reference={`$${name}`}
       className={cn(
         "inline-flex items-baseline gap-1 rounded bg-fill-selected px-1 align-baseline",
         "font-mono text-[0.92em] leading-[1.35] text-foreground ring-1 ring-border ring-inset",

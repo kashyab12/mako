@@ -10,7 +10,7 @@ import { desktop } from "@/state/desktop"
 import { git } from "@/state/git"
 import { github, useGitHub } from "@/state/github"
 import { prefsStore } from "@/state/prefs"
-import { actions, useSession } from "@/state/session"
+import { useSession } from "@/state/session"
 import { cn } from "@/lib/utils"
 import type { CheckSummary, GitHubStatus, PullRequest as Pull } from "@/lib/types"
 import {
@@ -21,7 +21,6 @@ import {
   GitPullRequestIcon,
   RefreshCwIcon,
   SparklesIcon,
-  UploadIcon,
   XIcon,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -61,25 +60,6 @@ export function PullRequestCard() {
   const behind = useSession((state) => state.git?.behind ?? 0)
   const root = useSession((state) => state.git?.root)
   const [composing, setComposing] = useState(false)
-  const [pushing, setPushing] = useState(false)
-
-  const push = useCallback(async function pushBranch() {
-    if (pushing) return
-    setPushing(true)
-    try {
-      await git.push()
-      await actions.refreshGit()
-    } catch (error) {
-      toast.error("Branch was not pushed", {
-          duration: Infinity,
-        description: error instanceof Error ? error.message : String(error),
-        action: { label: "Retry", onClick: () => void pushBranch() },
-      })
-    } finally {
-      setPushing(false)
-    }
-  }, [pushing])
-
   useEffect(() => {
     if (!root) return
     if (
@@ -90,7 +70,7 @@ export function PullRequestCard() {
       void github.refresh(root, branch)
   }, [branch, cached, cachedRoot, root, statusRoot])
 
-  if (!root || cachedRoot !== root || statusRoot !== root || !status)
+  if (!root || cachedRoot !== root || statusRoot !== root || cached !== branch || !status)
     return null
 
   const onDefault = Boolean(status.defaultBranch && branch === status.defaultBranch)
@@ -110,7 +90,7 @@ export function PullRequestCard() {
   }
 
   if (pull) return <PullSummary pull={pull} loading={loading} />
-  if (!hasWork) return null
+  if (onDefault || !hasWork) return null
   if (behind > 0) {
     return <BehindBranch behind={behind} upstream={upstream} />
   }
@@ -121,25 +101,14 @@ export function PullRequestCard() {
     <div className="shrink-0 border-t border-hairline px-2.5 py-2">
       <button
         type="button"
-        onClick={() => (onDefault ? void push() : setComposing(true))}
-        disabled={pushing}
+        onClick={() => setComposing(true)}
         className={cn(
           "pressable flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left",
           "text-ui text-muted-foreground transition-colors duration-100 hover:bg-fill-hover hover:text-foreground"
         )}
       >
-        {onDefault ? (
-          <UploadIcon className="size-3.5 shrink-0" />
-        ) : (
-          <GitPullRequestIcon className="size-3.5 shrink-0" />
-        )}
-        <span className="min-w-0 flex-1 truncate">
-          {onDefault
-            ? pushing
-              ? `Pushing to ${branch}…`
-              : `Push to ${branch}`
-            : `Open a pull request for ${branch}`}
-        </span>
+        <GitPullRequestIcon className="size-3.5 shrink-0" />
+        <span className="min-w-0 flex-1 truncate">Open a pull request for {branch}</span>
         <span className="tabular shrink-0 text-label text-faint">{commits}</span>
       </button>
     </div>

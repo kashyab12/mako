@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { toast } from "sonner"
 import { MultiFileDiff, Virtualizer } from "@pierre/diffs/react"
-import { Blank, IconAction } from "@/components/ui/kit"
+import { Action, Blank, IconAction } from "@/components/ui/kit"
+import { useWorkspaceTransition } from "@/state/workspace-transition"
 import { CommitBox } from "@/components/inspector/commit-box"
 import { Annotation, GutterAdd, ReviewBar } from "@/components/inspector/review"
 import { review, useReview } from "@/state/review"
@@ -9,6 +11,9 @@ import { Slot } from "@/extend/slot"
 import { actions, useSession } from "@/state/session"
 import { git as gitActions } from "@/state/git"
 import { GitLog } from "@/components/inspector/git-log"
+import { GitLoading } from "@/components/inspector/git-loading"
+import { GitDiffPreviewView } from "@/components/inspector/git-diff-preview"
+import { ChangeList } from "@/components/inspector/change-list"
 import { buildFileTree, type TreeRow } from "@/lib/file-tree"
 import { cn } from "@/lib/utils"
 import { prefsStore, setPref, togglePref, usePrefs } from "@/state/prefs"
@@ -65,16 +70,14 @@ const MARK = {
 
 export function ChangesPanel() {
   const focus = useWorkspaceFocus()
-  if (!focus.ready) {
-    return (
-      <Blank
-        icon={<RefreshCwIcon />}
-        title="Loading project"
-        body={focus.cwd ?? "Resolving the focused conversation workspace."}
-      />
-    )
+  const transition = useWorkspaceTransition((state) => state)
+  const snapshot = useSession((state) => state.git)
+  if (transition.kind === "failed") return <div role="alert" className="p-4 text-ui"><p>{transition.message}</p><Action onClick={() => void actions.openWorkspace(transition.cwd)}>Retry project</Action></div>
+  if (transition.kind === "loading" || !focus.ready || !snapshot || (focus.cwd && snapshot.cwd !== focus.cwd)) {
+    const cwd = transition.kind === "loading" ? transition.cwd : focus.cwd
+    return <GitLoading label={`Reading changes${cwd ? ` in ${cwd.split(/[\\/]/).filter(Boolean).at(-1)}` : ""}`} />
   }
-  return <WorkspaceChanges key={focus.identity} />
+  return <WorkspaceChanges key={`${focus.identity}:${snapshot.cwd}`} />
 }
 
 function WorkspaceChanges() {
@@ -82,7 +85,16 @@ function WorkspaceChanges() {
   const workspace = git?.root ?? git?.cwd ?? ""
   const collapsed = usePrefs((prefs) => prefs.collapsedDirs)
   const selectedDiffs = usePrefs((prefs) => prefs.selectedDiffs)
-  const files = useMemo(() => git?.files ?? [], [git])
+  const [stageOverrides, setStageOverrides] = useState(new Map<string, boolean>())
+  const requestedStages = useRef(stageOverrides)
+  const stageVersion = useRef(0)
+  const inFlightWrites = useRef(0)
+  const [pendingWrites, setPendingWrites] = useState(0)
+  const staging = pendingWrites > 0
+  const files = useMemo(() => (git?.files ?? []).map((file) => {
+    const request = stageOverrides.get(file.path)
+    return request === undefined ? file : { ...file, staged: request }
+  }), [git, stageOverrides])
 
   const autoOpenDiff = usePrefs((prefs) => prefs.autoOpenDiff)
   const selected = git?.root ? selectedDiffs[git.root] : undefined
@@ -95,7 +107,9 @@ function WorkspaceChanges() {
 
   // With the diff pane closed the list is the whole panel, so nothing is
   // "selected" and no file contents are fetched at all.
-  const active = autoOpenDiff ? (files.find((file) => file.path === selected) ?? files[0]) : undefined
+  const selectedFile = files.find((file) => file.path === selected)
+  const active = autoOpenDiff ? selectedFile : undefined
+  const showDiff = Boolean(active)
   const path = active?.path
   const ready = diff !== undefined && diff.path === path
 
@@ -211,18 +225,51 @@ function WorkspaceChanges() {
     )
   }, [])
 
-  const toggleStage = useCallback(async (file: GitFile) => {
-    if (file.staged) await gitActions.unstage([file.path])
-    else await gitActions.stage([file.path])
+  const updateStaging = useCallback(async (paths: string[], stage: boolean) => {
+    stageVersion.current += 1
+    inFlightWrites.current += 1
+    const next = new Map(requestedStages.current)
+    for (const path of paths) next.set(path, stage)
+    requestedStages.current = next
+    setStageOverrides(next)
+    setPendingWrites(inFlightWrites.current)
+    try {
+      if (stage) await gitActions.stage(paths)
+      else await gitActions.unstage(paths)
+    } catch (error) {
+      toast.error(stage ? "Files were not staged" : "Files were not unstaged", {
+        duration: Infinity,
+        description: error instanceof Error ? error.message : String(error),
+        action: { label: "Refresh changes", onClick: () => void actions.refreshGit() },
+      })
+    } finally {
+      inFlightWrites.current -= 1
+      if (inFlightWrites.current) setPendingWrites(inFlightWrites.current)
+      else {
+        const version = stageVersion.current
+        await actions.refreshGit()
+        if (!inFlightWrites.current && stageVersion.current === version) {
+          const settled = new Map<string, boolean>()
+          requestedStages.current = settled
+          setStageOverrides(settled)
+          setPendingWrites(0)
+        }
+      }
+    }
   }, [])
 
   const stagePaths = useCallback(async (paths: string[], stage: boolean) => {
     if (paths.length === 0) return
+    const targets = new Set(paths)
+    for (const file of files) {
+      if (!stage && targets.has(file.path) && file.status === "renamed" && file.oldName) targets.add(file.oldName)
+    }
     // One call for the whole folder: `git add -- a b c` is atomic where a loop
     // would emit a status refresh per file and flicker the list.
-    if (stage) await gitActions.stage(paths)
-    else await gitActions.unstage(paths)
-  }, [])
+    await updateStaging([...targets], stage)
+  }, [files, updateStaging])
+
+  const toggleStage = useCallback((file: GitFile) => stagePaths([file.path], !(requestedStages.current.get(file.path) ?? file.staged)), [stagePaths])
 
   if (files.length === 0) {
     return (
@@ -242,6 +289,7 @@ function WorkspaceChanges() {
         <CommitsSection onPickFile={pickCommitFile} onPickCommit={pickCommit} defaultOpen />
         {/* Still here on a clean tree — a branch you have finished committing
             is exactly when you want to open the pull request. */}
+        {git?.root ? <CommitBox staged={0} total={0} /> : null}
         <PullRequestCard />
       </div>
     )
@@ -250,16 +298,13 @@ function WorkspaceChanges() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-7 shrink-0 items-center gap-2 border-b border-hairline px-2.5 text-label text-faint">
-        <span>
-          {files.length} changed
-          {staged > 0 ? ` · ${staged} staged` : ""}
+        <span role="status" className="min-w-0 flex-1 truncate">
+          {staging ? "Updating staging..." : `${files.length} files changed${staged > 0 ? ` · ${staged} staged` : ""}`}
         </span>
-        <span className="tabular text-added">
-          +{files.reduce((sum, file) => sum + file.insertions, 0)}
-        </span>
-        <span className="tabular text-removed">
-          −{files.reduce((sum, file) => sum + file.deletions, 0)}
-        </span>
+        {files.every((file) => file.insertions !== null && file.deletions !== null) ? <>
+          <span className="tabular text-added">+{files.reduce((sum, file) => sum + (file.insertions ?? 0), 0)}</span>
+          <span className="tabular text-removed">−{files.reduce((sum, file) => sum + (file.deletions ?? 0), 0)}</span>
+        </> : <span className="text-label text-faint" title="Line totals are read on demand for large changesets">Totals on demand</span>}
         <div className="ml-auto flex items-center gap-0.5">
           <IconAction
             label="Review current changes in the center"
@@ -271,21 +316,18 @@ function WorkspaceChanges() {
           <IconAction
             label={staged === files.length ? "Unstage everything" : "Stage everything"}
             size="xs"
-            onClick={() =>
-              void (staged === files.length
-                ? gitActions.unstageAll()
-                : gitActions.stageAll())
-            }
+            onClick={() => void stagePaths(files.map((file) => file.path), staged !== files.length)}
           >
             {staged === files.length ? <MinusIcon /> : <PlusIcon />}
           </IconAction>
           <IconAction
-            label={autoOpenDiff ? "Hide the diff" : "Show the diff"}
+            label={selectedFile ? showDiff ? "Hide the diff" : "Show the diff" : "Select a file to preview"}
             size="xs"
-            data-on={autoOpenDiff || undefined}
+            disabled={!selectedFile}
+            data-on={showDiff || undefined}
             onClick={() => togglePref("autoOpenDiff")}
           >
-            {autoOpenDiff ? <PanelBottomCloseIcon /> : <PanelBottomOpenIcon />}
+            {showDiff ? <PanelBottomCloseIcon /> : <PanelBottomOpenIcon />}
           </IconAction>
           <IconAction label="Refresh" size="xs" onClick={() => void actions.refreshGit()}>
             <RefreshCwIcon />
@@ -293,28 +335,13 @@ function WorkspaceChanges() {
         </div>
       </div>
 
-      <div
-        className={cn(
-          "min-h-0 overflow-y-auto overscroll-contain px-1 py-1",
-          autoOpenDiff ? "max-h-[34%] shrink-0" : "flex-1"
-        )}
-      >
-        {rows.map((row) =>
-          row.kind === "dir" ? (
-            <DirRow key={row.key} row={row} onToggle={toggleDir} onStage={stagePaths} />
-          ) : (
-            <FileRow
-              key={row.key}
-              row={row}
-              active={selected === row.file.path}
-              onSelect={selectFile}
-              onToggleStage={toggleStage}
-            />
-          )
-        )}
-      </div>
+      <ChangeList rows={rows} compact={showDiff} renderRow={(row) => row.kind === "dir" ? (
+        <DirRow row={row} busy={row.paths.some((path) => stageOverrides.has(path))} onToggle={toggleDir} onStage={stagePaths} />
+      ) : (
+        <FileRow row={row} busy={stageOverrides.has(row.file.path)} active={selected === row.file.path} onSelect={selectFile} onToggleStage={toggleStage} />
+      )} />
 
-      {autoOpenDiff ? (
+      {showDiff ? (
         <div className="relative flex min-h-0 flex-1 flex-col border-t border-hairline">
           {/* Closing from the pane itself, not only from the header: the thing
               you want gone is the thing your pointer is already over. */}
@@ -352,8 +379,12 @@ function WorkspaceChanges() {
             </IconAction>
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
-        {!ready ? (
-          <p className="shimmer p-3 text-ui">Loading diff…</p>
+        {!path ? (
+          <p className="p-4 text-ui text-faint">Select a file to read its diff. Staging is available without opening a preview.</p>
+        ) : !ready ? (
+          <GitLoading kind="diff" label={`Reading ${path}`} />
+        ) : diff.preview ? (
+          <GitDiffPreviewView path={diff.path} preview={diff.preview} />
         ) : diff.binary || (!diff.oldFile && !diff.newFile) ? (
           <p className="p-3 text-ui text-faint">
             {diff.binary ? "Binary file — no text diff." : "No text content to compare."}
@@ -410,7 +441,7 @@ function WorkspaceChanges() {
 
       <CommitsSection onPickFile={pickCommitFile} onPickCommit={pickCommit} />
       <ReviewBar workspace={workspace} />
-      <CommitBox staged={staged} total={files.length} />
+      <CommitBox staged={staged} total={files.length} staging={staging} />
       <PullRequestCard />
     </div>
   )
@@ -465,55 +496,59 @@ function CommitsSection({
 function StageBox({
   state,
   label,
+  busy,
   onToggle,
 }: {
   state: "on" | "off" | "partial"
   label: string
+  busy: boolean
   onToggle: () => void
 }) {
   return (
     <button
       type="button"
       role="checkbox"
+      aria-label={label}
       aria-checked={state === "partial" ? "mixed" : state === "on"}
-      title={label}
+      aria-busy={busy}
       onClick={(event) => {
         // The row underneath is a click target too; staging must not also
         // expand a folder or open a diff.
         event.stopPropagation()
         onToggle()
       }}
-      className={cn(
-        "pressable flex size-3.5 shrink-0 items-center justify-center rounded-[3px] ring-1 ring-inset",
-        "[transition:background-color_120ms_ease,box-shadow_120ms_ease]",
-        state === "off"
-          ? "ring-border group-hover:ring-foreground/40"
-          : "bg-foreground/85 ring-foreground/85"
-      )}
+      className="pressable stage-hit-target flex size-6 shrink-0 cursor-pointer items-center justify-center select-none"
     >
-      {state === "on" ? (
-        <svg viewBox="0 0 10 10" className="size-2.5 text-background" aria-hidden>
-          <path
-            d="M1.5 5.2 4 7.5 8.5 2.8"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      ) : state === "partial" ? (
-        <span className="block h-[1.5px] w-[7px] rounded-full bg-background" />
-      ) : null}
+      <span aria-hidden className={cn(
+        "pointer-events-none flex size-3.5 items-center justify-center rounded-[3px] ring-1 ring-inset transition-colors",
+        state === "off" ? "ring-border group-hover:ring-foreground/40" : "bg-foreground/85 ring-foreground/85"
+      )}>
+        {state === "on" ? (
+          <svg viewBox="0 0 10 10" className="size-2.5 text-background" aria-hidden>
+            <path
+              d="M1.5 5.2 4 7.5 8.5 2.8"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        ) : state === "partial" ? (
+          <span className="block h-[1.5px] w-[7px] rounded-full bg-background" />
+        ) : null}
+      </span>
     </button>
   )
 }
 
 function DirRow({
   row,
+  busy,
   onToggle,
   onStage,
 }: {
+  busy: boolean
   row: Extract<TreeRow, { kind: "dir" }>
   onToggle: (key: string) => void
   onStage: (paths: string[], stage: boolean) => void
@@ -523,10 +558,11 @@ function DirRow({
   return (
     <div
       style={{ paddingInlineStart: 4 + row.depth * 11 }}
-      className="group flex h-6 items-center gap-1.5 rounded pr-1 transition-colors duration-100 hover:bg-fill-hover"
+      className="group flex h-6 items-center gap-1.5 rounded pr-1 select-none transition-colors duration-100 hover:bg-fill-hover"
     >
       <StageBox
         state={state}
+        busy={busy}
         // Partially staged reads as "not yet done", so the useful action is to
         // finish staging it rather than to clear what you already picked.
         label={state === "on" ? `Unstage ${row.label}` : `Stage all of ${row.label}`}
@@ -535,7 +571,7 @@ function DirRow({
       <button
         type="button"
         onClick={() => onToggle(row.key)}
-        className="flex min-w-0 flex-1 items-center gap-1 text-left"
+        className="pressable stage-hit-target flex h-full min-w-0 flex-1 items-center gap-1 text-left"
       >
         <ChevronRightIcon
           className={cn(
@@ -558,9 +594,11 @@ function DirRow({
 function FileRow({
   row,
   active,
+  busy,
   onSelect,
   onToggleStage,
 }: {
+  busy: boolean
   row: Extract<TreeRow, { kind: "file" }>
   active: boolean
   onSelect: (path: string) => void
@@ -573,13 +611,14 @@ function FileRow({
     <div
       style={{ paddingInlineStart: 4 + row.depth * 11 }}
       className={cn(
-        "group flex h-6 items-center gap-1.5 rounded pr-1 transition-colors duration-100",
+        "group flex h-6 items-center gap-1.5 rounded pr-1 select-none transition-colors duration-100",
         "hover:bg-fill-hover",
         active && "bg-fill-selected"
       )}
     >
       <StageBox
         state={file.staged ? "on" : "off"}
+        busy={busy}
         label={file.staged ? `Unstage ${row.label}` : `Stage ${row.label}`}
         onToggle={() => onToggleStage(file)}
       />
@@ -588,7 +627,7 @@ function FileRow({
         type="button"
         onClick={() => onSelect(file.path)}
         title={file.path}
-        className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+        className="pressable stage-hit-target flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
       >
         <span
           title={mark.title}

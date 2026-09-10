@@ -11,7 +11,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { IconAction } from "@/components/ui/kit"
 import type { ComposerControlSlotProps } from "@/extend/slots"
 import type { AppshotWindow } from "@/lib/types"
 import { appshots } from "@/state/appshots"
@@ -24,6 +23,7 @@ type Windows =
 export function AppshotButton({
   attachFiles,
   disabled,
+  dismiss,
 }: ComposerControlSlotProps) {
   const [open, setOpen] = useState(false)
   const [windows, setWindows] = useState<Windows>({ kind: "loading" })
@@ -49,6 +49,7 @@ export function AppshotButton({
   const capture = async (window: AppshotWindow) => {
     setOpen(false)
     setCapturing(window.app)
+    dismiss?.()
     try {
       // Let the chooser leave the captured window before taking its image.
       await new Promise<void>((resolve) =>
@@ -76,18 +77,19 @@ export function AppshotButton({
   return (
     <Popover open={open} onOpenChange={(next) => void show(next)}>
       <PopoverTrigger asChild>
-        <IconAction
-          label={capturing ? `Capturing ${capturing}` : "Attach appshot"}
-          size="xs"
-          side="top"
+        <button
+          type="button"
+          aria-label="Attach a screenshot"
+          className="pressable flex min-h-9 w-full items-center gap-3 rounded-md px-3 py-2 text-left text-ui text-foreground hover:bg-fill-hover focus-visible:bg-fill-hover disabled:opacity-40"
           disabled={disabled || capturing !== null}
         >
           {capturing ? (
-            <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" />
+            <LoaderCircleIcon className="size-4 animate-spin text-muted-foreground motion-reduce:animate-none" />
           ) : (
-            <CameraIcon />
+            <CameraIcon className="size-4 text-muted-foreground" />
           )}
-        </IconAction>
+          {capturing ? `Capturing ${capturing}` : "Attach a screenshot"}
+        </button>
       </PopoverTrigger>
       <PopoverContent
         side="top"

@@ -124,9 +124,9 @@ export function CommitPromptSection() {
               />
             </div>
             <p className="text-label leading-relaxed text-faint">
-              Generating sends the selected diff to this provider. Large diffs
-              use parallel summaries; any omitted content is reported with the
-              draft.
+              Generating sends the complete diff to this provider. Only context
+              overflow uses parallel summaries. Sensitive-file exclusions are
+              reported with the draft.
             </p>
           </section>
           <section

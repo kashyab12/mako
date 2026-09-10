@@ -8,7 +8,6 @@ import { useProviders } from "@/state/providers"
 import { useSession } from "@/state/session"
 import { stage } from "@/state/stage"
 import { useThreads } from "@/state/threads"
-import { harnessTitle } from "@/components/composer/harness-title"
 
 /**
  * The context dial — OpenCode's answer, adopted whole. A 16px progress
@@ -32,8 +31,8 @@ export const ContextDial = memo(function ContextDial() {
     composerHarness,
     profiles,
   })
-  const percent =
-    usage.kind === "exact" ? Math.min(100, usage.percent ?? 0) : 0
+  if (usage.kind !== "exact" || usage.tokens === null || usage.percent === null || usage.window <= 0) return null
+  const percent = Math.min(100, Math.max(0, usage.percent))
   const tone =
     percent > 90
       ? "text-negative"
@@ -76,45 +75,8 @@ export const ContextDial = memo(function ContextDial() {
         </button>
       </TooltipTrigger>
       <TooltipContent side="top" className="flex-col items-stretch gap-1">
-        {usage.kind === "exact" ? (
-          <>
-            <Reading label="spent" value={formatCost(usage.cost)} />
-            <Reading
-              label="context"
-              value={
-                usage.window > 0 && usage.tokens != null
-                  ? `${Math.round(percent)}% · ${formatTokens(usage.tokens)} of ${formatContextWindow(usage.window)}`
-                  : "unknown until the next response"
-              }
-            />
-          </>
-        ) : usage.kind === "reported-input" ? (
-          <>
-            <Reading
-              label="session spend"
-              value={usage.cost == null ? "not reported" : formatCost(usage.cost)}
-            />
-            <Reading
-              label="last input"
-              value={
-                usage.lastInput == null
-                  ? "not reported"
-                  : formatTokens(usage.lastInput)
-              }
-            />
-            {usage.window > 0 ? (
-              <Reading
-                label="model window"
-                value={formatContextWindow(usage.window)}
-              />
-            ) : null}
-          </>
-        ) : (
-          <Reading
-            label="context"
-            value={`not reported by ${harnessTitle(usage.harness)} live sessions`}
-          />
-        )}
+        <Reading label="spent" value={formatCost(usage.cost)} />
+        <Reading label="context" value={`${Math.round(percent)}% · ${formatTokens(usage.tokens)} of ${formatContextWindow(usage.window)}`} />
       </TooltipContent>
     </Tooltip>
   )

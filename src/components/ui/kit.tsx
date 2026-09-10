@@ -179,20 +179,26 @@ export function Segmented<T extends string>({
   value,
   options,
   onChange,
+  label,
+  disabled = false,
 }: {
   value: T
   options: Array<{ value: T; label: string }>
   onChange: (next: T) => void
+  label?: string
+  disabled?: boolean
 }) {
   return (
-    <div className="flex h-6 shrink-0 items-center rounded-md bg-raised p-[2px]">
+    <div role="group" aria-label={label} className="flex h-6 shrink-0 items-center rounded-md bg-raised p-[2px]">
       {options.map((option) => (
         <button
           key={option.value}
           type="button"
+          aria-pressed={value === option.value}
+          disabled={disabled}
           onClick={() => onChange(option.value)}
           className={cn(
-            "rounded-[4px] px-2 text-label font-medium",
+            "rounded-[4px] px-2 text-label font-medium disabled:pointer-events-none disabled:opacity-40",
             "[transition:background-color_120ms_ease,color_120ms_ease]",
             value === option.value
               ? "bg-surface text-foreground"

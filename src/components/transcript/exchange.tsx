@@ -4,6 +4,7 @@ import { ProposedPlanCard } from "./proposed-plan"
 import { ChangingLabel } from "@/components/ui/changing-label"
 import { RewindButton, PromptRewindButton } from "./rewind-button"
 import { useCopy } from "@/components/ui/use-copy"
+import { copyPromptSelection } from "./prompt-clipboard"
 import { acp, useAcp, activeLiveAcp } from "@/state/acp"
 import { PlanSummary } from "./tool-details"
 import { TranscriptAttachment } from "./attachment"
@@ -44,7 +45,6 @@ import { usePrefs } from "@/state/prefs"
 import { cn } from "@/lib/utils"
 import type { ChatMessage } from "@/lib/types"
 import {
-  BrainIcon,
   CheckIcon,
   ChevronRightIcon,
   CopyIcon,
@@ -97,7 +97,7 @@ export const Exchange = memo(function Exchange({
       ))}
 
       {sections.length > 0 ? (
-        <div className={cn("flex flex-col gap-2.5", exchange.prompt && "mt-3")}>
+        <div className={cn("flex flex-col gap-4", exchange.prompt && "mt-4")}>
           {provider ? <AgentByline provider={provider} /> : null}
           {sections.map((section, index) =>
             section.kind === "steer" ? (
@@ -175,7 +175,10 @@ function Prompt({ message }: { message: ChatMessage }) {
     [files, message.blocks]
   )
   const referenceFiles = useMemo(() => reusable.map((item) => ({ index: item.index, name: item.name, path: item.stagedPath })), [reusable])
-  const { copied, copy } = useCopy(restoreAttachmentReferences(text, reusable))
+  const { copied, copy } = useCopy(
+    appendPlanContext(restoreAttachmentReferences(text, reusable), plans) + raw.slice(stripThreadReferenceAppendix(raw).length),
+    reusable
+  )
   const compose = () =>
     window.dispatchEvent(
       new CustomEvent("mako:compose", {
@@ -209,16 +212,15 @@ function Prompt({ message }: { message: ChatMessage }) {
       {/* The user's words are a bubble, not a slab: right-aligned and capped
           at a reading measure, unmistakably theirs without a ring. The
           assistant's reply below stays full-width and chrome-free. */}
-      <div className="max-w-[min(82%,64ch)] rounded-xl rounded-br-md bg-raised px-3.5 py-2.5">
+      <div onCopy={event => copyPromptSelection(event, reusable)} className="max-w-[min(82%,64ch)] rounded-xl rounded-br-md bg-raised px-3.5 py-2.5">
         <Prose text={text} references={referenceFiles} className="prompt-prose whitespace-normal" />
         <PlanContextChips plans={plans} />
         {message.blocks
           .filter((block) => block.type === "attachment")
           .map((attachment, index) => (
-            <TranscriptAttachment
-              key={attachment.id ?? index}
-              attachment={attachment}
-            />
+            <div key={attachment.id ?? index} data-copy-file={attachment.source.kind === "file" ? attachment.source.path : undefined}>
+              <TranscriptAttachment attachment={attachment} />
+            </div>
           ))}
         {files.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -493,21 +495,13 @@ function Response({
   const proposals = message.blocks.filter(
     (block) => block.type === "proposed-plan"
   )
-  const blank =
-    !proposals.length &&
-    !attachments.length &&
-    !thinking &&
-    !tools.length &&
-    !text &&
-    !message.error
   const visible =
     proposals.length ||
     attachments.length ||
     text ||
     message.error ||
     (showWork && tools.length > 0) ||
-    (showWork && showThinking && thinking) ||
-    (blank && message.streaming)
+    (showWork && showThinking && thinking)
   if (!visible) return null
 
   return (
@@ -546,9 +540,6 @@ function Response({
         </div>
       ) : null}
 
-      {blank && message.streaming ? (
-        <p className="shimmer text-ui">Thinking…</p>
-      ) : null}
     </div>
   )
 }
@@ -573,15 +564,7 @@ function Thinking({ text, live }: { text: string; live: boolean }) {
             open && "rotate-90"
           )}
         />
-        <BrainIcon className="size-3" />
-        <span className={cn("shrink-0", live && "shimmer")}>
-          {live ? "Reasoning…" : "Reasoning"}
-        </span>
-        {!open && summary ? (
-          <span className="min-w-0 flex-1 truncate text-faint/70">
-            {summary}
-          </span>
-        ) : null}
+        <span className="shrink-0" title={summary}>Thought process</span>
       </button>
       {open ? (
         <div className="border-t border-hairline px-2.5 py-2 text-muted-foreground">

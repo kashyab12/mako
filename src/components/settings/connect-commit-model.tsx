@@ -347,8 +347,8 @@ export function ConnectCommitModel({
                   }
                   className={inputClass}
                 />
-                Large diffs are summarized in parallel. If the provider rejects
-                the size, Mako retries with smaller chunks.
+                The complete diff is sent in one call when it fits. Only context
+                overflow triggers parallel summaries of every part.
               </label>
             </details>
           </fieldset>
