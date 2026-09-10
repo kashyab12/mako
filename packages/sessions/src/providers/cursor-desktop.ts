@@ -1,5 +1,6 @@
 import { cursorTaskNotification, cursorPrompt } from "./cursor-presentation.js"
 import { stat } from "node:fs/promises"
+import { createHash } from "node:crypto"
 import { basename, join } from "node:path"
 import type { DatabaseSync, SQLOutputValue } from "node:sqlite"
 import { z } from "zod"
@@ -14,7 +15,7 @@ import {
 import { type AttachmentContent, attachmentFromUrl } from "../content.js"
 import { normalizeToolOutput } from "../tool-output.js"
 import { todoDetails } from "../tool-plan.js"
-import type { NativeFile, SessionFollower } from "./types.js"
+import type { NativeFile, SessionFollower, SessionUpdate } from "./types.js"
 
 const MAX_RECORD = 16 * 1024 * 1024
 const MAX_BUBBLE = 2 * 1024 * 1024
@@ -95,6 +96,11 @@ export class CursorDesktopStore {
   readonly root: string
   private readonly databasePath: string
   private readonly readRevisions = new Map<string, string>()
+  private lastRead: {
+    path: string
+    revision: string | undefined
+    signatures: string[]
+  } | null = null
   constructor(home: string) {
     this.root = join(
       home,
@@ -189,6 +195,10 @@ export class CursorDesktopStore {
 
   createFollower(path: string): SessionFollower {
     let revision = this.readRevisions.get(path)
+    let previous =
+      this.lastRead?.path === path && this.lastRead.revision === revision
+        ? this.lastRead.signatures
+        : null
     return {
       offset: 0,
       next: async () => {
@@ -198,7 +208,27 @@ export class CursorDesktopStore {
         const thread = await this.read(path)
         if (!thread) return { entries: [], nextByte: 0, replace: false }
         revision = thread.ref.revision
-        return { entries: thread.entries, nextByte: 0, replace: true }
+        const signatures =
+          this.lastRead?.path === path && this.lastRead.revision === revision
+            ? this.lastRead.signatures
+            : thread.entries.map(entrySignature)
+        let shared = 0
+        while (
+          previous &&
+          shared < previous.length &&
+          shared < signatures.length &&
+          previous[shared] === signatures[shared]
+        )
+          shared++
+        const appended = previous !== null && shared === previous.length
+        previous = signatures
+        const update: SessionUpdate = {
+          entries: thread.entries.slice(shared),
+          nextByte: 0,
+          replace: !appended,
+        }
+        if (!appended) update.replaceFrom = shared
+        return update
       },
     }
   }
@@ -275,11 +305,21 @@ export class CursorDesktopStore {
       this.readRevisions.set(path, ref.revision ?? "")
       if (this.readRevisions.size > 32)
         this.readRevisions.delete(this.readRevisions.keys().next().value!)
-      return { ref, entries: sink.done() }
+      const entries = sink.done()
+      this.lastRead = {
+        path,
+        revision: ref.revision,
+        signatures: entries.map(entrySignature),
+      }
+      return { ref, entries }
     } finally {
       db.close()
     }
   }
+}
+
+function entrySignature(entry: ThreadEntry): string {
+  return createHash("sha256").update(JSON.stringify(entry)).digest("base64url")
 }
 
 function bubbleImages(images: z.infer<typeof Image>[]): AttachmentContent[] {

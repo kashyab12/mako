@@ -72,6 +72,19 @@ try {
     await guarded.stop().catch(() => {})
   }
 
+  const files = [{ path: join(home, "alias-a"), bytes: 1, mtimeMs: 1 }, { path: join(home, "alias-b"), bytes: 1, mtimeMs: 2 }]
+  const indexed = new SessionCatalog([{ harness: "fixture", displayName: "Fixture", roots: () => [], discover: async () => files, peek: async file => ({ harness: "fixture", nativeId: "shared", path: file.path, cwd: file.path, updatedAt: new Date(file.mtimeMs).toISOString() }), read: async () => null }])
+  try {
+    await indexed.scan()
+    assert.equal(indexed.count, 1)
+    indexed.list().pop()
+    assert.equal(indexed.count, 1, "list callers cannot mutate the cached count")
+    assert.equal(indexed.list({ cwd: files[0].path })[0].path, files[0].path, "workspace filtering precedes alias deduplication")
+    files.pop()
+    await indexed.scan()
+    assert.equal(indexed.list()[0].path, files[0].path, "removal invalidates catalogue ordering")
+  } finally { await indexed.stop() }
+
   const dir = join(home, ".claude", "projects", "p")
   await mkdir(dir, { recursive: true })
   const path = join(dir, "session.jsonl")

@@ -111,6 +111,7 @@ export class SessionCatalog {
   private providers: SessionProvider[]
   private pollTimer: NodeJS.Timeout | null = null
   private byPath = new Map<string, CacheEntry>()
+  private orderedRefs: ThreadRef[] | null = null
   private cachePath?: string
   private cacheLoaded = false
   private saveTimer: NodeJS.Timeout | null = null
@@ -153,6 +154,7 @@ export class SessionCatalog {
         (current.mtimeMs === file.mtimeMs && current.bytes > file.bytes))
     )
       return false
+    this.orderedRefs = null
     this.byPath.set(file.path, {
       bytes: file.bytes,
       mtimeMs: file.mtimeMs,
@@ -173,6 +175,7 @@ export class SessionCatalog {
   async scan(options: { emitChanges?: boolean } = {}): Promise<ThreadRef[]> {
     await this.loadCache()
     await this.archive?.load()
+    this.orderedRefs = null
     const seen = new Set<string>()
     await Promise.all(
       this.providers.map(async (provider) => {
@@ -201,14 +204,20 @@ export class SessionCatalog {
     for (const path of this.byPath.keys()) {
       if (seen.has(path)) continue
       const existing = await stat(path).catch(() => null)
-      if (!existing) this.byPath.delete(path)
+      if (!existing) this.forget(path)
     }
     this.scheduleSave()
     return this.list()
   }
 
+  get count(): number {
+    return this.orderedRefs?.length ?? this.list().length
+  }
+
   /** The known sessions, newest first, optionally narrowed to a workspace. */
   list(filter: { cwd?: string; harness?: string } = {}): ThreadRef[] {
+    const unfiltered = !filter.cwd && !filter.harness
+    if (unfiltered && this.orderedRefs) return this.orderedRefs.slice()
     const refs: ThreadRef[] = []
     const admit = (ref: ThreadRef | null) => {
       if (!ref) return
@@ -238,9 +247,11 @@ export class SessionCatalog {
         byIdentity.set(key, ref)
       }
     }
-    return [...byIdentity.values()].sort((a, b) =>
+    const ordered = [...byIdentity.values()].sort((a, b) =>
       (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")
     )
+    if (unfiltered) this.orderedRefs = ordered
+    return unfiltered ? ordered.slice() : ordered
   }
 
   /** Full translation of one session, via whichever store owns its path. */
@@ -540,7 +551,7 @@ export class SessionCatalog {
         ) &&
         !seen.has(path)
       ) {
-        this.byPath.delete(path)
+        this.forget(path)
         this.emit({ type: "removed", path })
       }
     }
@@ -574,7 +585,7 @@ export class SessionCatalog {
   ): Promise<void> {
     const info = await stat(path).catch(() => null)
     if (!info || !info.isFile()) {
-      if (this.byPath.delete(path)) {
+      if (this.forget(path)) {
         this.scheduleSave()
         this.emit({ type: "removed", path })
       }
@@ -712,6 +723,11 @@ export class SessionCatalog {
       this.archive?.note(ref, () => this.open(ref.path, false))
   }
 
+  private forget(path: string): boolean {
+    this.orderedRefs = null
+    return this.byPath.delete(path)
+  }
+
   private emit(event: CatalogEvent): void {
     // Archive once the writer releases its lock. Re-translating a giant live
     // conversation on every checkpoint competes with the agent writing it.
@@ -732,7 +748,10 @@ export class SessionCatalog {
     try {
       const raw = await readFile(this.cachePath, "utf8")
       const entries = parseCache(raw)
-      if (entries) this.byPath = entries
+      if (entries) {
+        this.byPath = entries
+        this.orderedRefs = null
+      }
     } catch {
       // No cache yet, or an unreadable one: the scan simply peeks everything.
     }

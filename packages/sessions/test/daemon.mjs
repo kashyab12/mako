@@ -34,6 +34,7 @@ const page = {
 }
 let deliverEntries
 const catalog = {
+  count: 0,
   list: () => [],
   open: async () => {
     await new Promise((resolve) => setTimeout(resolve, 150))

@@ -217,7 +217,7 @@ export async function serveCatalog(
               result: {
                 pid: process.pid,
                 startedAt,
-                sessions: catalog.list().length,
+                sessions: catalog.count,
                 version: PROTOCOL_VERSION,
                 rss: memory.rss,
                 heapUsed: memory.heapUsed,
