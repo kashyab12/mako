@@ -75,7 +75,7 @@
    * composer, settings, guide) share one column; compact floating surfaces
    * (palette, error card) share the other. A third width is a bug.
    */
-  --container-content: 760px;
+  --container-content: 800px;
   --container-dialog: 544px;
 
   /*
@@ -84,21 +84,22 @@
    * their own voices in .mako-prose. Tracking flips sign at small sizes —
    * optical compensation, not styling.
    */
-  --text-label: 11px;
+  --text-label: 12px;
   --text-label--line-height: 16px;
   --text-label--letter-spacing: 0.05px;
-  --text-ui: 13px;
-  --text-ui--line-height: 18px;
+  --text-code: var(--diffs-font-size);
+  --text-ui: 14px;
+  --text-ui--line-height: 20px;
   --text-ui--letter-spacing: -0.04px;
-  --text-title: 15px;
-  --text-title--line-height: 20px;
+  --text-title: 16px;
+  --text-title--line-height: 22px;
   --text-title--letter-spacing: -0.13px;
   /* The conversation's own size — the prompt bubble must match the prose
      that answers it, or the exchange reads as two different documents. */
   --text-welcome: clamp(22px, 3vw, 30px);
   --text-welcome--line-height: 1.12;
   --text-welcome--letter-spacing: -1px;
-  --text-prose: 15px;
+  --text-prose: 16px;
   --text-prose--line-height: 1.65;
   --text-prose--letter-spacing: -0.04px;
 
@@ -314,7 +315,7 @@ diffs-container {
     background: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
-    font-size: 13px;
+    font-size: var(--text-ui);
     line-height: 1.5;
     letter-spacing: -0.04px;
     font-weight: 440;
@@ -407,6 +408,59 @@ diffs-container {
     transform: scale(0.97);
   }
 
+  .stage-hit-target:active:not(:disabled) {
+    transform: none;
+  }
+
+  [data-commit-box][data-busy] .commit-editor::after {
+    content: "";
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    width: 35%;
+    height: 1px;
+    pointer-events: none;
+    opacity: 0.45;
+    background: linear-gradient(90deg, transparent, var(--foreground), transparent);
+    animation: git-progress 1.6s linear infinite;
+  }
+
+  [data-push-state="pushing"] > svg {
+    animation: git-upload 1.2s var(--ease-out) infinite;
+  }
+
+  .git-action-label {
+    animation: git-feedback 140ms var(--ease-out) both;
+  }
+
+  .git-loading [data-slot="skeleton"] {
+    animation-duration: 1.8s;
+  }
+
+  @keyframes git-progress {
+    from { transform: translateX(-110%); }
+    to { transform: translateX(400%); }
+  }
+
+  @keyframes git-upload {
+    0%, 100% { transform: translateY(2px); opacity: 0.5; }
+    50% { transform: translateY(-2px); opacity: 1; }
+  }
+
+  @keyframes git-feedback {
+    from { transform: translateY(2px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-commit-box][data-busy] .commit-editor::after,
+    [data-push-state="pushing"] > svg,
+    .git-action-label,
+    .git-loading [data-slot="skeleton"] {
+      animation: none;
+    }
+  }
+
   .thread-jump-scope[data-jump-hints] [data-thread-row][data-jump-index] {
     position: relative;
   }
@@ -453,6 +507,36 @@ diffs-container {
     background: var(--popover);
     border-radius: 10px;
     box-shadow: var(--elevation-overlay);
+  }
+
+  .application-dialog {
+    width: min(460px, calc(100vw - 32px));
+    max-height: calc(100svh - 32px);
+    overflow-y: auto;
+  }
+
+  .update-progress {
+    appearance: none;
+    border: 0;
+    border-radius: 999px;
+    background: var(--fill-hover);
+  }
+
+  .update-progress::-webkit-progress-bar {
+    background: var(--fill-hover);
+    border-radius: 999px;
+  }
+
+  .update-progress::-webkit-progress-value {
+    background: var(--foreground);
+    border-radius: 999px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .application-dialog {
+      animation: none;
+      transition: none;
+    }
   }
 
   /* Hairlines drawn at half a pixel, outside the border box. */
