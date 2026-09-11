@@ -7,7 +7,7 @@ import type {
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk"
 import type { SessionSettings } from "@mako/sessions/settings"
-import type { LiveSessionState } from "../../shared.js"
+import type { LiveSessionMode, LiveSessionState } from "../../shared.js"
 import type {
   ProviderLiveDriver,
   ProviderStartOptions,
@@ -23,6 +23,16 @@ import { ClaudeProjection } from "./sdk-projection.js"
 import { spawnClaudeProcess } from "./sdk-process.js"
 import { ClaudePermissions } from "./sdk-permissions.js"
 import { ClaudeTranscript } from "./sdk-transcript.js"
+
+/** Claude's permission modes, placed on the shared access ladder. */
+const CLAUDE_MODES: LiveSessionMode[] = [
+  { id: "default", name: "Ask for approval", access: "ask", enforcement: "provider" },
+  { id: "acceptEdits", name: "Accept edits", access: "edits", enforcement: "provider" },
+  { id: "plan", name: "Plan", access: "plan", enforcement: "provider" },
+  { id: "dontAsk", name: "Deny unapproved tools", access: "deny", enforcement: "provider" },
+  { id: "auto", name: "Automatic approval review", access: "auto", enforcement: "provider" },
+  { id: "bypassPermissions", name: "Bypass permissions", access: "full", enforcement: "provider" },
+]
 
 type ClaudeQuery = Pick<
   Query,
@@ -205,6 +215,7 @@ export function createClaudeSdkDriver(
     observesNativeAgents: true,
     canResume: true,
     forkPoint: "checkpoint",
+    steering: "step",
     available: () => dependencies.available(),
     async start(cwd, options) {
       if (!options.emit) throw new Error("A live event receiver is required")
@@ -279,13 +290,7 @@ export function createClaudeSdkDriver(
             : (options.resume ?? options.conversationId),
           status: "starting",
           connection: "starting",
-          modes: [
-            { id: "default", name: "Ask for approval" },
-            { id: "acceptEdits", name: "Accept edits" },
-            { id: "plan", name: "Plan" },
-            { id: "dontAsk", name: "Deny unapproved tools" },
-            { id: "auto", name: "Automatic approval review" },
-          ],
+          modes: CLAUDE_MODES,
           currentMode: null,
           configOptions: [],
           settings: options.tuning,

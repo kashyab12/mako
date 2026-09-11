@@ -31,6 +31,8 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { acpStore, type LiveAcpConversation } from "../src/state/acp"
 import { LiveActionStatus } from "../src/components/viewer/live-action-status"
 import { AcpPanel } from "../src/components/viewer/acp-panel"
+import { AccessModeList, LiveComposerControls, SteeringPreference } from "../src/components/composer/live-controls"
+import { threadsStore } from "../src/state/threads"
 import { TransferStatus } from "../src/components/viewer/transfer-status"
 import { ConversationRelations } from "../src/components/viewer/conversation-relations"
 
@@ -85,6 +87,41 @@ assert.match(authenticationMarkup, /Your prompt waits until sign-in succeeds/)
 assert.doesNotMatch(authenticationMarkup, /Choose how long to allow it/)
 conversation.permission = null
 conversation.session = { ...conversation.session, status: "ready", connection: "connected" }
+// The access picker shows one ladder: tier labels in tier order, the
+// provider's own name beside them, and who enforces a host-made tier.
+threadsStore.set({
+  liveCapabilities: [{ provider: "claude", canResume: true, canSteer: true, steering: "step", canCompact: true }],
+})
+conversation.session = {
+  ...conversation.session,
+  currentMode: "access:full",
+  modes: [
+    { id: "agent", name: "Agent", access: "ask", enforcement: "provider" },
+    { id: "plan", name: "Plan", access: "plan", enforcement: "provider" },
+    { id: "access:full", name: "Full access", access: "full", enforcement: "host" },
+    { id: "access:auto", name: "Auto review", access: "auto", enforcement: "launch" },
+    { id: "verbose", name: "Verbose", description: "Provider-only switch" },
+  ],
+}
+publish()
+const triggerMarkup = renderToStaticMarkup(<LiveComposerControls canCompact={false} compactEnabled={false} />)
+assert.match(triggerMarkup, /aria-label="Access: Full access"/)
+const steeringMarkup = renderToStaticMarkup(<SteeringPreference />)
+assert.match(steeringMarkup, /Enter steers the running turn/)
+assert.match(steeringMarkup, /reads your message at its next step/)
+const controlsMarkup = renderToStaticMarkup(
+  <AccessModeList modes={conversation.session.modes} current="access:full" harness="claude" onSelect={() => {}} />
+)
+const order = ["Plan", "Ask before acting", "Auto review", "Full access", "Verbose"].map((label) => controlsMarkup.indexOf(`<span class="truncate">${label}</span>`))
+assert.ok(order.every((index) => index >= 0), `every mode renders: ${order.join(",")}`)
+assert.deepEqual([...order].sort((a, b) => a - b), order, "the ladder renders least to most permissive, provider-only modes last")
+assert.match(controlsMarkup, /claude: Agent/)
+assert.match(controlsMarkup, /Mako approves the agent&#x27;s requests/)
+assert.match(controlsMarkup, /Set when the session starts/)
+assert.match(controlsMarkup, /Provider-only switch/)
+threadsStore.set({ liveCapabilities: [{ provider: "claude", canResume: true, canSteer: false, canCompact: true }] })
+assert.equal(renderToStaticMarkup(<SteeringPreference />), "", "no steering preference where the provider cannot steer")
+conversation.session = { ...conversation.session, currentMode: null, modes: [] }
 control.actions = [
   {
     input: { kind: "compact", id },

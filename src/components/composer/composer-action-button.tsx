@@ -6,6 +6,8 @@ interface ComposerActionButtonProps {
   action: ComposerActionKind
   ready: boolean
   stopping: boolean
+  /** What steering does with the message for this provider. */
+  steerTitle?: string
   onSend: () => void
   onStop: () => void
 }
@@ -22,11 +24,13 @@ export function ComposerActionButton({
   action,
   ready,
   stopping,
+  steerTitle,
   onSend,
   onStop,
 }: ComposerActionButtonProps) {
   const stop = action === "stop"
   const queue = action === "queue"
+  const steer = action === "steer"
   const enabled = stop || ready
   const label = stop
     ? stopping
@@ -34,14 +38,17 @@ export function ComposerActionButton({
       : "Stop"
     : queue
       ? "Queue message"
-      : "Send"
+      : steer
+        ? "Steer the running turn"
+        : "Send"
+  const title = steer && steerTitle ? steerTitle : label
   return (
     <button
       type="button"
       onClick={stop ? onStop : onSend}
       disabled={!enabled || (stop && stopping)}
       aria-label={label}
-      title={label}
+      title={title}
       className={cn(
         "composer-send pressable relative flex size-8 shrink-0 items-center justify-center rounded-none focus-visible:outline focus-visible:outline-offset-2 focus-visible:outline-ring",
         "[transition:transform_var(--duration-press)_var(--ease-out),background-color_160ms_ease,opacity_160ms_ease]",

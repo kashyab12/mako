@@ -26,6 +26,8 @@ import {
   type PendingServerRequest,
   type PermissionCallbacks,
 } from "./codex-app-permissions.js"
+import { codexAccessModes, codexAccessTier, codexTurnAccess } from "./providers/codex/access.js"
+import type { AccessTier } from "./contracts/access.js"
 import { boundedText, type JsonObject } from "./codex-app-json.js"
 import {
   consumeStdout,
@@ -59,6 +61,8 @@ type Live = {
   threadId: string | null
   promptSequence: number
   currentTurnId: string | null
+  /** The chosen tier; sent with every turn/start and kept by Codex afterwards. */
+  access: AccessTier | null
   state: LiveSessionState
   tuning?: Tuning
   conversationToolsUrl?: string
@@ -124,6 +128,7 @@ export async function codexAppStart(
     threadId: null,
     promptSequence: 0,
     currentTurnId: null,
+    access: null,
     state: {
       id,
       harness: "codex",
@@ -131,7 +136,7 @@ export async function codexAppStart(
       title: options.title,
       status: "starting",
       connection: "starting",
-      modes: [],
+      modes: codexAccessModes(),
       currentMode: null,
       configOptions: [],
     },
@@ -251,6 +256,7 @@ export async function codexAppPrompt(
       input: codexInput(text, attachments),
       cwd: live.cwd,
       ...codexWireSettings(tuning),
+      ...codexTurnAccess(live.access),
     })
     if (live.promptSequence === sequence) {
       const settings: SessionSettings = {
@@ -273,6 +279,14 @@ export async function codexAppPrompt(
     updateState(live, { status: "failed", error: message, lastStop: "failed" })
     throw new Error(message, { cause: error })
   }
+}
+
+/** Takes effect on the next turn/start; Codex has no mid-turn policy switch. */
+export function codexAppSetMode(id: string, modeId: string): void {
+  const live = sessions.get(id)
+  if (!live || live.exited) throw new Error("This Codex session is not running")
+  live.access = codexAccessTier(modeId)
+  updateState(live, { currentMode: modeId })
 }
 
 export function codexAppPermission(

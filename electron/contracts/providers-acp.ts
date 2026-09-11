@@ -1,8 +1,19 @@
+import type { AccessEnforcement, AccessTier } from "./access.js"
+
+/**
+ * How a mid-turn message reaches the running agent. `step` folds it into the
+ * running turn at the agent's next step; `interrupt` cancels the current step
+ * and continues with the message. A provider that can only queue a message
+ * behind the running turn advertises no steering at all.
+ */
+export type LiveSteering = "step" | "interrupt"
+
 export interface LiveCapability {
   provider: string
   canResume: boolean
   observesNativeAgents?: boolean
   canSteer?: boolean
+  steering?: LiveSteering
   canCompact?: boolean
 }
 
@@ -35,6 +46,18 @@ export interface HarnessProfile {
 /* Interactive foreign agents (ACP)                                    */
 /* ------------------------------------------------------------------ */
 
+/**
+ * One selectable mode. `access` places a provider's own mode on the shared
+ * ladder; a mode without it is provider-specific and shown as named.
+ */
+export interface LiveSessionMode {
+  id: string
+  name: string
+  access?: AccessTier
+  enforcement?: AccessEnforcement
+  description?: string
+}
+
 export interface LiveSessionState {
   nativeRunId?: string
   nativeForkId?: string
@@ -46,7 +69,7 @@ export interface LiveSessionState {
   cwd: string
   title?: string
   status: "starting" | "ready" | "running" | "failed" | "closed"
-  modes: Array<{ id: string; name: string }>
+  modes: LiveSessionMode[]
   currentMode: string | null
   configOptions: import("@mako/sessions/settings").ModelOption[]
   settings?: SessionSettings

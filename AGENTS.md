@@ -399,6 +399,41 @@ process through Quit/reopen, a retained question, and a second native window.
 Permission modes are saved only after provider acknowledgement, separately for
 each provider. New sessions apply that mode before their first prompt. Execution
 preferences sync between windows; draft text and preview layout remain separate.
+
+## Access tiers and steering
+
+`electron/contracts/access.ts` is the one ladder: plan, chat, ask, edits, auto,
+full, deny. A provider mode carries the tier it implements (`access`) and who
+makes it true (`enforcement`): the provider itself, the host answering the
+provider's permission requests, or a launch flag the running process already
+read. The picker orders by tier and shows the provider's own name beside it.
+Never show a tier nobody enforces. Host approval (`hostAccessDecision`) answers
+only allow/reject choices, never a question, and prefers once-scoped grants so
+a stricter tier chosen later is honoured by the agent's next ask. A mode id of
+the form `access:<tier>` is host-defined; anything else is the provider's own.
+
+Each ACP provider declares its placement in `access` on its `ProviderAcpSource`
+(`native`, `host`, `launch`, `base`); `electron/acp-access.ts` builds the mode
+list and resolves a selection, and `acp.ts` applies it. Verified on 2026-09-11
+against the installed CLIs: Cursor advertises agent/plan/ask, asks for every
+command, and ignores `--force`/`--yolo` under `acp`, so Accept edits and Full
+access are host-enforced on top of `agent`. Devin advertises all five tiers
+natively. Grok reads `--permission-mode` at launch and, in every mode except
+always-approve, denies tool calls over ACP instead of asking, so its tiers are
+launch-only. OpenCode reads `OPENCODE_PERMISSION` at launch; its remaining asks
+can be host-answered. Claude maps its own modes, with `bypassPermissions`
+allowed at launch so a later switch is accepted. Codex sends approval policy,
+sandbox, and reviewer with every `turn/start`; a change applies to the next
+turn. `test-access-modes.ts` covers the placements and decisions.
+
+Steering is a capability with a kind, not a command. `step` folds the message
+into the running turn at the agent's next step (Claude, Codex, Devin);
+`interrupt` cancels the current step and continues with the message (Cursor).
+Grok queues a concurrent prompt behind the whole turn, so it advertises no
+steering and messages queue honestly. Enter steers a steerable running turn and
+Cmd/Ctrl+Enter queues; the `steerOnEnter` preference swaps them. Re-verify a
+provider's kind with a real multi-step tool task before changing it: a single
+long generation cannot distinguish step delivery from turn-end delivery.
 Each renderer and web document owns its workspace pool and git target, selected
 through async request context. Provider conversations remain shared. A preview
 must never change another window's cwd, file target, or active workspace tab.

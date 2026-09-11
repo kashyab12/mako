@@ -25,7 +25,9 @@ export type {
   LiveCapability,
   LivePermissionRequest,
   PromptAttachment,
+  LiveSessionMode,
   LiveSessionState,
+  LiveSteering,
   LiveUpdate,
   EntryBlock,
   Harness,
@@ -137,3 +139,5 @@ export type {
 } from "../../electron/shared"
 
 export type { NativeRequest, NativeRequestInput } from "../../electron/shared"
+
+export type { AccessEnforcement, AccessTier } from "../../electron/contracts/access"

@@ -41,6 +41,7 @@ export const ClaudeModeSchema = z.enum([
   "plan",
   "dontAsk",
   "auto",
+  "bypassPermissions",
 ])
 export const ClaudeTuningSchema = z.object({
   effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),

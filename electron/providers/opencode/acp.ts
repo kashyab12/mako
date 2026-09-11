@@ -1,5 +1,6 @@
 import { z } from "zod"
 import type { ProviderAcpSource } from "../acp-source.js"
+import type { AccessTier } from "../../contracts/access.js"
 import {
   openCodeInstallation,
   openCodeSessionGeneration,
@@ -10,10 +11,37 @@ interface OpenCodeAcpConfig {
   agent?: { build: { variant: string } }
 }
 
+/**
+ * OpenCode decides what to ask through its `permission` config; the ACP
+ * server only forwards the asks that config leaves open. Read-only tools and
+ * questions never wait. The inline `OPENCODE_PERMISSION` overlay is read at
+ * process start, so the ladder is fixed for the session's life; the host can
+ * still answer the remaining asks for the tiers it enforces.
+ */
+function openCodePermission(access: AccessTier): string | undefined {
+  const open = { read: "allow", glob: "allow", grep: "allow", list: "allow", question: "allow", todowrite: "allow", lsp: "allow" }
+  switch (access) {
+    case "ask":
+      return JSON.stringify({ "*": "ask", ...open })
+    case "edits":
+      return JSON.stringify({ "*": "ask", ...open, edit: "allow" })
+    case "full":
+      return JSON.stringify("allow")
+    default:
+      return undefined
+  }
+}
+
 export const openCodeAcpSource: ProviderAcpSource = {
   provider: "opencode",
   canResume: true,
   launchOptionIds: ["effort"],
+  access: {
+    native: { plan: "plan" },
+    launch: ["ask", "edits", "full"],
+    host: ["edits", "full"],
+    base: "build",
+  },
   available: () => openCodeInstallation() !== null,
   async launch(options) {
     const generation = options.resume
@@ -25,6 +53,8 @@ export const openCodeAcpSource: ProviderAcpSource = {
       command: installation.command,
       args: ["acp"],
       configureEnvironment(env) {
+        const permission = options.access ? openCodePermission(options.access) : undefined
+        if (permission) env.OPENCODE_PERMISSION = permission
         if ((generation ?? installation.generation) === "v2" || !options.tuning)
           return
         const config: OpenCodeAcpConfig = {}

@@ -256,11 +256,13 @@ async function runElectron() {
         }
         const launchOnly = process.argv.includes("--launch-only")
         const launchBegan = performance.now()
+        // MAKO_E2E_MODE selects an access mode before launch, exactly as the
+        // desk does from a saved preference (for example `access:full`).
         await owner.start(driver.provider, cwd, {
           conversationId: id,
           title: "Mako disposable E2E fixture",
           tuning,
-          modeId: undefined,
+          modeId: process.env.MAKO_E2E_MODE || undefined,
           threadPath: undefined,
           displayPrompt: undefined,
         })
@@ -289,10 +291,15 @@ async function runElectron() {
           continue
         }
         const requestId = randomUUID()
+        // --shell asks for a command instead of a file read. The permission
+        // handler above rejects any command approval, so a completed shell
+        // turn proves the selected access mode answered it without the user.
         owner.submit(
           id,
           requestId,
-          "Read proof.txt in this workspace using your file tool. Reply with only the fixture value. This is an authorized disposable integration test. Do not modify files."
+          process.argv.includes("--shell")
+            ? "Run the shell command `cat proof.txt` with your terminal or shell tool and reply with only the fixture value it prints. This is an authorized disposable integration test. Do not modify files."
+            : "Read proof.txt in this workspace using your file tool. Reply with only the fixture value. This is an authorized disposable integration test. Do not modify files."
         )
         let completed = await waitFor(id, (snapshot) =>
           snapshot?.requests.some(
@@ -300,13 +307,15 @@ async function runElectron() {
               request.id === requestId && request.status === "completed"
           )
         )
+        result.currentMode = completed.session.currentMode
+        result.availableModeIds = completed.session.modes.map((mode) => mode.id)
         const response = completed.blocks
           .filter((block) => block.type === "text")
           .map((block) => block.text)
           .join("\n")
         if (!response.includes(nonce))
           throw new Error(
-            "The real response did not contain the value from the fixture file"
+            `The real response did not contain the value from the fixture file: ${JSON.stringify(response.slice(0, 600))}`
           )
         if (profile) {
           const controls =

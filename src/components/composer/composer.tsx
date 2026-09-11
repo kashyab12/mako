@@ -28,6 +28,8 @@ import {
 import { Banner } from "@/components/composer/banner"
 import { ComposerActionButton } from "@/components/composer/composer-action-button"
 import { ComposerRouting } from "@/components/composer/composer-routing"
+import { steeringTitle } from "@/components/composer/steering"
+import { usePrefs } from "@/state/prefs"
 import { ComposerAdditions } from "@/components/composer/composer-additions"
 import { ContextDial } from "@/components/composer/context-dial"
 import { harnessTitle } from "@/components/composer/harness-title"
@@ -585,7 +587,8 @@ export function Composer() {
     if (event.key === "Enter" && !event.shiftKey) {
       promptHistory.current = null
       event.preventDefault()
-      void submit(event.metaKey || event.ctrlKey ? "steer" : undefined)
+      const modified = event.metaKey || event.ctrlKey
+      void submit(modified !== steerOnEnter ? "steer" : undefined)
     }
     if (event.key === "Escape" && turnRunning) {
       event.preventDefault()
@@ -600,6 +603,13 @@ export function Composer() {
       (item) => item.provider === liveHarness && item.canSteer
     )
   )
+  const steeringKind = useThreads(
+    (state) =>
+      state.liveCapabilities.find((item) => item.provider === liveHarness)
+        ?.steering ?? null
+  )
+  const steerOnEnter = usePrefs((state) => state.steerOnEnter)
+  const steerTitle = steeringTitle(steeringKind)
   const liveRunning = useAcp((state) => {
     const active = activeAcp(state)
     return (
@@ -655,6 +665,7 @@ export function Composer() {
   const primaryAction = composerActionKind({
     running: turnRunning && hostConnected && !opening,
     hasContent,
+    steer: liveOwnsComposer && canSteer && steerOnEnter,
   })
   const viewingResumeUnavailable = useThreads(
     (state) => state.viewing?.ref.resumeUnavailable
@@ -879,17 +890,22 @@ export function Composer() {
                   type="button"
                   className="pressable rounded px-2 py-1 text-label text-muted-foreground hover:bg-fill-hover disabled:opacity-40"
                   disabled={!hasContent || !hostConnected || Boolean(opening)}
-                  onClick={() => void submit("steer")}
-                  title="Send this message to the active turn"
+                  onClick={() => void submit(steerOnEnter ? undefined : "steer")}
+                  title={
+                    steerOnEnter
+                      ? "Send after this turn finishes (Cmd+Enter)"
+                      : `${steerTitle} (Cmd+Enter)`
+                  }
                 >
-                  Steer
+                  {steerOnEnter ? "Queue" : "Steer"}
                 </button>
               ) : null}
               <ComposerActionButton
                 action={primaryAction}
                 ready={hasContent && !opening && hostConnected}
                 stopping={liveOwnsComposer && stopping}
-                onSend={() => void submit()}
+                steerTitle={steerTitle}
+                onSend={() => void submit(primaryAction === "steer" ? "steer" : undefined)}
                 onStop={() => void stopCurrentTurn()}
               />
             </div>

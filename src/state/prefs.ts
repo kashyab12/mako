@@ -48,6 +48,11 @@ export interface Prefs {
   railSortBy: RailSortBy
   railGrouping: "project" | "recent" | "archived"
   providerModes: PreferenceStringMap
+  /**
+   * Enter during a running turn steers it when the provider can; Cmd/Ctrl+Enter
+   * then queues for after the turn. Off swaps the two.
+   */
+  steerOnEnter: boolean
   collapsedGroups: string[]
   collapsedDirs: string[]
   /** Folders open in the project tree. Keys are folded paths, not path prefixes. */
@@ -110,6 +115,7 @@ const defaults: Prefs = {
   railSortBy: "recent",
   railGrouping: "project",
   providerModes: {},
+  steerOnEnter: true,
   collapsedGroups: [],
   collapsedDirs: [],
   openDirs: [],
@@ -331,6 +337,7 @@ function parsePrefs(value: JsonValue): Prefs | null {
     composerHarness: readComposerHarness(value.composerHarness),
     railGrouping: readChoice(value.railGrouping, ["project", "recent", "archived"], defaults.railGrouping),
     providerModes: readStringRecord(value.providerModes),
+    steerOnEnter: readBoolean(value.steerOnEnter, defaults.steerOnEnter),
     providerSettings: readProviderSettings(value.providerSettings, value.composerTuning),
     settingsOverrides: readSettingsOverrides(value.settingsOverrides),
     keybindings: readStringRecord(value.keybindings),

@@ -5,6 +5,7 @@ import type {
   PromptAttachment,
   LiveSessionState,
   LiveDriverEvent,
+  LiveSteering,
   McpRegistrySnapshot,
 } from "../shared.js"
 import type { LiveStartOptions } from "../contracts/live-conversations.js"
@@ -28,6 +29,8 @@ export interface ProviderStartOptions extends LiveStartOptions {
 export interface ProviderLiveDriver extends ProviderCapability {
   observesNativeAgents?: true
   steer?(id: string, input: ProviderSteerInput): Promise<ProviderSteerResult>
+  /** Required with `steer`; says what the provider does with the message. */
+  steering?: LiveSteering
   compact?(id: string): Promise<void>
   forkPoint?: "run" | "checkpoint"
   canResume: boolean

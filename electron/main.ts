@@ -12,7 +12,7 @@ import { ControlPreviews } from "./control-previews.js"
 import { RelayConversations } from "./relay-conversations.js"
 import { nativeCheckpoint, canResumeBinding } from "./native-continuation.js"
 import { NativeRequests } from "./native-requests.js"
-import type { NativeRequestInput } from "./shared.js"
+import type { LiveCapability, NativeRequestInput } from "./shared.js"
 import { startConversationMcp } from "./conversation-mcp.js"
 import { BrowserService } from "./browser-service.js"
 import { prepareBrowserExtension } from "./browser-extension-setup.js"
@@ -865,13 +865,17 @@ function bindIpc() {
     providerHost.liveDrivers
       .list()
       .filter((driver) => driver.available(app.getAppPath()))
-      .map((driver) => ({
-        provider: driver.provider,
-        canResume: driver.canResume,
-        observesNativeAgents: driver.observesNativeAgents === true,
-        canSteer: Boolean(driver.steer),
-        canCompact: Boolean(driver.compact),
-      }))
+      .map((driver) => {
+        const capability: LiveCapability = {
+          provider: driver.provider,
+          canResume: driver.canResume,
+          observesNativeAgents: driver.observesNativeAgents === true,
+          canSteer: Boolean(driver.steer),
+          canCompact: Boolean(driver.compact),
+        }
+        if (driver.steer && driver.steering) capability.steering = driver.steering
+        return capability
+      })
   )
   handle(
     "mako:live-start",

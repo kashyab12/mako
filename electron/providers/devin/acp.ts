@@ -10,6 +10,9 @@ export const devinAcpSource: ProviderAcpSource = {
   provider: "devin",
   canResume: true,
   steering: "concurrent-prompt",
+  access: {
+    native: { edits: "accept-edits", auto: "smart", chat: "ask", plan: "plan", full: "bypass" },
+  },
   available: () => devinExecutable() !== null,
   async launch() {
     return {

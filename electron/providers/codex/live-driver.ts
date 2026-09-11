@@ -21,9 +21,8 @@ export const codexLiveDriver: ProviderLiveDriver = {
   close: (id) => {
     void import("../../codex-app.js").then((module) => module.codexAppClose(id))
   },
-  setMode: async () => {
-    throw new Error(
-      "This provider uses model configuration instead of session modes"
-    )
+  steering: "step",
+  setMode: async (...args) => {
+    ;(await import("../../codex-app.js")).codexAppSetMode(...args)
   },
 }

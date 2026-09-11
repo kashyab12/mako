@@ -12,9 +12,10 @@ export function acpLiveDriver(source: ProviderAcpSource): ProviderLiveDriver {
     start: async (cwd, options) =>
       (await import("../acp.js")).liveStart(source.provider, cwd, options),
     prompt: async (...args) => (await import("../acp.js")).livePrompt(...args),
-    steer: source.steering === "concurrent-prompt"
+    steer: source.steering
       ? async (...args) => (await import("../acp.js")).liveSteer(...args)
       : undefined,
+    steering: source.steering === "interrupting-prompt" ? "interrupt" : source.steering ? "step" : undefined,
     permission: async (...args) => {
       ;(await import("../acp.js")).acpRespondPermission(...args)
     },

@@ -3,6 +3,9 @@ import { stripVTControlCharacters } from "node:util"
 import type { ProviderStartOptions, ProviderSteerInput, ProviderSteerResult } from "./providers/live-driver.js"
 import { AcpPromptTurn } from "./acp-prompt-turn.js"
 import { openAuthenticatedSession } from "./acp-authentication.js"
+import { acpInitialSelection, acpModeChange, acpSessionModes } from "./acp-access.js"
+import type { AcpLaunchOptions } from "./providers/acp-source.js"
+import { accessTierOfModeId, hostAccessDecision, type AccessTier } from "./contracts/access.js"
 /**
  * Interactive foreign agents, over ACP.
  *
@@ -96,6 +99,12 @@ interface Live {
   configOptions: SessionConfigOption[]
   mcpServers: McpServer[]
   turn: AcpPromptTurn | null
+  /** The tier the host enforces by answering permission requests. */
+  hostAccess: AccessTier | null
+  /** The tier the process was launched with, for providers that read it at start. */
+  launchAccess: AccessTier | null
+  /** The provider's own current mode, as it last reported it. */
+  nativeMode: string | null
 }
 
 const sessions = new Map<string, Live>()
@@ -178,12 +187,16 @@ export async function liveStart(
   options: ProviderStartOptions
 ): Promise<LiveSessionState> {
   const source = providerHost.acpSources.get(harness)
-  const spec = await source?.launch({
+  const requestedAccess = options.modeId ? accessTierOfModeId(options.modeId) : null
+  const launchAccess = requestedAccess && source?.access?.launch?.includes(requestedAccess) ? requestedAccess : null
+  const launchOptions: AcpLaunchOptions = {
     appPath: app.getAppPath(),
     execPath: process.execPath,
     resume: options.resume,
     tuning: options.tuning,
-  })
+  }
+  if (launchAccess) launchOptions.access = launchAccess
+  const spec = await source?.launch(launchOptions)
   if (!spec) throw new Error(`${harness} does not speak ACP here yet`)
 
   const id = options.conversationId
@@ -244,6 +257,9 @@ export async function liveStart(
     configOptions: [],
     mcpServers: [],
     turn: null,
+    hostAccess: null,
+    launchAccess,
+    nativeMode: null,
   }
   sessions.set(id, live)
 
@@ -266,6 +282,15 @@ export async function liveStart(
 
   const client: Client = {
     async requestPermission(params: RequestPermissionRequest) {
+      // The selected access tier answers first. It never answers a question
+      // (options outside allow/reject) and prefers once-scoped grants, so a
+      // stricter tier chosen later is honoured by the agent's next ask.
+      const decided = hostAccessDecision(live.hostAccess, {
+        toolKind: params.toolCall?.kind ?? undefined,
+        options: params.options,
+      })
+      if (decided !== null)
+        return { outcome: { outcome: "selected" as const, optionId: decided } }
       const requestId = `${id}-perm-${live.pendingPermissions.size}-${Date.now()}`
       const request: LivePermissionRequest = {
         id: requestId,
@@ -295,6 +320,10 @@ export async function liveStart(
     },
     async sessionUpdate(params: SessionNotification) {
       if (params.update.sessionUpdate === "config_option_update") live.configOptions = params.update.configOptions
+      if (params.update.sessionUpdate === "current_mode_update") {
+        acpObserveNativeMode(id, params.update.currentModeId)
+        return
+      }
       forward(live, params, emit, updateState, live.state.settings)
     },
   }
@@ -388,16 +417,23 @@ export async function liveStart(
     live.configOptions = session.configOptions
     live.state.settings = acpObservedSettings(session.configOptions, session.model)
     const applied = await applyTuning(live, options.tuning, true)
+    const policy = source?.access
+    const modes = acpSessionModes(policy, session.modes)
+    const selection = acpInitialSelection(policy, modes, session.modes, options.modeId)
+    live.nativeMode = session.modes?.currentModeId ?? null
+    live.hostAccess = selection.hostTier
+    // A host-enforced tier runs on the provider's base mode; a session that
+    // opened elsewhere (a resumed plan-mode session, say) is moved there first.
+    if (selection.hostTier && policy?.base && live.nativeMode !== policy.base) {
+      await connection.setSessionMode({ sessionId: session.sessionId, modeId: policy.base })
+      live.nativeMode = policy.base
+    }
     update(live, {
       nativeId: session.sessionId,
       status: "ready",
       connection: "connected",
-      modes:
-        session.modes?.availableModes.map((mode) => ({
-          id: mode.id,
-          name: mode.name,
-        })) ?? [],
-      currentMode: session.modes?.currentModeId ?? null,
+      modes,
+      currentMode: selection.currentMode,
       configOptions: normalizeAcpOptions(applied.options),
       settings: applied.settings,
     })
@@ -541,7 +577,7 @@ export async function liveSteer(id: string, input: ProviderSteerInput): Promise<
   if (!live?.sessionId || !live.connection)
     throw new Error("This interactive session is not connected")
   const turn = live.turn
-  if (providerHost.acpSources.get(live.harness)?.steering !== "concurrent-prompt" ||
+  if (!providerHost.acpSources.get(live.harness)?.steering ||
     live.state.status !== "running" || turn?.id !== input.expectedRunId || !turn.acceptsSteering)
     return { kind: "not-accepted", reason: "The provider turn has already changed or does not support steering" }
   const connection = live.connection
@@ -577,18 +613,51 @@ export function acpRespondPermission(
 export async function liveSetMode(id: string, modeId: string): Promise<void> {
   const live = sessions.get(id)
   if (!live?.sessionId || !live.connection) return
-  await live.connection.setSessionMode({ sessionId: live.sessionId, modeId })
-  live.configOptions = live.configOptions.map((option) =>
-    option.type === "select" && (option.category === "mode" || option.id === "mode")
-      ? { ...option, currentValue: modeId } : option
-  )
-  update(live, { currentMode: modeId, configOptions: normalizeAcpOptions(live.configOptions), settings: acpObservedSettings(live.configOptions, live.state.settings?.model) })
+  const policy = providerHost.acpSources.get(live.harness)?.access
+  const change = acpModeChange(policy, live.state.modes, modeId, live.launchAccess, live.nativeMode, live.harness)
+  if (change.kind === "unchanged") {
+    // Back on the tier the process was launched with: the provider enforces
+    // it alone again, so the host stops answering on the user's behalf.
+    live.hostAccess = null
+    update(live, { currentMode: change.modeId })
+    return
+  }
+  const nativeMode = change.kind === "native" ? change.modeId : change.baseMode
+  if (nativeMode) {
+    await live.connection.setSessionMode({ sessionId: live.sessionId, modeId: nativeMode })
+    live.nativeMode = nativeMode
+    live.configOptions = live.configOptions.map((option) =>
+      option.type === "select" && (option.category === "mode" || option.id === "mode")
+        ? { ...option, currentValue: nativeMode } : option
+    )
+  }
+  live.hostAccess = change.hostTier
+  update(live, { currentMode: change.modeId, configOptions: normalizeAcpOptions(live.configOptions), settings: acpObservedSettings(live.configOptions, live.state.settings?.model) })
+}
+
+/**
+ * The agent reported its own mode. While the host enforces a tier on top of
+ * the provider's base mode that report is the base and the shown mode stays;
+ * any other native switch (the agent entered plan mode, say) ends the host's
+ * tier so the picker never shows an access level nobody enforces.
+ */
+export function acpObserveNativeMode(id: string, nativeMode: string): void {
+  const live = sessions.get(id)
+  if (!live) return
+  live.nativeMode = nativeMode
+  const base = providerHost.acpSources.get(live.harness)?.access?.base
+  if (live.hostAccess && nativeMode === base) return
+  live.hostAccess = null
+  update(live, { currentMode: nativeMode })
 }
 
 export async function liveCancel(id: string): Promise<void> {
   const live = sessions.get(id)
   if (!live?.sessionId || !live.connection) return
   live.turn?.cancel()
+  // The protocol requires pending permission requests to settle as cancelled
+  // once the client cancels; an agent may otherwise wait on them forever.
+  for (const resolve of live.pendingPermissions.values()) resolve({ kind: "choice", optionId: null })
   await live.connection.cancel({ sessionId: live.sessionId })
 }
 

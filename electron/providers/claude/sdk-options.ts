@@ -3,7 +3,7 @@ import { accountEnv } from "../../accounts.js"
 import { resolveExecutable } from "../../executable.js"
 import { acpMcpServers } from "../../mcp-runtime.js"
 import type { ProviderStartOptions } from "../live-driver.js"
-import { ClaudeTuningSchema } from "./input.js"
+import { ClaudeModeSchema, ClaudeTuningSchema } from "./input.js"
 
 export async function claudeSdkOptions(
   cwd: string,
@@ -16,6 +16,7 @@ export async function claudeSdkOptions(
   if (env.CLAUDE_CODE_EXECUTABLE && !executable)
     throw new Error("The configured Claude Code executable is unavailable")
   const tuning = ClaudeTuningSchema.parse(input.tuning?.options ?? {})
+  const initialMode = ClaudeModeSchema.safeParse(input.modeId)
   if (tuning.agentTeams !== undefined)
     env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = tuning.agentTeams ? "1" : "0"
   if (!input.mcpSnapshot)
@@ -64,6 +65,11 @@ export async function claudeSdkOptions(
     resumeSessionAt: input.fork?.runId,
     model: input.tuning?.model,
     effort: tuning.effort,
+    // The launch tier, when one was chosen. The bypass capability is always
+    // granted at launch so a later switch to Full access through
+    // setPermissionMode is accepted; the mode itself stays explicit.
+    permissionMode: initialMode.success ? initialMode.data : undefined,
+    allowDangerouslySkipPermissions: true,
     settings: tuning.fast === undefined ? undefined : { fastMode: tuning.fast },
     settingSources: ["user", "project", "local"],
     systemPrompt: { type: "preset", preset: "claude_code" },

@@ -1,4 +1,4 @@
-export type ComposerActionKind = "send" | "queue" | "stop"
+export type ComposerActionKind = "send" | "queue" | "steer" | "stop"
 
 export function composerTurnRunning({
   builtinRunning,
@@ -24,10 +24,14 @@ export function composerTurnRunning({
 export function composerActionKind({
   running,
   hasContent,
+  steer = false,
 }: {
   running: boolean
   hasContent: boolean
+  /** The running turn takes messages now and the user prefers that over queueing. */
+  steer?: boolean
 }): ComposerActionKind {
   if (!running) return "send"
-  return hasContent ? "queue" : "stop"
+  if (!hasContent) return "stop"
+  return steer ? "steer" : "queue"
 }
