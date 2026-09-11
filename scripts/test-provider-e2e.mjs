@@ -116,6 +116,7 @@ async function runElectron() {
     await import("@mako/sessions/settings")
   const models = JSON.parse(process.env.MAKO_E2E_MODELS ?? "{}")
   const results = []
+  const authentications = new Map()
   const delegationParents = new Set()
   const delegationChildren = new Set()
   const requested = process.argv.slice(2).filter((arg) => !arg.startsWith("--"))
@@ -152,6 +153,7 @@ async function runElectron() {
           const once = permission.options.find(
             (option) => option.kind === "allow_once"
           )
+          const fixtureAuthentication = process.argv.includes("--launch-only") && snapshot.session.harness === "devin" && permission.kind === "authentication" && permission.options.length === 1 && permission.options[0].optionId === "devin-browser"
           const fixtureRead =
             permission.title === "Read File" &&
             reads.some((block) =>
@@ -171,6 +173,7 @@ async function runElectron() {
           if (
             !once ||
             (!fixtureRead &&
+              !fixtureAuthentication &&
               !capabilitiesRead &&
               !fixtureDelegation &&
               !fixtureChildWrite)
@@ -178,6 +181,7 @@ async function runElectron() {
             throw new Error(
               `Permission outside the fixture read grant: ${permission.title}`
             )
+          if (fixtureAuthentication) authentications.set(id, (authentications.get(id) ?? 0) + 1)
           await owner.permission(id, permission.id, {
             kind: "choice",
             optionId: once.optionId,
@@ -277,6 +281,7 @@ async function runElectron() {
           result.status = "passed"
           result.launchMs = performance.now() - launchBegan
           result.nativeIdentityReported = Boolean(state.nativeId)
+          result.authenticationConsents = authentications.get(id) ?? 0
           result.currentMode = state.currentMode
           result.availableModeIds = state.modes.map((mode) => mode.id)
           console.log(JSON.stringify(result))

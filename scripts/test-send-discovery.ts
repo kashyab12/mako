@@ -236,6 +236,10 @@ try {
     }),
     /not supported/
   )
+  const unavailable = { ...profile, available: false, error: "Provider is not signed in", models: [] }
+  loader.loadForSend = async () => unavailable
+  account = "unavailable-model-catalogue"
+  await assert.rejects(resolveHarnessLaunch(profile.id, "/unavailable", { model: "model-family", options: { effort: "high" } }), /not signed in/)
   console.log(
     "Send discovery: native defaults and native IDs avoid discovery; option validation, concurrent launches, account/workspace isolation, aliases, and full profile updates are preserved"
   )

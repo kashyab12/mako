@@ -422,6 +422,15 @@ properties into null or loosen the wire schema. `test-runtime-transport.ts` cove
 new-thread options, nested attachments/settings and invalid requests over a real
 socket. After building, `node scripts/test-shared-runtime.mjs --transport-only`
 checks both Electron client modes without starting a provider.
+`npm run test:provider-launch-options` exercises the production launch actions for
+all registered drivers and tests authentication refusal/cancellation. After building,
+`node scripts/test-provider-e2e.mjs --launch-only` initializes installed providers
+in disposable workspaces without prompts; it approves only the single advertised
+Devin browser sign-in method. Other authentication choices require user action.
+ACP session creation retries once only on `auth_required`, after explicit sign-in
+consent and successful provider-owned `authenticate` on the same connection.
+Never substitute CLI credentials or change the selected binary to bypass that gate.
+Interactive sign-in is cancellable and is not capped by the 20-second RPC deadline.
 Older installed binaries must finish their work before a one-time upgrade; do not
 merge their active journals or run a new host against an occupied profile.
 
@@ -494,7 +503,14 @@ Option-bearing settings still require the provider's launch catalogue, and legac
 preferences still need their authoritative option-name migration. Full default
 probes run behind that catalogue without mutating it. Account and real workspace
 paths key the caches. Discovery keeps at most four CLI processes, with no more than
-three background jobs so launch validation retains capacity.
+three background jobs so launch validation retains capacity. A failed launch
+catalogue must reject an explicit model selection with its actual discovery
+error; never forward an unresolved family ID and its options to ACP. Failed
+provider startup disconnects its resident and ignores late transport events.
+`test-send-discovery.ts` and `test-live-conversations.ts` cover these refusals.
+A provider login is verified by a fresh `auth status` and model discovery,
+not by the browser or login command's success message. Never borrow IDE
+credentials or switch binaries to evade an authentication boundary.
 
 `test:message-queue` covers these boundaries with held discovery promises and real
 fixture subprocesses. ACP and app-server startup must consume the host-provided

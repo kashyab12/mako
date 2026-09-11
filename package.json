@@ -48,7 +48,7 @@
     "verify:mac-release": "tsx scripts/verify-macos-release.ts",
     "test:plugins": "tsx scripts/test-plugins.ts",
     "test:providers": "tsx scripts/test-providers.ts && tsx scripts/test-codex-activity.ts && tsx scripts/test-opencode-activity.ts && tsx scripts/test-opencode-plugin.ts",
-    "test:provider-launch-options": "tsx --tsconfig tsconfig.app.json scripts/test-provider-launch-options.ts",
+    "test:provider-launch-options": "tsx --tsconfig tsconfig.app.json scripts/test-provider-launch-options.ts && tsx scripts/test-acp-authentication.ts && tsx scripts/test-devin-environment.ts",
     "test:skills": "tsx scripts/test-skills.ts",
     "test:stage": "tsx scripts/test-stage-layout.ts && tsx scripts/test-thread-opening.ts && tsx scripts/test-session-identity.ts && tsx scripts/test-ui-preferences.ts",
     "test:renderer-assets": "node scripts/test-renderer-assets.mjs && node --max-old-space-size=256 scripts/test-packaged-import-guards.mjs",

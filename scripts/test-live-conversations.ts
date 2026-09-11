@@ -439,6 +439,24 @@ async function coalescedToolBursts() {
   }
 }
 
+async function refusedStartup() {
+  const f = fixture()
+  try {
+    const requestId = randomUUID()
+    await f.owner.start("test-provider", "/tmp", { conversationId: f.id, initialRequest: { id: requestId, text: "Retain this prompt", attachments: [] } })
+    f.started.reject(new Error("Selected model is unavailable"))
+    await tick()
+    const failed = f.owner.snapshot(f.id)
+    assert.equal(failed?.session.connection, "disconnected")
+    assert.equal(failed?.session.error, "Selected model is unavailable")
+    assert.equal(failed?.requests[0]?.status, "failed")
+    f.owner.observe({ type: "acp-session", session: { ...f.state, status: "failed", error: "late stderr noise" } })
+    assert.equal(f.owner.snapshot(f.id)?.session.error, "Selected model is unavailable")
+    assert.deepEqual(f.sent, [])
+  } finally { f.cleanup() }
+}
+
+await refusedStartup()
 await coalescedToolBursts()
 await failureIsolationAndAssets()
 

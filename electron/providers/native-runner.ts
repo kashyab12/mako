@@ -13,6 +13,7 @@ export interface NativeCommand {
 
 export interface NativeRunner extends ProviderCapability {
   fastMode: "supported" | "unsupported"
+  configureEnvironment?(env: NodeJS.ProcessEnv): void
   resume(
     id: string,
     prompt: string,

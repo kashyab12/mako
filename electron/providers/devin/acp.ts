@@ -3,6 +3,7 @@ import { devinResumePolicy } from "./resume.js"
 import type { ProviderAcpSource } from "../acp-source.js"
 import { devinExecutable } from "./executable.js"
 import { devinPermissionTitle } from "./permissions.js"
+import { configureDevinEnvironment } from "./environment.js"
 
 export const devinAcpSource: ProviderAcpSource = {
   ...devinResumePolicy(),
@@ -14,7 +15,7 @@ export const devinAcpSource: ProviderAcpSource = {
     return {
       command: devinExecutable() ?? "devin",
       args: ["acp"],
-      configureEnvironment: () => {},
+      configureEnvironment: configureDevinEnvironment,
       permissionTitle: devinPermissionTitle,
       prepareMcp: prepareDevinMcp,
     }

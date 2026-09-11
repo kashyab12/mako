@@ -94,8 +94,13 @@ function Blocks({ starting = false }: { starting?: boolean }) {
       empty={
         <div className="mx-auto flex w-full max-w-content flex-col gap-4 px-6 py-6">
           <p className="pt-8 text-center text-ui leading-relaxed text-faint">
-            The session is loaded. Anything you send continues it — same
-            conversation, same working directory.
+            {session?.status === "failed"
+              ? session.error || "The provider could not open this session. Your saved message is preserved below."
+              : session?.connection === "disconnected"
+                ? "Saved conversation. The provider is not currently connected."
+                : running
+                  ? "Connecting to the provider. Your message is being kept until it is ready."
+                  : "The session is loaded. Anything you send continues it — same conversation, same working directory."}
           </p>
           <AcpActivity
             running={running}
@@ -162,7 +167,7 @@ function Permission() {
         <span className="min-w-0 truncate font-mono">{permission.title}</span>
       </p>
       <p className="pt-0.5 pb-2 text-label text-faint">
-        Choose how long to allow it.
+        {permission.kind === "authentication" ? "Continue with the provider's sign-in flow. Your prompt waits until sign-in succeeds." : "Choose how long to allow it."}
       </p>
       <div className="flex flex-wrap gap-1.5">
         {permission.options.map((option) => {
@@ -193,6 +198,11 @@ function Permission() {
             </button>
           )
         })}
+        {permission.kind === "authentication" ? (
+          <button type="button" onClick={() => acp.answerPermission(null)} className="pressable rounded-md border border-hairline px-2 py-1 text-label text-muted-foreground hover:text-foreground">
+            Cancel sign-in
+          </button>
+        ) : null}
       </div>
     </div>
   )

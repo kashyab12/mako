@@ -2,6 +2,7 @@ import { z } from "zod"
 import { stripVTControlCharacters } from "node:util"
 import type { ProviderStartOptions, ProviderSteerInput, ProviderSteerResult } from "./providers/live-driver.js"
 import { AcpPromptTurn } from "./acp-prompt-turn.js"
+import { openAuthenticatedSession } from "./acp-authentication.js"
 /**
  * Interactive foreign agents, over ACP.
  *
@@ -86,6 +87,7 @@ interface Live {
   sessionId: string | null
   state: LiveSessionState
   pendingPermissions: Map<string, (response: LivePermissionResponse) => void>
+  startup: AbortController
   promptCapabilities: {
     image?: boolean
     audio?: boolean
@@ -237,6 +239,7 @@ export async function liveStart(
       configOptions: [],
     },
     pendingPermissions: new Map(),
+    startup: new AbortController(),
     promptCapabilities: {},
     configOptions: [],
     mcpServers: [],
@@ -249,6 +252,8 @@ export async function liveStart(
     stderr = (stderr + chunk.toString()).slice(-4000)
   })
   child.on("exit", (code, signal) => {
+    live.startup.abort()
+    for (const resolve of live.pendingPermissions.values()) resolve({ kind: "choice", optionId: null })
     if (live.state.status === "closed") return
     update(live, {
       status: "failed",
@@ -329,35 +334,56 @@ export async function liveStart(
         )
       : []
     if (conversationMcp && mcpCapabilities?.http) live.mcpServers.push(conversationMcp)
-    const session = options.resume
-      ? parseLoadedAcpSession(
-          await startupStep(
-            connection.loadSession(
-              loadSessionRequest(
-                options.resume,
-                workingDir,
-                harness,
-                options.tuning,
-                live.mcpServers
-              )
+    const session = await openAuthenticatedSession({
+      methods: initialized.authMethods ?? [],
+      signal: live.startup.signal,
+      select: async (methods) => {
+        const requestId = `${id}-authenticate-${Date.now()}`
+        const request: LivePermissionRequest = {
+          id: requestId, sessionId: id, kind: "authentication",
+          title: `${harness} requires sign-in before opening this session. Choose the provider's sign-in method to continue.`,
+          options: methods.map((method) => ({ optionId: method.id, name: method.name, kind: "allow_once" })),
+        }
+        const response = await new Promise<LivePermissionResponse>((resolve) => {
+          live.pendingPermissions.set(requestId, resolve)
+          emit({ type: "acp-permission", request })
+        })
+        live.pendingPermissions.delete(requestId)
+        return response.kind === "choice" ? response.optionId : null
+      },
+      authenticate: async (methodId) => {
+        await connection.authenticate({ methodId })
+      },
+      open: async () => options.resume
+        ? parseLoadedAcpSession(
+            await startupStep(
+              connection.loadSession(
+                loadSessionRequest(
+                  options.resume,
+                  workingDir,
+                  harness,
+                  options.tuning,
+                  live.mcpServers
+                )
+              ),
+              harness
             ),
-            harness
-          ),
-          options.resume
-        )
-      : parseNewAcpSession(
-          await startupStep(
-            connection.newSession(
-              newSessionRequest(
-                workingDir,
-                harness,
-                options.tuning,
-                live.mcpServers
-              )
-            ),
-            harness
+            options.resume
           )
-        )
+        : parseNewAcpSession(
+            await startupStep(
+              connection.newSession(
+                newSessionRequest(
+                  workingDir,
+                  harness,
+                  options.tuning,
+                  live.mcpServers
+                )
+              ),
+              harness
+            )
+          ),
+    })
     live.sessionId = session.sessionId
     live.configOptions = session.configOptions
     live.state.settings = acpObservedSettings(session.configOptions, session.model)
@@ -570,6 +596,7 @@ export function liveClose(id: string): void {
   const live = sessions.get(id)
   if (!live) return
   update(live, { status: "closed" })
+  live.startup.abort()
   for (const resolve of live.pendingPermissions.values())
     resolve({ kind: "choice", optionId: null })
   live.child.kill()

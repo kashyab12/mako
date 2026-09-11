@@ -7,13 +7,15 @@ import { acpReadable, acpWritable } from "../../acp-stream.js"
 import { acpObservedSettings } from "../../acp-config.js"
 import { withDiscoveryProcess } from "../discovery-process.js"
 import { withDevinProbeWorkspace } from "./probe-workspace.js"
+import { devinEnvironment } from "./environment.js"
 
 /** Devin reports its effective model when opening a session, not in models/list. */
 export async function devinDefaultModel(
   executable: string,
-  env: NodeJS.ProcessEnv,
+  base: NodeJS.ProcessEnv,
   cwd: string
 ): Promise<string> {
+  const env = devinEnvironment(base)
   // Never leave empty discovery sessions in the user's history.
   return withDevinProbeWorkspace(executable, env, (workspace) =>
     withDiscoveryProcess(

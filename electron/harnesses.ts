@@ -76,7 +76,9 @@ export async function resolveHarnessLaunch(
     !Object.keys(tuning.options ?? {}).length
   )
     return tuning
-  return resolveHarnessTuning(await harnessProfileForSend(harness, cwd), tuning)
+  const profile = await harnessProfileForSend(harness, cwd)
+  if (!profile.available || profile.configurationError) throw new Error(profile.error ?? profile.configurationError ?? `${profile.label} model discovery is unavailable. Refresh its settings before sending.`)
+  return resolveHarnessTuning(profile, tuning)
 }
 
 async function loadProfile(

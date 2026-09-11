@@ -10,6 +10,7 @@ import { runDiscovery } from "../profile-transport.js"
 import { devinExecutable } from "./executable.js"
 import { devinDefaultModel } from "./settings.js"
 import { homedir } from "node:os"
+import { devinEnvironment } from "./environment.js"
 
 export const devinProfileLoader: ProviderProfileLoader = {
   provider: "devin",
@@ -27,8 +28,9 @@ export const devinProfileLoader: ProviderProfileLoader = {
     "mcp",
     "models",
   ],
-  cacheKey: () => "",
-  async load(env, cwd) {
+  cacheKey: (env) => JSON.stringify(["standalone", devinExecutable(), env.XDG_CONFIG_HOME ?? "", env.XDG_DATA_HOME ?? ""]),
+  async load(base, cwd) {
+    const env = devinEnvironment(base)
     const executable = devinExecutable()
     if (!executable) throw new Error("Devin CLI is not installed")
     const parsed: DevinModelListResponse = JSON.parse(

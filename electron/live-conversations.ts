@@ -436,11 +436,16 @@ export class LiveConversations {
       .catch((error) => {
         if (resident.generation !== generation) return
         resident.opening = false
+        resident.driver = null
+        resident.connections.clear()
+        driver.close(id)
         resident.snapshot = {
           ...resident.snapshot,
+          permissions: [],
           session: {
             ...resident.snapshot.session,
             status: "failed",
+            connection: "disconnected",
             error: errorMessage({ error }),
           },
           requests: resident.snapshot.requests.map((request) =>

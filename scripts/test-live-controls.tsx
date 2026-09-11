@@ -30,6 +30,7 @@ import assert from "node:assert/strict"
 import { renderToStaticMarkup } from "react-dom/server"
 import { acpStore, type LiveAcpConversation } from "../src/state/acp"
 import { LiveActionStatus } from "../src/components/viewer/live-action-status"
+import { AcpPanel } from "../src/components/viewer/acp-panel"
 import { TransferStatus } from "../src/components/viewer/transfer-status"
 import { ConversationRelations } from "../src/components/viewer/conversation-relations"
 
@@ -74,6 +75,16 @@ function publish() {
     conversations: { [id]: { ...conversation, control: { ...control } } },
   })
 }
+conversation.session = { ...conversation.session, status: "starting", connection: "starting" }
+conversation.permission = { id: "sign-in", sessionId: id, kind: "authentication", title: "Provider requires sign-in", options: [{ optionId: "browser", name: "Log in with browser", kind: "allow_once" }] }
+publish()
+const authenticationMarkup = renderToStaticMarkup(<AcpPanel />)
+assert.match(authenticationMarkup, /Log in with browser/)
+assert.match(authenticationMarkup, /Cancel sign-in/)
+assert.match(authenticationMarkup, /Your prompt waits until sign-in succeeds/)
+assert.doesNotMatch(authenticationMarkup, /Choose how long to allow it/)
+conversation.permission = null
+conversation.session = { ...conversation.session, status: "ready", connection: "connected" }
 control.actions = [
   {
     input: { kind: "compact", id },
