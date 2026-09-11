@@ -5,6 +5,7 @@ import { useThreads } from "@/state/thread-store"
 import { useSession } from "@/state/session"
 import { providerProfileKey, providers, useProviders } from "@/state/providers"
 import {
+  composerModelLabel,
   observedSessionSettings,
   resolveComposerSettingsInput,
   resolveSettingsTarget,
@@ -24,6 +25,12 @@ export function useComposerSettings(provider?: string) {
       harness: conversation?.harness,
       cwd: conversation?.cwd,
       path: conversation?.threadPath,
+      settingsTarget:
+        conversation?.kind === "starting"
+          ? conversation.settingsTarget
+          : undefined,
+      status:
+        conversation?.kind === "live" ? conversation.session.status : undefined,
       nativeId:
         conversation?.kind === "live"
           ? conversation.session.nativeId
@@ -49,6 +56,10 @@ export function useComposerSettings(provider?: string) {
   )
   const target = resolveSettingsTarget({ harness, ref, live, workspace })
   const key = settingsTargetKey(target)
+  // A native reply in flight: the file gains its model with the first answer.
+  const working = useThreads((state) =>
+    target.kind === "thread" ? Boolean(state.working[target.path]) : false
+  )
   const overrides = usePrefs((prefs) => prefs.settingsOverrides[key])
   const preference = usePrefs((prefs) => prefs.providerSettings[harness])
   const profile = useProviders(
@@ -92,10 +103,16 @@ export function useComposerSettings(provider?: string) {
         ? { options: live.options }
         : undefined,
   })
+  const reporting =
+    working ||
+    (live.harness === harness &&
+      (live.settingsTarget !== undefined ||
+        live.status === "starting" ||
+        live.status === "running"))
   const modelLabel =
     model?.label ??
     (resolved.model.kind === "known" ? resolved.model.value : undefined) ??
-    ((!profile || profile.pending) && !error ? "Loading model…" : "Model unavailable")
+    composerModelLabel({ target, profile, error, reporting })
   return {
     target,
     profile,

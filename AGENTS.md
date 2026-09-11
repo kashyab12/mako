@@ -555,6 +555,11 @@ catalogue must reject an explicit model selection with its actual discovery
 error; never forward an unresolved family ID and its options to ACP. Failed
 provider startup disconnects its resident and ignores late transport events.
 `test-send-discovery.ts` and `test-live-conversations.ts` cover these refusals.
+A starting conversation has no session settings; the composer resolves it
+through the target the send used, so the model control never reads
+"unavailable" while a provider starts. Only a failed profile is unavailable;
+a session that has not reported its model yet is loading.
+`test-composer-settings.ts` covers this.
 A provider login is verified by a fresh `auth status` and model discovery,
 not by the browser or login command's success message. Never borrow IDE
 credentials or switch binaries to evade an authentication boundary.

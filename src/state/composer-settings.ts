@@ -81,6 +81,8 @@ export function currentSettingsTarget(
           harness: live.harness,
           cwd: live.cwd,
           path: live.threadPath,
+          settingsTarget:
+            live.kind === "starting" ? live.settingsTarget : undefined,
         }
       : undefined,
     workspace: store.get().meta?.cwd,
@@ -90,17 +92,50 @@ export function currentSettingsTarget(
 export function resolveSettingsTarget(input: {
   harness: string
   ref?: ThreadRef
-  live?: { id?: string; harness?: string; cwd?: string; path?: string }
+  live?: {
+    id?: string
+    harness?: string
+    cwd?: string
+    path?: string
+    /** The target a starting conversation was sent with, until the provider reports its session. */
+    settingsTarget?: ComposerTarget
+  }
   workspace?: string
 }): ComposerTarget {
   const { harness, ref, live, workspace } = input
   if (live?.harness === harness && live.id) {
+    // A conversation that is still starting has no session settings of its
+    // own. Resolving it as an existing session would drop the provider
+    // default and the saved preference the send was built from, and the
+    // model control would read "unavailable" until the provider answered.
+    // The send target it carries is exactly what the user was shown.
+    if (live.settingsTarget?.harness === harness) return live.settingsTarget
     return live.path
       ? { kind: "thread", path: live.path, harness, cwd: live.cwd ?? "" }
       : { kind: "live", id: live.id, harness, cwd: live.cwd ?? "" }
   }
   if (ref?.harness === harness) return threadSettingsTarget(ref)
   return { kind: "new", harness, cwd: ref?.cwd ?? live?.cwd ?? workspace ?? "" }
+}
+
+/**
+ * What the model control says when nothing resolves. Only a failed profile is
+ * "unavailable"; a session that has not reported its model yet is loading,
+ * and a finished conversation without one simply never recorded it.
+ */
+export function composerModelLabel(input: {
+  target: ComposerTarget
+  profile?: HarnessProfile
+  error?: string
+  /** The session is starting or answering, so its report is still on the way. */
+  reporting: boolean
+}): string {
+  const { profile } = input
+  if (input.error) return "Model unavailable"
+  if (!profile || profile.pending) return "Loading model…"
+  if (!profile.available) return "Model unavailable"
+  if (input.target.kind === "new") return "Choose a model"
+  return input.reporting ? "Loading model…" : "Model not recorded"
 }
 
 export function settingsSession(
