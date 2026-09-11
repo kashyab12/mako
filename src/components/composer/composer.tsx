@@ -75,15 +75,6 @@ import {
 import { threads, threadsStore, useThreads } from "@/state/threads"
 import { XIcon, Maximize2Icon, Minimize2Icon } from "lucide-react"
 
-interface CommandMention {
-  sigil: "/"
-  query: string
-  start: number
-  end: number
-}
-
-type ComposerMention = ActiveMention | CommandMention
-
 type ComposerTextEvent = CustomEvent<string>
 type ComposerDraftEvent = CustomEvent<{
   text: string
@@ -150,7 +141,10 @@ export function Composer() {
   const storedDraft = savedDraft?.text ?? ""
   const draft = restoreAttachmentReferences(storedDraft, attachments.items)
   const draftPlans = savedDraft?.plans
-  const [mention, setMention] = useState<ComposerMention | null>(null)
+  const [mention, setMention] = useState<ActiveMention | null>(null)
+  // The menu can be open with nothing to show (`$5`); then the textarea keeps
+  // its keys, so Enter still sends.
+  const [menuVisible, setMenuVisible] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const textarea = useRef<HTMLTextAreaElement>(null)
@@ -244,20 +238,7 @@ export function Composer() {
     const node = textarea.current
     if (!node) return
     const caret = node.selectionStart ?? 0
-    const found = mentionAt(node.value, caret)
-    // `/` only opens a menu at the very start of an empty-ish draft, the way
-    // slash commands work everywhere else.
-    const slash = /^\/([\w-]*)$/.exec(node.value)
-    if (slash) {
-      setMention({
-        sigil: "/",
-        query: slash[1] ?? "",
-        start: 0,
-        end: node.value.length,
-      })
-      return
-    }
-    setMention(found)
+    setMention(mentionAt(node.value, caret))
   }, [])
 
   /*
@@ -501,13 +482,6 @@ export function Composer() {
   const pick = useCallback(
     (value: string) => {
       if (!mention) return
-      if (value.startsWith("/")) {
-        update("")
-        setMention(null)
-        void actions.runCommand(value.slice(1))
-        return
-      }
-      if (mention.sigil === "/") return
       const next = replaceMention(draft, mention, value)
       update(next.text)
       if (value.startsWith("@thread:")) {
@@ -527,9 +501,10 @@ export function Composer() {
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.nativeEvent.isComposing) return
-    // The mention menu owns navigation keys while it is open.
+    // The mention menu owns navigation keys while it is showing rows.
     if (
       mention &&
+      menuVisible &&
       ["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"].includes(event.key)
     )
       return
@@ -757,6 +732,7 @@ export function Composer() {
               kind={mention.sigil}
               query={mention.query}
               onPick={pick}
+              onVisibility={setMenuVisible}
               onDismiss={() => {
                 setMention(null)
                 textarea.current?.focus()

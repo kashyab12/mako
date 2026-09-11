@@ -21,6 +21,14 @@ export const skillsStore = createStore<SkillsState>({
 export const useSkills = createHook(skillsStore)
 
 export const skills = {
+  /** Load once per workspace; the composer calls this when its menu opens. */
+  ensure(cwd: string) {
+    const state = skillsStore.get()
+    if (state.status === "loading" || state.status === "syncing") return
+    if (state.snapshot && (!cwd || state.snapshot.cwd === cwd)) return
+    void skills.load()
+  },
+
   async load() {
     if (!hasBridge()) return
     skillsStore.set({ status: "loading", error: undefined })

@@ -11,6 +11,7 @@ import { backendConnectionCredentials } from "./backend-connection.js"
 import { cuaEmbeddedSocket } from "./cua-embedded.js"
 import { environmentForExecutable, resolveExecutable } from "./executable.js"
 import type { JsonObject, JsonValue } from "./codex-app-json.js"
+import { projectedMcpServers } from "./contracts/mcp-reach.js"
 import type {
   McpProvider,
   McpRegistryProviderStatus,
@@ -689,42 +690,12 @@ export function projectPortableDefinitions(
     .map(safeDefinition)
 }
 
-const MAKO_RUNTIME_SERVERS = new Set([
-  "mako-browser-use",
-  "mako-local-tools",
-  "mako-local-control",
-  "mako-backend",
-])
-
 export function projectRuntimeDefinitions(
   snapshot: McpRegistrySnapshot,
   provider: McpProvider,
   transports: readonly McpTransport[]
 ): McpServerDefinition[] {
-  const nativeNames = new Set(
-    snapshot.servers
-      .filter(
-        (server) =>
-          server.availability !== "unavailable" &&
-          server.origins.some((origin) => origin.provider === provider)
-      )
-      .map((server) => server.name)
+  return projectedMcpServers(snapshot, provider, transports).map(
+    safeDefinition
   )
-  return snapshot.servers
-    .filter((server) => {
-      const managed = server.origins.some(
-        (origin) => origin.provider === "mako"
-      )
-      const managedRuntime =
-        MAKO_RUNTIME_SERVERS.has(server.name) && !server.blockReason
-      return (
-        (server.portable || managedRuntime) &&
-        !server.conflict &&
-        server.availability !== "unavailable" &&
-        transports.includes(server.transport) &&
-        !nativeNames.has(server.name) &&
-        (!managed || managedRuntime)
-      )
-    })
-    .map(safeDefinition)
 }

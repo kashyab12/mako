@@ -10,6 +10,7 @@ import {
 } from "@/lib/parsed-markdown"
 import {
   FileChip,
+  McpChip,
   SkillChip,
   ThreadChip,
 } from "@/components/composer/reference-chip"
@@ -252,6 +253,7 @@ function CitationLink({ href, children }: ComponentProps<"a">) {
       <ThreadChip harness={reference.harness} nativeId={reference.nativeId} />
     )
   if (reference?.kind === "skill") return <SkillChip name={reference.name} />
+  if (reference?.kind === "mcp") return <McpChip name={reference.name} />
   const target = markdownFileTarget(href)
   if (!href)
     return (

@@ -1,7 +1,9 @@
-import { fileKind, threadToken } from "@/lib/mentions"
+import { capabilityToken, fileKind, threadToken } from "@/lib/mentions"
+import { isMakoServerName } from "@/lib/composer-capabilities"
 import { fileName } from "@/lib/format"
 import { desktop } from "@/state/desktop"
 import { useThreads } from "@/state/threads"
+import { MakoMark } from "@/components/ui/mako-mark"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { cn } from "@/lib/utils"
 import {
@@ -12,6 +14,7 @@ import {
   FileTextIcon,
   ImageIcon,
   PaletteIcon,
+  PlugIcon,
 } from "lucide-react"
 
 const KIND_ICON = {
@@ -105,18 +108,39 @@ export function ThreadChip({
   )
 }
 
+const capabilityChipClass = cn(
+  "inline-flex items-baseline gap-1 rounded bg-fill-selected px-1 align-baseline",
+  "font-mono text-[0.92em] leading-[1.35] text-foreground ring-1 ring-border ring-inset",
+  "[&_svg]:translate-y-[1.5px]"
+)
+
 export function SkillChip({ name }: { name: string }) {
   return (
     <span
       title={`Skill: ${name}`}
-      data-copy-reference={`$${name}`}
-      className={cn(
-        "inline-flex items-baseline gap-1 rounded bg-fill-selected px-1 align-baseline",
-        "font-mono text-[0.92em] leading-[1.35] text-foreground ring-1 ring-border ring-inset",
-        "[&_svg]:translate-y-[1.5px]"
-      )}
+      data-copy-reference={capabilityToken("$", "skill", name)}
+      className={capabilityChipClass}
     >
       <BookOpenIcon className="size-3 shrink-0 text-muted-foreground" />
+      {name}
+    </span>
+  )
+}
+
+/** An MCP server the prompt points the agent at; Mako's own wear the fin. */
+export function McpChip({ name }: { name: string }) {
+  const builtIn = isMakoServerName(name)
+  return (
+    <span
+      title={builtIn ? `Built-in Mako MCP server: ${name}` : `MCP server: ${name}`}
+      data-copy-reference={capabilityToken("$", "mcp", name)}
+      className={capabilityChipClass}
+    >
+      {builtIn ? (
+        <MakoMark className="size-3 shrink-0 text-foreground" />
+      ) : (
+        <PlugIcon className="size-3 shrink-0 text-muted-foreground" />
+      )}
       {name}
     </span>
   )

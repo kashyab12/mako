@@ -23,7 +23,7 @@ export const ReferenceOverlay = memo(function ReferenceOverlay({
   const pieces = []
   let cursor = 0
   for (const range of ranges) {
-    pieces.push(...tokenize(text.slice(cursor, range.start)))
+    pieces.push(...tokenize(text.slice(cursor, range.start), cursor === 0))
     pieces.push({
       kind: "attachment" as const,
       item: range.item,
@@ -31,7 +31,7 @@ export const ReferenceOverlay = memo(function ReferenceOverlay({
     })
     cursor = range.end
   }
-  const segments = [...pieces, ...tokenize(text.slice(cursor))]
+  const segments = [...pieces, ...tokenize(text.slice(cursor), cursor === 0)]
 
   return (
     <div

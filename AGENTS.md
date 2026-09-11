@@ -337,7 +337,16 @@ files, and diffs for that thread, never more sessions.
 
 The composer groups file attachments, screenshots, references, skills, and MCP
 settings under one + popover. `composer.controls` contributions render inside
-that menu and may dismiss it before capture. Terminal remains on Command-J and
+that menu and may dismiss it before capture. Typing `$` anywhere or `/` at the
+start of an empty draft opens one capability menu listing the skills and MCP
+servers the *selected* provider will actually have: skills from that provider's
+own roots plus the universal `.agents/skills` roots, and servers from the same
+reach predicate the host projects into a launch (`electron/contracts/mcp-reach.ts`,
+plus the launch-attached conversation tools). Mako's managed servers wear the
+fin. A pick inserts plain text in the sigil typed (`$name`, `/name`,
+`$mcp:server`); providers receive exactly that text. Skills installed only for
+other providers are a count in the footer that opens Settings, never a row.
+`scripts/test-composer-capabilities.ts` covers the tokens, reach, and ranking. Terminal remains on Command-J and
 in the command palette, not as an extra composer icon. Context usage is shown
 only with an exact, usable reading; unsupported providers do not get an empty
 ring. Chat activity uses one compact 20px mark and no redundant Responding row

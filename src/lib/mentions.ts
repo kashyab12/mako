@@ -1,10 +1,12 @@
 /**
  * Composer references.
  *
- * `@path/to/file`, `@thread:…`, and `$skill-name` are plain text in the draft.
- * The selected provider receives exactly what is on screen plus any prepared
- * transcript bundles they reference. The tokenizer lets the same string render as
- * chips in the composer and in the transcript.
+ * `@path/to/file`, `@thread:…`, `$skill-name`, and `$mcp:server` are plain
+ * text in the draft, and a draft may open with `/skill-name` the way every
+ * agent CLI's slash invocation does. The selected provider receives exactly
+ * what is on screen plus any prepared transcript bundles they reference. The
+ * tokenizer lets the same string render as chips in the composer and in the
+ * transcript.
  */
 
 export type Segment =
@@ -12,6 +14,10 @@ export type Segment =
   | { kind: "file"; path: string; raw: string }
   | { kind: "thread"; harness: string; nativeId: string; raw: string }
   | { kind: "skill"; name: string; raw: string }
+  | { kind: "mcp"; name: string; raw: string }
+
+export type CapabilityKind = "skill" | "mcp"
+export type CapabilitySigil = "$" | "/"
 
 /**
  * A file token runs to the next whitespace. Paths do not contain spaces often
@@ -20,14 +26,37 @@ export type Segment =
  */
 const TOKEN = /(^|\s)([@$])([^\s]+)/g
 
-export function tokenize(text: string): Segment[] {
+/**
+ * A slash invocation only counts at the very start of the draft and only
+ * with a skill-shaped name, so `/Users/me/file.ts` stays a path and `/` alone
+ * stays a character the user is still typing.
+ */
+const LEADING_SLASH = /^\/((?:mcp:)?[a-z0-9][\w.-]*)(?=\s|$)/i
+
+const MCP_PREFIX = "mcp:"
+
+function capabilitySegment(sigil: string, body: string): Segment {
+  const raw = `${sigil}${body}`
+  return body.startsWith(MCP_PREFIX)
+    ? { kind: "mcp", name: body.slice(MCP_PREFIX.length), raw }
+    : { kind: "skill", name: body, raw }
+}
+
+/** Split text into prose and reference segments. `leading` is false for a slice that does not start the draft. */
+export function tokenize(text: string, leading = true): Segment[] {
   const segments: Segment[] = []
   let cursor = 0
+
+  const slash = leading ? LEADING_SLASH.exec(text) : null
+  if (slash?.[1]) {
+    segments.push(capabilitySegment("/", slash[1]))
+    cursor = slash[0].length
+  }
 
   for (const match of text.matchAll(TOKEN)) {
     const [, lead, sigil, matchedBody] = match
     const start = (match.index ?? 0) + lead.length
-    if (!matchedBody) continue
+    if (!matchedBody || start < cursor) continue
 
     if (start > cursor) segments.push({ kind: "text", text: text.slice(cursor, start) })
 
@@ -44,7 +73,7 @@ export function tokenize(text: string): Segment[] {
         ? { kind: "thread", ...thread, raw }
         : sigil === "@"
           ? { kind: "file", path: body, raw }
-          : { kind: "skill", name: body, raw }
+          : capabilitySegment(sigil, body)
     )
     cursor = start + raw.length
   }
@@ -56,13 +85,22 @@ export function tokenize(text: string): Segment[] {
 
 export function hasReferences(text: string): boolean {
   TOKEN.lastIndex = 0
-  return TOKEN.test(text)
+  return LEADING_SLASH.test(text) || TOKEN.test(text)
 }
 
 export function threadToken(harness: string, nativeId: string): string {
   // The full native id keeps the token collision-safe. Older drafts containing
   // shortened ids still resolve when their prefix identifies exactly one thread.
   return `@thread:${encodeURIComponent(harness)}:${encodeURIComponent(nativeId)}`
+}
+
+/** The text a picked skill or MCP server inserts, in the sigil the user typed. */
+export function capabilityToken(
+  sigil: CapabilitySigil,
+  kind: CapabilityKind,
+  name: string
+): string {
+  return `${sigil}${kind === "mcp" ? MCP_PREFIX : ""}${name}`
 }
 
 export function parseThreadToken(body: string): { harness: string; nativeId: string } | null {
@@ -77,7 +115,7 @@ export function parseThreadToken(body: string): { harness: string; nativeId: str
 
 /** The reference being typed at the caret, if any. */
 export interface ActiveMention {
-  sigil: "@" | "$"
+  sigil: "@" | "$" | "/"
   query: string
   /** Offsets of the token in the source string, for replacement. */
   start: number
@@ -85,6 +123,14 @@ export interface ActiveMention {
 }
 
 export function mentionAt(text: string, caret: number): ActiveMention | null {
+  // `/` opens a menu only while the draft is nothing but that one token, the
+  // way slash commands work everywhere else; a path later in a sentence is
+  // just a path.
+  const head = text.slice(0, caret)
+  if (/^\/[^\s]*$/.test(head)) {
+    return { sigil: "/", query: head.slice(1), start: 0, end: caret }
+  }
+
   // Scan back from the caret to the sigil, stopping at whitespace.
   let index = caret - 1
   while (index >= 0 && !/\s/.test(text[index])) {

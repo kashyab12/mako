@@ -178,13 +178,13 @@ export function attachmentPromptSegments(
   let cursor = 0
   for (const match of matches) {
     if (match.start < cursor) continue
-    segments.push(...tokenize(text.slice(cursor, match.start)), {
+    segments.push(...tokenize(text.slice(cursor, match.start), cursor === 0), {
       kind: "attachment",
       file: match.file,
     })
     cursor = match.end
   }
-  return [...segments, ...tokenize(text.slice(cursor))]
+  return [...segments, ...tokenize(text.slice(cursor), cursor === 0)]
 }
 
 export function mergeAttachmentDraft(

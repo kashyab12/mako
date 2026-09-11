@@ -29,6 +29,14 @@ export const mcpStore = createStore<McpState>({
 export const useMcp = createHook(mcpStore)
 
 export const mcp = {
+  /** Load once per workspace; the composer calls this when its menu opens. */
+  ensure(cwd: string) {
+    const state = mcpStore.get()
+    if (state.status === "loading" || state.status === "syncing") return
+    if (state.snapshot && (!cwd || state.snapshot.cwd === cwd)) return
+    void mcp.load()
+  },
+
   async prepareBrowser() {
     if (mcpStore.get().preparingBrowser) return
     mcpStore.set({ preparingBrowser: true, error: undefined })
