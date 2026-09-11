@@ -53,6 +53,14 @@ const CACHE_SAVE_DEBOUNCE_MS = 2000
 
 /** Rescan cadence where recursive watching is unavailable. Stat-only. */
 const POLL_FALLBACK_MS = 30_000
+/**
+ * How often files that changed recently are stat-ed while watching. A
+ * watcher can miss a burst of appends to a session another app is writing,
+ * and a row that stays at its first few kilobytes for an hour is what that
+ * looks like. Recent files are few, so this is a handful of stats.
+ */
+const ACTIVE_RECONCILE_MS = 15_000
+const ACTIVE_WINDOW_MS = 2 * 3600_000
 const workspaceRoots = new Map<string, string>()
 
 async function forEachConcurrent<T>(
@@ -95,6 +103,16 @@ function workspaceOf(cwd: string | undefined): string | undefined {
   return path
 }
 
+async function refined(
+  provider: SessionProvider,
+  ref: ThreadRef,
+  fromByte: number
+): Promise<ThreadRef> {
+  if (!provider.refine) return ref
+  const next = await provider.refine(ref, fromByte).catch(() => ref)
+  return withWorkspace(next) ?? ref
+}
+
 function withWorkspace(ref: ThreadRef | null): ThreadRef | null {
   if (!ref) return null
   const workspace = workspaceOf(ref.cwd)
@@ -110,6 +128,7 @@ function withThreadWorkspace(thread: Thread | null): Thread | null {
 export class SessionCatalog {
   private providers: SessionProvider[]
   private pollTimer: NodeJS.Timeout | null = null
+  private activeTimer: NodeJS.Timeout | null = null
   private byPath = new Map<string, CacheEntry>()
   private orderedRefs: ThreadRef[] | null = null
   private cachePath?: string
@@ -349,6 +368,35 @@ export class SessionCatalog {
       }
     }
     if (unwatchable) this.ensurePolling()
+    if (!this.activeTimer) {
+      this.activeTimer = setInterval(() => {
+        void this.reconcileActive()
+      }, ACTIVE_RECONCILE_MS)
+      this.activeTimer.unref?.()
+    }
+  }
+
+  /**
+   * Stat every followed or recently updated file and refresh the ones the
+   * watcher did not report. Bounded to the active set; a full scan stays the
+   * job of the polling fallback.
+   */
+  async reconcileActive(now = Date.now()): Promise<void> {
+    const since = new Date(now - ACTIVE_WINDOW_MS).toISOString()
+    const candidates: string[] = []
+    for (const [path, entry] of this.byPath) {
+      if (this.follows.has(path) || (entry.ref?.updatedAt ?? "") >= since)
+        candidates.push(path)
+    }
+    await forEachConcurrent(candidates, 4, async (path) => {
+      const provider = this.ownerOf(path)
+      if (!provider || provider.rescanRoot) return
+      const cached = this.byPath.get(path)
+      const info = await stat(path).catch(() => null)
+      if (!cached || !info?.isFile()) return
+      if (cached.bytes === info.size && cached.mtimeMs === info.mtimeMs) return
+      await this.refresh(provider, path)
+    })
   }
 
   onEvent(listener: (event: CatalogEvent) => void): () => void {
@@ -398,6 +446,10 @@ export class SessionCatalog {
     if (this.pollTimer) {
       clearInterval(this.pollTimer)
       this.pollTimer = null
+    }
+    if (this.activeTimer) {
+      clearInterval(this.activeTimer)
+      this.activeTimer = null
     }
     for (const timer of this.pending.values()) clearTimeout(timer)
     this.pending.clear()
@@ -605,15 +657,29 @@ export class SessionCatalog {
     )
       return
 
+    // An appended file keeps its identity, so the cached ref is reused with
+    // fresh size and time. That shortcut is only safe once the peek found
+    // what it names the row by: a session captured before its first prompt
+    // was written (a fresh Codex rollout is one metadata line) would
+    // otherwise stay untitled for its whole life. Providers with a separate
+    // title store refine the reused ref so a late native name still lands.
     const grew = cached && file.bytes > cached.bytes
-    const ref =
-      grew && cached.ref
-        ? {
-            ...cached.ref,
+    const previous = cached && grew ? cached.ref : null
+    const reusable =
+      cached && previous && previous.title !== undefined && previous.model !== undefined
+        ? { ref: previous, fromByte: cached.bytes }
+        : null
+    const ref = reusable
+      ? await refined(
+          provider,
+          {
+            ...reusable.ref,
             bytes: file.bytes,
             updatedAt: new Date(file.mtimeMs).toISOString(),
-          }
-        : withWorkspace(await provider.peek(file).catch(() => null))
+          },
+          reusable.fromByte
+        )
+      : withWorkspace(await provider.peek(file).catch(() => null))
     if (!this.commit(file, ref)) return
     this.scheduleSave()
     if (ref) this.emit({ type: cached?.ref ? "updated" : "added", ref })

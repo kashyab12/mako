@@ -84,7 +84,13 @@ record before retaining it, skip into a tail from the next newline, and collect
 bounded chunks before one final concatenation. Never carry `Buffer.concat`
 through a loop. Catalog scans use bounded concurrency, and provider metadata
 queries select only the native session IDs being peeked rather than hydrating a
-whole provider database.
+whole provider database. A file that grew reuses its cached ref only when that
+ref already has a title and a model; a session captured before its first prompt
+(Codex writes `session_meta` first) is re-read, and providers with a separate
+title store (`refine`: Codex's state database, Claude's appended `ai-title`)
+update the reused ref. While watching, followed and recently updated files are
+stat-ed every 15 seconds so a missed watcher event cannot leave a row at its
+first kilobytes. `test/catalog-growth.mjs` covers these.
 
 ## The built-in runtime's session tree is not a tree
 

@@ -65,6 +65,15 @@ export interface SessionProvider {
   read(path: string): Promise<Thread | null>
 
   /**
+   * Cheap metadata refresh for a session whose file grew. A provider with an
+   * out-of-band title store (Codex names threads in its state database after
+   * the first turn) returns the current title and cwd without re-reading the
+   * file. A provider whose store appends the name later (Claude Code writes
+   * an `ai-title` line) scans only the bytes appended since `fromByte`.
+   */
+  refine?(ref: ThreadRef, fromByte: number): Promise<ThreadRef>
+
+  /**
    * Incremental read for live sync: entries appended since `fromByte`, and
    * where to tail from next time. Providers whose store is not append-only
    * (Cursor's SQLite) fall back to a full re-read by omitting this.

@@ -527,6 +527,9 @@ export class CodexProvider implements SessionProvider {
       )
       for (const file of batch) {
         if (!file) continue
+        // A resumed thread continues in `<id>_<suffix>.jsonl` with the same
+        // session id; the first id names the thread and the group below picks
+        // Codex's current file for it.
         const id =
           basename(file.path).match(
             /[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}/i
@@ -623,6 +626,21 @@ export class CodexProvider implements SessionProvider {
               : ref.updatedAt,
         }
       : ref
+  }
+
+  /** Codex names a thread in its state database after the first turn; pick that up without rereading the rollout. */
+  async refine(ref: ThreadRef, _fromByte: number): Promise<ThreadRef> {
+    const details = await this.threadMetadata(ref.nativeId)
+    if (!details) return ref
+    return {
+      ...ref,
+      cwd: details.cwd ?? ref.cwd,
+      title: details.title ?? ref.title,
+      updatedAt:
+        details.updatedAt && details.updatedAt > (ref.updatedAt ?? "")
+          ? details.updatedAt
+          : ref.updatedAt,
+    }
   }
 
   async read(path: string): Promise<Thread | null> {

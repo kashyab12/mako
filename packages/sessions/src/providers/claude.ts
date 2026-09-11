@@ -410,6 +410,25 @@ export class ClaudeProvider implements SessionProvider {
     return ref.nativeId ? ref : null
   }
 
+  /**
+   * Claude Code appends its own `ai-title` (once `summary`) line after the
+   * conversation has moved on. Only the appended bytes can carry a new one,
+   * and a later settings line there moves the row's model with it.
+   */
+  async refine(ref: ThreadRef, fromByte: number): Promise<ThreadRef> {
+    const next: ThreadRef = { ...ref }
+    await readLines(ref.path, fromByte, (raw) => {
+      const line = parseClaudeLine(raw)
+      if (!line || line.isSidechain) return
+      if (line.title?.trim() && (line.type === "ai-title" || line.type === "summary")) {
+        next.title = titleFrom(line.title) ?? next.title
+      }
+      if (line.type === "assistant" && line.message?.model !== undefined)
+        next.model = line.message.model
+    })
+    return next
+  }
+
   async read(path: string): Promise<Thread | null> {
     const file = await stat(path).catch(() => null)
     if (!file) return null
