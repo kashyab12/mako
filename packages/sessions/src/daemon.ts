@@ -219,6 +219,8 @@ export async function serveCatalog(
                 startedAt,
                 sessions: catalog.count,
                 version: PROTOCOL_VERSION,
+                script: process.argv[1] ?? "",
+                runtime: process.execPath,
                 rss: memory.rss,
                 heapUsed: memory.heapUsed,
                 eventLoopP99Ms:

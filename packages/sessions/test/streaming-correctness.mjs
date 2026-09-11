@@ -52,6 +52,8 @@ function fileProvider(root, hooks = {}) {
         harness: "test",
         nativeId: "test-session",
         path: file.path,
+        title: "seed",
+        model: "test-model",
         bytes: file.bytes,
         updatedAt: new Date(file.mtimeMs).toISOString(),
       }

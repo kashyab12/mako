@@ -12,6 +12,10 @@ export interface DaemonStats {
   startedAt: number
   sessions: number
   version: number
+  /** The entry script this daemon runs; a client from another build retires it. */
+  script?: string
+  /** The Node runtime executing that script. */
+  runtime?: string
   rss?: number
   heapUsed?: number
   eventLoopP99Ms?: number
@@ -234,6 +238,10 @@ function parseDaemonStats(value: JsonValue | undefined): DaemonStats | null {
   )
     return null
   const result: DaemonStats = { pid, startedAt, sessions, version }
+  const script = readString(value, "script")
+  const runtime = readString(value, "runtime")
+  if (script !== undefined) result.script = script
+  if (runtime !== undefined) result.runtime = runtime
   const rss = readNumber(value, "rss")
   const heapUsed = readNumber(value, "heapUsed")
   const eventLoopP99Ms = readNumber(value, "eventLoopP99Ms")

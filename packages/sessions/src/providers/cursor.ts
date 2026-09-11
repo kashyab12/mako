@@ -17,7 +17,9 @@ import { attachmentFromUrl, type AttachmentContent } from "../content.js"
  * carry the paired `tool-result`. Like Grok, Cursor wraps what the user
  * actually typed in a `<user_query>` tag inside a message that is mostly
  * injected context; user messages without the tag are scaffolding and are
- * skipped. Verified against 181 real session stores.
+ * skipped. A store whose meta carries `subagentInfo` is a Task child of
+ * another agent and is not a catalog thread. Verified against 181 real
+ * session stores.
  *
  * SQLite comes from `node:sqlite` — present in the Node this app ships with;
  * where it is missing the provider reports no sessions rather than failing
@@ -53,6 +55,8 @@ interface CursorMeta {
   createdAt?: string | number
   latestRootBlobId?: string
   model?: string
+  /** Set when this store is a child of another agent, not a user-facing thread. */
+  subagent?: boolean
 }
 
 interface CursorSidecar {
@@ -367,6 +371,11 @@ export class CursorProvider implements SessionProvider {
     try {
       const meta = this.readMeta(database)
       if (!meta) return null
+      // Cursor writes each Task/subagent as its own store.db with
+      // `subagentInfo` pointing at the parent. Those are tool calls, not
+      // conversations; listing them next to the parent is the same mistake
+      // as showing Codex `thread_source=subagent` rollouts.
+      if (meta.subagent) return null
       // "New Agent" is the placeholder Cursor writes before a session is
       // named; the first real prompt makes a better title than that.
       const named =
@@ -671,6 +680,7 @@ function parseCursorMeta(raw: string): CursorMeta | null {
     createdAt,
     latestRootBlobId: stringValue(value["latestRootBlobId"]),
     model: stringValue(value["model"]),
+    subagent: isJsonObject(value["subagentInfo"]),
   }
 }
 

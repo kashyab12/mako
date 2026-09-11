@@ -19,7 +19,11 @@
 import { existsSync, realpathSync, watch, type FSWatcher } from "node:fs"
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises"
 import { dirname, join, sep } from "node:path"
-import { parseCache, type CacheEntry } from "./catalog-cache.js"
+import {
+  parseCache,
+  CATALOG_CACHE_VERSION,
+  type CacheEntry,
+} from "./catalog-cache.js"
 import type { Thread, ThreadEntry, ThreadPage, ThreadRef } from "./format.js"
 import type {
   NativeFile,
@@ -214,8 +218,9 @@ export class SessionCatalog {
           const ref = withWorkspace(await provider.peek(file).catch(() => null))
           if (!this.commit(file, ref)) return
           if (ref) this.capture(ref)
-          if (options.emitChanges && ref) {
-            this.emit({ type: cached?.ref ? "updated" : "added", ref })
+          if (options.emitChanges) {
+            if (ref) this.emit({ type: cached?.ref ? "updated" : "added", ref })
+            else if (cached?.ref) this.emit({ type: "removed", path: file.path })
           }
         })
       })
@@ -580,6 +585,7 @@ export class SessionCatalog {
         const ref = withWorkspace(await provider.peek(file).catch(() => null))
         if (!this.commit(file, ref)) continue
         if (ref) this.emit({ type: cached?.ref ? "updated" : "added", ref })
+        else if (cached?.ref) this.emit({ type: "removed", path: file.path })
       }
       if (follow && follow.listeners.size > 0) {
         if (!follow.follower) {
@@ -700,6 +706,7 @@ export class SessionCatalog {
     if (!this.commit(file, ref)) return
     this.scheduleSave()
     if (ref) this.emit({ type: cached?.ref ? "updated" : "added", ref })
+    else if (cached?.ref) this.emit({ type: "removed", path })
 
     if (!follow || follow.listeners.size === 0) return
     if (!follow.follower)
@@ -856,7 +863,7 @@ export class SessionCatalog {
       for (const [path, entry] of this.byPath) entries[path] = entry
       await writeFile(
         this.cachePath,
-        JSON.stringify({ version: 8, entries }),
+        JSON.stringify({ version: CATALOG_CACHE_VERSION, entries }),
         "utf8"
       )
     } catch {

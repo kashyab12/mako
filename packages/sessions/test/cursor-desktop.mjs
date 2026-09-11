@@ -15,6 +15,9 @@ try {
   const id = "12345678-1234-1234-1234-123456789abc"
   const header = {composerId: id, name: "Saved architecture review", createdAt: 1700000000000, lastUpdatedAt: 1700000001000, workspaceIdentifier: {uri: {fsPath: home}}}
   db.prepare("INSERT INTO composerHeaders VALUES (?,?,?,?,?)").run(id, header.lastUpdatedAt, 1, 0, JSON.stringify(header))
+  const childId = "22345678-1234-1234-1234-123456789abc"
+  const childHeader = {composerId: childId, name: "Task subagent", createdAt: 1700000002000, lastUpdatedAt: 1700000003000, workspaceIdentifier: {uri: {fsPath: home}}}
+  db.prepare("INSERT INTO composerHeaders VALUES (?,?,?,?,?)").run(childId, childHeader.lastUpdatedAt, 1, 1, JSON.stringify(childHeader))
   const write = (key, value) => db.prepare("INSERT OR REPLACE INTO cursorDiskKV VALUES (?,?)").run(key, JSON.stringify(value))
   const bubbles = [
     {bubbleId: "user", type: 1, text: "Explain the architecture", images: [{filePath: join(home, "proof.png")}]},
@@ -29,6 +32,16 @@ try {
   const provider = new CursorProvider(home)
   const files = await provider.discover()
   assert.equal(files.length, 1)
+  assert.equal(files[0].path.endsWith(id), true)
+  assert.equal(
+    await provider.peek({
+      path: files[0].path.replace(id, childId),
+      bytes: 0,
+      mtimeMs: childHeader.lastUpdatedAt,
+    }),
+    null,
+    "Desktop subagent composers are not threads"
+  )
   const ref = await provider.peek(files[0])
   assert.equal(ref.title, header.name)
   assert.equal(ref.cwd, home)

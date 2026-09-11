@@ -6,6 +6,7 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 
 import { SessionCatalog } from "../dist/catalog.js"
+import { CATALOG_CACHE_VERSION } from "../dist/catalog-cache.js"
 import { DevinCliProvider } from "../dist/providers/devin-cli.js"
 
 const home = mkdtempSync(join(tmpdir(), "mako-devin-cli-"))
@@ -198,7 +199,7 @@ try {
   await writeFile(
     cachePath,
     JSON.stringify({
-      version: 8,
+      version: CATALOG_CACHE_VERSION,
       entries: {
         [file.path]: {
           bytes: file.bytes,

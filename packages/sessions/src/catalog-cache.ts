@@ -7,6 +7,9 @@ export interface CacheEntry {
   ref: ThreadRef | null
 }
 
+/** Bump when a peek rule change would leave stale rows in a warm cache. */
+export const CATALOG_CACHE_VERSION = 9
+
 type JsonScalar = boolean | number | string | null
 type JsonValue = JsonScalar | JsonRecord | JsonValue[]
 
@@ -17,7 +20,11 @@ interface JsonRecord {
 export function parseCache(raw: string): Map<string, CacheEntry> | null {
   try {
     const value: JsonValue = JSON.parse(raw)
-    if (!isJsonRecord(value) || readNumber(value, "version") !== 8) return null
+    if (
+      !isJsonRecord(value) ||
+      readNumber(value, "version") !== CATALOG_CACHE_VERSION
+    )
+      return null
     const stored = value.entries
     if (!isJsonRecord(stored)) return null
     const entries = new Map<string, CacheEntry>()

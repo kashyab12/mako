@@ -62,6 +62,8 @@ const client = await connectDaemon(socketPath, 100)
 const refreshed = await client.refresh()
 assert.equal(refreshed.pid, process.pid)
 assert.ok((refreshed.rss ?? 0) > 0)
+assert.equal(refreshed.script, process.argv[1], "a daemon names the script it runs so another build can retire it")
+assert.equal(refreshed.runtime, process.execPath)
 assert.deepEqual(await client.open(thread.ref.path), thread)
 assert.deepEqual(await client.page(thread.ref.path), page)
 const streamed = new Promise((resolve) => {

@@ -166,7 +166,7 @@ export class CursorDesktopStore {
     try {
       const row = db
         .prepare(
-          "SELECT value, lastUpdatedAt, checkpointAt FROM composerHeaders WHERE composerId = ? AND length(value) <= 65536"
+          "SELECT value, lastUpdatedAt, checkpointAt FROM composerHeaders WHERE composerId = ? AND COALESCE(isSubagent,0) = 0 AND length(value) <= 65536"
         )
         .get(id)
       const header = parseJson(Header, row?.value)
