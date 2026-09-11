@@ -55,7 +55,6 @@ import {
   threadsStore,
 } from "@/state/threads"
 import { acp, acpStore, activeAcp, activeLiveAcp } from "@/state/acp"
-import { watchOnboarding } from "@/state/onboarding"
 import { toast } from "sonner"
 import { mcpStore } from "@/state/mcp"
 
@@ -510,7 +509,6 @@ export const actions = {
       void threads.load()
       if (!boot.archives) void threadLifecycle.load()
       threads.watchFocus()
-      watchOnboarding()
     } catch (error) {
       store.set({
         phase: "detached",
@@ -692,13 +690,24 @@ export const actions = {
     return guard(() => getMako().clearQueue())
   },
 
-  async newConversationIn(folder = store.get().meta?.cwd) {
-    acp.deactivate()
-    threads.closeViewer()
+  /**
+   * Start a fresh thread in `folder`. The current view stays put until the
+   * host has actually opened a tab there: tearing it down first would leave
+   * the previous tab's empty launcher on screen after a failed open, which
+   * looks exactly like a new thread — in the wrong project.
+   */
+  async newConversationIn(folder: string) {
+    const opened = await actions.openTab({ cwd: folder })
+    if (!opened) return false
+    const cwd = store.get().meta?.cwd
+    if (cwd !== folder) {
+      report(
+        `The new thread opened in ${cwd ?? "an unknown folder"} instead of ${folder}. Check the folder still exists before sending a prompt.`
+      )
+      return false
+    }
     viewer.close()
     stage.close()
-    const opened = await actions.openTab(folder ? { cwd: folder } : {})
-    if (!opened) return false
     requestAnimationFrame(() =>
       window.dispatchEvent(new CustomEvent("mako:focus-composer"))
     )
@@ -706,7 +715,8 @@ export const actions = {
   },
 
   async newSession() {
-    return actions.newConversationIn()
+    const folder = store.get().meta?.cwd
+    return folder ? actions.newConversationIn(folder) : actions.openTab()
   },
 
   /**

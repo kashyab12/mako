@@ -9,6 +9,8 @@ export interface ThreadFolderActivity {
   failed?: boolean
   unread?: boolean
   active?: boolean
+  /** Its file changed within the last minute; the writer may be outside Mako. */
+  observed?: boolean
 }
 
 export interface ThreadFolder {
@@ -26,6 +28,22 @@ export interface ThreadFolder {
   failed: number
   unread: number
   active: number
+}
+
+/**
+ * Keep the normal project order stable while ensuring a project selected by
+ * another surface is not hidden behind pagination. A project already in the
+ * first page stays exactly where it was; an off-page current project is added
+ * at its natural relative position.
+ */
+export function visibleThreadFolders(
+  folders: ThreadFolder[],
+  limit: number
+): ThreadFolder[] {
+  const visible = new Set(folders.slice(0, limit).map((folder) => folder.key))
+  const current = folders.find((folder) => folder.current)
+  if (current) visible.add(current.key)
+  return folders.filter((folder) => visible.has(folder.key))
 }
 
 function normalizedPath(path: string | undefined): string {
@@ -65,6 +83,48 @@ export function threadFolderKey(ref: Pick<ThreadRef, "cwd" | "workspace">): stri
   return folderPath(ref.workspace ?? ref.cwd)
 }
 
+/** Where a thread sits in "latest activity" order, and why it sits there. */
+export interface RailRank {
+  at: string
+  active: boolean
+}
+
+/** Held ranks by thread path. */
+export interface RailRanks {
+  [path: string]: RailRank
+}
+
+/**
+ * Recency that holds still while work happens.
+ *
+ * A working thread's file changes many times a second, and every change
+ * moved its updatedAt and with it the row, the folder, and everything below.
+ * Two agents in two projects swapped places on every token. So a thread
+ * takes a rank when it is first seen, moves once when it becomes active,
+ * keeps that rank for as long as it stays active, and settles once when it
+ * finishes. An idle thread still follows its file: activity from outside
+ * Mako is real news.
+ */
+export function stableThreadRanks(
+  refs: readonly ThreadRef[],
+  activity: Record<string, ThreadFolderActivity>,
+  previous: RailRanks
+): RailRanks {
+  const next: RailRanks = {}
+  for (const ref of refs) {
+    const state = activity[ref.path]
+    const active = Boolean(
+      state?.running || state?.needsInput || state?.active || state?.observed
+    )
+    const held = previous[ref.path]
+    const at = ref.updatedAt ?? ""
+    if (held && active && held.active) next[ref.path] = held
+    else if (held && active) next[ref.path] = { at: at > held.at ? at : held.at, active }
+    else next[ref.path] = { at, active }
+  }
+  return next
+}
+
 export function groupThreadFolders({
   refs,
   live = [],
@@ -73,6 +133,7 @@ export function groupThreadFolders({
   pinnedFolders,
   priorities = {},
   activity = {},
+  ranks = {},
   sortBy,
 }: {
   refs: ThreadRef[]
@@ -82,8 +143,11 @@ export function groupThreadFolders({
   pinnedFolders: string[]
   priorities?: Record<string, number>
   activity?: Record<string, ThreadFolderActivity>
+  /** Held recency from `stableThreadRanks`; a thread without one uses its updatedAt. */
+  ranks?: RailRanks
   sortBy: RailSortBy
 }): ThreadFolder[] {
+  const recency = (ref: ThreadRef): string => ranks[ref.path]?.at ?? ref.updatedAt ?? ""
   const held = new Set(pinnedThreads)
   const byCwd = new Map<string, ThreadRef[]>()
   const allByCwd = new Map<string, ThreadRef[]>()
@@ -116,7 +180,7 @@ export function groupThreadFolders({
     if (sortBy === "name") return (a.title ?? "").localeCompare(b.title ?? "")
     if (sortBy === "created")
       return (b.startedAt ?? "").localeCompare(a.startedAt ?? "")
-    return (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")
+    return recency(b).localeCompare(recency(a))
   }
   const normalizedPinnedFolders = pinnedFolders.map(folderPath)
   const pinned = new Set(normalizedPinnedFolders)
@@ -136,7 +200,10 @@ export function groupThreadFolders({
               (ref.startedAt ?? "") > top ? ref.startedAt! : top,
             ""
           )
-        : latest
+        : allEntries.reduce(
+            (top, ref) => (recency(ref) > top ? recency(ref) : top),
+            liveLatest ? new Date(liveLatest).toISOString() : ""
+          )
     let running = present.filter((presence) => presence.status === "running" || presence.status === "starting").length
     let needsInput = present.filter((presence) => presence.status === "needs-permission").length
     let failed = present.filter((presence) => presence.status === "failed").length
@@ -192,7 +259,6 @@ export function groupThreadFolders({
   }
   result.sort((a, b) => {
     if (a.cwd === null || b.cwd === null) return a.cwd === null ? 1 : -1
-    if (a.current !== b.current) return a.current ? -1 : 1
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
     if (a.pinned && b.pinned) return pinIndex(a) - pinIndex(b)
     if (a.priority !== b.priority) return b.priority - a.priority

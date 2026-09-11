@@ -59,10 +59,6 @@ export interface Prefs {
   openDirs: string[]
   autoOpenDiff: boolean
   selectedDiffs: PreferenceStringMap
-  /** The getting-started list is finished or dismissed, and will not return. */
-  onboarded: boolean
-  /** Checklist steps that have been true at least once. Done is done. */
-  onboardedSteps: string[]
   /** Threads kept at the top of both rails, by session path. */
   pinnedThreads: string[]
   pinnedProjects: string[]
@@ -121,8 +117,6 @@ const defaults: Prefs = {
   openDirs: [],
   autoOpenDiff: true,
   selectedDiffs: {},
-  onboarded: false,
-  onboardedSteps: [],
   pinnedThreads: [],
   pinnedProjects: [],
   agentHarnessFilter: [],
@@ -320,11 +314,6 @@ function parsePrefs(value: JsonValue): Prefs | null {
     openDirs: readStringList(value.openDirs, defaults.openDirs),
     autoOpenDiff: readBoolean(value.autoOpenDiff, defaults.autoOpenDiff),
     selectedDiffs: readStringRecord(value.selectedDiffs),
-    onboarded: readBoolean(value.onboarded, defaults.onboarded),
-    onboardedSteps: readStringList(
-      value.onboardedSteps,
-      defaults.onboardedSteps
-    ),
     pinnedThreads: readStringList(value.pinnedThreads, defaults.pinnedThreads),
     pinnedProjects: readStringList(
       value.pinnedProjects,

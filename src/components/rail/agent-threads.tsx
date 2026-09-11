@@ -11,10 +11,14 @@ import { harnessLabel } from "@/components/rail/harness-meta"
 import { formatRelative } from "@/lib/format"
 import {
   groupThreadFolders,
+  stableThreadRanks,
   threadBelongsToWorkspace,
   threadFolderKey,
+  visibleThreadFolders,
   type ThreadFolder,
+  type ThreadFolderActivity,
 } from "@/lib/thread-folders"
+import { railRanksStore } from "@/state/rail-ranks"
 import {
   threadStatus,
   threadStatusPriority,
@@ -55,18 +59,21 @@ import {
  * The threads rail: every agent's conversations, arranged the way work is —
  * by folder, most alive first.
  *
- * The current workspace leads and shows its freshest threads; other folders
- * follow by recency, each holding a handful of rows and a quiet "More" for
- * the rest; folders gone cold collapse to a single line. No chips, no
+ * Folders follow recency, each holding the same handful of rows and a quiet
+ * "More" for the rest; folders gone cold collapse to a single line. Order and
+ * heights hold still while agents work: a busy thread keeps its rank until it
+ * finishes, and selecting a project never grows or shrinks a folder. No chips, no
  * toggles, no permanent search box — search and the harness filter live
  * behind two small glyphs in the header and take space only while in use.
  * A row is one line: the harness's mark, the title, and how long ago. The
  * marks carry the multi-harness story; everything else stays out of the way.
  */
 
-/** Rows a folder shows before "More": generous for the folder being worked. */
-const LEAD_ROWS = 5
-const REST_ROWS = 3
+/**
+ * Rows a folder shows before "More". The same count for every folder:
+ * selecting a project must not grow it and shrink the one you came from.
+ */
+const FOLDER_LEAD_ROWS = 4
 /** Each press of "More" reveals this many further rows. */
 const PAGE_ROWS = 5
 const PINNED_ROWS = 8
@@ -213,16 +220,7 @@ export function AgentThreads() {
       working,
     }
     const nextPriorities: Record<string, number> = {}
-    const nextActivity: Record<
-      string,
-      {
-        running?: boolean
-        needsInput?: boolean
-        failed?: boolean
-        unread?: boolean
-        active?: boolean
-      }
-    > = {}
+    const nextActivity: Record<string, ThreadFolderActivity> = {}
     for (const ref of matched) {
       const status = threadStatus(ref, state)
       nextPriorities[ref.path] = threadStatusPriority(status)
@@ -232,10 +230,21 @@ export function AgentThreads() {
         failed: status.kind === "failed",
         unread: status.kind === "review" && status.unread,
         active: status.kind === "external-active",
+        observed: status.kind === "observed",
       }
     }
     return { priorities: nextPriorities, threadActivity: nextActivity }
   }, [attention, externalActivity, matched, observed, working])
+
+  // Ranks from the last render decide this one, so a thread that is busy
+  // keeps its place instead of climbing on every appended byte.
+  const ranks = useMemo(
+    () => stableThreadRanks(matched, threadActivity, railRanksStore.get().ranks),
+    [matched, threadActivity]
+  )
+  useEffect(() => {
+    railRanksStore.set({ ranks })
+  }, [ranks])
 
   const held = useMemo(() => {
     const set = new Set(pinned)
@@ -254,14 +263,15 @@ export function AgentThreads() {
         pinnedFolders: pinnedProjects,
         priorities,
         activity: threadActivity,
+        ranks,
         sortBy,
       }),
-    [cwd, matched, unboundLiveAgents, pinned, pinnedProjects, priorities, sortBy, threadActivity]
+    [cwd, matched, unboundLiveAgents, pinned, pinnedProjects, priorities, ranks, sortBy, threadActivity]
   )
   const recent = useMemo(() => [
-    ...matched.map((ref) => ({ kind: "native" as const, key: ref.path, at: ref.updatedAt ?? "", ref })),
+    ...matched.map((ref) => ({ kind: "native" as const, key: ref.path, at: ranks[ref.path]?.at ?? ref.updatedAt ?? "", ref })),
     ...unboundLiveAgents.map((presence) => ({ kind: "live" as const, key: presence.key, at: new Date(presence.createdAt).toISOString(), presence })),
-  ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 80), [matched, unboundLiveAgents])
+  ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 80), [matched, ranks, unboundLiveAgents])
 
   const searchActive = Boolean(deferred.trim())
   const quietPinned = held
@@ -276,7 +286,10 @@ export function AgentThreads() {
   ).length
   const shownFolders = showAllFolders
     ? workspaceFolders
-    : workspaceFolders.slice(0, Math.max(FOLDER_ROWS, priorityFolders))
+    : visibleThreadFolders(
+        workspaceFolders,
+        Math.max(FOLDER_ROWS, priorityFolders)
+      )
   const hiddenFolders = workspaceFolders.length - shownFolders.length
 
   useEffect(() => {
@@ -696,8 +709,8 @@ function HarnessFilter({
 }
 
 /**
- * One folder of conversations. The current workspace opens wide; recent
- * folders show a few; cold folders rest as a single line. "More" unfolds
+ * One folder of conversations. Warm folders show a few rows; cold folders
+ * rest as a single line. "More" unfolds
  * the tail in place — the grid-rows trick animates to unknown heights.
  */
 function FolderSection({
@@ -733,8 +746,7 @@ function FolderSection({
   const closed = collapsed ? !cold : cold
   const contentId = `folder-${folder.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`
 
-  const lead = folder.current ? LEAD_ROWS : REST_ROWS
-  const limit = lead + pages * PAGE_ROWS
+  const limit = FOLDER_LEAD_ROWS + pages * PAGE_ROWS
   const shownLive = liveAgents.slice(0, limit)
   const visible = folder.refs.slice(0, Math.max(0, limit - shownLive.length))
   const hidden = folder.refs.length + liveAgents.length - visible.length - shownLive.length
@@ -792,10 +804,10 @@ function FolderSection({
         {onNew ? (
           <button
             type="button"
-            aria-label={`New session in ${folder.name}`}
-            title={`New session in ${folder.name}`}
+            aria-label={`New thread in ${folder.name}`}
+            title={`New thread in ${folder.name}`}
             onClick={onNew}
-            className="pressable rounded p-0.5 text-faint transition-colors duration-100 hover:bg-background/40 hover:text-foreground"
+            className="pressable flex size-6 shrink-0 items-center justify-center rounded text-faint transition-colors duration-100 hover:bg-background/40 hover:text-foreground"
           >
             <PlusIcon className="size-3" />
           </button>
@@ -806,7 +818,7 @@ function FolderSection({
             aria-label={folder.pinned ? "Unpin folder" : "Pin folder"}
             onClick={onPin}
             className={cn(
-              "mr-1 rounded p-0.5 text-faint transition-opacity duration-150 hover:text-foreground",
+              "pressable mr-0.5 flex size-6 shrink-0 items-center justify-center rounded text-faint transition-opacity duration-150 hover:text-foreground",
               folder.pinned
                 ? "text-foreground/70"
                 : "opacity-0 group-hover/folder:opacity-100 focus:opacity-100"

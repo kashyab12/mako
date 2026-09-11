@@ -151,7 +151,16 @@ export function installMockBridge() {
       return snapshot
     },
     stopThread: async () => false,
-    openTab: async () => mockTab(`tab-${++tabCount}`),
+    openTab: async (options) => {
+      const tab = mockTab(`tab-${++tabCount}`)
+      const cwd = options?.cwd
+      if (!cwd) return tab
+      return {
+        ...tab,
+        session: { ...tab.session, meta: { ...meta, cwd } },
+        git: { ...GIT, cwd, root: cwd },
+      }
+    },
     closeTab: async (id: string) => ({ tabs: [id], activeId: "tab-1" }),
     activateTab: async () => true,
     fork: async () => ({
