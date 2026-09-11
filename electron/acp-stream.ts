@@ -20,8 +20,17 @@ export function acpReadable(pipe: Readable): ReadableStream<Uint8Array> {
   })
 }
 
+/**
+ * A provider that exits or closes its stdin while a request is in flight
+ * surfaces the failed write twice: in the write callback and as an `error`
+ * event on the pipe. Without a listener the event is an uncaught exception in
+ * the host process, so the pipe error is routed into the stream instead.
+ */
 export function acpWritable(pipe: Writable): WritableStream<Uint8Array> {
   return new WritableStream<Uint8Array>({
+    start(controller) {
+      pipe.once("error", (error) => controller.error(error))
+    },
     write(chunk) {
       return new Promise<void>((resolve, reject) => {
         pipe.write(chunk, (error) => (error ? reject(error) : resolve()))
