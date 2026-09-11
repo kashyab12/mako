@@ -34,8 +34,8 @@ export function McpSection() {
     <div>
       <p className="pb-3 text-ui leading-relaxed text-muted-foreground">
         Servers found in each provider&apos;s configuration, deduplicated by
-        connection. Mako&apos;s local browser and computer control attach only to
-        sessions launched here; they are never written into provider clients.
+        connection. Mako&apos;s local browser and computer control attach only
+        to sessions launched here; they are never written into provider clients.
         Environment and header values stay in the host.
       </p>
 
@@ -64,6 +64,33 @@ export function McpSection() {
               onClick={() => void mcp.requestComputerPermissions()}
             >
               Grant to Mako
+            </Action>
+          ) : null}
+        </div>
+      ) : null}
+      {state.driver?.executable ? (
+        <div className="mb-3 flex items-center gap-3 rounded-lg bg-surface px-2.5 py-2 ring-1 ring-hairline">
+          <span className="min-w-0 flex-1">
+            <span className="block text-ui text-foreground/90">
+              {state.driver.version
+                ? `CUA Driver ${state.driver.version}`
+                : "CUA Driver"}
+            </span>
+            <span className="block text-label text-faint">
+              {state.driver.outdated
+                ? `Mako verified ${state.driver.verified}. Updating restarts local control; agents using computer tools start a new driver session on their next call.`
+                : state.driver.version
+                  ? `Mako verified ${state.driver.verified}.`
+                  : state.driver.detail}
+            </span>
+          </span>
+          {state.driver.outdated ? (
+            <Action
+              tone="outline"
+              disabled={state.updatingDriver}
+              onClick={() => void mcp.updateComputerDriver()}
+            >
+              {state.updatingDriver ? "Updating…" : "Update driver"}
             </Action>
           ) : null}
         </div>
@@ -167,9 +194,7 @@ export function McpSection() {
                 >
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-1.5">
-                      <span className="font-mono text-ui">
-                        {server.name}
-                      </span>
+                      <span className="font-mono text-ui">{server.name}</span>
                       <span className="rounded bg-raised px-1 py-0.5 text-label text-faint">
                         {server.transport}
                       </span>

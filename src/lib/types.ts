@@ -75,6 +75,7 @@ export type {
   ModelCost,
   ModelInfo,
   MakoComputerPermissions,
+  CuaDriverStatus,
   BrowserControlStatus,
   ControlActivity,
   ControlPreview,

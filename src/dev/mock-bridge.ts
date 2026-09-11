@@ -139,14 +139,25 @@ export function installMockBridge() {
   let archiveRevision = 0
   window.mako = {
     boot: async () => boot,
-    threadArchives: async () => ({ revision: archiveRevision, keys: [...archivedThreads] }),
-    threadControls: async () => ({ archived: false, stop: null, external: false }),
+    threadArchives: async () => ({
+      revision: archiveRevision,
+      keys: [...archivedThreads],
+    }),
+    threadControls: async () => ({
+      archived: false,
+      stop: null,
+      external: false,
+    }),
     archiveThread: async (command) => {
-      const { threadArchiveKey } = await import("../../electron/contracts/thread-lifecycle")
+      const { threadArchiveKey } =
+        await import("../../electron/contracts/thread-lifecycle")
       const key = threadArchiveKey(command.target)
       if (command.archived) archivedThreads.add(key)
       else archivedThreads.delete(key)
-      const snapshot = { revision: ++archiveRevision, keys: [...archivedThreads] }
+      const snapshot = {
+        revision: ++archiveRevision,
+        keys: [...archivedThreads],
+      }
       emit({ type: "thread-archives", snapshot })
       return snapshot
     },
@@ -366,15 +377,48 @@ export function installMockBridge() {
     ],
     generateCommitMessage: async () => ({
       message: "Reserve a gutter for the turn navigator",
-      model: "google/gemini-2.5-flash", scope: "staged", files: 2, warnings: [], requests: 1,
+      model: "google/gemini-2.5-flash",
+      scope: "staged",
+      files: 2,
+      warnings: [],
+      requests: 1,
     }),
     cancelCommitGeneration: async () => {},
-    utilityModelSettings: async () => ({ providers: [
-      { id: "google", name: "Google", description: "Gemini with a Google AI Studio API key" },
-      { id: "openai-compatible", name: "OpenAI-compatible", description: "Local models or your own endpoint" },
-    ], connections: [], issues: [], secureStorage: true }),
-    utilityModelCatalog: async (input) => ({ source: input.source, models: [{ id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", contextTokens: 1_048_576 }], fetchedAt: Date.now(), stale: false }),
-    connectUtilityModel: async (input) => ({ provider: input.provider, model: input.model, baseUrl: input.baseUrl, contextTokens: input.contextTokens }),
+    utilityModelSettings: async () => ({
+      providers: [
+        {
+          id: "google",
+          name: "Google",
+          description: "Gemini with a Google AI Studio API key",
+        },
+        {
+          id: "openai-compatible",
+          name: "OpenAI-compatible",
+          description: "Local models or your own endpoint",
+        },
+      ],
+      connections: [],
+      issues: [],
+      secureStorage: true,
+    }),
+    utilityModelCatalog: async (input) => ({
+      source: input.source,
+      models: [
+        {
+          id: "gemini-3.8-flash",
+          name: "Gemini 3.8 Flash",
+          contextTokens: 1_048_576,
+        },
+      ],
+      fetchedAt: Date.now(),
+      stale: false,
+    }),
+    connectUtilityModel: async (input) => ({
+      provider: input.provider,
+      model: input.model,
+      baseUrl: input.baseUrl,
+      contextTokens: input.contextTokens,
+    }),
     disconnectUtilityModel: async () => {},
 
     stageFile: async (name: string) => ({
@@ -384,6 +428,20 @@ export function installMockBridge() {
     }),
     defaultCommitPrompt: async () =>
       "You are an expert at writing Git commits.",
+    computerDriver: async () => ({
+      executable: "/Applications/CuaDriver.app/Contents/MacOS/cua-driver",
+      version: "0.28.0",
+      verified: "0.28.0",
+      outdated: false,
+      detail: "CUA Driver 0.28.0",
+    }),
+    updateComputerDriver: async () => ({
+      executable: "/Applications/CuaDriver.app/Contents/MacOS/cua-driver",
+      version: "0.28.0",
+      verified: "0.28.0",
+      outdated: false,
+      detail: "CUA Driver 0.28.0",
+    }),
     computerPermissions: async () => ({
       supported: true,
       persistentAcrossUpdates: true,
@@ -1540,12 +1598,30 @@ export function installMockBridge() {
       queueMicrotask(() => listener({ type: "connection", state: "ready" }))
       return () => terminalListeners.delete(listener)
     },
-    lifecycleState: async () => ({ work: [], revision: "fixture", operation: { kind: "idle" as const } }),
-    lifecycleCommand: async () => ({ work: [], revision: "fixture", operation: { kind: "idle" as const } }),
+    lifecycleState: async () => ({
+      work: [],
+      revision: "fixture",
+      operation: { kind: "idle" as const },
+    }),
+    lifecycleCommand: async () => ({
+      work: [],
+      revision: "fixture",
+      operation: { kind: "idle" as const },
+    }),
     quitClient: async () => {},
     acknowledgeShutdown: async () => {},
-    installationState: async () => ({ distribution: "development" as const, build: null, source: null, local: { kind: "idle" as const } }),
-    selectUpdateSource: async () => ({ distribution: "development" as const, build: null, source: null, local: { kind: "idle" as const } }),
+    installationState: async () => ({
+      distribution: "development" as const,
+      build: null,
+      source: null,
+      local: { kind: "idle" as const },
+    }),
+    selectUpdateSource: async () => ({
+      distribution: "development" as const,
+      build: null,
+      source: null,
+      local: { kind: "idle" as const },
+    }),
     buildUpdate: async () => {},
     updateState: async () => ({
       status: "unsupported" as const,

@@ -14,6 +14,8 @@ import { Stage } from "@/components/stage/stage"
 import { Action, Blank } from "@/components/ui/kit"
 import { useDeskCommands } from "@/desk/use-desk-commands"
 import { actions, store, useSession } from "@/state/session"
+import { applicationStore } from "@/state/application"
+import { hostConnectionStore } from "@/state/host-connection"
 import { bindTheme, prefsStore, setPref, usePrefs } from "@/state/prefs"
 import { PlugZapIcon } from "lucide-react"
 import { WorkspaceFocusProvider } from "@/components/stage/workspace-focus"
@@ -52,6 +54,11 @@ export function AppShell() {
   useEffect(() => {
     const refresh = () => {
       if (store.get().phase !== "ready") return
+      // No host to ask while reconnecting, and none worth asking while it is
+      // stopping agents to restart, install or quit.
+      if (hostConnectionStore.get().kind !== "connected") return
+      const operation = applicationStore.get().lifecycle?.operation.kind
+      if (operation === "stopping" || operation === "waiting" || operation === "applying") return
       void actions.refreshGit()
     }
     window.addEventListener("focus", refresh)

@@ -11,24 +11,11 @@ import {
   SearchIcon,
   ShieldCheckIcon,
 } from "lucide-react"
-import {
-  FaGithub,
-  FaGoogle,
-  FaMicrosoft,
-  FaSlack,
-} from "react-icons/fa"
-import {
-  SiAtlassian,
-  SiLinear,
-  SiNotion,
-  SiSentry,
-} from "react-icons/si"
+import { FaGithub, FaGoogle, FaMicrosoft, FaSlack } from "react-icons/fa"
+import { SiAtlassian, SiLinear, SiNotion, SiSentry } from "react-icons/si"
 import { Action, Eyebrow } from "@/components/ui/kit"
 import { cn } from "@/lib/utils"
-import type {
-  IntegrationCategory,
-  IntegrationRecord,
-} from "@/lib/types"
+import type { IntegrationCategory, IntegrationRecord } from "@/lib/types"
 import { integrations, useIntegrations } from "@/state/integrations"
 
 const CATEGORIES: IntegrationCategory[] = [
@@ -144,6 +131,7 @@ export function IntegrationsSection() {
 
 function IntegrationCard({ record }: { record: IntegrationRecord }) {
   const state = record.connection
+  const updatingDriver = useIntegrations((value) => value.updatingDriver)
   const configured = state.kind === "connected" || state.kind === "ready"
   return (
     <div className="contain-turn flex min-h-36 flex-col rounded-lg bg-surface p-3 ring-1 ring-hairline">
@@ -182,6 +170,14 @@ function IntegrationCard({ record }: { record: IntegrationRecord }) {
             onClick={() => void integrations.requestComputerPermissions()}
           >
             Grant access
+          </Action>
+        ) : state.kind === "needs-update" ? (
+          <Action
+            tone="outline"
+            disabled={updatingDriver}
+            onClick={() => void integrations.updateComputerDriver()}
+          >
+            {updatingDriver ? "Updating…" : "Update driver"}
           </Action>
         ) : state.kind === "setup" ? (
           <Action
@@ -233,7 +229,9 @@ function TrustMark({ trust }: { trust: IntegrationRecord["trust"] }) {
     <span className="text-label text-faint">community</span>
   ) : (
     <ShieldCheckIcon
-      aria-label={trust === "official" ? "Official integration" : "Mako integration"}
+      aria-label={
+        trust === "official" ? "Official integration" : "Mako integration"
+      }
       className="size-3 text-faint"
     />
   )
@@ -249,11 +247,19 @@ function StatusMark({ record }: { record: IntegrationRecord }) {
       </span>
     )
   }
-  if (kind === "conflict" || kind === "needs-permission") {
+  if (
+    kind === "conflict" ||
+    kind === "needs-permission" ||
+    kind === "needs-update"
+  ) {
     return (
       <span className="flex shrink-0 items-center gap-1 text-label text-caution">
         <AlertTriangleIcon className="size-3" />
-        {kind === "conflict" ? "Conflict" : "Permissions"}
+        {kind === "conflict"
+          ? "Conflict"
+          : kind === "needs-update"
+            ? "Update"
+            : "Permissions"}
       </span>
     )
   }

@@ -296,13 +296,10 @@ export async function settingsForSend(
   })
   if (resolved.issues.length)
     throw new Error(resolved.issues.map((issue) => issue.message).join(" "))
-  const mode =
-    conversation?.kind === "live"
-      ? conversation.session.currentMode
-      : prefs.providerModes[target.harness]
-  return mode && resolved.settings.options?.mode !== undefined
-    ? { ...resolved.settings, options: { ...resolved.settings.options, mode } }
-    : resolved.settings
+  // Access is `modeId` / `currentMode`, never a provider config option. Copying
+  // it into `options.mode` sent Cursor `access:full` where it only accepts
+  // agent/plan/ask, so the turn never started.
+  return resolved.settings
 }
 
 function saveOverrides(

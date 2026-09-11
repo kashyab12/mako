@@ -5,6 +5,7 @@ import type { Attachment } from "@/lib/attachments"
 import { applyThreadArchives, threadLifecycle } from "@/state/thread-lifecycle"
 import { receiveControlActivity } from "@/state/control-preview"
 import { hostConnectionStore } from "@/state/host-connection"
+import { isHostReconnectingError } from "../../electron/contracts/host-connection"
 import { admitProfile, providers } from "@/state/providers"
 import { applyLiveBatch, hydrateLiveSummaries, hydrateLive } from "@/state/live-recovery"
 import { createHook, createStore, shallowEqual } from "@/state/store"
@@ -373,6 +374,9 @@ async function guard<T>(run: () => Promise<T>): Promise<T | undefined> {
   try {
     return await run()
   } catch (error) {
+    // The host left mid-call. The reconnect banner already says so; a second
+    // alarm per refresh would only bury it.
+    if (error instanceof Error && isHostReconnectingError(error)) return undefined
     report(error instanceof Error ? error.message : String(error))
     return undefined
   }

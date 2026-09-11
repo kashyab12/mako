@@ -1,5 +1,6 @@
 import { getMako, hasBridge } from "@/lib/bridge"
 import type {
+  CuaDriverStatus,
   MakoComputerPermissions,
   BrowserControlStatus,
   McpRegistrySnapshot,
@@ -13,9 +14,13 @@ interface McpState {
   snapshot: McpRegistrySnapshot | null
   previews: Record<string, McpSyncPreview[]>
   permissions?: MakoComputerPermissions
+  driver?: CuaDriverStatus
+  updatingDriver: boolean
   error?: string
   browsers: BrowserControlStatus[]
-  browserSetup?: Awaited<ReturnType<ReturnType<typeof getMako>["prepareBrowserExtension"]>>
+  browserSetup?: Awaited<
+    ReturnType<ReturnType<typeof getMako>["prepareBrowserExtension"]>
+  >
   preparingBrowser: boolean
 }
 
@@ -25,6 +30,7 @@ export const mcpStore = createStore<McpState>({
   previews: {},
   browsers: [],
   preparingBrowser: false,
+  updatingDriver: false,
 })
 export const useMcp = createHook(mcpStore)
 
@@ -40,28 +46,44 @@ export const mcp = {
   async prepareBrowser() {
     if (mcpStore.get().preparingBrowser) return
     mcpStore.set({ preparingBrowser: true, error: undefined })
-    try { mcpStore.set({ browserSetup: await getMako().prepareBrowserExtension() }) }
-    catch (error) { mcpStore.set({ error: error instanceof Error ? error.message : "Browser setup failed" }) }
-    finally { mcpStore.set({ preparingBrowser: false }) }
+    try {
+      mcpStore.set({ browserSetup: await getMako().prepareBrowserExtension() })
+    } catch (error) {
+      mcpStore.set({
+        error: error instanceof Error ? error.message : "Browser setup failed",
+      })
+    } finally {
+      mcpStore.set({ preparingBrowser: false })
+    }
   },
   async refreshBrowsers() {
-    try { mcpStore.set({ browsers: await getMako().browserControlStatus() }) }
-    catch (error) { mcpStore.set({ error: error instanceof Error ? error.message : "Browser profiles could not be loaded" }) }
+    try {
+      mcpStore.set({ browsers: await getMako().browserControlStatus() })
+    } catch (error) {
+      mcpStore.set({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Browser profiles could not be loaded",
+      })
+    }
   },
   async load() {
     if (!hasBridge()) return
     mcpStore.set({ status: "loading", error: undefined })
     try {
-      const [snapshot, permissions, browsers] = await Promise.all([
+      const [snapshot, permissions, browsers, driver] = await Promise.all([
         getMako().discoverMcp(),
         getMako().computerPermissions(),
         getMako().browserControlStatus(),
+        getMako().computerDriver(),
       ])
       mcpStore.set({
         status: "ready",
         snapshot,
         permissions,
         browsers,
+        driver,
         previews: {},
       })
     } catch {
@@ -73,12 +95,27 @@ export const mcp = {
   },
 
   async connectBrowser(browser: string) {
-    try { mcpStore.set({ error: undefined, browsers: await getMako().connectBrowser(browser) }) }
-    catch (error) { mcpStore.set({ error: error instanceof Error ? error.message : "Browser connection failed" }) }
+    try {
+      mcpStore.set({
+        error: undefined,
+        browsers: await getMako().connectBrowser(browser),
+      })
+    } catch (error) {
+      mcpStore.set({
+        error:
+          error instanceof Error ? error.message : "Browser connection failed",
+      })
+    }
   },
   async disconnectBrowser(browser: string) {
-    try { mcpStore.set({ browsers: await getMako().disconnectBrowser(browser) }) }
-    catch (error) { mcpStore.set({ error: error instanceof Error ? error.message : "Browser disconnect failed" }) }
+    try {
+      mcpStore.set({ browsers: await getMako().disconnectBrowser(browser) })
+    } catch (error) {
+      mcpStore.set({
+        error:
+          error instanceof Error ? error.message : "Browser disconnect failed",
+      })
+    }
   },
 
   async requestComputerPermissions() {
@@ -93,6 +130,23 @@ export const mcp = {
             ? `Computer-use permission request failed: ${error.message}`
             : "Computer-use permission request failed",
       })
+    }
+  },
+
+  async updateComputerDriver() {
+    if (!hasBridge() || mcpStore.get().updatingDriver) return
+    mcpStore.set({ updatingDriver: true, error: undefined })
+    try {
+      mcpStore.set({ driver: await getMako().updateComputerDriver() })
+    } catch (error) {
+      mcpStore.set({
+        error:
+          error instanceof Error
+            ? `CUA Driver update failed: ${error.message}`
+            : "CUA Driver update failed",
+      })
+    } finally {
+      mcpStore.set({ updatingDriver: false })
     }
   },
 
