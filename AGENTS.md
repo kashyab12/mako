@@ -718,3 +718,36 @@ Providers and installations are fixtures; these checks do not replace the user's
 app or send provider prompts. `npm run test:application-ui` retains light/dark
 screenshots and checks trusted input, safe focus, cancellation and reduced motion.
 `test-draft-persistence.ts` also checks failed-save exit refusal and retry routing.
+
+## Detached daemons and profile hosts
+
+Two processes outlive the host on purpose: the terminal daemon
+(`terminal-daemon.ts`, one per profile) and the session sync daemon
+(`@mako/sessions` `daemon-main.ts`, one per user, optionally a LaunchAgent).
+Both set a process title (`mako-terminal-daemon`, `mako-syncd`) and an
+installer's running-process check excludes exactly those titles; the title is
+trusted only to exclude, never to detect, so nothing that renames itself can
+evade the executable-name check. Every daemon answers with the build that
+spawned it: the terminal daemon echoes `--build`, the LaunchAgent carries
+`MAKO_DAEMON_VERSION`. Both come from `buildTag()` in `build-identity.ts`,
+which includes the packaged build ID because every local build reports the
+same version. A host from another build retires the daemon on first contact
+and respawns it from its own executable, so an update never keeps serving from
+the bundle it replaced. Terminal scrollback is persisted first; live shells
+are reported interrupted.
+
+launchd is consulted through `launchctl print`, never through the exit code
+of `bootstrap` or `bootout`: a bootstrap that loads the job has returned an
+I/O error, and deleting the plist on that verdict once left a job running for
+three days with no definition and no host able to see it. A loaded job with no
+plist is booted out by the installed app.
+
+A profile host (dev, sandbox, test) stops itself after twenty minutes with no
+client, no lifecycle work and no launcher lease (`host-idle.ts`; the dev
+launcher holds a pid-keyed lease beside the host socket). The installed
+app's default-profile host never does. Every host removes its runtime
+directory on exit, and a new host removes driver sockets whose owner is dead.
+Retained previous applications are pruned after a verified, launched install:
+only the newest backup survives, and only staging directories holding nothing
+but a backup and its installer script are removed, under the install lock.
+`test-host-idle.ts` and `test-local-update-install.ts` cover these.

@@ -6,6 +6,7 @@ import { createServer } from "vite"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir, homedir } from "node:os"
 import { ensureRuntime, runtimeDataRoot } from "../dist-electron/runtime-service.js"
+import { holdHostLease } from "../dist-electron/host-idle.js"
 import { join } from "node:path"
 import { webHostProxy } from "./web-dev-proxy.mjs"
 import { manualDevUpdates } from "./dev-updates.mjs"
@@ -28,6 +29,10 @@ const appData = process.platform === "darwin" ? join(homedir(), "Library", "Appl
 const dataRoot = runtimeDataRoot(appData, { ...process.env, MAKO_PROFILE: profile })
 const runtime = await ensureRuntime({ dataRoot, executable: electronPath, args: [root], cwd: root, env: { ...process.env, MAKO_PROFILE: profile } })
 const socket = runtime.socket
+// A profile host stops itself once nothing has used it for a while. This
+// launcher is a user, even between page loads, so it holds a lease keyed by
+// its own pid; a crashed launcher's lease expires with it.
+const releaseLease = profile ? await holdHostLease(runtime.directory) : null
 const cacheDirectory = await mkdtemp(join(tmpdir(), "mako-vite-"))
 const server = await createServer({
   cacheDir: cacheDirectory,
@@ -101,6 +106,7 @@ async function stop(code, signal) {
     compiler.kill("SIGTERM")
   }
   await server.close()
+  await releaseLease?.()
   await rm(cacheDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   process.exitCode = code
 }

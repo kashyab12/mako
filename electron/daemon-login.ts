@@ -21,6 +21,7 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 import { app } from "electron"
 import { DAEMON_NODE_ARGS } from "./daemon-command.js"
+import { buildTag } from "./build-identity.js"
 
 const run = promisify(execFile)
 
@@ -49,7 +50,7 @@ ${DAEMON_NODE_ARGS.map((argument) => `    <string>${argument}</string>`).join("\
   <key>EnvironmentVariables</key>
   <dict>
     <key>ELECTRON_RUN_AS_NODE</key><string>1</string>
-    <key>MAKO_DAEMON_VERSION</key><string>${app.getVersion()}</string>
+    <key>MAKO_DAEMON_VERSION</key><string>${buildTag()}</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key>
@@ -82,25 +83,39 @@ export async function refreshDaemonLoginJob(): Promise<void> {
   }
 }
 
-export async function daemonLoginProcess(): Promise<number | null> {
-  if (process.platform !== "darwin") return null
-  const uid = process.getuid?.() ?? 501
+function launchdUid(): number {
+  return process.getuid?.() ?? 501
+}
+
+/**
+ * Whether launchd currently holds the job, and under which pid if it runs.
+ * `launchctl print` is the only honest source: `bootstrap` and `bootout`
+ * report errors for jobs they did in fact load or unload, which once left a
+ * job running for days with its plist deleted and no host able to see it.
+ */
+export async function daemonLoginJob(): Promise<{ loaded: boolean; pid: number | null }> {
+  if (process.platform !== "darwin") return { loaded: false, pid: null }
   try {
-    const { stdout } = await run("launchctl", [
-      "print",
-      `gui/${uid}/${LABEL}`,
-    ])
+    const { stdout } = await run("launchctl", ["print", `gui/${launchdUid()}/${LABEL}`])
     const match = /\bpid = (\d+)/.exec(stdout)
-    return match ? Number(match[1]) : null
+    return { loaded: true, pid: match ? Number(match[1]) : null }
   } catch {
-    return null
+    return { loaded: false, pid: null }
   }
 }
 
+export async function daemonLoginProcess(): Promise<number | null> {
+  return (await daemonLoginJob()).pid
+}
+
+/** Unload the job and wait until launchd agrees it is gone. */
 export async function stopDaemonLoginJob(): Promise<void> {
   if (process.platform !== "darwin") return
-  const uid = process.getuid?.() ?? 501
-  await run("launchctl", ["bootout", `gui/${uid}/${LABEL}`]).catch(() => {})
+  await run("launchctl", ["bootout", `gui/${launchdUid()}/${LABEL}`]).catch(() => {})
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (!(await daemonLoginJob()).loaded) return
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
 }
 
 export async function daemonLoginEnabled(): Promise<boolean> {
@@ -123,9 +138,8 @@ export async function setDaemonLogin(enabled: boolean): Promise<void> {
   if (process.platform !== "darwin") {
     throw new Error("Login start is only wired up for macOS so far")
   }
-  const uid = process.getuid?.() ?? 501
   if (!enabled) {
-    await run("launchctl", ["bootout", `gui/${uid}/${LABEL}`]).catch(() => {})
+    await stopDaemonLoginJob()
     await rm(plistPath(), { force: true })
     return
   }
@@ -137,18 +151,24 @@ export async function setDaemonLogin(enabled: boolean): Promise<void> {
   await mkdir(join(homedir(), "Library", "LaunchAgents"), { recursive: true })
   await writeFile(plistPath(), plist, "utf8")
   // Re-bootstrap so a re-save (after an app update moved the binary) takes.
-  await run("launchctl", ["bootout", `gui/${uid}/${LABEL}`]).catch(() => {})
+  // The old job must be fully gone first: bootstrapping over a job still
+  // unloading fails with "already loaded" even though the new definition
+  // never took.
+  await stopDaemonLoginJob()
   let failure: Error | null = null
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
-      await run("launchctl", ["bootstrap", `gui/${uid}`, plistPath()])
-      return
+      await run("launchctl", ["bootstrap", `gui/${launchdUid()}`, plistPath()])
     } catch (error) {
       failure = error instanceof Error ? error : new Error(String(error))
-      await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)))
     }
+    // The job's presence decides, not the exit code: launchctl has returned an
+    // I/O error for a bootstrap that loaded the job. Deleting the plist on that
+    // verdict is what strands a job with no definition behind it.
+    if ((await daemonLoginJob()).loaded) return
+    await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)))
   }
-  // An unloadable plist should not stay on disk claiming otherwise.
+  // A plist launchd will not load should not stay on disk claiming otherwise.
   await rm(plistPath(), { force: true })
   throw new Error(`launchctl refused the job: ${failure?.message ?? "unknown error"}`)
 }
