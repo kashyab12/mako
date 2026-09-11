@@ -20,13 +20,13 @@ export function ThreadActions({ target, title, archived, running, controlled }: 
   }
   return (
     <span className="flex shrink-0 items-center" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
-      {running && controlled ? <button type="button" aria-label={`Stop ${title}`} title="Stop this run and pause its queue" disabled={busy} onClick={() => { void stop() }} className="pressable flex size-6 items-center justify-center rounded text-faint hover:bg-fill-hover hover:text-foreground disabled:opacity-40"><SquareIcon className="size-3" /></button> : null}
+      {running && controlled ? <button type="button" aria-label={`Stop ${title}`} title="Stop this run and pause its queue" disabled={busy} onClick={() => { void stop() }} className="pressable flex size-6 items-center justify-center rounded text-faint hover:bg-fill-hover hover:text-foreground disabled:opacity-40"><SquareIcon className="size-2.5 fill-current" strokeWidth={0} /></button> : null}
       <DropdownMenu.Root modal={false} onOpenChange={(open) => {
         if (!open) { setControls(null); return }
         setError(null)
         void threadLifecycle.controls(target).then(setControls).catch((error) => setError(error instanceof Error ? error.message : "Controls are unavailable"))
       }}>
-        <DropdownMenu.Trigger asChild><button type="button" aria-label={`Actions for ${title}`} className="pressable flex size-6 shrink-0 items-center justify-center rounded text-faint opacity-0 hover:bg-fill-hover group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"><MoreHorizontalIcon className="size-3.5" /></button></DropdownMenu.Trigger>
+        <DropdownMenu.Trigger asChild><button type="button" aria-label={`Actions for ${title}`} className="pressable flex size-6 shrink-0 items-center justify-center rounded text-faint hover:bg-fill-hover hover:text-foreground"><MoreHorizontalIcon className="size-3.5" /></button></DropdownMenu.Trigger>
         <DropdownMenu.Portal><DropdownMenu.Content align="end" sideOffset={4} className="overlay-panel z-50 min-w-48 rounded-lg p-1 text-ui">
           <DropdownMenu.Item disabled={busy || !controls?.stop} onSelect={() => { void stop() }} className="flex cursor-default items-center gap-2 rounded px-2 py-1.5 outline-none data-[highlighted]:bg-fill-hover data-[disabled]:text-faint"><SquareIcon className="size-3" />{controls?.external ? "Controlled by another app" : "Stop run and pause queue"}</DropdownMenu.Item>
           <DropdownMenu.Item data-thread-action="archive" onSelect={() => { void threadLifecycle.archive(target, !archived) }} className="flex cursor-default items-center gap-2 rounded px-2 py-1.5 outline-none data-[highlighted]:bg-fill-hover">{archived ? <ArchiveRestoreIcon className="size-3.5" /> : <ArchiveIcon className="size-3.5" />}{archived ? "Restore thread" : running ? "Archive when finished" : "Archive thread"}</DropdownMenu.Item>

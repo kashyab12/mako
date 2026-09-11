@@ -6,6 +6,7 @@ import { ThreadActions } from "@/components/rail/thread-actions"
 import { archivedThread, nativeThreadTarget, useThreadArchives } from "@/state/thread-lifecycle"
 import { HarnessIcon } from "@/components/ui/provider-icon"
 import { workspaceName } from "@/lib/format"
+import { threadFolderKey } from "@/lib/thread-folders"
 import type { ThreadRef } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { prefsStore, setPref, togglePinned, usePrefs } from "@/state/prefs"
@@ -53,21 +54,35 @@ const Attached = memo(function Attached({ path }: { path: string }) {
           className="size-1.5 shrink-0 rounded-full bg-foreground/45"
         />
       ) : null}
-      {tab.only ? null : (
-        <button
-          type="button"
-          aria-label="Detach"
-          title="Detach — stop holding this session open in the background"
-          onClick={(event) => {
-            event.stopPropagation()
-            void actions.closeTab(tab.id)
-          }}
-          className="shrink-0 rounded p-0.5 text-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
-        >
-          <XIcon className="size-3" />
-        </button>
-      )}
     </>
+  )
+})
+
+/** The detach control for an attached background tab; lives in the row's hover pill. */
+const Detach = memo(function Detach({ path }: { path: string }) {
+  const tab = useTabs(
+    useCallback(
+      (state: { tabs: TabInfo[]; activeId: string }) => {
+        const found = state.tabs.find((entry) => entry.sessionFile === path)
+        return found && state.tabs.length > 1 ? found.id : null
+      },
+      [path]
+    )
+  )
+  if (!tab) return null
+  return (
+    <button
+      type="button"
+      aria-label="Detach"
+      title="Detach — stop holding this session open in the background"
+      onClick={(event) => {
+        event.stopPropagation()
+        void actions.closeTab(tab)
+      }}
+      className="pressable flex size-6 items-center justify-center rounded text-faint hover:bg-fill-hover hover:text-foreground"
+    >
+      <XIcon className="size-3" />
+    </button>
   )
 })
 
@@ -147,7 +162,7 @@ export const ThreadRow = memo(function ThreadRow({
       data-conversation-id={target.kind === "live" ? target.id : undefined}
       data-thread-indent={indent || undefined}
       className={cn(
-        "group flex h-8 w-full items-center gap-2 rounded-md pr-1.5 text-left",
+        "group relative flex h-8 w-full items-center gap-2 rounded-md pr-1.5 text-left",
         indent ? "pl-[26px]" : "pl-1.5",
         "transition-colors duration-100 hover:bg-fill-hover data-active:bg-raised"
       )}
@@ -200,7 +215,7 @@ export const ThreadRow = memo(function ThreadRow({
           }}
           title="Double-click to rename"
           className={cn(
-            "min-w-0 flex-1 truncate text-ui",
+            "min-w-0 flex-[1_1_60%] truncate text-ui",
             lit ? "font-medium text-foreground" : "text-foreground/85"
           )}
         >
@@ -208,27 +223,13 @@ export const ThreadRow = memo(function ThreadRow({
         </span>
       )}
       {showFolder && ref.cwd ? (
-        <span className="max-w-[6rem] shrink-0 truncate text-label text-faint/70">
-          {workspaceName(ref.cwd)}
+        <span className="min-w-10 max-w-[6rem] shrink truncate text-label text-faint/70">
+          {threadFolderKey(ref) ? workspaceName(ref.cwd) : "tmp"}
         </span>
       ) : null}
-      <button
-        type="button"
-        aria-label={isPinned ? "Unpin" : "Pin"}
-        onClick={(event) => {
-          event.stopPropagation()
-          togglePinned(ref.path)
-        }}
-        className={cn(
-          "shrink-0 rounded p-0.5 transition-opacity duration-150",
-          isPinned
-            ? "text-foreground/70"
-            : "text-faint opacity-0 group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
-        )}
-      >
-        <PinIcon className={cn("size-3", isPinned && "fill-current")} />
-      </button>
-      <ThreadActions target={target} title={override ?? ref.title ?? "Untitled session"} archived={archived} running={working || activeElsewhere || status.kind === "needs-permission"} controlled={target.kind === "live" || working} />
+      {isPinned ? (
+        <PinIcon className="size-3 shrink-0 fill-current text-foreground/60" aria-label="Pinned" />
+      ) : null}
       <Attached path={ref.path} />
       {ref.archived ? (
         <ArchiveIcon
@@ -237,6 +238,26 @@ export const ThreadRow = memo(function ThreadRow({
         />
       ) : null}
       <ThreadStatusMark status={status} updatedAt={ref.updatedAt} />
+      {/* Hover pill: the row's controls, laid over the meta on hover or focus so
+          a row never reserves width for buttons nobody can see. */}
+      <span
+        className="absolute top-1/2 right-7 hidden -translate-y-1/2 items-center gap-0.5 rounded-md bg-raised p-0.5 group-hover:flex group-focus-within:flex group-focus-visible:flex"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          aria-label={isPinned ? "Unpin" : "Pin"}
+          onClick={(event) => {
+            event.stopPropagation()
+            togglePinned(ref.path)
+          }}
+          className="pressable flex size-6 items-center justify-center rounded text-faint hover:bg-fill-hover hover:text-foreground"
+        >
+          <PinIcon className={cn("size-3", isPinned && "fill-current")} />
+        </button>
+        <ThreadActions target={target} title={override ?? ref.title ?? "Untitled session"} archived={archived} running={working || activeElsewhere || status.kind === "needs-permission"} controlled={target.kind === "live" || working} />
+        <Detach path={ref.path} />
+      </span>
     </div>
   )
 })

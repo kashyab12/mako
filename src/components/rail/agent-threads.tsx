@@ -7,7 +7,7 @@ import {
 import { LiveAgentRow } from "@/components/rail/active-threads"
 import type { AcpPresence } from "@/state/acp-presence"
 import { ThreadRow } from "@/components/rail/thread-row"
-import { harnessLabel } from "@/components/rail/harness-meta"
+import { HARNESS_LABEL, harnessLabel } from "@/components/rail/harness-meta"
 import { formatRelative } from "@/lib/format"
 import {
   groupThreadFolders,
@@ -617,6 +617,7 @@ function HarnessFilter({
       <PopoverContent align="end" sideOffset={6} className="w-56 p-1">
         <p className={section}>Agents</p>
         {[...counts.entries()]
+          .filter(([harness]) => harness in HARNESS_LABEL)
           .sort((a, b) => b[1] - a[1])
           .map(([harness, count]) => {
             const active = filter.includes(harness)
@@ -769,7 +770,7 @@ function FolderSection({
           )}
           <span
             className={cn(
-              "min-w-0 flex-1 truncate text-ui",
+              "min-w-14 flex-1 truncate text-ui",
               folder.current
                 ? "font-medium text-foreground"
                 : "text-foreground/80"
@@ -780,7 +781,7 @@ function FolderSection({
           {branch ? (
             <span
               title={branch}
-              className="max-w-24 shrink-0 truncate font-mono text-label text-faint/70"
+              className="min-w-0 max-w-24 shrink truncate font-mono text-label text-faint/70"
             >
               {branch}
             </span>

@@ -451,6 +451,13 @@ it while the thread is working, observed, or externally active, and settles it
 once when it finishes, so a file that changes on every token moves nothing.
 Every folder shows the same number of lead rows; selecting a project never
 resizes one. `test-stage-layout.ts` covers the ranks and the stable order.
+A row's controls (pin, stop, actions, detach) live in a pill that appears over
+the row's meta on hover or focus; an invisible control must never reserve
+width, because at the rail's default width that halves the title. Titles keep
+most of a row and folder chips shrink first; folder names keep room and the
+branch label shrinks first. The Agents filter lists only providers the desk
+names. A thread in a temporary directory is labelled `tmp`, never the random
+directory name.
 
 Native session ownership is provider plus native session ID, not a catalog path.
 Account roots can expose one Claude session through multiple paths. Capture and

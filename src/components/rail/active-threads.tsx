@@ -4,6 +4,7 @@ import { ActivityMark, type ActivityState } from "@/components/ui/activity-mark"
 import { ThreadActions } from "@/components/rail/thread-actions"
 import { archivedLive, useThreadArchives } from "@/state/thread-lifecycle"
 import { workspaceName } from "@/lib/format"
+import { threadFolderKey } from "@/lib/thread-folders"
 import { acp } from "@/state/acp"
 import type { AcpPresence } from "@/state/acp-presence"
 import { cn } from "@/lib/utils"
@@ -49,22 +50,27 @@ export function LiveAgentRow({
       data-thread-indent={indent || undefined}
       onClick={() => acp.activate(presence.key)}
       className={cn(
-        "pressable group flex h-8 w-full items-center gap-2 rounded-md pr-1.5 text-left transition-colors duration-100 hover:bg-fill-hover",
+        "pressable group relative flex h-8 w-full items-center gap-2 rounded-md pr-1.5 text-left transition-colors duration-100 hover:bg-fill-hover",
         indent ? "pl-[26px]" : "pl-1.5"
       )}
     >
       <HarnessIcon harness={presence.harness} className="size-3 shrink-0" />
-      <span className="min-w-0 flex-1 truncate text-ui text-foreground/85">
+      <span className="min-w-0 flex-[1_1_60%] truncate text-ui text-foreground/85">
         {title}
       </span>
       {!indent ? (
-        <span className="max-w-20 shrink-0 truncate text-label text-faint">
-          {workspaceName(presence.cwd)}
+        <span className="min-w-10 max-w-[6rem] shrink truncate text-label text-faint">
+          {threadFolderKey(presence) ? workspaceName(presence.cwd) : "tmp"}
         </span>
       ) : null}
-      <ThreadActions target={{ kind: "live", id: presence.key }} title={title} archived={archived} running={presence.status === "running" || presence.status === "starting" || presence.status === "needs-permission"} controlled />
       <span title={label} className="flex shrink-0 text-muted-foreground">
         <ActivityMark state={state} size={20} />
+      </span>
+      <span
+        className="absolute top-1/2 right-7 hidden -translate-y-1/2 items-center gap-0.5 rounded-md bg-raised p-0.5 group-hover:flex group-focus-within:flex group-focus-visible:flex"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <ThreadActions target={{ kind: "live", id: presence.key }} title={title} archived={archived} running={presence.status === "running" || presence.status === "starting" || presence.status === "needs-permission"} controlled />
       </span>
     </div>
   )
