@@ -355,13 +355,24 @@ second animated status.
 
 ## Working on the UI
 
-`npm run dev` (or `npm run web`) attaches a local web UI to the shared persistent
-host, starting it if absent. `npm run desktop` and the installed app attach desktop
-clients to that same profile. The host owns provider processes and journals;
-closing every client or stopping Vite does not terminate agents. Open Vite's URL
-without `?mock` for normal UI verification. Opening a thread does not start an
-agent; sending a prompt does. `MAKO_PROFILE` or `--sandbox` explicitly selects a
-separate host. Never silently create a second host when attachment fails.
+`npm run dev` (or `npm run web`) attaches a local web UI to the `dev` profile's
+persistent host, starting it if absent; `npm run desktop` attaches a desktop
+client to that same host. The installed app runs its own host on the default
+profile, so a development restart never drops the desk you work in and an
+in-app install never closes a development session. Pass `--shared` to attach
+development clients to the installed app's host on purpose. The host owns
+provider processes and journals; closing every client or stopping Vite does not
+terminate agents. Open Vite's URL without `?mock` for normal UI verification.
+Opening a thread does not start an agent; sending a prompt does. `MAKO_PROFILE`
+or `--sandbox` explicitly selects another separate host. Never silently create a
+second host when attachment fails.
+
+When the host closes for a restart, install or quit it answers every pending
+call with `host-restarting` (`electron/contracts/host-connection.ts`) instead of
+resetting the connection. The client turns that, and a dropped socket, into
+`RuntimeDisconnectedError`; `electron/runtime-retry.ts` repeats read-only
+channels once the event stream reattaches and never repeats a mutation. The
+renderer treats that error as the reconnect banner, not a toast.
 
 `npm run dev:fixtures` plus `?mock` is an explicit fixture mode for deterministic
 edge cases, not the default UI verification path. Changes to host handler
@@ -632,6 +643,16 @@ actual package metadata and cross-build signing requirements. Install with
 read-only readiness check. Installation refuses running Mako processes or a
 running default shared host and retains the previous app. Open the installed
 app before starting a development host after the one-time signing transition.
+
+A TCC grant is bound to the designated requirement the app had when the row
+was written, so a build whose requirement differs (an ad-hoc cdhash, a new
+certificate) is denied while System Settings still shows the toggle on and
+macOS never prompts again. Both installers compare the retained app's
+requirement with the new one and reset Mako's Accessibility and Screen
+Recording rows when they differ; the receipt says to grant again. Settings'
+Grant resets its own row before prompting for the same reason. Read tccd's
+verdict with `/usr/bin/log show --predicate 'process == "tccd"' --info`;
+zsh's `log` builtin shadows the command and prints nothing.
 
 Performance audit tooling is isolated from application entry points. Run
 `npx tsx --tsconfig tsconfig.app.json scripts/audit-runtime-performance.ts` for

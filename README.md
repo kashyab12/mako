@@ -5,7 +5,7 @@
 <h1 align="center">Mako</h1>
 
 <p align="center">
-  Run coding agents on your Mac.
+  One desktop app for Claude Code, Codex, Cursor, Grok, Devin, and OpenCode.
 </p>
 
 <p align="center">
@@ -16,113 +16,84 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/mako-hero.png" alt="Mako running a coding-agent session" width="1120" />
+  <img src="docs/images/mako-hero.png" alt="Mako with a Claude Code thread open, the project rail on the left, and the changed files and commit box on the right" width="1120" />
 </p>
 
-Mako finds sessions created by the supported CLIs and apps. Open a session to
-watch it update, resume it with the tool that created it, or continue it with a
-different tool.
+Mako is a macOS workspace for AI coding agents. It finds the sessions your
+agent CLIs already created, opens them live, and lets you resume each one with
+the tool that made it or hand it to a different agent. Several agents run at
+once, each in its own thread, beside the git diff and the files they touch.
+
+If you keep six terminal tabs open for six different agents, this is the one
+window that replaces them.
 
 ## What it does
 
-- Runs multiple agent sessions concurrently.
-- Lists sessions created in Mako, a terminal, Zed, and other ACP clients.
-- Streams text, reasoning, tools, plans, permissions, and subagent activity.
-- Resumes sessions through their original CLI.
-- Moves conversations between supported agents using a deterministic transcript.
-- Shows changed files, diffs, commits, pull requests, context, and terminals.
-- Runs browser and computer-use tools locally.
-- Queues Slack requests while the Mac is offline, then runs them locally.
+- Runs every supported agent side by side. Each thread keeps its own provider,
+  model, reasoning effort, and permission mode.
+- Lists sessions from Mako, your terminal, Zed, and other ACP clients, grouped
+  by project and ordered by activity.
+- Streams text, reasoning, tool calls, plans, permission prompts, and subagent
+  work as they happen.
+- Resumes a session through its original CLI, or continues it with a different
+  agent using a deterministic transcript.
+- Shows the working tree next to the conversation: changed files, diffs,
+  commits, a commit-message drafter, and push.
+- Opens files in tabs beside the chat, with split panes and a terminal dock.
+- Lists the selected agent's skills and MCP servers when you type `/` or `$`.
+- Shows context and token usage per session when the provider reports real
+  numbers. No estimates dressed up as readings.
+- Runs browser and computer-use tools locally. Slack requests queue while the
+  Mac is offline and run when it is back.
 
-## File workbench
+<table>
+  <tr>
+    <td width="62%"><img src="docs/images/mako-skills.png" alt="Typing a slash in the composer lists the skills and MCP servers the selected agent will have" /></td>
+    <td width="38%"><img src="docs/images/mako-context.png" alt="The Context panel showing agent, model, token counts, and the files in play" /></td>
+  </tr>
+</table>
+
+## Sessions from other tools
 
 <p align="center">
-  <img src="docs/images/mako-workbench.png" alt="Conversation with split file panes" width="1120" />
+  <img src="docs/images/mako-cursor-session.png" alt="A Cursor session opened read-only from its native store, with the option to continue in a new Cursor session" width="900" />
 </p>
 
-The conversation stays open next to the file viewer. Files open in preview tabs;
-double-click a tab to keep it. Split the file area right or down.
+Mako reads each tool's own session store. Credentials stay with the tool that
+owns them, and the interface only ever sees a redacted, provider-neutral view.
 
-Mako renders:
-
-- source code with syntax highlighting
-- Markdown as source or formatted text
-- workspace images referenced by Markdown
-- PNG, JPEG, GIF, WebP, SVG, and AVIF
-- PDF, audio, and video
-- CSV and TSV tables with bounded rows and columns
-- macOS Quick Look thumbnails for Excel and Numbers files
-
-Open files can also be sent to Zed, Cursor, VS Code, Windsurf, Sublime Text, or
-Xcode. Mako detects which editors are installed.
-
-## Sessions and providers
-
-| Provider | Discover | Follow while running | Resume | Interactive transport |
+| Provider | Discover | Follow live | Resume | Transport |
 | --- | :---: | :---: | :---: | --- |
 | Claude Code | yes | yes | yes | ACP |
 | Codex | yes | yes | yes | app-server |
 | Cursor | yes | yes | yes | ACP |
 | Grok | yes | yes | yes | ACP |
 | Devin | yes | yes | yes | ACP |
-| OpenCode 2 / OpenCode | yes | yes | yes | ACP |
+| OpenCode | yes | yes | yes | ACP |
 
-Mako reads each tool’s session store directly. Credentials stay with the tool
-that owns them. The renderer receives a redacted, provider-independent IPC
-contract.
-
-Completed tool calls are grouped into a work log. A running turn stays open and
-shows live activity. Interrupted turns are labeled as interrupted instead of
-being presented as completed work. Subagent assignments and results are
-available inside the same work log.
-
-## Accounts and usage
-
-<p align="center">
-  <img src="docs/images/mako-usage.png" alt="Account usage and local cost chart" width="880" />
-</p>
-
-Mako reads account identity and rate-limit windows from provider credentials and
-provider endpoints. It preserves the windows as reported.
-
-The Usage page scans local Claude Code, Codex, OpenCode, and Mako history. It
-separates costs reported by a runtime from estimates based on current API list
-prices. Estimates are not billing totals.
-
-## Integrations
-
-<p align="center">
-  <img src="docs/images/mako-integrations.png" alt="Mako integration settings" width="880" />
-</p>
-
-Slack works with a bot and backend you control. The project’s Vercel Connect
-configuration is optional. See [Run your own Mako Slack bot](docs/self-hosted-slack.md)
-for the Slack app scopes, Azure queue, environment variables, and desktop setup.
-
-Browser and computer-use integrations run locally. Mako does not offer a cloud
-browser mode.
+Completed tool calls fold into a work log under the answer they produced.
+A running turn stays open with live activity. An interrupted turn is marked
+interrupted, not presented as finished work.
 
 ## Install
 
-Mako currently ships for Apple-silicon Macs and is **not signed or notarized by
-Apple**. Read the [installer](scripts/install-macos.sh), then run:
+Mako ships for Apple-silicon Macs and is **not signed or notarized by Apple**.
+Read the [installer](scripts/install-macos.sh) first, then run:
 
 ```bash
 curl -fsSL https://github.com/kashyab12/mako/releases/latest/download/install-macos.sh | bash
 ```
 
-The installer downloads the DMG and published checksum from GitHub, verifies the
-DMG before mounting it, copies only Mako into Applications, and removes
-quarantine only from that copied app. It does not disable Gatekeeper globally or
-change macOS security policy. See [macOS distribution](docs/macos-release.md)
-for the complete security disclosure and manual DMG instructions.
-
-Unsigned builds cannot safely authenticate automatic updates. Re-run the same
-installer command to update Mako.
+The script downloads the DMG and its published checksum, verifies the DMG
+before mounting it, copies only Mako into Applications, and removes quarantine
+from that one app. It does not change Gatekeeper or any other macOS policy.
+Unsigned builds cannot verify automatic updates, so re-run the same command to
+update. See [macOS distribution](docs/macos-release.md) for the full
+disclosure and manual DMG steps.
 
 ### Run from source
 
-Requirements: Node.js 24, Git, and at least one supported agent CLI.
+Requires Node.js 24, Git, and at least one supported agent CLI.
 
 ```bash
 git clone https://github.com/kashyab12/mako.git
@@ -131,97 +102,69 @@ npm install
 npm run desktop
 ```
 
-For interface work in a browser with your real sessions and settings:
+`npm run dev` serves the same interface in a browser against your real
+sessions. Reload UI picks up renderer edits without restarting agents, and
+`npm run dev:hot` makes that automatic. A source checkout keeps its own data
+directory, so it runs beside the installed app. Opening a thread never starts
+an agent. Sending a prompt does.
 
-```bash
-npm run dev
-# Open the local URL printed by Vite, without ?mock.
-```
+## Keyboard
 
-This starts the same host used by the desktop app and streams real session,
-provider, terminal, and git events into the web UI. Reading threads does not start
-an agent. Sending prompts, editing files, and git actions operate on real data.
-The web gateway listens on loopback and forwards same-origin requests through a
-private local socket. Run one desk host at a time for a given Mako data directory.
-
-A source checkout keeps its own data directory (`mako-dev`), so it runs beside
-the installed app; set `MAKO_PROFILE=<name>` for another isolated instance.
-Edits under `src/` hot-reload into the window. Edits under `electron/` are
-compiled as you save; run **Restart Mako** from the palette to load them.
-Conversations reopen from their journals, and only the provider processes end.
-
-For deterministic fixture cases, use `npm run dev:fixtures` and append `?mock`.
-Run `npm run generate:host-inputs` after changing host handler arguments and
-`npm run test:web` to verify the generated contract and local gateway.
-
-## Useful shortcuts
-
-| Shortcut | Action |
+| Keys | Action |
 | --- | --- |
-| `⌘K` | Open the command palette |
+| `⌘K` | Command palette |
+| `⌘N` | New session |
+| `⌘T` | Attach another session |
 | `⌘P` | Open a file |
 | `⌘⇧F` | Search files and conversations |
-| `⌘T` | Start a session |
-| `⌘1–9` | Switch session tabs |
-| `⌘↑ / ⌘↓` | Move between conversation turns |
-| `⌘/` | Show keyboard help |
-| `Esc` | Stop or close the current activity |
+| `⌘⇧L` | Search sessions |
+| `⌘J` | Terminal dock |
+| `⌘B` / `⌘⌥B` | Session list / right sidebar |
+| `⌘1`, `⌘2` … | Chat, then each right-sidebar surface in order |
+| `⌘⇧G` | Draft a commit message |
+| `⌘⇧M` | Switch model |
+| `⌘⎋` | Stop the current turn |
+| `⌘/` | What is where |
 
-## Architecture
+## How it is built
 
 ```text
 Claude Code · Codex · Cursor · Grok · Devin · OpenCode
-                           │
-                           ▼
-              Electron host + @mako/sessions
-          processes · session stores · git · credentials
-                           │
-                           ▼
-                    React renderer
+                        │
+                        ▼
+        Electron host + @mako/sessions
+   provider processes · session stores · git
+                        │
+                        ▼
+                 React renderer
 ```
 
-The host owns processes, credentials, native session formats, and Git. The
-renderer uses one IPC contract. Streaming sends only the current message;
-unchanged sessions are not reread. Long lists are virtualized and syntax
-highlighting loads when a file is opened.
-
-## Build and release
-
-```bash
-npm run lint
-npm run typecheck:all
-npm run package:mac
-```
-
-`npm run package:mac` writes the fixed-name DMG, ZIP, blockmaps, and updater
-metadata to `release/`. A `v*` tag verifies the package, copies the disclosed
-installer, writes checksums, and publishes the GitHub Release only after those
-checks pass. Until the project joins the Apple Developer Program, release notes
-and installation documentation explicitly identify builds as unsigned.
-
-The same workflow automatically raises its bar to Developer ID, notarization,
-stapler, and Gatekeeper verification when all protected Apple credentials are
-configured. See [macOS distribution](docs/macos-release.md).
+The host owns provider processes, native session formats, credentials, and
+Git. The renderer speaks one wire contract. Streaming sends only the message in
+flight, long lists are virtualized, and unchanged sessions are never reread.
+Every provider is installed from one module and no provider gets a privileged
+path. [AGENTS.md](AGENTS.md) has the full set of rules.
 
 ## Security
 
-- Provider credentials remain in provider storage or macOS Keychain.
-- Secrets are removed before data crosses IPC.
-- Slack verifies timestamped signatures and checks a team and user allowlist.
-- Automation definitions start disabled on a new machine.
-- Browser and computer-use tools run locally.
-- Crash reports remain on disk unless the user copies one.
+- Provider credentials stay in provider storage or the macOS Keychain.
+- The host strips secrets before anything reaches the interface.
+- Slack verifies timestamped signatures against a team and user allowlist.
+  Running your own bot is documented in
+  [Run your own Mako Slack bot](docs/self-hosted-slack.md).
+- Browser and computer-use tools run on your machine. There is no cloud
+  browser mode.
+- Crash reports stay on disk until you choose to share one.
 
 ## Development
 
-Read [AGENTS.md](AGENTS.md) before changing provider or IPC architecture.
-
 ```bash
-npm run typecheck:all
 npm run lint
+npm run typecheck:all
 npm test --workspace @mako/sessions
-npm run backend:test
 ```
+
+Read [AGENTS.md](AGENTS.md) before touching provider or host code.
 
 ## License
 

@@ -16,7 +16,7 @@
     "test:background-lifecycle": "npm run build:electron && node scripts/test-background-lifecycle.mjs",
     "test:desktop-continuity": "npm run build:electron && node scripts/test-desktop-continuity.mjs",
     "test:shared-runtime": "npm run build && node scripts/test-shared-runtime.mjs",
-    "test:thread-lifecycle": "tsx scripts/test-thread-lifecycle.ts && tsx scripts/test-runtime-transport.ts",
+    "test:thread-lifecycle": "tsx scripts/test-thread-lifecycle.ts && tsx scripts/test-runtime-transport.ts && tsx scripts/test-runtime-recovery.ts",
     "test:workspace-ui": "node scripts/test-workspace-ui.mjs",
     "desktop": "npm run build:electron && node electron/start.mjs",
     "backend:build": "npm run build --workspace @mako/backend",
