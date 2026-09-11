@@ -1,10 +1,11 @@
-import { fork } from "node:child_process"
-import { cp, lstat, mkdtemp } from "node:fs/promises"
+import { fork, type ChildProcess } from "node:child_process"
+import { cp, lstat, mkdir, mkdtemp } from "node:fs/promises"
 import { constants } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { verifyLocalCandidate } from "./local-updates.js"
 import { resolveExecutable } from "./executable.js"
+import { desktopLaunchEnvironment } from "./local-update-installer.js"
 
 export async function prepareLocalInstall(
   candidate: { app: string; identity: string },
@@ -18,6 +19,7 @@ export async function prepareLocalInstall(
     throw new Error(
       "Install Mako in /Applications before using in-app updates."
     )
+  await mkdir(dirname(receipt), { recursive: true, mode: 0o700 })
   const staging = await mkdtemp("/Applications/.mako-update-")
   const app = join(staging, "Mako.app")
   await cp(candidate.app, app, {
@@ -36,6 +38,7 @@ export async function prepareLocalInstall(
     [staging, candidate.identity, String(process.pid), receipt],
     {
       execPath: node,
+      env: desktopLaunchEnvironment(process.env),
       stdio: ["ignore", "ignore", "ignore", "ipc"],
       detached: true,
     }
@@ -61,15 +64,18 @@ export async function prepareLocalInstall(
       reject(new Error("The installer exited before it was ready."))
     })
   })
+  let dispatched = false
   return {
     install() {
+      if (dispatched) return
       if (!child.connected)
         throw new Error("The prepared installer is no longer running.")
       child.send("install")
+      dispatched = true
       child.unref()
     },
     cancel() {
-      child.kill()
+      if (!dispatched) child.kill()
     },
   }
 }

@@ -47,7 +47,8 @@ export async function runtimeInfo(socket: string) {
 }
 
 export async function invokeRuntime(socket: string, client: string, channel: string, args: unknown[]) {
-  const body = RuntimeCallSchema.parse({ channel, args: args.map((value) => value === undefined ? { kind: "absent" } : { kind: "value", value }) })
+  const encoded = JSON.stringify({ channel, args: args.map((value) => value === undefined ? { kind: "absent" } : { kind: "value", value }) })
+  const body = RuntimeCallSchema.parse(JSON.parse(encoded))
   const reply = await runtimeRequest({ socket, path: "/rpc", schema: RuntimeReplySchema, body, client, timeoutMs: 5 * 60_000 })
   if (!reply.ok) throw new Error(reply.error)
   return reply.value

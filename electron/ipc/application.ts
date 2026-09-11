@@ -53,10 +53,16 @@ export function installApplicationIpc(dependencies: ApplicationDependencies) {
         ]
       : []),
   ]
-  const closeClients = (action: LifecycleAction) =>
-    shutdown.request(dependencies.clients(), (requestId) =>
+  const closeClients = async (action: LifecycleAction) => {
+    const clients = new Set(dependencies.clients())
+    await shutdown.request([...clients], (requestId) =>
       dependencies.emit({ type: "app-shutdown", requestId, action })
     )
+    if (dependencies.clients().some((client) => !clients.has(client)))
+      throw new Error(
+        "Another Mako window opened during shutdown. Nothing was installed. Review the open windows and try again."
+      )
+  }
   const lifecycle = new ApplicationLifecycle({
     work,
     ready(action) {

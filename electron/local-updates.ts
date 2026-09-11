@@ -118,7 +118,7 @@ export class LocalUpdates {
       const result = z
         .object({ ok: z.boolean(), message: z.string().optional() })
         .parse(JSON.parse(receipt))
-      if (!result.ok)
+      if (!result.ok || result.message)
         this.state = {
           kind: "error",
           message:

@@ -9,7 +9,7 @@ interface PendingShutdown {
 
 export class WindowShutdown {
   private pending: PendingShutdown | null = null
-  private completed: string | null = null
+  private completed: { id: string; clients: Set<string> } | null = null
   private readonly timeoutMs: number
   constructor(timeoutMs = 15_000) {
     this.timeoutMs = timeoutMs
@@ -31,7 +31,7 @@ export class WindowShutdown {
       }, this.timeoutMs)
       complete = () => {
         clearTimeout(timer)
-        this.completed = id
+        this.completed = { id, clients: new Set(clients) }
         this.pending = null
         resolve()
       }
@@ -42,7 +42,7 @@ export class WindowShutdown {
   }
 
   acknowledge(id: string, client: string): boolean {
-    if (this.completed === id) return true
+    if (this.completed?.id === id) return this.completed.clients.has(client)
     if (this.pending?.id !== id || !this.pending.clients.has(client))
       return false
     this.pending.clients.delete(client)

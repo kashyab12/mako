@@ -35,7 +35,12 @@ export class ApplicationLifecycle {
       .update(
         JSON.stringify(
           work
-            .map(({ id, token, stoppable }) => ({ id, token, stoppable }))
+            .map(({ id, token, status, stoppable }) => ({
+              id,
+              token,
+              status,
+              stoppable,
+            }))
             .sort((a, b) => a.id.localeCompare(b.id))
         )
       )

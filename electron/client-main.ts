@@ -18,7 +18,7 @@ const uiRoot = `${dataRoot}-ui-${flavor}`
 app.setPath("userData", uiRoot)
 protocol.registerSchemesAsPrivileged([{ scheme: "mako-file", privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true } }])
 
-const launch = { dataRoot, executable: process.execPath, args: app.isPackaged ? [] : [app.getAppPath()], cwd: app.getAppPath(), env: process.env }
+const launch = { dataRoot, executable: process.execPath, args: app.isPackaged ? [] : [app.getAppPath()], cwd: process.cwd(), env: process.env }
 const clients = new Map<number, { id: string; connected: boolean; dispose(): void }>()
 let runtime: Awaited<ReturnType<typeof ensureRuntime>>
 let shuttingDown = false
@@ -36,7 +36,15 @@ function requestCommand(command: "app.quit" | "app.updates"): void {
   }
 }
 
+function finishClientShutdown(): void {
+  if (!shutdownAction || shuttingDown || BrowserWindow.getAllWindows().length) return
+  shuttingDown = true
+  if (shutdownAction === "restart") app.relaunch()
+  app.quit()
+}
+
 async function openWindow(preview = false) {
+  if (closingLocally || shutdownAction || shuttingDown) throw new Error("Mako is closing safely. Open another window after it finishes.")
   const id = randomUUID()
   const window = new BrowserWindow({
     title: isDev ? "Mako Dev" : "Mako", width: 1440, height: 960, minWidth: 640, minHeight: 540,
@@ -79,7 +87,7 @@ async function openWindow(preview = false) {
     })
   }
   connect()
-  window.once("closed", () => { client.dispose(); clients.delete(rendererId) })
+  window.once("closed", () => { client.dispose(); clients.delete(rendererId); finishClientShutdown() })
   window.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//i.test(url)) void shell.openExternal(url); return { action: "deny" } })
   const query = new URLSearchParams({ runtime: "shared" })
   if (process.env.MAKO_PROFILE) query.set("profile", process.env.MAKO_PROFILE)
@@ -123,10 +131,7 @@ async function start() {
       if (channel === "mako:quit-client") {
         if (shutdownAction) {
           BrowserWindow.fromWebContents(event.sender)?.close()
-          if (BrowserWindow.getAllWindows().length) return
-          if (shutdownAction === "restart") app.relaunch()
-          shuttingDown = true
-          app.quit()
+          finishClientShutdown()
         } else if (!closingLocally) {
           closingLocally = true
           void draftShutdown.request([...clients.keys()].map(String), (requestId) => {
