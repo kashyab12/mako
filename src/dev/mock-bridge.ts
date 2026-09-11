@@ -776,6 +776,7 @@ export function installMockBridge() {
         available: true,
         transport: "acp" as const,
         defaultModel: "opus[1m]",
+        settings: { model: "opus[1m]" },
         capabilities: ["stream", "fork"],
         models: [
           {
@@ -808,6 +809,7 @@ export function installMockBridge() {
         available: true,
         transport: "app-server" as const,
         defaultModel: "gpt-5.6-sol",
+        settings: { model: "gpt-5.6-sol" },
         capabilities: ["stream", "fork-at-turn"],
         models: [
           {
@@ -833,6 +835,7 @@ export function installMockBridge() {
         available: true,
         transport: "acp" as const,
         defaultModel: "claude-fable-5",
+        settings: { model: "claude-fable-5" },
         capabilities: ["stream"],
         models: [
           { id: "claude-fable-5", label: "Claude Fable 5", options: [] },
@@ -852,6 +855,7 @@ export function installMockBridge() {
         available: true,
         transport: "acp" as const,
         defaultModel: "adaptive",
+        settings: { model: "adaptive" },
         capabilities: ["stream"],
         models: [{ id: "adaptive", label: "Adaptive", options: [] }],
       },
@@ -861,6 +865,7 @@ export function installMockBridge() {
         available: true,
         transport: "acp" as const,
         defaultModel: "opencode/x-preview-f-free",
+        settings: { model: "opencode/x-preview-f-free" },
         capabilities: ["stream", "resume", "models"],
         models: [
           {
@@ -931,6 +936,8 @@ export function installMockBridge() {
         modes: [],
         currentMode: null,
         configOptions: [],
+        // The host reports the tuning it started with until the provider says otherwise.
+        settings: options.tuning,
       }
       acpSessions.set(session.id, session)
       const request: LiveRequest | undefined = options.initialRequest
@@ -1406,48 +1413,47 @@ export function installMockBridge() {
       run: { path: `fresh:${harness}:1`, harness, status: "running" as const },
       cwd: "/Users/you/mako",
     }),
-    harnessTuning: async (harness: string) => ({
-      id: harness,
-      label: harness,
-      available: true,
-      transport:
-        harness === "codex" ? ("app-server" as const) : ("acp" as const),
-      defaultModel:
+    harnessTuning: async (harness: string) => {
+      const model =
         harness === "claude"
           ? "opus[1m]"
           : harness === "devin"
             ? "adaptive"
-            : "gpt-5.6-sol",
-      capabilities: ["stream"],
-      models: [
-        {
-          id:
-            harness === "claude"
-              ? "opus[1m]"
-              : harness === "devin"
-                ? "adaptive"
-                : "gpt-5.6-sol",
-          label:
-            harness === "claude"
-              ? "Opus 5"
-              : harness === "devin"
-                ? "Adaptive"
-                : "GPT-5.6 Sol",
-          options: [
-            {
-              kind: "select" as const,
-              id: "effort",
-              label: "Reasoning",
-              current: "high",
-              values: ["low", "medium", "high", "xhigh"].map((value) => ({
-                value,
-                label: value,
-              })),
-            },
-          ],
-        },
-      ],
-    }),
+            : "gpt-5.6-sol"
+      return {
+        id: harness,
+        label: harness,
+        available: true,
+        transport:
+          harness === "codex" ? ("app-server" as const) : ("acp" as const),
+        defaultModel: model,
+        settings: { model },
+        capabilities: ["stream"],
+        models: [
+          {
+            id: model,
+            label:
+              harness === "claude"
+                ? "Opus 5"
+                : harness === "devin"
+                  ? "Adaptive"
+                  : "GPT-5.6 Sol",
+            options: [
+              {
+                kind: "select" as const,
+                id: "effort",
+                label: "Reasoning",
+                current: "high",
+                values: ["low", "medium", "high", "xhigh"].map((value) => ({
+                  value,
+                  label: value,
+                })),
+              },
+            ],
+          },
+        ],
+      }
+    },
     abortThreadRun: async () => {},
     usage: async () => ({
       total: {
