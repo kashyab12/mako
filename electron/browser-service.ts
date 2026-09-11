@@ -1,15 +1,22 @@
 import { randomUUID } from "node:crypto"
-import { isAbsolute } from "node:path"
+import { stat, writeFile } from "node:fs/promises"
+import { dirname, isAbsolute, join } from "node:path"
 import { z } from "zod"
 import { imageSize } from "image-size"
 import {
   BrowserConnection,
   type BrowserProtocolEvent,
 } from "./browser-connection.js"
-import { navigatePage, screenshotGeometry } from "./browser-page.js"
+import {
+  navigatePage,
+  pageMetrics,
+  screenshotGeometry,
+  type ElementBox,
+} from "./browser-page.js"
 import {
   AccessibilityNodeSchema,
   browserObservation,
+  OBSERVATION_BUDGET_BYTES,
 } from "./browser-observation.js"
 import { localBrowsers, type LocalBrowser } from "./browser-discovery.js"
 import {
@@ -17,6 +24,7 @@ import {
   type BrowserCommand,
   type BrowserControlStatus,
   type BrowserTarget,
+  type KeyModifierSchema,
 } from "./contracts/browser-control.js"
 import type { JsonObject, JsonValue } from "./codex-app-json.js"
 
@@ -28,6 +36,183 @@ const targetInfo = z.object({
 })
 const targetsResult = z.object({ targetInfos: z.array(targetInfo) })
 const sessionResult = z.object({ sessionId: z.string() })
+const pointResult = z.object({
+  result: z.object({ value: z.object({ x: z.number(), y: z.number() }) }),
+})
+const boxResult = z.object({
+  result: z.object({
+    value: z.object({
+      x: z.number(),
+      y: z.number(),
+      width: z.number(),
+      height: z.number(),
+    }),
+  }),
+})
+const editableResult = z.object({
+  result: z.object({
+    value: z.object({ tag: z.string(), length: z.number() }),
+  }),
+})
+const scrollResult = z.object({
+  result: z.object({ value: z.object({ x: z.number(), y: z.number() }) }),
+})
+const mainFrame = z.object({
+  frame: z.object({ parentId: z.string().optional() }),
+})
+const dialogOpening = z.object({
+  type: z.string(),
+  message: z.string().default(""),
+  defaultPrompt: z.string().optional(),
+  url: z.string().optional(),
+})
+const requestEvent = z.object({ requestId: z.string() })
+const downloadBegin = z.object({
+  guid: z.string(),
+  url: z.string().optional(),
+  suggestedFilename: z.string().optional(),
+})
+const downloadProgress = z.object({
+  guid: z.string(),
+  state: z.enum(["inProgress", "completed", "canceled"]),
+  receivedBytes: z.number().optional(),
+  totalBytes: z.number().optional(),
+})
+const frameNode = z.object({
+  frame: z.object({
+    id: z.string(),
+    parentId: z.string().optional(),
+    url: z.string(),
+    name: z.string().optional(),
+    securityOrigin: z.string().optional(),
+  }),
+  childFrames: z.array(z.json()).optional(),
+})
+const historyResult = z.object({
+  currentIndex: z.number().int(),
+  entries: z.array(z.object({ id: z.number().int(), url: z.string() })),
+})
+const cookieList = z.object({
+  cookies: z.array(
+    z.looseObject({
+      name: z.string(),
+      value: z.string(),
+      domain: z.string(),
+      path: z.string(),
+      expires: z.number().optional(),
+      secure: z.boolean().optional(),
+      httpOnly: z.boolean().optional(),
+      sameSite: z.string().optional(),
+    })
+  ),
+})
+const isolatedWorld = z.object({ executionContextId: z.number() })
+const pdfResult = z.object({ data: z.string() })
+const waitResult = z.object({ result: z.object({ value: z.boolean() }) })
+/** One page-side poll never outlives the connection's request timeout. */
+const WAIT_SLICE_MS = 20_000
+interface DialogState {
+  type: string
+  message: string
+  defaultPrompt?: string
+  url?: string
+  openedAt: number
+}
+interface DownloadState {
+  guid: string
+  url?: string
+  suggestedFilename?: string
+  state: "inProgress" | "completed" | "canceled"
+  receivedBytes?: number
+  totalBytes?: number
+}
+/** Targets that render a document and accept page-level input. */
+const PAGE_TARGET_TYPES = new Set(["page", "iframe", "webview"])
+const EVENT_ENTRY_LIMIT = 128
+const EVENT_ENTRY_BYTES = 16_384
+type Modifier = z.infer<typeof KeyModifierSchema>
+const MODIFIER_BITS = {
+  Alt: 1,
+  Control: 2,
+  Meta: 4,
+  Shift: 8,
+} satisfies Record<Modifier, number>
+const BUTTON_BITS = { left: 1, right: 2, middle: 4 } as const
+interface KeySpec {
+  key: string
+  code: string
+  keyCode: number
+  text?: string
+}
+const NAMED_KEYS = new Map<string, KeySpec>([
+  ["Enter", { key: "Enter", code: "Enter", keyCode: 13, text: "\r" }],
+  ["Tab", { key: "Tab", code: "Tab", keyCode: 9 }],
+  ["Escape", { key: "Escape", code: "Escape", keyCode: 27 }],
+  ["Backspace", { key: "Backspace", code: "Backspace", keyCode: 8 }],
+  ["Delete", { key: "Delete", code: "Delete", keyCode: 46 }],
+  ["ArrowUp", { key: "ArrowUp", code: "ArrowUp", keyCode: 38 }],
+  ["ArrowDown", { key: "ArrowDown", code: "ArrowDown", keyCode: 40 }],
+  ["ArrowLeft", { key: "ArrowLeft", code: "ArrowLeft", keyCode: 37 }],
+  ["ArrowRight", { key: "ArrowRight", code: "ArrowRight", keyCode: 39 }],
+  ["Home", { key: "Home", code: "Home", keyCode: 36 }],
+  ["End", { key: "End", code: "End", keyCode: 35 }],
+  ["PageUp", { key: "PageUp", code: "PageUp", keyCode: 33 }],
+  ["PageDown", { key: "PageDown", code: "PageDown", keyCode: 34 }],
+  ["Space", { key: " ", code: "Space", keyCode: 32, text: " " }],
+  ...Array.from({ length: 12 }, (_, index): [string, KeySpec] => [
+    `F${index + 1}`,
+    { key: `F${index + 1}`, code: `F${index + 1}`, keyCode: 112 + index },
+  ]),
+])
+const PUNCTUATION_CODES = new Map<string, [string, number]>([
+  [";", ["Semicolon", 186]],
+  ["=", ["Equal", 187]],
+  [",", ["Comma", 188]],
+  ["-", ["Minus", 189]],
+  [".", ["Period", 190]],
+  ["/", ["Slash", 191]],
+  ["`", ["Backquote", 192]],
+  ["[", ["BracketLeft", 219]],
+  ["\\", ["Backslash", 220]],
+  ["]", ["BracketRight", 221]],
+  ["'", ["Quote", 222]],
+])
+
+function keySpec(name: string): KeySpec {
+  const named = NAMED_KEYS.get(name)
+  if (named) return named
+  if ([...name].length !== 1)
+    fault(
+      "invalid-request",
+      `Unknown key "${name}". Use one printable character or a named key such as Enter, Tab, Escape, Backspace, Delete, Arrow keys, Home, End, PageUp, PageDown, Space or F1-F12.`
+    )
+  const upper = name.toUpperCase()
+  if (/^[A-Z]$/.test(upper))
+    return {
+      key: name,
+      code: `Key${upper}`,
+      keyCode: upper.charCodeAt(0),
+      text: name,
+    }
+  if (/^[0-9]$/.test(name))
+    return {
+      key: name,
+      code: `Digit${name}`,
+      keyCode: name.charCodeAt(0),
+      text: name,
+    }
+  const punctuation = PUNCTUATION_CODES.get(name)
+  return {
+    key: name,
+    code: punctuation?.[0] ?? "",
+    keyCode: punctuation?.[1] ?? 0,
+    text: name,
+  }
+}
+function modifierMask(modifiers: readonly Modifier[] | undefined): number {
+  return (modifiers ?? []).reduce((mask, name) => mask | MODIFIER_BITS[name], 0)
+}
+
 interface Binding {
   owner: string
   target: BrowserTarget
@@ -39,6 +224,10 @@ interface Binding {
   tail: Promise<void>
   refs: Map<string, number>
   events: BrowserProtocolEvent[]
+  dialog: DialogState | null
+  dialogPolicy: "ask" | "accept" | "dismiss"
+  network: { enabled: boolean; inflight: Set<string> }
+  downloads: Map<string, DownloadState>
 }
 interface BrowserEntry {
   definition: LocalBrowser
@@ -54,15 +243,24 @@ function fault(
     | "target-busy"
     | "stale-target"
     | "invalid-request"
-    | "disconnected",
+    | "disconnected"
+    | "unavailable",
   message: string
 ): never {
   throw new BrowserFault({ code, message, outcome: "not-dispatched" })
 }
 function pageUrl(url: string): string {
-  const parsed = new URL(url)
-  if (!["http:", "https:", "about:"].includes(parsed.protocol))
-    fault("invalid-request", "Navigation supports http, https and about URLs.")
+  const parsed = z.string().url().safeParse(url).success
+    ? new URL(url)
+    : fault(
+        "invalid-request",
+        `"${url}" is not a URL. Navigation supports http, https, about and data URLs.`
+      )
+  if (!["http:", "https:", "about:", "data:"].includes(parsed.protocol))
+    fault(
+      "invalid-request",
+      "Navigation supports http, https, about and data URLs."
+    )
   return parsed.href
 }
 
@@ -76,8 +274,13 @@ export class BrowserService {
   private closing = false
   private readonly discover: () => LocalBrowser[]
 
-  constructor(definitions?: LocalBrowser[]) {
-    this.discover = definitions ? () => definitions : localBrowsers
+  constructor(definitions?: LocalBrowser[] | (() => LocalBrowser[])) {
+    this.discover =
+      definitions === undefined
+        ? localBrowsers
+        : Array.isArray(definitions)
+          ? () => definitions
+          : definitions
     this.browsers = new Map(
       this.discover().map((definition) => [
         definition.id,
@@ -142,9 +345,16 @@ export class BrowserService {
   }
   private entry(id: string): BrowserEntry {
     const entry = this.browsers.get(id)
-    if (!entry)
-      fault("invalid-request", "Choose a browser ID returned by status.")
-    return entry
+    if (entry) return entry
+    if (this.browsers.size === 0)
+      fault(
+        "unavailable",
+        "No browser is connected to Mako. Install the Mako Browser extension and connect a profile in Settings > MCP > Browser connections, then call status again."
+      )
+    return fault(
+      "invalid-request",
+      `Unknown browser "${id}". Choose a browser ID returned by status: ${[...this.browsers.keys()].join(", ")}.`
+    )
   }
 
   connect(id: string): Promise<BrowserConnection> {
@@ -247,13 +457,92 @@ export class BrowserService {
         continue
       }
       if (event.sessionId !== binding.sessionId) continue
-      if (event.method === "Page.frameNavigated") binding.refs.clear()
+      this.trackPageEvent(binding, event)
+      // Only a main-frame navigation replaces the document the refs came from;
+      // an advertisement iframe loading must not invalidate the page's refs.
+      if (event.method === "Page.frameNavigated") {
+        const frame = mainFrame.safeParse(event.params)
+        if (!frame.success || frame.data.frame.parentId === undefined)
+          binding.refs.clear()
+      }
       const bounded =
-        JSON.stringify(event.params).length > 16_384
+        JSON.stringify(event.params).length > EVENT_ENTRY_BYTES
           ? { ...event, params: { truncated: true } }
           : event
       binding.events.push(bounded)
-      if (binding.events.length > 128) binding.events.shift()
+      if (binding.events.length > EVENT_ENTRY_LIMIT) binding.events.shift()
+    }
+  }
+
+  /** Dialogs, in-flight requests and downloads the tab reports between commands. */
+  private trackPageEvent(binding: Binding, event: BrowserProtocolEvent): void {
+    switch (event.method) {
+      case "Page.javascriptDialogOpening": {
+        const dialog = dialogOpening.safeParse(event.params)
+        if (!dialog.success) return
+        binding.dialog = { ...dialog.data, openedAt: Date.now() }
+        if (binding.dialogPolicy === "ask") return
+        const accept = binding.dialogPolicy === "accept"
+        void binding.connection
+          .send(
+            "Page.handleJavaScriptDialog",
+            { accept },
+            AbortSignal.timeout(5000),
+            binding.sessionId
+          )
+          .then(
+            () => {
+              binding.connection.emitLocal(
+                "mako.dialogAutoHandled",
+                { ...dialog.data, accept },
+                binding.sessionId
+              )
+            },
+            () => {
+              /* The dialog stays open for an explicit answer. */
+            }
+          )
+        return
+      }
+      case "Page.javascriptDialogClosed":
+        binding.dialog = null
+        return
+      case "Network.requestWillBeSent": {
+        const request = requestEvent.safeParse(event.params)
+        if (request.success)
+          binding.network.inflight.add(request.data.requestId)
+        return
+      }
+      case "Network.loadingFinished":
+      case "Network.loadingFailed": {
+        const request = requestEvent.safeParse(event.params)
+        if (request.success)
+          binding.network.inflight.delete(request.data.requestId)
+        return
+      }
+      case "Page.downloadWillBegin":
+      case "Browser.downloadWillBegin": {
+        const begin = downloadBegin.safeParse(event.params)
+        if (begin.success)
+          binding.downloads.set(begin.data.guid, {
+            ...begin.data,
+            state: "inProgress",
+          })
+        return
+      }
+      case "Page.downloadProgress":
+      case "Browser.downloadProgress": {
+        const progress = downloadProgress.safeParse(event.params)
+        if (!progress.success) return
+        const current = binding.downloads.get(progress.data.guid)
+        binding.downloads.set(progress.data.guid, {
+          ...(current ?? { guid: progress.data.guid }),
+          ...progress.data,
+        })
+        return
+      }
+      default:
+        return
     }
   }
 
@@ -320,14 +609,19 @@ export class BrowserService {
       .parse(
         await connection.send("Target.getTargetInfo", { targetId: tab }, signal)
       )
+    const page = PAGE_TARGET_TYPES.has(info.targetInfo.type)
+    if (!page)
+      fault(
+        "invalid-request",
+        `Target ${tab} is a ${info.targetInfo.type}, not a page. Select a page target from tabs; workers and service workers accept no page input.`
+      )
     if (existing) {
-      if (existing.page)
-        await connection.send(
-          "Emulation.setFocusEmulationEnabled",
-          { enabled: false },
-          signal,
-          existing.sessionId
-        )
+      await connection.send(
+        "Emulation.setFocusEmulationEnabled",
+        { enabled: false },
+        signal,
+        existing.sessionId
+      )
       await connection.send(
         "Target.detachFromTarget",
         { sessionId: existing.sessionId },
@@ -342,19 +636,16 @@ export class BrowserService {
         signal
       )
     )
-    const page = ["page", "iframe", "webview"].includes(info.targetInfo.type)
     try {
-      if (page) {
-        await connection.send("Page.enable", {}, signal, sessionId)
-        // Hidden tabs can acknowledge Input commands without delivering events.
-        // Focus emulation keeps this target interactive without activating its tab.
-        await connection.send(
-          "Emulation.setFocusEmulationEnabled",
-          { enabled: true },
-          signal,
-          sessionId
-        )
-      }
+      await connection.send("Page.enable", {}, signal, sessionId)
+      // Hidden tabs can acknowledge Input commands without delivering events.
+      // Focus emulation keeps this target interactive without activating its tab.
+      await connection.send(
+        "Emulation.setFocusEmulationEnabled",
+        { enabled: true },
+        signal,
+        sessionId
+      )
       this.bindings.set(key, {
         owner,
         target,
@@ -366,6 +657,10 @@ export class BrowserService {
         tail: Promise.resolve(),
         refs: new Map(),
         events: [],
+        dialog: null,
+        dialogPolicy: "ask",
+        network: { enabled: false, inflight: new Set() },
+        downloads: new Map(),
       })
     } catch (error) {
       await connection
@@ -396,7 +691,7 @@ export class BrowserService {
       const geometry = await screenshotGeometry(
         binding.connection,
         binding.sessionId,
-        false,
+        { fullPage: false, maxSide: 640 },
         signal
       )
       const result = z.object({ data: z.string().max(512 * 1024) }).parse(
@@ -406,16 +701,7 @@ export class BrowserService {
             format: "jpeg",
             quality: 55,
             captureBeyondViewport: false,
-            clip: {
-              ...geometry.clip,
-              scale:
-                geometry.clip.scale *
-                Math.min(
-                  1,
-                  640 / geometry.clip.width,
-                  480 / geometry.clip.height
-                ),
-            },
+            clip: geometry.clip,
           },
           signal,
           binding.sessionId
@@ -454,6 +740,7 @@ export class BrowserService {
       )
       return result.targetInfos.map((tab) => ({
         ...tab,
+        selectable: PAGE_TARGET_TYPES.has(tab.type),
         claimed: this.bindings.has(
           this.key({ browser: command.browser, tab: tab.targetId })
         ),
@@ -492,14 +779,21 @@ export class BrowserService {
         false,
         signal
       )
-      if (url !== "about:blank")
-        await this.execute(
+      if (url === "about:blank") return { ...target }
+      // The tab exists and is bound whatever the navigation does; return the
+      // handle with the navigation's outcome rather than losing the tab.
+      try {
+        const navigation = await this.execute(
           owner,
           { action: "navigate", target, url },
           signal,
           authorize
         )
-      return { ...target }
+        return { ...target, navigation }
+      } catch (error) {
+        if (!(error instanceof BrowserFault)) throw error
+        return { ...target, navigation: { fault: error.detail } }
+      }
     }
     const binding = this.binding(owner, command.target)
     const run = async () => {
@@ -517,6 +811,15 @@ export class BrowserService {
           code: "outcome-unknown",
           message:
             "The previous action's outcome is unknown. Observe or capture this exact target before taking another action.",
+          outcome: "not-dispatched",
+        })
+      if (
+        binding.dialog &&
+        !["dialog", "events", "release", "close"].includes(command.action)
+      )
+        throw new BrowserFault({
+          code: "target-busy",
+          message: `A ${binding.dialog.type} dialog is open on this tab: "${binding.dialog.message.slice(0, 200)}". Answer it with the dialog tool (respond accept or dismiss) before other actions; set auto to answer future dialogs automatically.`,
           outcome: "not-dispatched",
         })
       binding.running++
@@ -555,6 +858,7 @@ export class BrowserService {
     // while its navigation is waiting. The exact owner and lease still apply.
     if (
       command.action === "events" ||
+      command.action === "dialog" ||
       (command.action === "cdp" && command.concurrent)
     )
       return run()
@@ -603,23 +907,45 @@ export class BrowserService {
         const info = await root("Target.getTargetInfo", {
           targetId: binding.target.tab,
         })
+        const [tree, metrics] = await Promise.all([
+          send(
+            "Accessibility.getFullAXTree",
+            command.frameId ? { frameId: command.frameId } : {}
+          ),
+          pageMetrics(binding.connection, binding.sessionId, signal).catch(
+            () => null
+          ),
+        ])
         const result = z
           .object({ nodes: z.array(AccessibilityNodeSchema) })
-          .parse(await send("Accessibility.getFullAXTree"))
+          .parse(tree)
         const observation = browserObservation({
           target: binding.target,
           info,
           nodes: result.nodes,
           maxNodes: command.maxNodes,
+          offset: command.offset,
+          query: command.query,
+          interactiveOnly: command.interactiveOnly,
+          viewport: metrics
+            ? {
+                ...metrics.cssVisualViewport,
+                contentWidth: metrics.cssContentSize.width,
+                contentHeight: metrics.cssContentSize.height,
+              }
+            : undefined,
         })
         binding.refs = observation.refs
         return observation.value
       }
       case "screenshot": {
+        const box = command.ref
+          ? await this.box(binding, command.ref, signal)
+          : undefined
         const geometry = await screenshotGeometry(
           binding.connection,
           binding.sessionId,
-          command.fullPage,
+          { fullPage: command.fullPage, maxSide: command.maxSide, box },
           signal
         )
         const result = z
@@ -630,7 +956,7 @@ export class BrowserService {
               ...(command.format === "jpeg"
                 ? { quality: command.quality }
                 : { optimizeForSpeed: true }),
-              captureBeyondViewport: command.fullPage,
+              captureBeyondViewport: command.fullPage || Boolean(box),
               clip: geometry.clip,
             })
           )
@@ -641,12 +967,15 @@ export class BrowserService {
           imageHeight: height,
           imageScaleX: width / geometry.clip.width,
           imageScaleY: height / geometry.clip.height,
+          devicePixelRatio: geometry.devicePixelRatio,
           pageX: geometry.clip.x,
           pageY: geometry.clip.y,
           viewportPageX: geometry.viewport.pageX,
           viewportPageY: geometry.viewport.pageY,
+          viewportWidth: geometry.viewport.clientWidth,
+          viewportHeight: geometry.viewport.clientHeight,
           instruction:
-            "For click coordinates: x = imageX / imageScaleX + pageX - viewportPageX; y = imageY / imageScaleY + pageY - viewportPageY. Scroll offscreen content into view before clicking.",
+            "For click coordinates: x = imageX / imageScaleX + pageX - viewportPageX; y = imageY / imageScaleY + pageY - viewportPageY. Use scroll to bring offscreen content into the viewport before clicking it.",
         }
         return {
           target: { ...binding.target },
@@ -656,24 +985,54 @@ export class BrowserService {
           data: result.data,
         }
       }
-      case "events":
+      case "events": {
+        const events: JsonObject[] = []
+        let bytes = 0
+        let more = false
+        for (const event of binding.events) {
+          if (event.cursor <= command.after) continue
+          const entry: JsonObject = {
+            cursor: event.cursor,
+            method: event.method,
+            params: event.params,
+            sessionId: event.sessionId ?? null,
+          }
+          const size = Buffer.byteLength(JSON.stringify(entry)) + 1
+          if (
+            events.length >= command.limit ||
+            bytes + size > OBSERVATION_BUDGET_BYTES
+          ) {
+            more = true
+            break
+          }
+          bytes += size
+          events.push(entry)
+        }
         return {
           target: { ...binding.target },
-          events: binding.events
-            .filter((event) => event.cursor > command.after)
-            .map((event) => ({ ...event, sessionId: event.sessionId ?? null })),
-          cursor: binding.events.at(-1)?.cursor ?? command.after,
+          events,
+          cursor:
+            events.length > 0
+              ? z.number().parse(events[events.length - 1].cursor)
+              : command.after,
+          more,
           gap:
             command.after > 0 &&
-            binding.events.length === 128 &&
+            binding.events.length === EVENT_ENTRY_LIMIT &&
             command.after < binding.events[0].cursor,
         }
+      }
       case "evaluate": {
-        const result = await send("Runtime.evaluate", {
+        const contextId = command.frameId
+          ? await this.frameContext(binding, command.frameId, signal)
+          : undefined
+        const evaluation: JsonObject = {
           expression: command.expression,
           awaitPromise: true,
           returnByValue: true,
-        })
+        }
+        if (contextId !== undefined) evaluation.contextId = contextId
+        const result = await send("Runtime.evaluate", evaluation)
         if (result.exceptionDetails)
           throw new BrowserFault({
             code: "protocol-error",
@@ -688,7 +1047,8 @@ export class BrowserService {
           binding.sessionId,
           pageUrl(command.url),
           signal,
-          command.waitUntil ?? "load"
+          command.waitUntil ?? "load",
+          command.timeoutMs
         )
       case "close": {
         const result = await root("Target.closeTarget", {
@@ -725,6 +1085,14 @@ export class BrowserService {
           command.method === "Target.activateTarget"
         )
           return root(command.method, { targetId: binding.target.tab })
+        if (command.method === "Page.navigate") {
+          const url = z.string().safeParse(command.params.url)
+          if (!url.success) fault("invalid-request", "Page.navigate needs url.")
+          return send(command.method, {
+            ...command.params,
+            url: pageUrl(url.data),
+          })
+        }
         return command.method.startsWith("Target.") ||
           command.method.startsWith("Browser.") ||
           command.method.startsWith("SystemInfo.")
@@ -732,11 +1100,36 @@ export class BrowserService {
           : send(command.method, command.params)
       }
       case "type": {
+        const field = command.ref
+          ? await this.focusEditable(binding, command.ref, signal)
+          : await this.activeEditable(binding, signal)
+        if (command.clear && field.length > 0) {
+          await this.keyPress(
+            send,
+            { key: "a", code: "KeyA", keyCode: 65 },
+            0,
+            ["selectAll"]
+          )
+          await this.keyPress(send, keySpec("Backspace"), 0)
+        }
+        await send("Input.insertText", { text: command.text })
+        if (command.submit) await this.keyPress(send, keySpec("Enter"), 0)
+        return {
+          field: field.tag,
+          cleared: command.clear && field.length > 0 ? field.length : 0,
+          inserted: command.text.length,
+          submitted: command.submit,
+        }
+      }
+      case "press": {
         if (command.ref)
-          await send("DOM.focus", {
-            backendNodeId: this.node(binding, command.ref),
-          })
-        return send("Input.insertText", { text: command.text })
+          await this.focusEditable(binding, command.ref, signal, false)
+        await this.keyPress(
+          send,
+          keySpec(command.key),
+          modifierMask(command.modifiers)
+        )
+        return { key: command.key, modifiers: command.modifiers ?? [] }
       }
       case "upload": {
         if (!command.files.every(isAbsolute))
@@ -749,59 +1142,474 @@ export class BrowserService {
           files: command.files,
         })
       }
-      case "click": {
-        const point =
-          "ref" in command.at
-            ? await this.point(binding, command.at.ref, signal)
-            : command.at
-        try {
-          await send("Input.dispatchMouseEvent", {
-            type: "mousePressed",
-            ...point,
-            button: command.button,
-            clickCount: command.count,
+      case "hover": {
+        const point = await this.resolvePoint(binding, command.at, signal)
+        await send("Input.dispatchMouseEvent", {
+          type: "mouseMoved",
+          ...point,
+          button: "none",
+          pointerType: "mouse",
+        })
+        return { ...point }
+      }
+      case "scroll": {
+        const point = command.at
+          ? await this.resolvePoint(binding, command.at, signal)
+          : await this.viewportCentre(binding, signal)
+        await send("Input.dispatchMouseEvent", {
+          type: "mouseWheel",
+          ...point,
+          deltaX: command.deltaX,
+          deltaY: command.deltaY,
+          pointerType: "mouse",
+        })
+        // Wheel scrolling is applied by the compositor and may animate; read
+        // the position once it has moved and settled, or after 250 ms.
+        const position = scrollResult.safeParse(
+          await send("Runtime.evaluate", {
+            expression:
+              "(async()=>{const read=()=>({x:window.scrollX,y:window.scrollY});const sleep=ms=>new Promise(r=>setTimeout(r,ms));let last=read();let changed=false;const start=performance.now();for(;;){await sleep(16);const now=read();if(now.x!==last.x||now.y!==last.y){changed=true;last=now;continue}if(changed||performance.now()-start>250)return now}})()",
+            awaitPromise: true,
+            returnByValue: true,
           })
-        } catch (error) {
-          if (
-            error instanceof BrowserFault &&
-            error.detail.outcome === "unknown"
-          )
-            await binding.connection
-              .send(
-                "Input.dispatchMouseEvent",
-                {
-                  type: "mouseReleased",
-                  ...point,
-                  button: command.button,
-                  clickCount: command.count,
-                },
-                AbortSignal.timeout(2000),
-                binding.sessionId
-              )
-              .catch(() => {})
-          throw error
-        }
-        const released = await binding.connection.send(
-          "Input.dispatchMouseEvent",
-          {
-            type: "mouseReleased",
-            ...point,
-            button: command.button,
-            clickCount: command.count,
-          },
-          AbortSignal.timeout(2000),
-          binding.sessionId
         )
-        if (signal.aborted)
+        return {
+          ...point,
+          scrollX: position.success ? position.data.result.value.x : null,
+          scrollY: position.success ? position.data.result.value.y : null,
+        }
+      }
+      case "click":
+        return this.clickAt(
+          binding,
+          command.at,
+          command.button,
+          command.count,
+          modifierMask(command.modifiers),
+          signal
+        )
+      case "dialog": {
+        if (command.auto) binding.dialogPolicy = command.auto
+        let answered: DialogState | null = null
+        if (command.respond) {
+          if (!binding.dialog)
+            fault(
+              "invalid-request",
+              "No dialog is open on this tab. Read the pending dialog first, or set auto for future ones."
+            )
+          answered = binding.dialog
+          const answer: JsonObject = { accept: command.respond === "accept" }
+          if (command.promptText !== undefined)
+            answer.promptText = command.promptText
+          await send("Page.handleJavaScriptDialog", answer)
+          binding.dialog = null
+        }
+        const describe = (dialog: DialogState): JsonObject => ({
+          type: dialog.type,
+          message: dialog.message,
+          defaultPrompt: dialog.defaultPrompt ?? null,
+          url: dialog.url ?? null,
+          openedAt: dialog.openedAt,
+        })
+        return {
+          pending: binding.dialog ? describe(binding.dialog) : null,
+          answered: answered
+            ? { ...describe(answered), respond: command.respond ?? null }
+            : null,
+          auto: binding.dialogPolicy,
+        }
+      }
+      case "download": {
+        if (!isAbsolute(command.directory))
+          fault("invalid-request", "directory must be an absolute local path.")
+        const directory = await stat(command.directory).catch(() => null)
+        if (!directory?.isDirectory())
+          fault(
+            "invalid-request",
+            `${command.directory} is not an existing directory.`
+          )
+        if (!command.at && !command.url)
+          fault("invalid-request", "Pass at (an element to click) or url.")
+        const known = new Set(binding.downloads.keys())
+        await send("Page.setDownloadBehavior", {
+          behavior: "allow",
+          downloadPath: command.directory,
+        })
+        if (command.at)
+          await this.clickAt(binding, command.at, "left", 1, 0, signal)
+        else if (command.url) {
+          const url = pageUrl(command.url)
+          if (!url.startsWith("http"))
+            fault("invalid-request", "url must be http or https.")
+          await send("Page.navigate", { url })
+        }
+        const deadline = Date.now() + command.timeoutMs
+        let download: DownloadState | undefined
+        while (Date.now() < deadline) {
+          signal.throwIfAborted()
+          download = [...binding.downloads.values()].find(
+            (entry) => !known.has(entry.guid)
+          )
+          if (download && download.state !== "inProgress") break
+          await new Promise((resolve) => setTimeout(resolve, 100))
+        }
+        if (!download)
           throw new BrowserFault({
-            code: "cancelled",
-            message:
-              "Click was dispatched and its button released before cancellation. Observe before deciding whether to click again.",
+            code: "timed-out",
+            message: `No download started within ${command.timeoutMs} ms. The click or URL may not trigger a file download; observe the tab.`,
             outcome: "unknown",
           })
-        return released
+        const path = download.suggestedFilename
+          ? join(command.directory, download.suggestedFilename)
+          : null
+        const saved = path ? await stat(path).catch(() => null) : null
+        return {
+          guid: download.guid,
+          state: download.state,
+          url: download.url ?? null,
+          suggestedFilename: download.suggestedFilename ?? null,
+          path,
+          bytes: saved?.size ?? download.receivedBytes ?? null,
+          note:
+            download.state === "completed"
+              ? saved
+                ? null
+                : "The browser reported completion but the file is not at the suggested path; the browser may have renamed it to avoid a clash. List the directory."
+              : download.state === "canceled"
+                ? "The download was cancelled."
+                : `The download was still in progress after ${command.timeoutMs} ms.`,
+        }
+      }
+      case "pdf": {
+        if (!isAbsolute(command.path))
+          fault("invalid-request", "path must be an absolute local file path.")
+        const parent = await stat(dirname(command.path)).catch(() => null)
+        if (!parent?.isDirectory())
+          fault(
+            "invalid-request",
+            `${dirname(command.path)} is not an existing directory.`
+          )
+        const print: JsonObject = {
+          landscape: command.landscape,
+          printBackground: command.printBackground,
+          scale: command.scale,
+        }
+        if (command.paperWidth !== undefined)
+          print.paperWidth = command.paperWidth
+        if (command.paperHeight !== undefined)
+          print.paperHeight = command.paperHeight
+        if (command.pageRanges !== undefined)
+          print.pageRanges = command.pageRanges
+        const result = pdfResult.parse(await send("Page.printToPDF", print))
+        const bytes = Buffer.from(result.data, "base64")
+        await writeFile(command.path, bytes)
+        return { path: command.path, bytes: bytes.byteLength }
+      }
+      case "cookies": {
+        switch (command.operation) {
+          case "list": {
+            const info = await root("Target.getTargetInfo", {
+              targetId: binding.target.tab,
+            })
+            const current = z
+              .object({ targetInfo: z.object({ url: z.string() }) })
+              .parse(info).targetInfo.url
+            const listed = cookieList.parse(
+              await send("Network.getCookies", {
+                urls: command.urls ?? [current],
+              })
+            )
+            return {
+              cookies: listed.cookies.map((cookie) => ({
+                name: cookie.name,
+                domain: cookie.domain,
+                path: cookie.path,
+                expires: cookie.expires ?? null,
+                secure: cookie.secure ?? false,
+                httpOnly: cookie.httpOnly ?? false,
+                sameSite: cookie.sameSite ?? null,
+                ...(command.includeValues
+                  ? { value: cookie.value }
+                  : { valueLength: cookie.value.length }),
+              })),
+            }
+          }
+          case "set": {
+            if (!command.cookies?.length)
+              fault("invalid-request", "cookies is required for set.")
+            for (const cookie of command.cookies)
+              if (!cookie.url && !cookie.domain)
+                fault(
+                  "invalid-request",
+                  `Cookie ${cookie.name} needs url or domain.`
+                )
+            await send("Network.setCookies", { cookies: command.cookies })
+            return { set: command.cookies.map((cookie) => cookie.name) }
+          }
+          case "delete": {
+            if (!command.name)
+              fault("invalid-request", "name is required for delete.")
+            const removal: JsonObject = { name: command.name }
+            if (command.url !== undefined) removal.url = command.url
+            if (command.domain !== undefined) removal.domain = command.domain
+            if (command.path !== undefined) removal.path = command.path
+            await send("Network.deleteCookies", removal)
+            return { deleted: command.name }
+          }
+          case "clear":
+            await send("Network.clearBrowserCookies")
+            return { cleared: true }
+          default:
+            return fault("invalid-request", "Unknown cookie operation.")
+        }
+      }
+      case "frames": {
+        const tree = await send("Page.getFrameTree")
+        const frames: JsonObject[] = []
+        const walk = (value: JsonValue, depth: number) => {
+          const node = frameNode.safeParse(value)
+          if (!node.success) return
+          frames.push({
+            id: node.data.frame.id,
+            parentId: node.data.frame.parentId ?? null,
+            url: node.data.frame.url,
+            name: node.data.frame.name ?? null,
+            origin: node.data.frame.securityOrigin ?? null,
+            depth,
+          })
+          for (const child of node.data.childFrames ?? [])
+            walk(child, depth + 1)
+        }
+        walk(tree.frameTree, 0)
+        return {
+          frames,
+          note: "Same-process frames accept frameId on observe and evaluate. Out-of-process iframes appear as separate iframe targets in tabs.",
+        }
+      }
+      case "wait": {
+        const started = Date.now()
+        const deadline = started + command.timeoutMs
+        if (command.for.networkIdle && !binding.network.enabled) {
+          await send("Network.enable")
+          binding.network.enabled = true
+        }
+        const conditions = command.for
+        const domCondition =
+          conditions.selector !== undefined || conditions.text !== undefined
+        for (;;) {
+          signal.throwIfAborted()
+          const remaining = deadline - Date.now()
+          if (remaining <= 0)
+            return { satisfied: false, elapsedMs: Date.now() - started }
+          let dom = true
+          if (domCondition) {
+            const slice = Math.min(remaining, WAIT_SLICE_MS)
+            const result = waitResult.parse(
+              await send("Runtime.evaluate", {
+                expression: `(async()=>{const deadline=performance.now()+${slice};const wantSelector=${JSON.stringify(conditions.selector ?? null)};const wantText=${JSON.stringify(conditions.text ?? null)};const hidden=${conditions.hidden};const check=()=>{const s=wantSelector===null?true:(!!document.querySelector(wantSelector))!==hidden;const t=wantText===null?true:(!!document.body&&document.body.innerText.includes(wantText))!==hidden;return s&&t};for(;;){if(check())return true;if(performance.now()>deadline)return false;await new Promise(r=>setTimeout(r,100))}})()`,
+                awaitPromise: true,
+                returnByValue: true,
+              })
+            )
+            dom = result.result.value
+            if (!dom) continue
+          }
+          let url = true
+          if (conditions.url !== undefined) {
+            const info = await root("Target.getTargetInfo", {
+              targetId: binding.target.tab,
+            })
+            url = z
+              .object({ targetInfo: z.object({ url: z.string() }) })
+              .parse(info)
+              .targetInfo.url.includes(conditions.url)
+          }
+          let idle = true
+          if (conditions.networkIdle) {
+            idle = binding.network.inflight.size === 0
+            if (idle) {
+              await new Promise((resolve) => setTimeout(resolve, 500))
+              idle = binding.network.inflight.size === 0
+            }
+          }
+          if (dom && url && idle)
+            return { satisfied: true, elapsedMs: Date.now() - started }
+          await new Promise((resolve) => setTimeout(resolve, 100))
+        }
+      }
+      case "history": {
+        const loaded = this.awaitLoad(binding, signal)
+        if (command.go === "reload") await send("Page.reload", {})
+        else {
+          const history = historyResult.parse(
+            await send("Page.getNavigationHistory")
+          )
+          const index = history.currentIndex + (command.go === "back" ? -1 : 1)
+          const entry = history.entries[index]
+          if (!entry) {
+            loaded.cancel()
+            return {
+              moved: false,
+              url: history.entries[history.currentIndex]?.url ?? null,
+            }
+          }
+          await send("Page.navigateToHistoryEntry", { entryId: entry.id })
+        }
+        const completion = await loaded.promise
+        const after = historyResult.parse(
+          await send("Page.getNavigationHistory")
+        )
+        return {
+          moved: true,
+          completion,
+          url: after.entries[after.currentIndex]?.url ?? null,
+        }
+      }
+      case "selectOption": {
+        if (command.value === undefined && command.label === undefined)
+          fault("invalid-request", "Pass value or label.")
+        const result = await this.callOnNode(
+          binding,
+          command.ref,
+          `function(){if(!this.isConnected)throw Error('Element detached: observe again');if(this.tagName!=='SELECT')throw Error('Element <'+this.tagName.toLowerCase()+'> is not a <select>; use click or type instead');const want=${JSON.stringify(command.value ?? null)};const label=${JSON.stringify(command.label ?? null)};const option=[...this.options].find(o=>want!==null?o.value===want:o.label.trim()===label.trim());if(!option)throw Error('No option matches; options are: '+[...this.options].map(o=>o.label.trim()+'='+o.value).slice(0,50).join(', '));this.value=option.value;this.dispatchEvent(new Event('input',{bubbles:true}));this.dispatchEvent(new Event('change',{bubbles:true}));return {value:option.value,label:option.label.trim()}}`,
+          signal
+        )
+        return z
+          .object({
+            result: z.object({
+              value: z.object({ value: z.string(), label: z.string() }),
+            }),
+          })
+          .parse(result).result.value
       }
     }
+  }
+
+  private async clickAt(
+    binding: Binding,
+    at: { ref: string } | { x: number; y: number },
+    button: "left" | "right" | "middle",
+    count: number,
+    modifiers: number,
+    signal: AbortSignal
+  ): Promise<JsonValue> {
+    const send = (method: string, params: JsonObject = {}) =>
+      binding.connection.send(method, params, signal, binding.sessionId)
+    const point = await this.resolvePoint(binding, at, signal)
+    const pressed = {
+      ...point,
+      button,
+      clickCount: count,
+      modifiers,
+      pointerType: "mouse",
+    }
+    await send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      ...point,
+      button: "none",
+      modifiers,
+      pointerType: "mouse",
+    })
+    const release = (timeoutMs: number) =>
+      binding.connection.send(
+        "Input.dispatchMouseEvent",
+        { type: "mouseReleased", ...pressed, buttons: 0 },
+        AbortSignal.timeout(timeoutMs),
+        binding.sessionId
+      )
+    try {
+      await send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        ...pressed,
+        buttons: BUTTON_BITS[button],
+      })
+    } catch (error) {
+      if (error instanceof BrowserFault && error.detail.outcome === "unknown")
+        await release(2000).catch(() => {})
+      throw error
+    }
+    // The release gets its own budget so a cancelled command still lets go
+    // of the button; a second attempt covers one slow synchronous handler.
+    const released = await release(5000).catch(() => release(2000))
+    if (signal.aborted)
+      throw new BrowserFault({
+        code: "cancelled",
+        message:
+          "Click was dispatched and its button released before cancellation. Observe before deciding whether to click again.",
+        outcome: "unknown",
+      })
+    return released
+  }
+
+  /** An execution context inside one same-process frame. */
+  private async frameContext(
+    binding: Binding,
+    frameId: string,
+    signal: AbortSignal
+  ): Promise<number> {
+    const world = await binding.connection.send(
+      "Page.createIsolatedWorld",
+      { frameId, worldName: "mako", grantUniveralAccess: true },
+      signal,
+      binding.sessionId
+    )
+    return isolatedWorld.parse(world).executionContextId
+  }
+
+  /** Resolve once this session's main frame reports load, or after ten seconds. */
+  private awaitLoad(binding: Binding, signal: AbortSignal) {
+    let settle: ((value: "load" | "timeout") => void) | undefined
+    const timer = setTimeout(() => settle?.("timeout"), 10_000)
+    const unsubscribe = binding.connection.onEvent((event) => {
+      if (
+        event.sessionId === binding.sessionId &&
+        event.method === "Page.lifecycleEvent" &&
+        event.params.name === "load"
+      )
+        settle?.("load")
+    })
+    const abort = () => settle?.("timeout")
+    signal.addEventListener("abort", abort, { once: true })
+    const promise = new Promise<"load" | "timeout">((resolve) => {
+      settle = (value) => {
+        clearTimeout(timer)
+        unsubscribe()
+        signal.removeEventListener("abort", abort)
+        settle = undefined
+        resolve(value)
+      }
+    })
+    return { promise, cancel: () => settle?.("timeout") }
+  }
+
+  private async keyPress(
+    send: (method: string, params?: JsonObject) => Promise<JsonObject>,
+    spec: KeySpec,
+    modifiers: number,
+    commands?: string[]
+  ): Promise<void> {
+    const down: JsonObject = {
+      type: spec.text === undefined || commands ? "rawKeyDown" : "keyDown",
+      key: spec.key,
+      code: spec.code,
+      windowsVirtualKeyCode: spec.keyCode,
+      nativeVirtualKeyCode: spec.keyCode,
+      modifiers,
+    }
+    if (spec.text !== undefined && !commands) {
+      down.text = spec.text
+      down.unmodifiedText = spec.text
+    }
+    if (commands) down.commands = commands
+    await send("Input.dispatchKeyEvent", down)
+    await send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: spec.key,
+      code: spec.code,
+      windowsVirtualKeyCode: spec.keyCode,
+      nativeVirtualKeyCode: spec.keyCode,
+      modifiers,
+    })
   }
 
   private node(binding: Binding, ref: string): number {
@@ -809,9 +1617,63 @@ export class BrowserService {
     if (id === undefined)
       fault(
         "stale-target",
-        "This element reference is stale. Observe the exact tab again."
+        `Ref "${ref}" is not from this tab's latest observation. Observe the exact tab again and use a ref from that result.`
       )
     return id
+  }
+
+  private async callOnNode(
+    binding: Binding,
+    ref: string,
+    functionDeclaration: string,
+    signal: AbortSignal
+  ): Promise<JsonObject> {
+    let node: JsonObject
+    try {
+      node = await binding.connection.send(
+        "DOM.resolveNode",
+        { backendNodeId: this.node(binding, ref) },
+        signal,
+        binding.sessionId
+      )
+    } catch (error) {
+      if (
+        error instanceof BrowserFault &&
+        error.detail.code === "protocol-error"
+      )
+        fault(
+          "stale-target",
+          `Ref "${ref}" no longer resolves to an element; the page changed. Observe the exact tab again.`
+        )
+      throw error
+    }
+    const {
+      object: { objectId },
+    } = z.object({ object: z.object({ objectId: z.string() }) }).parse(node)
+    const result = await binding.connection.send(
+      "Runtime.callFunctionOn",
+      { objectId, returnByValue: true, functionDeclaration },
+      signal,
+      binding.sessionId
+    )
+    const failure = z
+      .object({
+        exceptionDetails: z.object({
+          exception: z
+            .object({ description: z.string().optional() })
+            .optional(),
+          text: z.string().optional(),
+        }),
+      })
+      .safeParse(result)
+    if (failure.success)
+      fault(
+        "invalid-request",
+        failure.data.exceptionDetails.exception?.description?.split("\n")[0] ??
+          failure.data.exceptionDetails.text ??
+          "The element could not be used."
+      )
+    return result
   }
 
   private async point(
@@ -819,31 +1681,98 @@ export class BrowserService {
     ref: string,
     signal: AbortSignal
   ): Promise<{ x: number; y: number }> {
-    const node = await binding.connection.send(
-      "DOM.resolveNode",
-      { backendNodeId: this.node(binding, ref) },
-      signal,
-      binding.sessionId
+    const result = await this.callOnNode(
+      binding,
+      ref,
+      "function(){if(!this.isConnected)throw Error('Element detached: observe again');this.scrollIntoView({block:'center',inline:'center',behavior:'instant'});const r=this.getBoundingClientRect();const x=r.x+r.width/2,y=r.y+r.height/2;const hit=this.getRootNode().elementFromPoint(x,y);if(!r.width||!r.height||!(hit===this||this.contains(hit)||(hit&&hit.contains(this))))throw Error('Element is hidden or covered at its centre; observe again or use coordinates from a screenshot');return {x,y}}",
+      signal
     )
-    const {
-      object: { objectId },
-    } = z.object({ object: z.object({ objectId: z.string() }) }).parse(node)
+    return pointResult.parse(result).result.value
+  }
+
+  private async box(
+    binding: Binding,
+    ref: string,
+    signal: AbortSignal
+  ): Promise<ElementBox> {
+    const result = await this.callOnNode(
+      binding,
+      ref,
+      "function(){if(!this.isConnected)throw Error('Element detached: observe again');this.scrollIntoView({block:'center',inline:'center',behavior:'instant'});const r=this.getBoundingClientRect();if(!r.width||!r.height)throw Error('Element has no box');const m=8;return {x:Math.max(0,r.x+window.scrollX-m),y:Math.max(0,r.y+window.scrollY-m),width:r.width+2*m,height:r.height+2*m}}",
+      signal
+    )
+    return boxResult.parse(result).result.value
+  }
+
+  private async focusEditable(
+    binding: Binding,
+    ref: string,
+    signal: AbortSignal,
+    requireEditable = true
+  ): Promise<{ tag: string; length: number }> {
+    const result = await this.callOnNode(
+      binding,
+      ref,
+      `function(){if(!this.isConnected)throw Error('Element detached: observe again');const tag=this.tagName.toLowerCase();const editable=this.isContentEditable||((tag==='input'||tag==='textarea')&&!this.disabled&&!this.readOnly)||tag==='select';if(${requireEditable}&&!editable)throw Error('Element <'+tag+'> is not editable; choose a text field, textarea, select or contenteditable ref');this.scrollIntoView({block:'center',inline:'center',behavior:'instant'});this.focus();const active=this.getRootNode().activeElement;if(active!==this&&!this.contains(active))throw Error('Element <'+tag+'> did not take focus; click it first or use coordinates');return {tag,length:String(this.value??this.textContent??'').length}}`,
+      signal
+    )
+    return editableResult.parse(result).result.value
+  }
+
+  private async activeEditable(
+    binding: Binding,
+    signal: AbortSignal
+  ): Promise<{ tag: string; length: number }> {
     const result = await binding.connection.send(
-      "Runtime.callFunctionOn",
+      "Runtime.evaluate",
       {
-        objectId,
+        expression:
+          "(()=>{let a=document.activeElement;while(a&&a.shadowRoot&&a.shadowRoot.activeElement)a=a.shadowRoot.activeElement;if(!a||a===document.body)return null;const tag=a.tagName.toLowerCase();const editable=a.isContentEditable||((tag==='input'||tag==='textarea')&&!a.disabled&&!a.readOnly)||tag==='select';return editable?{tag,length:String(a.value??a.textContent??'').length}:{tag,length:-1}})()",
         returnByValue: true,
-        functionDeclaration:
-          "function(){if(!this.isConnected)throw Error('Element detached');this.scrollIntoView({block:'center',inline:'center'});const r=this.getBoundingClientRect();const x=r.x+r.width/2,y=r.y+r.height/2;const hit=this.getRootNode().elementFromPoint(x,y);if(!r.width||!r.height||!(hit===this||this.contains(hit)))throw Error('Element is hidden or covered');return {x,y}}",
       },
       signal,
       binding.sessionId
     )
-    return z
+    const active = z
       .object({
-        result: z.object({ value: z.object({ x: z.number(), y: z.number() }) }),
+        result: z.object({
+          value: z.object({ tag: z.string(), length: z.number() }).nullable(),
+        }),
       })
       .parse(result).result.value
+    if (!active || active.length < 0)
+      fault(
+        "invalid-request",
+        active
+          ? `The focused element <${active.tag}> is not editable. Pass the ref of a text field, or click it first.`
+          : "No element has focus in this tab. Pass the ref of a text field, or click it first."
+      )
+    return active
+  }
+
+  private resolvePoint(
+    binding: Binding,
+    at: { ref: string } | { x: number; y: number },
+    signal: AbortSignal
+  ): Promise<{ x: number; y: number }> {
+    return "ref" in at
+      ? this.point(binding, at.ref, signal)
+      : Promise.resolve({ x: at.x, y: at.y })
+  }
+
+  private async viewportCentre(
+    binding: Binding,
+    signal: AbortSignal
+  ): Promise<{ x: number; y: number }> {
+    const metrics = await pageMetrics(
+      binding.connection,
+      binding.sessionId,
+      signal
+    )
+    return {
+      x: metrics.cssVisualViewport.clientWidth / 2,
+      y: metrics.cssVisualViewport.clientHeight / 2,
+    }
   }
 
   disconnect(id: string): void {

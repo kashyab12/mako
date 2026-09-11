@@ -8,6 +8,12 @@ import { chmod } from "node:fs/promises"
 import { z } from "zod"
 import type { HostEvent, TerminalEvent } from "./shared.js"
 import { RuntimeCallSchema, type RuntimeInfo } from "./contracts/runtime.js"
+import { HOST_CLOSED_CODE, HOST_RECONNECTING_MESSAGE, HOST_RESTARTING_CODE } from "./contracts/host-connection.js"
+
+/** Sent to every call still waiting when the host closes, so no client is left to infer a reset. */
+const FAREWELL = JSON.stringify({ ok: false, error: HOST_RECONNECTING_MESSAGE, code: HOST_RESTARTING_CODE })
+/** Sent to a call that arrives on a lingering connection after the close began; it never ran. */
+const REFUSAL = JSON.stringify({ ok: false, error: HOST_RECONNECTING_MESSAGE, code: HOST_CLOSED_CODE })
 
 async function readRequest(request: IncomingMessage) {
   const chunks: Buffer[] = []
@@ -32,9 +38,22 @@ export async function startWebHost(
 ) {
   const streams = new Map<ServerResponse, string>()
   const releases = new Map<string, ReturnType<typeof setTimeout>>()
+  const pending = new Set<ServerResponse>()
   let closed = false
+  const farewell = (response: ServerResponse, body = FAREWELL) => {
+    if (response.destroyed || response.headersSent) return
+    response
+      .writeHead(200, { "content-type": "application/json", connection: "close" })
+      .end(body)
+  }
   const server = createServer((request, response) => {
     response.setHeader("cache-control", "no-store")
+    if (closed) {
+      // A keep-alive connection can still deliver a request after close() began.
+      if (request.method === "POST" && request.url === "/rpc") farewell(response, REFUSAL)
+      else response.writeHead(503, { connection: "close" }).end()
+      return
+    }
     if (request.method === "GET" && request.url === "/health" && runtime) {
       if (process.env.MAKO_RUNTIME_TRACE === "1") console.info("[mako-runtime] health requested")
       response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(runtime))
@@ -76,7 +95,8 @@ export async function startWebHost(
       return
     }
     if (request.url === "/events") {
-      response.writeHead(200, { "content-type": "application/x-ndjson" })
+      // A stream's connection is never worth reusing once it ends.
+      response.writeHead(200, { "content-type": "application/x-ndjson", connection: "close" })
       response.write(JSON.stringify({ channel: "ready", runtime }) + "\n")
       clearTimeout(releases.get(clientId))
       releases.delete(clientId)
@@ -95,6 +115,9 @@ export async function startWebHost(
       response.writeHead(404).end()
       return
     }
+    pending.add(response)
+    response.once("finish", () => pending.delete(response))
+    response.once("close", () => pending.delete(response))
     void readRequest(request)
       .then(async ({ channel, args }) => {
         const encoded = await invoke(
@@ -102,12 +125,14 @@ export async function startWebHost(
           args.map((arg) => (arg.kind === "absent" ? undefined : arg.value)),
           clientId
         )
+        // close() may already have answered this call with the farewell.
+        if (response.destroyed || response.headersSent) return
         response
           .writeHead(200, { "content-type": "application/json" })
           .end(encoded)
       })
       .catch((error) => {
-        if (!response.destroyed)
+        if (!response.destroyed && !response.headersSent)
           response.writeHead(200, { "content-type": "application/json" }).end(
             JSON.stringify({
               ok: false,
@@ -145,6 +170,12 @@ export async function startWebHost(
     clients: () => [...new Set(streams.values())],
     event: (event: HostEvent, client?: string) => send("event", event, client),
     terminal: (event: TerminalEvent) => send("terminal", event),
+    /**
+     * Leave without resetting anyone. Every call still waiting gets an explicit
+     * "restarting" reply on a connection marked to close, so a client can tell a
+     * planned restart from a crash and decide whether the call is safe to repeat.
+     * Idle keep-alive connections close now; anything else is swept shortly after.
+     */
     close() {
       closed = true
       clearInterval(heartbeat)
@@ -152,8 +183,12 @@ export async function startWebHost(
       streams.clear()
       for (const timer of releases.values()) clearTimeout(timer)
       releases.clear()
-      server.closeAllConnections()
+      for (const response of pending) farewell(response)
+      pending.clear()
       server.close()
+      server.closeIdleConnections()
+      const sweep = setTimeout(() => server.closeAllConnections(), 250)
+      sweep.unref()
     },
   }
 }

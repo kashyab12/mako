@@ -1,7 +1,26 @@
-import type { ThreadTarget, ThreadControls, ThreadArchiveSnapshot, ArchiveCommand, StopTarget } from "./thread-lifecycle.js"
-import type { LifecycleState, LifecycleCommand, UpdateInstallation } from "./app-lifecycle.js"
+import type {
+  ThreadTarget,
+  ThreadControls,
+  ThreadArchiveSnapshot,
+  ArchiveCommand,
+  StopTarget,
+} from "./thread-lifecycle.js"
+import type {
+  LifecycleState,
+  LifecycleCommand,
+  UpdateInstallation,
+} from "./app-lifecycle.js"
 import type { QueuedPromptEdit } from "./live-queue.js"
-import type { CommitGenerationInput, CommitGenerationResult, UtilityConnection, UtilityConnectionInput, UtilityModelSettings, UtilityProvider, UtilityCatalogInput, UtilityCatalog } from "./utility-models.js"
+import type {
+  CommitGenerationInput,
+  CommitGenerationResult,
+  UtilityConnection,
+  UtilityConnectionInput,
+  UtilityModelSettings,
+  UtilityProvider,
+  UtilityCatalogInput,
+  UtilityCatalog,
+} from "./utility-models.js"
 import type { RewindInput, RewindPreview } from "./workspace-snapshots.js"
 import type { LiveAction, LiveActionInput } from "./live-actions.js"
 import type { SessionSettings } from "@mako/sessions/settings"
@@ -101,10 +120,14 @@ export function createMakoBridge(transport: BridgeTransport) {
   const api = {
     nativeWindowVideo: transport.nativeWindowVideo === true,
     boot: () => invokeTrustedHost<BootPayload>("mako:boot"),
-    threadArchives: () => invokeTrustedHost<ThreadArchiveSnapshot>("mako:thread-archives"),
-    threadControls: (target: ThreadTarget) => invokeTrustedHost<ThreadControls>("mako:thread-controls", target),
-    archiveThread: (command: ArchiveCommand) => invokeTrustedHost<ThreadArchiveSnapshot>("mako:thread-archive", command),
-    stopThread: (target: StopTarget) => invokeTrustedHost<boolean>("mako:thread-stop", target),
+    threadArchives: () =>
+      invokeTrustedHost<ThreadArchiveSnapshot>("mako:thread-archives"),
+    threadControls: (target: ThreadTarget) =>
+      invokeTrustedHost<ThreadControls>("mako:thread-controls", target),
+    archiveThread: (command: ArchiveCommand) =>
+      invokeTrustedHost<ThreadArchiveSnapshot>("mako:thread-archive", command),
+    stopThread: (target: StopTarget) =>
+      invokeTrustedHost<boolean>("mako:thread-stop", target),
 
     /* Cross-harness threads: every coding agent's sessions on this machine. */
     threads: (filter?: { cwd?: string; harness?: string }) =>
@@ -331,6 +354,14 @@ export function createMakoBridge(transport: BridgeTransport) {
       invokeTrustedHost<MakoComputerPermissions>(
         "mako:computer-permissions-request"
       ),
+    computerDriver: () =>
+      invokeTrustedHost<import("../shared.js").CuaDriverStatus>(
+        "mako:computer-driver"
+      ),
+    updateComputerDriver: () =>
+      invokeTrustedHost<import("../shared.js").CuaDriverStatus>(
+        "mako:computer-driver-update"
+      ),
 
     /* MCP discovery is read-only; sync is always an explicit settings action. */
     integrations: () =>
@@ -449,7 +480,8 @@ export function createMakoBridge(transport: BridgeTransport) {
     gitUnstageAll: () => invokeTrustedHost<void>("mako:git-unstage-all"),
     gitCommit: (message: string, options?: { amend?: boolean }) =>
       invokeTrustedHost<void>("mako:git-commit", message, options),
-    gitPush: (input: GitPushInput) => invokeTrustedHost<void>("mako:git-push", input),
+    gitPush: (input: GitPushInput) =>
+      invokeTrustedHost<void>("mako:git-push", input),
     gitLog: (limit?: number) =>
       invokeTrustedHost<GitCommitEntry[]>("mako:git-log", limit),
     gitCommitFiles: (hash: string) =>
@@ -462,13 +494,20 @@ export function createMakoBridge(transport: BridgeTransport) {
         hash
       ),
     generateCommitMessage: (input: CommitGenerationInput) =>
-      invokeTrustedHost<CommitGenerationResult>("mako:git-generate-message", input),
+      invokeTrustedHost<CommitGenerationResult>(
+        "mako:git-generate-message",
+        input
+      ),
     cancelCommitGeneration: (requestId: string) =>
       invokeTrustedHost<void>("mako:git-cancel-generation", requestId),
-    utilityModelSettings: () => invokeTrustedHost<UtilityModelSettings>("mako:utility-model-settings"),
-    utilityModelCatalog: (input: UtilityCatalogInput) => invokeTrustedHost<UtilityCatalog>("mako:utility-model-catalog", input),
-    connectUtilityModel: (input: UtilityConnectionInput) => invokeTrustedHost<UtilityConnection>("mako:utility-model-connect", input),
-    disconnectUtilityModel: (provider: UtilityProvider) => invokeTrustedHost<void>("mako:utility-model-disconnect", provider),
+    utilityModelSettings: () =>
+      invokeTrustedHost<UtilityModelSettings>("mako:utility-model-settings"),
+    utilityModelCatalog: (input: UtilityCatalogInput) =>
+      invokeTrustedHost<UtilityCatalog>("mako:utility-model-catalog", input),
+    connectUtilityModel: (input: UtilityConnectionInput) =>
+      invokeTrustedHost<UtilityConnection>("mako:utility-model-connect", input),
+    disconnectUtilityModel: (provider: UtilityProvider) =>
+      invokeTrustedHost<void>("mako:utility-model-disconnect", provider),
     stageFile: (name: string, base64: string) =>
       invokeTrustedHost<StagedFile>("mako:stage-file", name, base64),
     stageFilePath: (sourcePath: string) =>
@@ -539,19 +578,25 @@ export function createMakoBridge(transport: BridgeTransport) {
       invokeTrustedHost<void>("mako:terminal-kill", sessionId),
     onTerminalEvent: transport.onTerminalEvent,
 
-    lifecycleState: () => invokeTrustedHost<LifecycleState>("mako:lifecycle-state"),
-    lifecycleCommand: (command: LifecycleCommand) => invokeTrustedHost<LifecycleState>("mako:lifecycle-command", command),
+    lifecycleState: () =>
+      invokeTrustedHost<LifecycleState>("mako:lifecycle-state"),
+    lifecycleCommand: (command: LifecycleCommand) =>
+      invokeTrustedHost<LifecycleState>("mako:lifecycle-command", command),
     quitClient: () => invokeTrustedHost<void>("mako:quit-client"),
-    acknowledgeShutdown: (requestId: string) => invokeTrustedHost<void>("mako:shutdown-ack", requestId),
-    installationState: () => invokeTrustedHost<UpdateInstallation>("mako:installation-state"),
-    selectUpdateSource: (path: string) => invokeTrustedHost<UpdateInstallation>("mako:select-update-source", path),
+    acknowledgeShutdown: (requestId: string) =>
+      invokeTrustedHost<void>("mako:shutdown-ack", requestId),
+    installationState: () =>
+      invokeTrustedHost<UpdateInstallation>("mako:installation-state"),
+    selectUpdateSource: (path: string) =>
+      invokeTrustedHost<UpdateInstallation>("mako:select-update-source", path),
     buildUpdate: () => invokeTrustedHost<void>("mako:build-update"),
     updateState: () => invokeTrustedHost<UpdateState>("mako:update-state"),
     checkUpdates: () => invokeTrustedHost<UpdateState>("mako:check-updates"),
     installUpdate: () => invokeTrustedHost<void>("mako:install-update"),
     /** Quit and come back on the current build; conversations reopen from their journals. */
     relaunch: () => invokeTrustedHost<void>("mako:relaunch"),
-    openPreviewWindow: () => invokeTrustedHost<void>("mako:open-preview-window"),
+    openPreviewWindow: () =>
+      invokeTrustedHost<void>("mako:open-preview-window"),
 
     /* Crash reports. Local only — see electron/crash.ts. */
     crashes: () => invokeTrustedHost<CrashReport[]>("mako:crashes"),

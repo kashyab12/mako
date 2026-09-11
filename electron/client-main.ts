@@ -8,6 +8,7 @@ import { z } from "zod"
 import { hostCallInputs } from "./contracts/host-call-inputs.js"
 import { ensureRuntime, runtimeDataRoot } from "./runtime-service.js"
 import { invokeRuntime, runtimeFile, subscribeRuntime } from "./runtime-connection.js"
+import { invokeWithRecovery, type RecoveryLink } from "./runtime-retry.js"
 
 const directory = dirname(fileURLToPath(import.meta.url))
 const isDev = !app.isPackaged && !process.env.MAKO_PROD
@@ -19,7 +20,8 @@ app.setPath("userData", uiRoot)
 protocol.registerSchemesAsPrivileged([{ scheme: "mako-file", privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true } }])
 
 const launch = { dataRoot, executable: process.execPath, args: app.isPackaged ? [] : [app.getAppPath()], cwd: process.cwd(), env: process.env }
-const clients = new Map<number, { id: string; connected: boolean; dispose(): void }>()
+const clients = new Map<number, { id: string; connected: boolean; link: RecoveryLink; dispose(): void }>()
+const DISCONNECTED_MESSAGE = "Reconnecting to the shared Mako host. Unconfirmed messages will not be resent automatically."
 let runtime: Awaited<ReturnType<typeof ensureRuntime>>
 let shuttingDown = false
 let pendingCommand: "app.quit" | "app.updates" | null = null
@@ -55,7 +57,32 @@ async function openWindow(preview = false) {
   let timer: ReturnType<typeof setTimeout> | undefined
   let seen = false
   let closed = false
-  const client = { id, connected: false, dispose() { closed = true; clearTimeout(timer); subscription?.() } }
+  const waiters = new Set<(connected: boolean) => void>()
+  const settle = (connected: boolean) => {
+    for (const waiter of waiters) waiter(connected)
+    waiters.clear()
+  }
+  let announced = false
+  // Once per outage, whichever notices first: a dropped call or the stream's end.
+  const disconnected = () => {
+    client.connected = false
+    if (announced) return
+    announced = true
+    if (!closed && !window.isDestroyed()) window.webContents.send("mako:event", { type: "host-disconnected", message: DISCONNECTED_MESSAGE })
+  }
+  const link: RecoveryLink = {
+    // A call dropped before the event stream noticed: tell the window now, and
+    // let the stream's own close drive the reconnect as it always has.
+    lost: disconnected,
+    whenConnected: (timeoutMs) => new Promise((resolve) => {
+      if (client.connected) { resolve(true); return }
+      if (closed) { resolve(false); return }
+      const deadline = setTimeout(() => { waiters.delete(waiter); resolve(false) }, timeoutMs)
+      const waiter = (connected: boolean) => { clearTimeout(deadline); resolve(connected) }
+      waiters.add(waiter)
+    }),
+  }
+  const client = { id, connected: false, link, dispose() { closed = true; clearTimeout(timer); subscription?.(); settle(false) } }
   const rendererId = window.webContents.id
   clients.set(rendererId, client)
   const connect = () => {
@@ -66,6 +93,8 @@ async function openWindow(preview = false) {
       if (packet.channel === "ready") {
         if (packet.runtime) runtime = { ...runtime, info: packet.runtime }
         client.connected = true
+        announced = false
+        settle(true)
         if (seen) window.webContents.send("mako:event", { type: "host-reconnected" })
         seen = true
       } else {
@@ -76,9 +105,8 @@ async function openWindow(preview = false) {
         window.webContents.send(packet.channel === "event" ? "mako:event" : "mako:terminal-event", packet.payload)
       }
     }, () => {
-      client.connected = false
+      disconnected()
       if (closed || window.isDestroyed()) return
-      window.webContents.send("mako:event", { type: "host-disconnected", message: "Reconnecting to the shared Mako host. Unconfirmed messages will not be resent automatically." })
       const retry = () => {
         if (closed || shuttingDown || shutdownAction) return
         void ensureRuntime(launch).then((next) => { runtime = next; connect() }).catch(() => { if (!closed) timer = setTimeout(retry, 2_000) })
@@ -157,7 +185,7 @@ async function start() {
         return result.canceled ? null : result.filePaths[0]
       }
       if (!runtime.info.methods.includes(channel)) throw new Error("This action requires a newer shared host. Existing agents have not been restarted.")
-      const result = await invokeRuntime(runtime.socket, client.id, channel, args)
+      const result = await invokeWithRecovery(channel, () => invokeRuntime(runtime.socket, client.id, channel, args), client.link)
       if (channel === "mako:boot") {
         if (pendingCommand) { event.sender.send("mako:event", { type: "app-command", command: pendingCommand }); pendingCommand = null }
         return { ...z.record(z.string(), z.json()).parse(result), sourceRoot: isDev ? app.getAppPath() : undefined }

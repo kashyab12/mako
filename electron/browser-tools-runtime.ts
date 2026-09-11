@@ -35,6 +35,8 @@ const messageSchema = z.discriminatedUnion("kind", [
     message: z.string(),
   }),
 ])
+/** Matches the direct tool budget so a script cannot smuggle a larger result. */
+const TEXT_BLOCK_BUDGET = 200_000
 export type BrowserOutput =
   | { type: "text"; text: string }
   | { type: "image"; data: string; mimeType: string }
@@ -104,13 +106,14 @@ export class BrowserToolsRuntime {
             : Buffer.byteLength(block.data)
         if (
           bytes > 28 * 1024 * 1024 ||
-          (block.type === "text" && Buffer.byteLength(block.text) > 1024 * 1024)
+          (block.type === "text" &&
+            Buffer.byteLength(block.text) > TEXT_BLOCK_BUDGET)
         )
           finish(
             new BrowserFault({
               code: "output-limit",
               message:
-                "Script output exceeded its limit. Return a smaller result or use a compressed screenshot.",
+                "Script output exceeded its limit (200 KB per text value, 28 MB in total). Return a smaller result: select fields, slice arrays, or use a compressed screenshot.",
               outcome: "unknown",
             })
           )

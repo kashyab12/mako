@@ -9,7 +9,7 @@ const messageSchema = z.object({
   id: z.number().int().optional(),
   sessionId: z.string().optional(),
   method: z.string().optional(),
-  params: object.optional(),
+  params: z.json().optional(),
   result: object.optional(),
   error: z.object({ code: z.number(), message: z.string() }).optional(),
 })
@@ -38,32 +38,38 @@ export class BrowserConnection {
   private constructor(socket: WebSocket) {
     this.socket = socket
     socket.on("message", (data) => {
+      // One unreadable frame must not take down every task's binding; the
+      // frame is dropped, and every request keeps its own timer.
+      let value: z.infer<typeof messageSchema>
       try {
-        const value = messageSchema.parse(JSON.parse(data.toString()))
-        if (value.id !== undefined) {
-          const request = this.pending.get(value.id)
-          if (!request) return
-          request.finish(
-            value.error
-              ? new BrowserFault({
-                  code: "protocol-error",
-                  message: value.error.message,
-                  outcome: "rejected",
-                })
-              : null,
-            value.result ?? {}
-          )
-        } else if (value.method) {
-          const event = {
-            cursor: ++this.eventSequence,
-            sessionId: value.sessionId,
-            method: value.method,
-            params: value.params ?? {},
-          }
-          for (const listener of this.listeners) listener(event)
-        }
+        value = messageSchema.parse(JSON.parse(data.toString()))
       } catch {
-        socket.terminate()
+        return
+      }
+      if (value.id !== undefined) {
+        const request = this.pending.get(value.id)
+        if (!request) return
+        request.finish(
+          value.error
+            ? new BrowserFault({
+                code: "protocol-error",
+                message: value.error.message,
+                outcome: "rejected",
+              })
+            : null,
+          value.result ?? {}
+        )
+      } else if (value.method) {
+        const params = object.safeParse(value.params)
+        const event = {
+          cursor: ++this.eventSequence,
+          sessionId: value.sessionId,
+          method: value.method,
+          params: params.success
+            ? params.data
+            : { value: value.params ?? null },
+        }
+        for (const listener of this.listeners) listener(event)
       }
     })
     socket.on("error", () => socket.terminate())
@@ -106,13 +112,12 @@ export class BrowserConnection {
         socket.terminate()
       }
       signal.addEventListener("abort", abort, { once: true })
-      socket.once("error", () => {
+      socket.once("error", (error) => {
         signal.removeEventListener("abort", abort)
         reject(
           new BrowserFault({
             code: "approval-required",
-            message:
-              "Chrome did not accept the connection. Check its debugging approval dialog, then connect again.",
+            message: `The browser did not accept Mako's local connection (${error.message}). For the Mako Browser extension, reload the extension in the browser and connect again; for a browser started with remote debugging, accept its debugging dialog first.`,
             outcome: "not-dispatched",
           })
         )
@@ -122,6 +127,12 @@ export class BrowserConnection {
         resolve(new BrowserConnection(socket))
       })
     })
+  }
+
+  /** Record something the host did on the browser's behalf, in cursor order with Chrome's own events. */
+  emitLocal(method: string, params: JsonObject, sessionId?: string): void {
+    const event = { cursor: ++this.eventSequence, sessionId, method, params }
+    for (const listener of this.listeners) listener(event)
   }
 
   onEvent(listener: (event: BrowserProtocolEvent) => void): () => void {

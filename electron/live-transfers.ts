@@ -211,11 +211,14 @@ export class LiveTransfers {
         prepared = { driver, session }
         if (prior?.nativeId && session.nativeId !== prior.nativeId)
           throw new Error("The provider returned a different session while resuming. The saved conversation was not replaced.")
-        const selectedMode = transfer.input.tuning?.options?.mode
-        const requestedMode = session.modes.find((mode) => mode.id === selectedMode)
-        if (reconnect && selectedMode !== undefined && !requestedMode)
+        const mode = reconnect ? source.session.currentMode : null
+        if (
+          reconnect &&
+          mode &&
+          session.modes.length > 0 &&
+          !session.modes.some((item) => item.id === mode)
+        )
           throw new Error("The requested agent mode is unavailable after reconnecting")
-        const mode = reconnect ? requestedMode?.id ?? source.session.currentMode : null
         if (mode && mode !== session.currentMode) {
           await driver.setMode(bindingId, mode)
           prepared.session = { ...session, currentMode: mode }

@@ -134,20 +134,27 @@ export interface MakoComputerPermissions {
   supported: boolean
   persistentAcrossUpdates: boolean
   accessibility: boolean
-  screenRecording: "not-determined" | "denied" | "restricted" | "granted" | "unknown"
+  screenRecording:
+    "not-determined" | "denied" | "restricted" | "granted" | "unknown"
+}
+
+/** Installed native computer-control driver against the release Mako verified. */
+export interface CuaDriverStatus {
+  executable: string | null
+  version: string | null
+  verified: string
+  outdated: boolean
+  detail: string
 }
 
 export type IntegrationCategory =
-  | "Communication"
-  | "Planning"
-  | "Development"
-  | "Productivity"
-  | "Local"
+  "Communication" | "Planning" | "Development" | "Productivity" | "Local"
 
 export type IntegrationConnection =
   | { kind: "connected"; detail: string; providers: McpProvider[] }
   | { kind: "ready"; detail: string }
   | { kind: "needs-permission"; detail: string }
+  | { kind: "needs-update"; detail: string }
   | { kind: "setup"; detail: string }
   | { kind: "unavailable"; detail: string }
   | { kind: "conflict"; detail: string }

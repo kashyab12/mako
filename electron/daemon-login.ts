@@ -31,8 +31,17 @@ function plistPath(): string {
   return join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`)
 }
 
-function daemonScript(): string {
+export function daemonScript(): string {
   return join(app.getAppPath(), "node_modules", "@mako", "sessions", "dist", "daemon-main.js")
+}
+
+/**
+ * Only the installed app may own the login job. A checkout that wrote one would
+ * pin the user's always-on sync to a working tree that changes under it and
+ * outlives every window the checkout ever opened.
+ */
+export function daemonLoginOwner(): boolean {
+  return app.isPackaged
 }
 
 function daemonPlist(script = daemonScript()): string {
@@ -72,11 +81,18 @@ function optOutPath(): string {
  * explicit always-on choice and is refreshed when its command changes.
  */
 export async function refreshDaemonLoginJob(): Promise<void> {
-  if (process.platform !== "darwin") return
+  if (process.platform !== "darwin" || !daemonLoginOwner()) return
   try {
-    if (existsSync(optOutPath())) return
     const current = await readFile(plistPath(), "utf8").catch(() => null)
-    if (!current || current === daemonPlist()) return
+    if (!current) {
+      // launchd still running a job whose definition is gone: a leftover from
+      // another build that nothing manages any more. Stop it before it serves
+      // this app stale data forever.
+      if ((await daemonLoginJob()).loaded) await stopDaemonLoginJob()
+      return
+    }
+    if (existsSync(optOutPath())) return
+    if (current === daemonPlist()) return
     await setDaemonLogin(true)
   } catch {
     // A failed install stays quiet; the settings toggle still works.
@@ -138,6 +154,8 @@ export async function setDaemonLogin(enabled: boolean): Promise<void> {
   if (process.platform !== "darwin") {
     throw new Error("Login start is only wired up for macOS so far")
   }
+  if (enabled && !daemonLoginOwner())
+    throw new Error("Login sync is installed from the installed Mako app, not from a development checkout.")
   if (!enabled) {
     await stopDaemonLoginJob()
     await rm(plistPath(), { force: true })

@@ -22,7 +22,6 @@ import { app } from "electron"
 import {
   connectDaemon,
   daemonMemoryUnsafe,
-  PROTOCOL_VERSION,
   defaultCatalog,
   renderTranscript,
   renderTranscriptBundle,
@@ -37,6 +36,7 @@ import {
   type ThreadPage,
   type ThreadRef,
 } from "@mako/sessions"
+import { daemonIsForeign } from "./daemon-vintage.js"
 import { WorkspaceGit } from "./host-git.js"
 import { WorkspaceFiles } from "./host-workspace.js"
 import { annotate as annotateLineage, loadLineage } from "./lineage.js"
@@ -71,7 +71,9 @@ import { providerHost } from "./providers/index.js"
 import type { ProviderActivitySession } from "./providers/process-probe.js"
 import {
   daemonLoginEnabled,
+  daemonLoginOwner,
   daemonLoginProcess,
+  daemonScript,
   refreshDaemonLoginJob,
   setDaemonLogin,
 } from "./daemon-login.js"
@@ -234,7 +236,10 @@ export function installThreads(send: (event: HostEvent) => void): void {
         return
       }
       if (await connectViaDaemon()) return
-      await startDaemon()
+      if (!(await startDaemon())) {
+        await runLocalCatalog()
+        return
+      }
       for (let attempt = 0; attempt < 100; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 100))
         if (await connectViaDaemon()) return
@@ -310,7 +315,13 @@ async function connectViaDaemon(): Promise<boolean> {
   let stopEvents: (() => void) | null = null
   try {
     client = await connectDaemon()
-    if (client.stats.version < PROTOCOL_VERSION) {
+    if (daemonIsForeign(client.stats, daemonScript())) {
+      // A checkout never evicts the daemon the user relies on; it watches
+      // locally instead. The installed app replaces any vintage but its own.
+      if (!daemonLoginOwner()) {
+        client.close()
+        return false
+      }
       const pid = client.stats.pid
       await Promise.race([
         client.retire().catch(() => {}),
@@ -383,11 +394,10 @@ async function connectViaDaemon(): Promise<boolean> {
 
 function recoverDaemon(): Promise<void> {
   recoveringDaemon ??= (async () => {
-    if (!(await daemonLoginEnabled())) {
+    if (!(await daemonLoginEnabled()) || !(await startDaemon())) {
       await runLocalCatalog()
       return
     }
-    await startDaemon()
     for (let attempt = 0; attempt < 10; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)))
       if (stopping) return
@@ -422,8 +432,11 @@ function processIsAlive(pid: number): boolean {
   }
 }
 
-async function startDaemon(): Promise<void> {
+/** Installs the login job and returns whether this build is allowed to. */
+async function startDaemon(): Promise<boolean> {
+  if (!daemonLoginOwner()) return false
   await setDaemonLogin(true)
+  return true
 }
 
 async function runLocalCatalog(): Promise<void> {

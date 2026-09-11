@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { HOST_CLOSED_CODE, HOST_RESTARTING_CODE } from "./host-connection.js"
 
 export const RuntimeCallSchema = z.object({
   channel: z.string().regex(/^mako:[a-z0-9-]+$/),
@@ -24,5 +25,5 @@ export const RuntimePacketSchema = z.discriminatedUnion("channel", [
 ])
 export const RuntimeReplySchema = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(true), value: z.json().optional() }),
-  z.object({ ok: z.literal(false), error: z.string() }),
+  z.object({ ok: z.literal(false), error: z.string(), code: z.enum([HOST_RESTARTING_CODE, HOST_CLOSED_CODE]).optional() }),
 ])

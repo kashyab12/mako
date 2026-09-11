@@ -1,7 +1,31 @@
 import { request } from "node:http"
 import { StringDecoder } from "node:string_decoder"
 import { RuntimeCallSchema, RuntimeInfoSchema, RuntimePacketSchema, RuntimeReplySchema, type RuntimeCall } from "./contracts/runtime.js"
+import { HOST_CALL_UNCONFIRMED_MESSAGE, HOST_CLOSED_CODE, HOST_RECONNECTING_MESSAGE, HOST_RESTARTING_CODE } from "./contracts/host-connection.js"
 import type { z } from "zod"
+
+/**
+ * The host stopped answering while a call was out. `unconfirmed` is true when
+ * the request may have reached the host before the connection dropped; a
+ * connection that was refused outright never dispatched anything.
+ */
+export class RuntimeDisconnectedError extends Error {
+  readonly code = "host-disconnected"
+  readonly unconfirmed: boolean
+  constructor(unconfirmed: boolean) {
+    super(unconfirmed ? HOST_CALL_UNCONFIRMED_MESSAGE : HOST_RECONNECTING_MESSAGE)
+    this.name = "RuntimeDisconnectedError"
+    this.unconfirmed = unconfirmed
+  }
+}
+
+const REFUSED = new Set(["ECONNREFUSED", "ENOENT"])
+const DROPPED = new Set(["ECONNRESET", "EPIPE", "ECONNABORTED"])
+function socketCode(error: Error): string | undefined {
+  if ("code" in error) return String(error.code)
+  // Node reports a connection closed before any response as a bare "socket hang up".
+  return error.message === "socket hang up" ? "ECONNRESET" : undefined
+}
 
 interface RuntimeRequest<Schema extends z.ZodType> {
   socket: string
@@ -49,8 +73,20 @@ export async function runtimeInfo(socket: string) {
 export async function invokeRuntime(socket: string, client: string, channel: string, args: unknown[]) {
   const encoded = JSON.stringify({ channel, args: args.map((value) => value === undefined ? { kind: "absent" } : { kind: "value", value }) })
   const body = RuntimeCallSchema.parse(JSON.parse(encoded))
-  const reply = await runtimeRequest({ socket, path: "/rpc", schema: RuntimeReplySchema, body, client, timeoutMs: 5 * 60_000 })
-  if (!reply.ok) throw new Error(reply.error)
+  let reply: z.output<typeof RuntimeReplySchema>
+  try {
+    reply = await runtimeRequest({ socket, path: "/rpc", schema: RuntimeReplySchema, body, client, timeoutMs: 5 * 60_000 })
+  } catch (error) {
+    const code = error instanceof Error ? socketCode(error) : undefined
+    if (code && REFUSED.has(code)) throw new RuntimeDisconnectedError(false)
+    if (code && DROPPED.has(code)) throw new RuntimeDisconnectedError(true)
+    throw error
+  }
+  if (!reply.ok) {
+    if (reply.code === HOST_RESTARTING_CODE) throw new RuntimeDisconnectedError(true)
+    if (reply.code === HOST_CLOSED_CODE) throw new RuntimeDisconnectedError(false)
+    throw new Error(reply.error)
+  }
   return reply.value
 }
 

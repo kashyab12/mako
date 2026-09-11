@@ -9,6 +9,7 @@ import type {
   McpProvider,
   McpRegistrySnapshot,
   McpServerRecord,
+  CuaDriverStatus,
 } from "./shared.js"
 
 interface Definition {
@@ -190,7 +191,8 @@ function localBrowserConnection(
 
 function localConnection(
   server: McpServerRecord | undefined,
-  permissions: MakoComputerPermissions
+  permissions: MakoComputerPermissions,
+  driver?: CuaDriverStatus
 ): IntegrationConnection {
   if (!server || server.availability === "unavailable") {
     return {
@@ -204,6 +206,7 @@ function localConnection(
       detail: "Grant Accessibility and Screen Recording",
     }
   }
+  if (driver?.outdated) return { kind: "needs-update", detail: driver.detail }
   return {
     kind: "ready",
     detail: permissions.persistentAcrossUpdates
@@ -232,7 +235,8 @@ export function integrationCatalog(
   permissions: MakoComputerPermissions,
   githubConnected: boolean,
   backendStatus: BackendConnectionStatus,
-  browsers: BrowserControlStatus[] = []
+  browsers: BrowserControlStatus[] = [],
+  driver?: CuaDriverStatus
 ): IntegrationCatalogSnapshot {
   const localControl = snapshot.servers.find(
     (server) => server.name === "mako-local-control"
@@ -282,7 +286,7 @@ export function integrationCatalog(
       auth: "local-permission",
       capabilities: ["Read UI", "Click", "Type", "Capture"],
       events: [],
-      connection: localConnection(localControl, permissions),
+      connection: localConnection(localControl, permissions, driver),
     },
     {
       id: "apple-mail",
@@ -293,7 +297,7 @@ export function integrationCatalog(
       auth: "local-permission",
       capabilities: ["Read UI", "Draft", "App automation"],
       events: [],
-      connection: localConnection(localControl, permissions),
+      connection: localConnection(localControl, permissions, driver),
     },
     {
       id: "apple-messages",
@@ -304,7 +308,7 @@ export function integrationCatalog(
       auth: "local-permission",
       capabilities: ["Read UI", "Draft", "App automation"],
       events: [],
-      connection: localConnection(localControl, permissions),
+      connection: localConnection(localControl, permissions, driver),
     },
   ]
   return {

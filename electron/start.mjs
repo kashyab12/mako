@@ -24,7 +24,11 @@ const electronPath = require("electron")
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const web = process.argv.includes("--web")
 const hot = process.argv.includes("--hot")
-const profile = process.env.MAKO_PROFILE || (process.argv.includes("--sandbox") ? `sandbox-${createHash("sha256").update(root).digest("hex").slice(0, 8)}` : undefined)
+// Development gets its own host by default. Sharing the installed app's host
+// means every "Restart Mako" here drops the calls of the desk you actually use,
+// and every install there closes this one. `--shared` opts back in on purpose.
+const shared = process.argv.includes("--shared")
+const profile = process.env.MAKO_PROFILE || (process.argv.includes("--sandbox") ? `sandbox-${createHash("sha256").update(root).digest("hex").slice(0, 8)}` : shared ? undefined : "dev")
 const appData = process.platform === "darwin" ? join(homedir(), "Library", "Application Support") : process.platform === "win32" ? process.env.APPDATA ?? join(homedir(), "AppData", "Roaming") : process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config")
 const dataRoot = runtimeDataRoot(appData, { ...process.env, MAKO_PROFILE: profile })
 const runtime = await ensureRuntime({ dataRoot, executable: electronPath, args: [root], cwd: root, env: { ...process.env, MAKO_PROFILE: profile } })
@@ -77,7 +81,7 @@ const hostEnvironment = {
   MAKO_WEB_SOCKET: socket,
   MAKO_WEB_ONLY: web ? "1" : "0",
 }
-console.log(`[mako-client] ${profile ? `Sandbox ${profile}` : "Shared host"} · host ${runtime.info.pid} · ${hot ? "automatic hot updates" : "manual reload"} · ${url}`)
+console.log(`[mako-client] ${profile ? `Profile ${profile}` : "Installed app's shared host"} · host ${runtime.info.pid} · ${hot ? "automatic hot updates" : "manual reload"} · ${url}`)
 let child
 let stopping = false
 

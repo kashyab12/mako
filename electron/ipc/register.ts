@@ -1,6 +1,6 @@
 import { ipcMain } from "electron"
 import { withHostClient } from "../host-client.js"
-import { breadcrumb, record } from "../crash.js"
+import { breadcrumb } from "../crash.js"
 import { hostCallInputs } from "../contracts/host-call-inputs.js"
 
 type HostChannel = keyof typeof hostCallInputs
@@ -24,12 +24,10 @@ export function registerIpc<Channel extends HostChannel, Result>(
     // SAFETY: the schema is selected by this exact Channel and parses every argument; TypeScript loses that key/output correlation when indexing the heterogeneous table.
     const parsed = hostCallInputs[channel].parse(args) as HostArguments<Channel>
     breadcrumb(channel)
-    try {
-      return await listener(undefined, ...parsed)
-    } catch (error) {
-      record("main-uncaught", error, channel)
-      throw error
-    }
+    // A refused call is returned to the renderer. Recording it as a crash
+    // filled the local store with expected validation errors and hid the
+    // failures that actually killed a process.
+    return await listener(undefined, ...parsed)
   }
   calls.set(channel, async (args) =>
     JSON.stringify({ ok: true, value: await call(args) })

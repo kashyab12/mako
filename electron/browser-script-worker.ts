@@ -34,7 +34,18 @@ const names = [
   "navigate",
   "close",
   "click",
+  "hover",
+  "scroll",
   "type",
+  "press",
+  "dialog",
+  "download",
+  "pdf",
+  "cookies",
+  "frames",
+  "wait",
+  "history",
+  "selectOption",
   "upload",
 ]
 port.on("message", (raw) => {

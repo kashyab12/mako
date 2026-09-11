@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { z } from "zod"
 import type { ComputerBackend } from "./computer-tools-main.js"
+import { driverSchemaValidator } from "./driver-schema.js"
 import type {
   Appshot,
   AppshotTarget,
@@ -41,7 +42,10 @@ export class Appshots {
       const backend = await this.backend()
       if (!backend)
         throw new Error("Appshots require the macOS computer-control driver.")
-      const client = new Client({ name: "mako-appshots", version: "1" })
+      const client = new Client(
+        { name: "mako-appshots", version: "1" },
+        { jsonSchemaValidator: driverSchemaValidator() }
+      )
       client.onclose = () => {
         this.connection = undefined
       }

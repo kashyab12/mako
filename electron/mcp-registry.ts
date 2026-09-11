@@ -9,6 +9,7 @@ import { providerHost } from "./providers/index.js"
 import type { ProviderMcpSource } from "./providers/mcp-source.js"
 import { backendConnectionCredentials } from "./backend-connection.js"
 import { cuaEmbeddedSocket } from "./cua-embedded.js"
+import { cuaDriverStatus } from "./cua-driver-version.js"
 import { environmentForExecutable, resolveExecutable } from "./executable.js"
 import type { JsonObject, JsonValue } from "./codex-app-json.js"
 import { projectedMcpServers } from "./contracts/mcp-reach.js"
@@ -498,6 +499,7 @@ export async function managedMcpDefinitions(
   const backendUrl = runtimeEnv.MAKO_BACKEND_URL
   const backend = Boolean(backendUrl && runtimeEnv.MAKO_BACKEND_TOKEN)
   const doctor = await harnessDoctor(harnessPath, commandEnv)
+  const driver = await cuaDriverStatus(cuaPath)
   const definitions: Array<
     McpInternalDefinition & { availability: boolean; detail: string }
   > = [
@@ -551,7 +553,9 @@ export async function managedMcpDefinitions(
       portable: true,
       availability: cua,
       detail: cua
-        ? "Local browser and computer control run under Mako permissions"
+        ? driver.outdated
+          ? `${driver.detail}. Update it from Settings > Integrations.`
+          : "Local browser and computer control run under Mako permissions"
         : cuaPath
           ? "Mako has not started local browser and computer control"
           : "CUA Driver is not installed",
@@ -695,7 +699,5 @@ export function projectRuntimeDefinitions(
   provider: McpProvider,
   transports: readonly McpTransport[]
 ): McpServerDefinition[] {
-  return projectedMcpServers(snapshot, provider, transports).map(
-    safeDefinition
-  )
+  return projectedMcpServers(snapshot, provider, transports).map(safeDefinition)
 }

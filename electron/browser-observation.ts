@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto"
+import { randomBytes } from "node:crypto"
 import { z } from "zod"
 import type { BrowserTarget } from "./contracts/browser-control.js"
-import type { JsonValue } from "./codex-app-json.js"
+import type { JsonObject, JsonValue } from "./codex-app-json.js"
 
 const accessibilityText = z
   .union([
@@ -22,7 +22,16 @@ export const AccessibilityNodeSchema = z.object({
   role: z.object({ value: accessibilityText }).optional(),
   name: z.object({ value: accessibilityText }).optional(),
   value: z.object({ value: accessibilityText }).optional(),
+  properties: z
+    .array(
+      z.object({
+        name: z.string(),
+        value: z.object({ value: accessibilityText }),
+      })
+    )
+    .optional(),
 })
+type AccessibilityNode = z.infer<typeof AccessibilityNodeSchema>
 const ObservationInfoSchema = z.object({
   targetInfo: z.object({
     targetId: z.string(),
@@ -31,14 +40,101 @@ const ObservationInfoSchema = z.object({
     url: z.string(),
   }),
 })
+export interface ObservationViewport {
+  pageX: number
+  pageY: number
+  clientWidth: number
+  clientHeight: number
+  contentWidth: number
+  contentHeight: number
+}
+
+/** Roles an agent acts on. Anything focusable counts as well. */
+const INTERACTIVE_ROLES = new Set([
+  "button",
+  "link",
+  "textbox",
+  "searchbox",
+  "checkbox",
+  "radio",
+  "combobox",
+  "listbox",
+  "option",
+  "menuitem",
+  "menuitemcheckbox",
+  "menuitemradio",
+  "tab",
+  "slider",
+  "spinbutton",
+  "switch",
+  "treeitem",
+  "menubutton",
+  "togglebutton",
+  "DisclosureTriangle",
+  "PopUpButton",
+  "ColorWell",
+  "DateTime",
+])
+/** Text runs and breaks duplicate their parent StaticText. */
+const SKIPPED_ROLES = new Set(["InlineTextBox", "LineBreak"])
+/** Unnamed wrappers carry no information an agent can use. */
+const WRAPPER_ROLES = new Set([
+  "generic",
+  "none",
+  "presentation",
+  "GenericContainer",
+])
+/** Accessibility properties worth carrying; a false or empty value is omitted. */
+const STATE_PROPERTIES = [
+  "checked",
+  "disabled",
+  "focused",
+  "expanded",
+  "selected",
+  "required",
+  "pressed",
+  "readonly",
+  "invalid",
+  "hasPopup",
+  "level",
+  "modal",
+  "multiselectable",
+  "url",
+] as const
+
+export const OBSERVATION_BUDGET_BYTES = 60_000
+
+function propertyMap(node: AccessibilityNode): Map<string, string> {
+  return new Map(
+    (node.properties ?? []).flatMap((property) =>
+      property.value.value === undefined || property.value.value === null
+        ? []
+        : [[property.name, property.value.value]]
+    )
+  )
+}
+
+/** The document root is focusable but is never something to act on. */
+const DOCUMENT_ROLES = new Set(["RootWebArea", "WebArea", "document"])
+function isInteractive(role: string | null, properties: Map<string, string>) {
+  if (role !== null && DOCUMENT_ROLES.has(role)) return false
+  return (
+    (role !== null && INTERACTIVE_ROLES.has(role)) ||
+    properties.get("focusable") === "true"
+  )
+}
 
 /** Bound the serialized result, not just node count: page-controlled names can
  * contain entire documents. Keep usable refs and explicitly report omissions. */
 export function browserObservation(input: {
   target: BrowserTarget
   info: JsonValue
-  nodes: z.infer<typeof AccessibilityNodeSchema>[]
+  nodes: AccessibilityNode[]
   maxNodes: number
+  offset?: number
+  query?: string
+  interactiveOnly?: boolean
+  viewport?: ObservationViewport
 }) {
   let truncatedTextFields = 0
   function text(
@@ -59,42 +155,108 @@ export function browserObservation(input: {
       url: text(sourceInfo.url, 2048),
     },
   }
-  const visible = input.nodes.filter((node) => !node.ignored)
+  const viewport = input.viewport
+    ? {
+        width: input.viewport.clientWidth,
+        height: input.viewport.clientHeight,
+        scrollX: input.viewport.pageX,
+        scrollY: input.viewport.pageY,
+        contentWidth: input.viewport.contentWidth,
+        contentHeight: input.viewport.contentHeight,
+        pagesAbove:
+          Math.round(
+            (input.viewport.pageY / input.viewport.clientHeight) * 10
+          ) / 10,
+        pagesBelow:
+          Math.round(
+            (Math.max(
+              0,
+              input.viewport.contentHeight -
+                input.viewport.pageY -
+                input.viewport.clientHeight
+            ) /
+              input.viewport.clientHeight) *
+              10
+          ) / 10,
+      }
+    : undefined
+  const depths = new Map<string, number>()
+  const query = input.query?.trim().toLowerCase() || undefined
+  const candidates: Array<{ node: AccessibilityNode; row: JsonObject }> = []
+  for (const node of input.nodes) {
+    const depth = node.parentId ? (depths.get(node.parentId) ?? 0) + 1 : 0
+    depths.set(node.nodeId, depth)
+    if (node.ignored) continue
+    const role = node.role?.value ?? null
+    if (role !== null && SKIPPED_ROLES.has(role)) continue
+    const name = node.name?.value
+    const value = node.value?.value
+    const properties = propertyMap(node)
+    if (
+      role !== null &&
+      WRAPPER_ROLES.has(role) &&
+      !name &&
+      !value &&
+      !isInteractive(role, properties)
+    )
+      continue
+    if (input.interactiveOnly && !isInteractive(role, properties)) continue
+    if (
+      query &&
+      ![role ?? "", name ?? "", value ?? ""].some((field) =>
+        field.toLowerCase().includes(query)
+      )
+    )
+      continue
+    const row: JsonObject = { depth, role: text(role, 100) }
+    const trimmedName = text(name, 500)
+    if (trimmedName !== null && trimmedName !== "") row.name = trimmedName
+    const trimmedValue = text(value, 1000)
+    if (trimmedValue !== null && trimmedValue !== "") row.value = trimmedValue
+    for (const state of STATE_PROPERTIES) {
+      const raw = properties.get(state)
+      if (raw === undefined || raw === "false" || raw === "") continue
+      if (state === "level") {
+        const level = Number(raw)
+        if (Number.isFinite(level)) row.level = level
+        continue
+      }
+      row[state] = state === "url" ? (text(raw, 2048) ?? raw) : raw
+    }
+    candidates.push({ node, row })
+  }
+  const offset = Math.min(input.offset ?? 0, candidates.length)
+  const prefix = randomBytes(3).toString("hex")
   const refs = new Map<string, number>()
-  const nodes: {
-    id: string
-    parent: string | null
-    ref: string | null
-    role: JsonValue
-    name: JsonValue
-    value: JsonValue
-  }[] = []
+  const nodes: JsonObject[] = []
   // Leave room for counters, separators and protocol metadata in the final JSON.
   let bytes =
-    Buffer.byteLength(JSON.stringify({ target: input.target, info })) + 256
-  for (const node of visible.slice(0, input.maxNodes)) {
-    const ref = node.backendDOMNodeId ? randomUUID() : null
-    const row = {
-      id: node.nodeId,
-      parent: node.parentId ?? null,
-      ref,
-      role: text(node.role?.value, 100),
-      name: text(node.name?.value, 500),
-      value: text(node.value?.value, 1000),
-    }
-    const size = Buffer.byteLength(JSON.stringify(row)) + 1
-    if (bytes + size > 60_000) break
+    Buffer.byteLength(
+      JSON.stringify({ target: input.target, info, viewport })
+    ) + 320
+  let index = offset
+  for (; index < candidates.length && nodes.length < input.maxNodes; index++) {
+    const { node, row } = candidates[index]
+    const ref = node.backendDOMNodeId ? `${prefix}:${index}` : undefined
+    const entry: JsonObject = ref ? { ref, ...row } : row
+    const size = Buffer.byteLength(JSON.stringify(entry)) + 1
+    if (bytes + size > OBSERVATION_BUDGET_BYTES) break
     bytes += size
-    nodes.push(row)
+    nodes.push(entry)
     if (ref && node.backendDOMNodeId) refs.set(ref, node.backendDOMNodeId)
   }
+  const nextOffset = index < candidates.length ? index : null
   return {
     refs,
     value: {
       target: { ...input.target },
       info,
+      viewport: viewport ?? null,
       nodes,
-      omitted: visible.length - nodes.length,
+      matched: candidates.length,
+      offset,
+      nextOffset,
+      omitted: candidates.length - nodes.length - offset,
       truncatedTextFields,
     },
   }

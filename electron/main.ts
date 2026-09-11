@@ -16,6 +16,10 @@ import { NativeRequests } from "./native-requests.js"
 import type { LiveCapability, NativeRequestInput } from "./shared.js"
 import { startConversationMcp } from "./conversation-mcp.js"
 import { BrowserService } from "./browser-service.js"
+import { localBrowsers } from "./browser-discovery.js"
+import { DeskBrowser } from "./desk-browser.js"
+import { deskPageForWindow } from "./desk-browser-window.js"
+import { deskUrlPolicy } from "./desk-browser-policy.js"
 import { prepareBrowserExtension } from "./browser-extension-setup.js"
 import { startControlService } from "./control-service.js"
 import type { DelegateInput, ForkInput, TransferInput } from "./shared.js"
@@ -140,9 +144,15 @@ import {
 } from "./accounts.js"
 import { daemonLoginEnabled, setDaemonLogin } from "./daemon-login.js"
 import { buildTag } from "./build-identity.js"
-import { IdleShutdown, PROFILE_HOST_IDLE_MS, activeHostLeases } from "./host-idle.js"
+import {
+  IdleShutdown,
+  PROFILE_HOST_IDLE_MS,
+  activeHostLeases,
+} from "./host-idle.js"
 import { TerminalDaemonClient } from "./terminal-client.js"
 import { ensureCuaEmbedded, stopCuaEmbedded } from "./cua-embedded.js"
+import { cuaDriverStatus, updateCuaDriver } from "./cua-driver-version.js"
+import { MAKO_BUNDLE_ID } from "./local-update-installer.js"
 import { bindAcp, stopAcp } from "./acp.js"
 import { bindCodexApp, stopCodexApps } from "./codex-app.js"
 import {
@@ -206,7 +216,8 @@ const isDev = !app.isPackaged && !process.env.MAKO_PROD
  */
 const persistentHost = process.env.MAKO_HOST_ONLY === "1"
 const instanceProfile = process.env.MAKO_PROFILE || (isDev ? "dev" : "")
-if (process.env.MAKO_DATA_ROOT) app.setPath("userData", process.env.MAKO_DATA_ROOT)
+if (process.env.MAKO_DATA_ROOT)
+  app.setPath("userData", process.env.MAKO_DATA_ROOT)
 else if (instanceProfile)
   app.setPath("userData", `${app.getPath("userData")}-${instanceProfile}`)
 if (!app.requestSingleInstanceLock()) {
@@ -250,7 +261,48 @@ const appshots = new Appshots(async () => {
     ? { command: driver, args: ["mcp", "--embedded", "--socket", socket] }
     : null
 })
-const browserControl = new BrowserService()
+/** Hidden windows agents drive; they never count as a client keeping the host alive. */
+const deskWindows = new Set<BrowserWindow>()
+const deskBrowser = new DeskBrowser({
+  allowsUrl: (url) => isDeskUrl(url),
+  createPage: async (previewId) => {
+    const hidden = new BrowserWindow({
+      title: isDev ? "Mako Dev Agent View" : "Mako Agent View",
+      width: 1600,
+      height: 1000,
+      show: false,
+      enableLargerThanScreen: true,
+      webPreferences: {
+        preload: join(__dirname, "preload.js"),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+        // Agents read this window through the protocol; it must keep painting.
+        backgroundThrottling: false,
+      },
+    })
+    // macOS clamps a new window to the display; ask for the size again.
+    hidden.setContentSize(1600, 1000)
+    trackRenderer(hidden)
+    deskWindows.add(hidden)
+    hidden.once("closed", () => deskWindows.delete(hidden))
+    hidden.webContents.setWindowOpenHandler(({ url }) => {
+      void shell.openExternal(url)
+      return { action: "deny" }
+    })
+    try {
+      await loadDesk(hidden, previewId)
+    } catch (error) {
+      hidden.destroy()
+      throw error
+    }
+    return deskPageForWindow(hidden)
+  },
+})
+const browserControl = new BrowserService(() => [
+  ...localBrowsers(),
+  deskBrowser.definition,
+])
 const controlPreviews = new ControlPreviews(
   browserControl,
   (image) => {
@@ -280,8 +332,10 @@ let threadLifecycle: ThreadLifecycle
 let window: BrowserWindow | null = null
 const rendererWindows = new Set<BrowserWindow>()
 let webHost: Awaited<ReturnType<typeof startWebHost>> | undefined
-const webSocket = isDev || persistentHost ? process.env.MAKO_WEB_SOCKET : undefined
-const webOnly = persistentHost || Boolean(webSocket && process.env.MAKO_WEB_ONLY !== "0")
+const webSocket =
+  isDev || persistentHost ? process.env.MAKO_WEB_SOCKET : undefined
+const webOnly =
+  persistentHost || Boolean(webSocket && process.env.MAKO_WEB_ONLY !== "0")
 let terminalClient: TerminalDaemonClient | null = null
 const workspaceClients = new WorkspaceClients(emit)
 
@@ -293,7 +347,7 @@ function terminal() {
 function ensureMakoLocalControl() {
   return ensureCuaEmbedded(
     join(app.getPath("userData"), "computer-use", "cua"),
-    "dev.mako.app"
+    MAKO_BUNDLE_ID
   )
 }
 
@@ -329,10 +383,24 @@ const RELAUNCH_EXIT_CODE = 75
 let relaunching = false
 let shuttingDown = false
 let application: ReturnType<typeof installApplicationIpc> | undefined
-if (persistentHost) process.once("SIGTERM", () => { shuttingDown = true; app.quit() })
+if (persistentHost)
+  process.once("SIGTERM", () => {
+    shuttingDown = true
+    app.quit()
+  })
 
 function hasActiveWork(): boolean {
-  return application ? application.lifecycle.snapshot().work.length > 0 : Boolean(liveConversations?.hasActiveWork() || nativeRequests?.list().some((request) => request.status === "dispatching" || request.status === "queued"))
+  return application
+    ? application.lifecycle.snapshot().work.length > 0
+    : Boolean(
+        liveConversations?.hasActiveWork() ||
+        nativeRequests
+          ?.list()
+          .some(
+            (request) =>
+              request.status === "dispatching" || request.status === "queued"
+          )
+      )
 }
 
 /**
@@ -346,10 +414,17 @@ function watchProfileHostIdle(hostDirectory: string): void {
     idleMs: PROFILE_HOST_IDLE_MS,
     now: () => Date.now(),
     busy: () =>
-      shuttingDown || relaunching || Boolean(application?.lifecycle.blocked) || hasActiveWork() ||
-      rendererWindows.size > 0 || (webHost?.clients().length ?? 0) > 0 || leases > 0,
+      shuttingDown ||
+      relaunching ||
+      Boolean(application?.lifecycle.blocked) ||
+      hasActiveWork() ||
+      [...rendererWindows].some((renderer) => !deskWindows.has(renderer)) ||
+      (webHost?.clients().length ?? 0) > 0 ||
+      leases > 0,
     quit: () => {
-      console.info(`[mako-host] profile ${instanceProfile} idle for ${Math.round(PROFILE_HOST_IDLE_MS / 60_000)} minutes with no client; stopping`)
+      console.info(
+        `[mako-host] profile ${instanceProfile} idle for ${Math.round(PROFILE_HOST_IDLE_MS / 60_000)} minutes with no client; stopping`
+      )
       shuttingDown = true
       app.quit()
     },
@@ -372,7 +447,8 @@ async function reopenWindow(): Promise<void> {
 }
 
 function relaunch() {
-  if (!application) throw new Error("Mako is still starting. Try again once it is ready.")
+  if (!application)
+    throw new Error("Mako is still starting. Try again once it is ready.")
   return application.lifecycle.command({ kind: "wait", action: "restart" })
 }
 
@@ -526,22 +602,62 @@ function trackRenderer(renderer: BrowserWindow): void {
   })
 }
 
+/** The renderer document, with a preview id so the window keeps its own drafts. */
+async function loadDesk(
+  target: BrowserWindow,
+  previewId: string
+): Promise<void> {
+  if (isDev) {
+    const url = new URL(
+      process.env.VITE_DEV_SERVER_URL ?? "http://127.0.0.1:5173"
+    )
+    url.searchParams.set("preview", previewId)
+    await target.loadURL(url.href)
+  } else
+    await target.loadFile(join(__dirname, "../dist/index.html"), {
+      query: { preview: previewId },
+    })
+}
+const isDeskUrl = deskUrlPolicy({
+  devServerUrl: isDev
+    ? (process.env.VITE_DEV_SERVER_URL ?? "http://127.0.0.1:5173")
+    : null,
+  indexFile: isDev ? null : join(__dirname, "../dist/index.html"),
+})
+
 async function openPreviewWindow(): Promise<void> {
   const preview = new BrowserWindow({
     title: isDev ? "Mako Dev Preview" : "Mako Preview",
-    width: 1200, height: 860, minWidth: 640, minHeight: 540,
+    width: 1200,
+    height: 860,
+    minWidth: 640,
+    minHeight: 540,
     show: false,
-    webPreferences: { preload: join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: false, backgroundThrottling: true },
+    webPreferences: {
+      preload: join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: true,
+    },
   })
   trackRenderer(preview)
-  preview.webContents.setWindowOpenHandler(({ url }) => { void shell.openExternal(url); return { action: "deny" } })
+  preview.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url)
+    return { action: "deny" }
+  })
   const id = crypto.randomUUID()
   try {
     if (isDev) {
-      const url = new URL(process.env.VITE_DEV_SERVER_URL ?? "http://127.0.0.1:5173")
+      const url = new URL(
+        process.env.VITE_DEV_SERVER_URL ?? "http://127.0.0.1:5173"
+      )
       url.searchParams.set("preview", id)
       await preview.loadURL(url.href)
-    } else await preview.loadFile(join(__dirname, "../dist/index.html"), { query: { preview: id } })
+    } else
+      await preview.loadFile(join(__dirname, "../dist/index.html"), {
+        query: { preview: id },
+      })
     if (!app.commandLine.hasSwitch("background")) {
       await app.dock?.show()
       preview.show()
@@ -655,12 +771,15 @@ function bindIpc() {
     followThread(path, fromByte)
   )
   handle("mako:thread-unfollow", () => unfollowThread())
-  const installed = () => [...new Set([
-    ...resumableHarnesses(),
-    ...providerHost.liveDrivers.list()
-      .filter((driver) => driver.available(app.getAppPath()))
-      .map((driver) => driver.provider),
-  ])]
+  const installed = () => [
+    ...new Set([
+      ...resumableHarnesses(),
+      ...providerHost.liveDrivers
+        .list()
+        .filter((driver) => driver.available(app.getAppPath()))
+        .map((driver) => driver.provider),
+    ]),
+  ]
   handle("mako:thread-resumable", installed)
   handle("mako:thread-continue-targets", installed)
   /**
@@ -745,9 +864,11 @@ function bindIpc() {
   )
   handle("mako:harness-availability", () => {
     const available = new Set(installed())
-    return Object.fromEntries(providerHost.profiles.list().map((profile) => [
-      profile.provider, available.has(profile.provider),
-    ]))
+    return Object.fromEntries(
+      providerHost.profiles
+        .list()
+        .map((profile) => [profile.provider, available.has(profile.provider)])
+    )
   })
   handle("mako:daemon-status", () => daemonStatus())
   handle("mako:daemon-login", () => daemonLoginEnabled())
@@ -800,6 +921,20 @@ function bindIpc() {
       app.focus({ steal: true })
     })
   )
+  handle("mako:computer-driver", () =>
+    cuaDriverStatus(resolveExecutable("cua-driver"))
+  )
+  // The driver's updater replaces the app bundle and stops running daemons,
+  // so the embedded driver is restarted from the new binary afterwards. Tasks
+  // mid-session receive a fresh driver session on their next call.
+  handle("mako:computer-driver-update", async () => {
+    const executable = resolveExecutable("cua-driver")
+    if (!executable) throw new Error("CUA Driver is not installed")
+    await updateCuaDriver(executable)
+    stopCuaEmbedded()
+    await ensureMakoLocalControl().catch(() => null)
+    return cuaDriverStatus(resolveExecutable("cua-driver"))
+  })
 
   handle("mako:mcp-discover", () =>
     withHost(async (host) => {
@@ -810,17 +945,19 @@ function bindIpc() {
   handle("mako:integrations", () =>
     withHost(async (host) => {
       await ensureMakoLocalControl().catch(() => null)
-      const [snapshot, github, backend] = await Promise.all([
+      const [snapshot, github, backend, driver] = await Promise.all([
         discoverMcpRegistry(host.workspace, app.getAppPath()),
         githubStatus(host.workspace),
         backendConnectionStatus(),
+        cuaDriverStatus(resolveExecutable("cua-driver")),
       ])
       return integrationCatalog(
         snapshot,
         computerPermissions(),
         github.authenticated,
         backend,
-        browserControl.status()
+        browserControl.status(),
+        driver
       )
     })
   )
@@ -904,7 +1041,8 @@ function bindIpc() {
           canSteer: Boolean(driver.steer),
           canCompact: Boolean(driver.compact),
         }
-        if (driver.steer && driver.steering) capability.steering = driver.steering
+        if (driver.steer && driver.steering)
+          capability.steering = driver.steering
         return capability
       })
   )
@@ -914,7 +1052,10 @@ function bindIpc() {
       const began = performance.now()
       const trace = (stage: string) => {
         if (process.env.MAKO_STARTUP_TRACE === "1")
-          console.info("[mako-startup]", JSON.stringify({ stage, elapsedMs: performance.now() - began }))
+          console.info(
+            "[mako-startup]",
+            JSON.stringify({ stage, elapsedMs: performance.now() - began })
+          )
       }
       const tuning = await resolveHarnessLaunch(harness, cwd, options.tuning)
       trace("profile")
@@ -976,7 +1117,11 @@ function bindIpc() {
   handle(
     "mako:live-transfer",
     async (_event, id: string, input: TransferInput) => {
-      const tuning = await resolveHarnessLaunch(input.provider, liveConversations.snapshot(id)?.session.cwd, input.tuning)
+      const tuning = await resolveHarnessLaunch(
+        input.provider,
+        liveConversations.snapshot(id)?.session.cwd,
+        input.tuning
+      )
       return liveConversations.transfer(id, { ...input, tuning })
     }
   )
@@ -1046,8 +1191,18 @@ function bindIpc() {
     ) => {
       const session = liveConversations.snapshot(id)?.session
       if (!session) throw new Error("This conversation is no longer available")
-      const selected = await resolveHarnessLaunch(session.harness, session.cwd, tuning)
-      return liveConversations.submit(id, requestId, text, attachments, selected)
+      const selected = await resolveHarnessLaunch(
+        session.harness,
+        session.cwd,
+        tuning
+      )
+      return liveConversations.submit(
+        id,
+        requestId,
+        text,
+        attachments,
+        selected
+      )
     }
   )
   handle(
@@ -1155,7 +1310,8 @@ function bindIpc() {
   handle("mako:update-state", () => updateState())
   handle("mako:check-updates", () => check())
   handle("mako:install-update", () => {
-    if (!application) throw new Error("Mako is still starting. Try again once it is ready.")
+    if (!application)
+      throw new Error("Mako is still starting. Try again once it is ready.")
     return application.lifecycle.command({ kind: "wait", action: "install" })
   })
   handle("mako:relaunch", () => relaunch())
@@ -1222,7 +1378,10 @@ async function readFilePreview(request: Request): Promise<Response> {
 installCrashReporting()
 
 app.whenReady().then(async () => {
-  const trace = (stage: string) => { if (process.env.MAKO_RUNTIME_TRACE === "1") console.info("[mako-runtime]", stage) }
+  const trace = (stage: string) => {
+    if (process.env.MAKO_RUNTIME_TRACE === "1")
+      console.info("[mako-runtime]", stage)
+  }
   trace("electron ready")
   if (persistentHost) app.dock?.hide()
   app.setAboutPanelOptions({
@@ -1246,7 +1405,9 @@ app.whenReady().then(async () => {
     },
     buildTag()
   )
-  powerMonitor.on("shutdown", () => { shuttingDown = true })
+  powerMonitor.on("shutdown", () => {
+    shuttingDown = true
+  })
   powerMonitor.on("resume", emitTerminalWake)
   powerMonitor.on("unlock-screen", emitTerminalWake)
   liveConversations = new LiveConversations({
@@ -1258,8 +1419,12 @@ app.whenReady().then(async () => {
       join(app.getPath("userData"), "workspace-snapshots")
     ),
     checkpoint: (path, provider) => {
-      const driver = provider ? providerHost.liveDrivers.get(provider) : undefined
-      return driver?.checkpoint ? driver.checkpoint(path) : nativeCheckpoint(path)
+      const driver = provider
+        ? providerHost.liveDrivers.get(provider)
+        : undefined
+      return driver?.checkpoint
+        ? driver.checkpoint(path)
+        : nativeCheckpoint(path)
     },
     nativePath: (session) =>
       listThreads().find(
@@ -1270,7 +1435,10 @@ app.whenReady().then(async () => {
       const driver = providerHost.liveDrivers.get(binding.provider)
       return driver?.canResumeBinding
         ? driver.canResumeBinding(binding)
-        : canResumeBinding(binding, providerHost.processProbes.get(binding.provider))
+        : canResumeBinding(
+            binding,
+            providerHost.processProbes.get(binding.provider)
+          )
     },
     appPath: app.getAppPath(),
     root: join(app.getPath("userData"), "conversations"),
@@ -1299,7 +1467,11 @@ app.whenReady().then(async () => {
       read: async (path) => (await openThread(path))?.ref ?? null,
       running: (path) => threadRun(path)?.status === "running",
       execute: async (ref, text, tuning) => {
-        const selected = await resolveHarnessLaunch(ref.harness, ref.cwd, tuning)
+        const selected = await resolveHarnessLaunch(
+          ref.harness,
+          ref.cwd,
+          tuning
+        )
         await resumeNative(ref, text, { ...selected, captureOutput: true })
         const result = await waitForNativeRun(ref.path)
         if (result.state.status !== "done")
@@ -1324,14 +1496,29 @@ app.whenReady().then(async () => {
   browserControl.subscribe((browsers) =>
     emit({ type: "browser-control", browsers })
   )
-  threadArchives = new ThreadArchives(join(app.getPath("userData"), "thread-archives.sqlite"))
-  threadLifecycle = new ThreadLifecycle({ live: liveConversations, archives: threadArchives, native: nativeRequests, threads: listThreads, nativeToken: nativeStopToken, abortNative, external: (path) => Boolean(threadActivitySnapshot()[path]) })
+  threadArchives = new ThreadArchives(
+    join(app.getPath("userData"), "thread-archives.sqlite")
+  )
+  threadLifecycle = new ThreadLifecycle({
+    live: liveConversations,
+    archives: threadArchives,
+    native: nativeRequests,
+    threads: listThreads,
+    nativeToken: nativeStopToken,
+    abortNative,
+    external: (path) => Boolean(threadActivitySnapshot()[path]),
+  })
   installThreadLifecycleIpc(threadLifecycle, threadArchives, emit)
   application = installApplicationIpc({
     live: liveConversations,
     native: nativeRequests,
     emit,
-    clients: () => [...webHost?.clients() ?? [], ...[...rendererWindows].map((renderer) => `renderer:${renderer.webContents.id}`)],
+    clients: () => [
+      ...(webHost?.clients() ?? []),
+      ...[...rendererWindows].map(
+        (renderer) => `renderer:${renderer.webContents.id}`
+      ),
+    ],
     quitClient: () => {
       for (const renderer of rendererWindows) renderer.hide()
       app.dock?.hide()
@@ -1342,7 +1529,11 @@ app.whenReady().then(async () => {
       try {
         install?.()
         if (relaunching && (!isDev || persistentHost)) app.relaunch()
-      } catch (error) { shuttingDown = false; relaunching = false; throw error }
+      } catch (error) {
+        shuttingDown = false
+        relaunching = false
+        throw error
+      }
       setImmediate(() => app.quit())
     },
   })
@@ -1352,19 +1543,42 @@ app.whenReady().then(async () => {
   if (webSocket) {
     if (persistentHost) {
       await mkdir(dirname(webSocket), { recursive: true, mode: 0o700 })
-      const stale = await lstat(webSocket).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return null; throw error })
+      const stale = await lstat(webSocket).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return null
+          throw error
+        }
+      )
       if (stale) {
-        if (!stale.isSocket() || (process.getuid && stale.uid !== process.getuid()) || await runtimeInfo(webSocket))
+        if (
+          !stale.isSocket() ||
+          (process.getuid && stale.uid !== process.getuid()) ||
+          (await runtimeInfo(webSocket))
+        )
           throw new Error("The shared host socket is already owned")
         await unlink(webSocket)
       }
     }
-    webHost = await startWebHost(webSocket, invokeHost, (request, client = "web") => withHostClient(client, () => readFilePreview(request)), (client) => {
-      void workspaceClients.release(client)
-    }, { protocol: RUNTIME_PROTOCOL, instanceId: crypto.randomUUID(), pid: process.pid, version: app.getVersion(), methods: Object.keys(hostCallInputs) })
+    webHost = await startWebHost(
+      webSocket,
+      invokeHost,
+      (request, client = "web") =>
+        withHostClient(client, () => readFilePreview(request)),
+      (client) => {
+        void workspaceClients.release(client)
+      },
+      {
+        protocol: RUNTIME_PROTOCOL,
+        instanceId: crypto.randomUUID(),
+        pid: process.pid,
+        version: app.getVersion(),
+        methods: Object.keys(hostCallInputs),
+      }
+    )
   }
   trace("host listening")
-  if (persistentHost && instanceProfile && webSocket) watchProfileHostIdle(dirname(webSocket))
+  if (persistentHost && instanceProfile && webSocket)
+    watchProfileHostIdle(dirname(webSocket))
   if (!webOnly) await createWindow()
   installUpdates(emit)
   trace("updates ready")
@@ -1398,48 +1612,59 @@ app.whenReady().then(async () => {
       version: app.getVersion(),
     })
   })
-  app.on("activate", () => { void reopenWindow() })
-  app.on("second-instance", () => { void reopenWindow() })
+  app.on("activate", () => {
+    void reopenWindow()
+  })
+  app.on("second-instance", () => {
+    void reopenWindow()
+  })
 })
 
 app.on("window-all-closed", () => {
   if (!persistentHost && process.platform !== "darwin") app.quit()
 })
 
-app.on("before-quit", (event) => handleQuit(event, {
-  hasActiveWork: () => persistentHost || hasActiveWork(),
-  isRestarting: () => relaunching || shuttingDown,
-  hide: () => {
-    for (const renderer of rendererWindows) renderer.hide()
-    app.dock?.hide()
-  },
-  cleanup: () => {
-  application?.dispose()
-  webHost?.close()
-  if (persistentHost && webSocket) {
-    // The runtime directory is this host's alone; leaving it behind is how
-    // fifty of them piled up in the temp folder.
-    try { rmSync(dirname(webSocket), { recursive: true, force: true }) } catch { /* best effort */ }
-  }
-  powerMonitor.removeListener("resume", emitTerminalWake)
-  powerMonitor.removeListener("unlock-screen", emitTerminalWake)
-  terminalClient?.dispose()
-  stopCuaEmbedded()
-  void appshots.close()
-  controlService?.close()
-  stopWorkspaceIpc()
-  stopWatching()
-  stopSlackRelay()
-  stopThreads()
-  stopDrivers()
-  stopAcp()
-  stopCodexApps()
-  nativeRequests?.stop()
-  conversationMcp?.close()
-  liveConversations?.stop()
-  threadArchives?.close()
-  void workspaceClients.dispose()
-  // After the ordinary shutdown, tell the dev launcher to bring us back.
-  if (relaunching && isDev && !persistentHost) app.exit(RELAUNCH_EXIT_CODE)
-  },
-}))
+app.on("before-quit", (event) =>
+  handleQuit(event, {
+    hasActiveWork: () => persistentHost || hasActiveWork(),
+    isRestarting: () => relaunching || shuttingDown,
+    hide: () => {
+      for (const renderer of rendererWindows) renderer.hide()
+      app.dock?.hide()
+    },
+    cleanup: () => {
+      application?.dispose()
+      webHost?.close()
+      if (persistentHost && webSocket) {
+        // The runtime directory is this host's alone; leaving it behind is how
+        // fifty of them piled up in the temp folder.
+        try {
+          rmSync(dirname(webSocket), { recursive: true, force: true })
+        } catch {
+          /* best effort */
+        }
+      }
+      powerMonitor.removeListener("resume", emitTerminalWake)
+      powerMonitor.removeListener("unlock-screen", emitTerminalWake)
+      terminalClient?.dispose()
+      stopCuaEmbedded()
+      void appshots.close()
+      controlService?.close()
+      deskBrowser.close()
+      stopWorkspaceIpc()
+      stopWatching()
+      stopSlackRelay()
+      stopThreads()
+      stopDrivers()
+      stopAcp()
+      stopCodexApps()
+      nativeRequests?.stop()
+      conversationMcp?.close()
+      liveConversations?.stop()
+      threadArchives?.close()
+      void workspaceClients.dispose()
+      // After the ordinary shutdown, tell the dev launcher to bring us back.
+      if (relaunching && isDev && !persistentHost) app.exit(RELAUNCH_EXIT_CODE)
+    },
+  })
+)

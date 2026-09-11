@@ -219,10 +219,66 @@ export type LocalInstallReceipt =
   | { ok: true; backup: string | null; message?: string }
   | { ok: false; message: string }
 
+export const MAKO_BUNDLE_ID = "dev.mako.app"
+export const MAKO_GRANT_SERVICES = ["Accessibility", "ScreenCapture"] as const
+export const GRANTS_RESET_MESSAGE =
+  "Mako's signing identity changed, so macOS no longer honours its Accessibility and Screen Recording grants. Grant both again in Settings > Integrations."
+
+type Run = (command: string, args: string[]) => Promise<{ stdout: string; stderr: string }>
+const defaultRun: Run = (command, args) =>
+  execute(command, args, { timeout: 60_000, maxBuffer: 1024 * 1024 })
+
+export function parseDesignatedRequirement(output: string): string | null {
+  return /^designated => (.+)$/m.exec(output)?.[1]?.trim() ?? null
+}
+
+/** The app's designated requirement as codesign prints it, or null when unsigned. */
+export async function designatedRequirement(
+  app: string,
+  run: Run = defaultRun
+): Promise<string | null> {
+  const result = await run("codesign", ["--display", "-r-", app]).catch(
+    () => null
+  )
+  return result ? parseDesignatedRequirement(result.stdout + result.stderr) : null
+}
+
+/**
+ * A TCC grant is bound to the designated requirement the app had when it was
+ * written. Replacing the app with one whose requirement differs (an ad-hoc
+ * cdhash, the move to a certificate, a new certificate) leaves the rows in
+ * place: System Settings shows the toggles on while tccd denies every request
+ * and never prompts again. Drop the rows so the next Grant gets a fresh
+ * decision, and say so in the receipt. Returns true when rows were reset.
+ */
+export async function reconcileGrantIdentity(
+  target: string,
+  backup: string | null,
+  run: Run = defaultRun
+): Promise<boolean> {
+  if (!backup) return false
+  const [previous, next] = await Promise.all([
+    designatedRequirement(backup, run),
+    designatedRequirement(target, run),
+  ])
+  if (previous !== null && previous === next) return false
+  let reset = false
+  for (const service of MAKO_GRANT_SERVICES) {
+    const outcome = await run("tccutil", ["reset", service, MAKO_BUNDLE_ID]).then(
+      () => true,
+      () => false
+    )
+    reset ||= outcome
+  }
+  return reset
+}
+
 interface InstallCompletion {
   replace(): Promise<string | null>
   save(receipt: LocalInstallReceipt): Promise<void>
   launch(): Promise<void>
+  /** Drops TCC rows a changed signing identity orphaned; true when it did. */
+  grants?(backup: string | null): Promise<boolean>
   /** Housekeeping after a verified, launched install; never affects the receipt. */
   prune?(backup: string | null): Promise<void>
 }
@@ -244,7 +300,9 @@ export async function completeLocalInstall(
     await input.launch().catch(() => {})
     throw error
   }
-  await input.save({ ok: true, backup })
+  const reset = await input.grants?.(backup).catch(() => false)
+  const notice = reset ? { message: GRANTS_RESET_MESSAGE } : {}
+  await input.save({ ok: true, backup, ...notice })
   try {
     await input.launch()
   } catch (error) {
@@ -371,6 +429,7 @@ async function runInstaller(): Promise<void> {
     save: async (result) => {
       await writeFile(receipt, JSON.stringify(result), { mode: 0o600 })
     },
+    grants: (backup) => reconcileGrantIdentity(target, backup),
     launch: async () => {
       await execute("open", [target], {
         timeout: 10_000,

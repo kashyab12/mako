@@ -18,26 +18,58 @@ const viewport = z.object({
   clientWidth: z.number().positive(),
   clientHeight: z.number().positive(),
 })
+const LayoutMetricsSchema = z.object({
+  cssContentSize: rectangle,
+  cssVisualViewport: viewport,
+})
+export type LayoutMetrics = z.infer<typeof LayoutMetricsSchema>
+export interface ElementBox {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export async function pageMetrics(
+  connection: BrowserConnection,
+  sessionId: string,
+  signal: AbortSignal
+): Promise<LayoutMetrics> {
+  return LayoutMetricsSchema.parse(
+    await connection.send("Page.getLayoutMetrics", {}, signal, sessionId)
+  )
+}
+
+/**
+ * Choose a capture clip whose longest side stays within `maxSide` device
+ * pixels. The clip scale multiplies CSS pixels by the device pixel ratio, so
+ * `1 / ratio` yields one image pixel per CSS pixel; further scaling only ever
+ * shrinks the image, never upsamples it.
+ */
 export async function screenshotGeometry(
   connection: BrowserConnection,
   sessionId: string,
-  fullPage: boolean,
+  options: { fullPage: boolean; maxSide: number; box?: ElementBox },
   signal: AbortSignal
 ) {
-  const metrics = z
-    .object({ cssContentSize: rectangle, cssVisualViewport: viewport })
-    .parse(
-      await connection.send("Page.getLayoutMetrics", {}, signal, sessionId)
-    )
+  const metrics = await pageMetrics(connection, sessionId, signal)
   const visible = metrics.cssVisualViewport
-  const area = fullPage
-    ? metrics.cssContentSize
-    : {
-        x: visible.pageX,
-        y: visible.pageY,
-        width: visible.clientWidth,
-        height: visible.clientHeight,
+  const content = metrics.cssContentSize
+  const area = options.box
+    ? {
+        x: Math.max(content.x, options.box.x),
+        y: Math.max(content.y, options.box.y),
+        width: Math.max(1, Math.min(options.box.width, content.width)),
+        height: Math.max(1, Math.min(options.box.height, content.height)),
       }
+    : options.fullPage
+      ? content
+      : {
+          x: visible.pageX,
+          y: visible.pageY,
+          width: visible.clientWidth,
+          height: visible.clientHeight,
+        }
   const density = z
     .object({ result: z.object({ value: z.number().positive().max(16) }) })
     .parse(
@@ -48,14 +80,21 @@ export async function screenshotGeometry(
         sessionId
       )
     ).result.value
+  const longest = Math.max(area.width, area.height)
   const scale = Math.min(
     1 / density,
-    4096 / (area.width * density),
-    4096 / (area.height * density),
+    options.maxSide / (longest * density),
     Math.sqrt(16_000_000 / (area.width * area.height)) / density
   )
-  return { clip: { ...area, scale }, viewport: visible }
+  return {
+    clip: { ...area, scale },
+    viewport: visible,
+    content,
+    devicePixelRatio: density,
+  }
 }
+
+export type NavigationWait = "load" | "domcontentloaded" | "commit"
 
 /** Subscribe before navigation so even a cached document cannot outrun the waiter. */
 export async function navigatePage(
@@ -63,7 +102,8 @@ export async function navigatePage(
   sessionId: string,
   url: string,
   signal: AbortSignal,
-  waitUntil: "load" | "commit" = "load"
+  waitUntil: NavigationWait = "load",
+  timeoutMs = 30_000
 ): Promise<JsonObject> {
   await connection.send(
     "Page.setLifecycleEventsEnabled",
@@ -77,18 +117,19 @@ export async function navigatePage(
     if (event.sessionId !== sessionId || event.method !== "Page.lifecycleEvent")
       return
     events.push(event)
-    if (events.length > 128) events.shift()
     wake?.()
   })
-  const active = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
   const disconnected = new AbortController()
   const removeClose = connection.onClose(() => disconnected.abort())
-  const waiting = AbortSignal.any([active, disconnected.signal])
   try {
+    // Lifecycle events buffered before the command is sent belong to the
+    // previous document. The reply and the new document's events can arrive
+    // in one chunk, so the boundary is taken before dispatch, not after.
+    const first = events.length
     const result = await connection.send(
       "Page.navigate",
       { url },
-      active,
+      AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
       sessionId
     )
     const navigation = z
@@ -111,36 +152,52 @@ export async function navigatePage(
         completion: navigation.isDownload ? "download" : "same-document",
       }
     if (waitUntil === "commit") return { ...result, completion: "commit" }
-    const loaded = () =>
-      events.some(
-        (event) =>
-          event.params.loaderId === navigation.loaderId &&
-          event.params.frameId === navigation.frameId &&
-          event.params.name === "load"
-      )
-    await new Promise<void>((resolve, reject) => {
+    const wanted = waitUntil === "load" ? "load" : "DOMContentLoaded"
+    // A redirect replaces the loader, so any later lifecycle event for this
+    // frame counts; the frame identity and event order are the evidence.
+    const reached = () =>
+      events
+        .slice(first)
+        .some(
+          (event) =>
+            event.params.frameId === navigation.frameId &&
+            event.params.name === wanted
+        )
+    const waiting = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(timeoutMs),
+      disconnected.signal,
+    ])
+    const completion = await new Promise<
+      "load" | "domcontentloaded" | "timeout"
+    >((resolve, reject) => {
       const abort = () => {
         waiting.removeEventListener("abort", abort)
-        reject(
-          new BrowserFault({
-            code: "outcome-unknown",
-            message:
-              "Navigation was dispatched but load completion was not observed. Observe the target before continuing.",
-            outcome: "unknown",
-          })
-        )
+        if (signal.aborted || disconnected.signal.aborted)
+          reject(
+            new BrowserFault({
+              code: "outcome-unknown",
+              message:
+                "Navigation was dispatched but its completion was not observed. Observe the target before continuing.",
+              outcome: "unknown",
+            })
+          )
+        else resolve("timeout")
       }
       wake = () => {
-        if (loaded()) {
+        if (reached()) {
           waiting.removeEventListener("abort", abort)
-          resolve()
+          resolve(waitUntil)
         }
       }
       waiting.addEventListener("abort", abort, { once: true })
       if (waiting.aborted) abort()
       else wake()
     })
-    return { ...result, completion: "load" }
+    const value: JsonObject = { ...result, completion }
+    if (completion === "timeout")
+      value.note = `The navigation committed but ${wanted} was not observed within ${timeoutMs} ms. Observe the tab before acting on it.`
+    return value
   } finally {
     unsubscribe()
     removeClose()
