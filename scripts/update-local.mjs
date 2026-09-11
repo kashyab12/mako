@@ -91,10 +91,12 @@ export async function updateLocal(options, dependencies) {
   let installed = false
   try {
     let waiting = false
-    while ((await dependencies.running()).length) {
+    for (;;) {
+      const running = await dependencies.running()
+      if (!running.length) break
       if (!waiting)
         dependencies.say(
-          "Waiting for Mako to close. On the older app, finish active work and fully quit Mako. Nothing will be force-stopped. Ctrl+C cancels this wait."
+          `Waiting for Mako to close (pids ${running.join(", ")}). On the older app, finish active work and fully quit Mako. Nothing will be force-stopped. Ctrl+C cancels this wait.`
         )
       waiting = true
       await closing?.check()

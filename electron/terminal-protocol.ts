@@ -41,7 +41,7 @@ export type TerminalRequest =
   | { protocol: number; id: number; type: "replace" }
 
 export type TerminalResult =
-  | { kind: "hello"; daemonVersion: string; pid: number }
+  | { kind: "hello"; daemonVersion: string; pid: number; daemonBuild?: string }
   | { kind: "sessions"; sessions: TerminalSession[] }
   | { kind: "session"; session: TerminalSession }
   | { kind: "snapshot"; snapshot: TerminalSnapshot }
@@ -93,7 +93,13 @@ const terminalSnapshotSchema = z.object({
   sequence: integer,
 })
 const terminalResultSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("hello"), daemonVersion: z.string(), pid: integer }),
+  z.object({
+    kind: z.literal("hello"),
+    daemonVersion: z.string(),
+    pid: integer,
+    /** The build that spawned the daemon; a host from another build replaces it. */
+    daemonBuild: boundedText(256).optional(),
+  }),
   z.object({ kind: z.literal("sessions"), sessions: z.array(terminalSessionSchema) }),
   z.object({ kind: z.literal("session"), session: terminalSessionSchema }),
   z.object({ kind: z.literal("snapshot"), snapshot: terminalSnapshotSchema }),

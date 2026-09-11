@@ -3,7 +3,8 @@ import { handleQuit } from "./background-lifecycle.js"
 import { RUNTIME_PROTOCOL } from "./contracts/runtime.js"
 import { hostCallInputs } from "./contracts/host-call-inputs.js"
 import { runtimeInfo } from "./runtime-connection.js"
-import { lstat, unlink } from "node:fs/promises"
+import { lstat, mkdir, unlink } from "node:fs/promises"
+import { rmSync } from "node:fs"
 import type { SessionSettings } from "@mako/sessions/settings"
 import { resolveExecutable } from "./executable.js"
 import { Appshots } from "./appshots.js"
@@ -138,6 +139,8 @@ import {
   type AccountProvider,
 } from "./accounts.js"
 import { daemonLoginEnabled, setDaemonLogin } from "./daemon-login.js"
+import { buildTag } from "./build-identity.js"
+import { IdleShutdown, PROFILE_HOST_IDLE_MS, activeHostLeases } from "./host-idle.js"
 import { TerminalDaemonClient } from "./terminal-client.js"
 import { ensureCuaEmbedded, stopCuaEmbedded } from "./cua-embedded.js"
 import { bindAcp, stopAcp } from "./acp.js"
@@ -330,6 +333,34 @@ if (persistentHost) process.once("SIGTERM", () => { shuttingDown = true; app.qui
 
 function hasActiveWork(): boolean {
   return application ? application.lifecycle.snapshot().work.length > 0 : Boolean(liveConversations?.hasActiveWork() || nativeRequests?.list().some((request) => request.status === "dispatching" || request.status === "queued"))
+}
+
+/**
+ * A profile host (dev, sandbox, test) stops itself after a long idle span with
+ * no client, no launcher lease and no work. The installed app's host on the
+ * default profile never does: it is the product and outlives every window.
+ */
+function watchProfileHostIdle(hostDirectory: string): void {
+  let leases = 0
+  const idle = new IdleShutdown({
+    idleMs: PROFILE_HOST_IDLE_MS,
+    now: () => Date.now(),
+    busy: () =>
+      shuttingDown || relaunching || Boolean(application?.lifecycle.blocked) || hasActiveWork() ||
+      rendererWindows.size > 0 || (webHost?.clients().length ?? 0) > 0 || leases > 0,
+    quit: () => {
+      console.info(`[mako-host] profile ${instanceProfile} idle for ${Math.round(PROFILE_HOST_IDLE_MS / 60_000)} minutes with no client; stopping`)
+      shuttingDown = true
+      app.quit()
+    },
+  })
+  const timer = setInterval(() => {
+    void activeHostLeases(hostDirectory).then((holders) => {
+      leases = holders.length
+      idle.tick()
+    })
+  }, 30_000)
+  timer.unref()
 }
 
 async function reopenWindow(): Promise<void> {
@@ -1212,7 +1243,8 @@ app.whenReady().then(async () => {
       webHost?.terminal(event)
       for (const renderer of rendererWindows)
         renderer.webContents.send("mako:terminal-event", event)
-    }
+    },
+    buildTag()
   )
   powerMonitor.on("shutdown", () => { shuttingDown = true })
   powerMonitor.on("resume", emitTerminalWake)
@@ -1319,6 +1351,7 @@ app.whenReady().then(async () => {
   bindCodexApp((event) => liveConversations.observe(event))
   if (webSocket) {
     if (persistentHost) {
+      await mkdir(dirname(webSocket), { recursive: true, mode: 0o700 })
       const stale = await lstat(webSocket).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return null; throw error })
       if (stale) {
         if (!stale.isSocket() || (process.getuid && stale.uid !== process.getuid()) || await runtimeInfo(webSocket))
@@ -1331,6 +1364,7 @@ app.whenReady().then(async () => {
     }, { protocol: RUNTIME_PROTOCOL, instanceId: crypto.randomUUID(), pid: process.pid, version: app.getVersion(), methods: Object.keys(hostCallInputs) })
   }
   trace("host listening")
+  if (persistentHost && instanceProfile && webSocket) watchProfileHostIdle(dirname(webSocket))
   if (!webOnly) await createWindow()
   installUpdates(emit)
   trace("updates ready")
@@ -1382,6 +1416,11 @@ app.on("before-quit", (event) => handleQuit(event, {
   cleanup: () => {
   application?.dispose()
   webHost?.close()
+  if (persistentHost && webSocket) {
+    // The runtime directory is this host's alone; leaving it behind is how
+    // fifty of them piled up in the temp folder.
+    try { rmSync(dirname(webSocket), { recursive: true, force: true }) } catch { /* best effort */ }
+  }
   powerMonitor.removeListener("resume", emitTerminalWake)
   powerMonitor.removeListener("unlock-screen", emitTerminalWake)
   terminalClient?.dispose()

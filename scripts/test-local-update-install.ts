@@ -18,7 +18,9 @@ import { join } from "node:path"
 import {
   bundleProcessIds,
   completeLocalInstall,
+  daemonProcessIds,
   desktopLaunchEnvironment,
+  pruneRetainedApplications,
   replacePreparedApplication,
   runningBundleProcesses,
   type LocalInstallReceipt,
@@ -186,13 +188,59 @@ try {
     /Verification failed/
   )
   assert.deepEqual(receipts, [{ ok: false, message: "Verification failed" }])
+  const titles =
+    "12 /Applications/Mako.app/Contents/MacOS/Mako\n13 Mako\n14 Mako Helper (Renderer)\n15 AnotherApp\n16 mako-terminal-daemon\n17 mako-syncd"
+  assert.deepEqual(bundleProcessIds(titles, "/Applications/Mako.app"), [12, 13, 14])
+  assert.deepEqual(daemonProcessIds(titles), [16, 17])
+  const receiptsForPrune: LocalInstallReceipt[] = []
+  const pruned: Array<string | null> = []
+  await completeLocalInstall({
+    replace: async () => "/retained/newest/Previous Mako.app",
+    save: async (receipt) => {
+      receiptsForPrune.push(receipt)
+    },
+    launch: async () => {},
+    prune: async (backup) => {
+      pruned.push(backup)
+      throw new Error("Housekeeping failure must not change the receipt")
+    },
+  })
+  assert.deepEqual(pruned, ["/retained/newest/Previous Mako.app"])
+  assert.deepEqual(receiptsForPrune, [{ ok: true, backup: "/retained/newest/Previous Mako.app" }])
+  // Retained copies: only the newest survives, and only pure backups are removed.
+  const applications = join(root, "Applications")
+  const installed = join(applications, "Mako.app")
+  await mkdir(installed, { recursive: true })
+  const retained = async (name: string, contents: string[]) => {
+    const staging = join(applications, name)
+    for (const entry of contents) {
+      await mkdir(join(staging, entry), { recursive: true })
+      await writeFile(join(staging, entry, "identity"), entry)
+    }
+    return staging
+  }
+  const newest = await retained(".mako-update-newest1", ["Previous Mako.app"])
+  const older = await retained(".mako-update-older01", ["Previous Mako.app"])
+  const cli = await retained(".mako-local-install-old2", ["Previous Mako.app"])
+  await writeFile(join(cli, "installer.mjs"), "")
+  const inFlight = await retained(".mako-update-inflight", ["Mako.app", "Previous Mako.app"])
+  const failed = await retained(".mako-update-failed01", ["Previous Mako.app", "failed-abc"])
+  const foreign = await retained("Other.app", ["Contents"])
+  const linked = join(applications, ".mako-update-linked1")
+  await symlink(older, linked)
+  const removed = await pruneRetainedApplications(installed, join(newest, "Previous Mako.app"))
+  assert.deepEqual(removed.sort(), [cli, older].sort())
   assert.deepEqual(
-    bundleProcessIds(
-      "12 /Applications/Mako.app/Contents/MacOS/Mako\n13 Mako\n14 Mako Helper (Renderer)\n15 AnotherApp\n16 mako-terminal-daemon",
-      "/Applications/Mako.app"
-    ),
-    [12, 13, 14]
+    (await readdir(applications)).sort(),
+    [".mako-update-failed01", ".mako-update-inflight", ".mako-update-linked1", ".mako-update-newest1", "Mako.app", "Other.app"].sort()
   )
+  assert.ok(await readFile(join(inFlight, "Mako.app/identity"), "utf8"), "a staging directory with a candidate is untouched")
+  assert.ok(await readFile(join(failed, "failed-abc/identity"), "utf8"), "rollback evidence is untouched")
+  assert.ok(await readFile(join(foreign, "Contents/identity"), "utf8"))
+  await writeFile(`${installed}.update-lock`, "{}")
+  assert.deepEqual(await pruneRetainedApplications(installed, null), [], "no pruning while another installer holds the lock")
+  await rm(`${installed}.update-lock`)
+  assert.deepEqual(await pruneRetainedApplications(installed, null), [newest], "without a newest backup every pure backup goes")
   const controlled = spawn(process.execPath, ["-e", "let count=0;process.send('ready');process.on('message',m=>{count++;process.send({message:m,count})});setTimeout(()=>{},10000)"], { stdio: ["ignore", "ignore", "ignore", "ipc"] })
   try {
     await once(controlled, "message")
@@ -209,6 +257,11 @@ try {
     ["-e", "process.title='renamed-test-process';setTimeout(()=>{},10000)"],
     { stdio: ["ignore", "ignore", "ignore", "ipc"] }
   )
+  const daemon = spawn(
+    process.execPath,
+    ["-e", "process.title='mako-terminal-daemon';setTimeout(()=>{},10000)"],
+    { stdio: ["ignore", "ignore", "ignore", "ipc"] }
+  )
   try {
     await new Promise((resolve) => setTimeout(resolve, 200))
     const processes = await runningBundleProcesses(
@@ -218,8 +271,13 @@ try {
       renamed.pid && processes.includes(renamed.pid),
       "OS executable names must detect processes whose displayed title changed"
     )
+    assert.ok(
+      daemon.pid && !processes.includes(daemon.pid),
+      "Mako's own detached daemons must not hold an install open"
+    )
   } finally {
     renamed.kill()
+    daemon.kill()
   }
   const polluted = {
     HOME: "/fixture",
@@ -243,7 +301,7 @@ try {
   })
   assert.equal(polluted.MAKO_HOST_ONLY, "1")
   console.log(
-    "Local installation: rollback, retained failures, changed-target refusal, exclusive install lock, final running-process check, fresh install and clean desktop environment passed"
+    "Local installation: rollback, retained failures, changed-target refusal, exclusive install lock, final running-process check, daemon exclusion, retained-copy pruning, fresh install and clean desktop environment passed"
   )
 } finally {
   await rm(root, { recursive: true, force: true })

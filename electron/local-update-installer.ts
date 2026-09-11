@@ -3,11 +3,13 @@ import {
   lstat,
   mkdtemp,
   open,
+  readdir,
   rename,
+  rm,
   unlink,
   writeFile,
 } from "node:fs/promises"
-import { basename, join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 
@@ -86,33 +88,109 @@ export async function replacePreparedApplication(
   }
 }
 
-export function bundleProcessIds(output: string, bundle: string): number[] {
-  const name = basename(bundle, ".app")
+/**
+ * Mako's own detached daemons, by the title each sets for itself. They are
+ * spawned from the bundle's executable and outlive the host on purpose, so the
+ * OS executable name counts them as the app; an installer waiting for "Mako to
+ * close" would then wait for a daemon that never closes. The next host
+ * replaces any daemon from another build on first contact, so leaving them
+ * running across an install is safe. The title is trusted only to *exclude* a
+ * process; nothing that renames itself can evade the executable-name check.
+ */
+export const MAKO_DAEMON_TITLES: ReadonlySet<string> = new Set([
+  "mako-terminal-daemon",
+  "mako-syncd",
+])
+
+function processLines(output: string): Array<{ pid: number; command: string }> {
   return output.split("\n").flatMap((line) => {
     const match = /^\s*(\d+)\s+(.+)$/.exec(line)
-    if (!match) return []
-    const command = match[2]!.trim()
-    return command.startsWith(`${bundle}/Contents/`) ||
-      command === name ||
-      command.startsWith(`${name} Helper`)
-      ? [Number(match[1])]
-      : []
+    return match ? [{ pid: Number(match[1]), command: match[2]!.trim() }] : []
   })
+}
+
+export function bundleProcessIds(output: string, bundle: string): number[] {
+  const name = basename(bundle, ".app")
+  return processLines(output).flatMap(({ pid, command }) =>
+    command.startsWith(`${bundle}/Contents/`) ||
+    command === name ||
+    command.startsWith(`${name} Helper`)
+      ? [pid]
+      : []
+  )
+}
+
+/** Pids whose displayed command is one of Mako's daemon titles. */
+export function daemonProcessIds(output: string): number[] {
+  return processLines(output).flatMap(({ pid, command }) =>
+    MAKO_DAEMON_TITLES.has(command) ? [pid] : []
+  )
 }
 
 export async function runningBundleProcesses(
   bundle: string
 ): Promise<number[]> {
-  const outputs = await Promise.all(
+  const [byTitle, byExecutable] = await Promise.all(
     ["comm=", "ucomm="].map(async (field) => {
       const { stdout } = await execute("ps", ["-axo", "pid=", "-o", field], {
         timeout: 10_000,
         maxBuffer: 4 * 1024 * 1024,
       })
-      return bundleProcessIds(stdout, bundle)
+      return stdout
     })
   )
-  return [...new Set(outputs.flat())]
+  const daemons = new Set(daemonProcessIds(byTitle!))
+  return [
+    ...new Set([
+      ...bundleProcessIds(byTitle!, bundle),
+      ...bundleProcessIds(byExecutable!, bundle),
+    ]),
+  ].filter((pid) => !daemons.has(pid))
+}
+
+const RETAINED_STAGING = /^\.mako-(update|local-install)-[A-Za-z0-9]+$/
+const RETAINED_CONTENTS = new Set(["Previous Mako.app", "installer.mjs"])
+
+/**
+ * Remove older retained applications once a new install has been verified
+ * and launched. Every install keeps the app it replaced beside the target;
+ * four of those were found holding 3.4 GB with nothing ever reclaiming them.
+ *
+ * Only the newest backup survives. A staging directory is removed only when
+ * it holds nothing but a retained app and its installer script: one that
+ * still contains a candidate, or a `failed-*` directory from a rollback, is
+ * evidence and stays. The install lock is held throughout so no concurrent
+ * installer is between renames with a backup it may still need.
+ */
+export async function pruneRetainedApplications(
+  target: string,
+  keep: string | null
+): Promise<string[]> {
+  const applications = dirname(target)
+  const kept = keep ? dirname(keep) : null
+  const lockPath = `${target}.update-lock`
+  const lock = await open(lockPath, "wx", 0o600).catch(() => null)
+  if (!lock) return []
+  const removed: string[] = []
+  try {
+    const uid = process.getuid?.()
+    for (const name of await readdir(applications)) {
+      if (!RETAINED_STAGING.test(name)) continue
+      const staging = join(applications, name)
+      if (staging === kept) continue
+      const info = await lstat(staging).catch(() => null)
+      if (!info || !info.isDirectory() || info.isSymbolicLink()) continue
+      if (uid !== undefined && info.uid !== uid) continue
+      const contents = await readdir(staging).catch(() => null)
+      if (!contents || contents.some((entry) => !RETAINED_CONTENTS.has(entry))) continue
+      await rm(staging, { recursive: true, force: true })
+      removed.push(staging)
+    }
+  } finally {
+    await lock.close()
+    await unlink(lockPath).catch(() => undefined)
+  }
+  return removed
 }
 
 export function desktopLaunchEnvironment(
@@ -145,6 +223,8 @@ interface InstallCompletion {
   replace(): Promise<string | null>
   save(receipt: LocalInstallReceipt): Promise<void>
   launch(): Promise<void>
+  /** Housekeeping after a verified, launched install; never affects the receipt. */
+  prune?(backup: string | null): Promise<void>
 }
 
 export async function completeLocalInstall(
@@ -176,6 +256,7 @@ export async function completeLocalInstall(
     })
     throw error
   }
+  await input.prune?.(backup).catch(() => undefined)
 }
 
 async function runInstaller(): Promise<void> {
@@ -295,6 +376,9 @@ async function runInstaller(): Promise<void> {
         timeout: 10_000,
         env: desktopLaunchEnvironment(process.env),
       })
+    },
+    prune: async (backup) => {
+      await pruneRetainedApplications(target, backup)
     },
   })
 }

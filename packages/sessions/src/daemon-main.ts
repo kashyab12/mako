@@ -30,6 +30,10 @@ function collectIdleHeap(): void {
 }
 
 async function main(): Promise<void> {
+  // The title lets an installer tell this detached daemon from the app whose
+  // executable it borrowed; the executable name is what would otherwise make
+  // an update wait forever for it to "close".
+  process.title = "mako-syncd"
   const dir = join(homedir(), ".mako")
   await mkdir(dir, { recursive: true, mode: 0o700 })
   await chmod(dir, 0o700)

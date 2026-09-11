@@ -82,6 +82,7 @@ const errnoSchema = z.object({ code: z.string() })
 
 const endpoint = argument("--endpoint")
 const stateDir = argument("--state-dir")
+const build = optionalArgument("--build")
 const historyFile = join(stateDir, "sessions.json")
 const historyTemp = join(stateDir, "sessions.tmp")
 const sessions = new Map<string, LiveSession>()
@@ -91,9 +92,13 @@ let dirty = false
 let saving: Promise<void> | null = null
 let stopping = false
 
-function argument(name: string) {
+function optionalArgument(name: string): string | undefined {
   const index = process.argv.indexOf(name)
-  const value = index >= 0 ? process.argv[index + 1] : undefined
+  return index >= 0 ? process.argv[index + 1] : undefined
+}
+
+function argument(name: string) {
+  const value = optionalArgument(name)
   if (!value) throw new Error(`Missing ${name}`)
   return value
 }
@@ -371,18 +376,13 @@ function getSession(id: string) {
 async function handleRequest(connection: ClientConnection, request: TerminalRequest) {
   try {
     if (request.type === "hello") {
-      send(
-        connection,
-        response(
-          request.id,
-          {
-            kind: "hello",
-            daemonVersion: TERMINAL_DAEMON_VERSION,
-            pid: process.pid,
-          },
-          request.protocol
-        )
-      )
+      const hello: Extract<TerminalResult, { kind: "hello" }> = {
+        kind: "hello",
+        daemonVersion: TERMINAL_DAEMON_VERSION,
+        pid: process.pid,
+      }
+      if (build !== undefined) hello.daemonBuild = build
+      send(connection, response(request.id, hello, request.protocol))
       return
     }
     if (request.type === "list") {

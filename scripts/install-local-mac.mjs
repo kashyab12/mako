@@ -89,7 +89,7 @@ async function main() {
       0,
       `Mako started during preparation. The installed app was not changed; the candidate remains at ${candidate}`
     )
-    const { replacePreparedApplication } =
+    const { pruneRetainedApplications, replacePreparedApplication } =
       await import("../dist-electron/local-update-installer.js")
     const backup = await replacePreparedApplication({
       staging,
@@ -102,8 +102,9 @@ async function main() {
           "Mako started during verification. Nothing was replaced."
         ),
     })
+    const pruned = await pruneRetainedApplications(target, backup).catch(() => [])
     console.log(
-      `Installed ${target}. Previous app retained at ${backup ?? "none"}. Open the installed app before starting a development host.`
+      `Installed ${target}. Previous app retained at ${backup ?? "none"}.${pruned.length ? ` Removed ${pruned.length} older retained ${pruned.length === 1 ? "copy" : "copies"}.` : ""} Open the installed app before starting a development host.`
     )
   }
 }

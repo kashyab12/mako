@@ -1,8 +1,7 @@
 import { app } from "electron"
-import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { z } from "zod"
-import { BuildIdentitySchema, type UpdateInstallation } from "./contracts/app-lifecycle.js"
+import type { UpdateInstallation } from "./contracts/app-lifecycle.js"
+import { buildMetadata } from "./build-identity.js"
 import { LocalUpdates } from "./local-updates.js"
 import { prepareLocalInstall } from "./local-update-install.js"
 import type { HostEvent, UpdateState } from "./shared.js"
@@ -42,8 +41,7 @@ let updater: Updater | null = null
 let state: UpdateState = { status: "idle", version: app.getVersion() }
 let emit: (event: HostEvent) => void = () => {}
 let local: LocalUpdates | null = null
-const metadataSchema = z.object({ makoBuild: BuildIdentitySchema.optional(), makoLocalSigningIdentity: z.string().regex(/^[a-fA-F0-9]{40}$/).optional() })
-const metadata = metadataSchema.parse(JSON.parse(readFileSync(join(app.getAppPath(), "package.json"), "utf8")))
+const metadata = buildMetadata()
 
 export function installationState(): UpdateInstallation {
   return { distribution: app.isPackaged ? packagedDistribution(app.getAppPath()) : "development", build: metadata.makoBuild ?? null, ...local?.snapshot() ?? { source: null, local: { kind: "idle" } } }

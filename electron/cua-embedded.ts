@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process"
-import { access, chmod, mkdir, unlink } from "node:fs/promises"
+import { access, chmod, mkdir, readdir, unlink } from "node:fs/promises"
 import { createConnection } from "node:net"
 import { homedir } from "node:os"
 import { delimiter, isAbsolute, join } from "node:path"
@@ -46,6 +46,27 @@ function probe(path: string): Promise<boolean> {
   })
 }
 
+/**
+ * Each host names its driver socket after its own pid; a host that died
+ * without its shutdown path leaves that file behind. Dozens accumulate. A
+ * socket whose owner no longer runs is unlinked before this host adds its own.
+ */
+async function sweepStaleSockets(stateDir: string): Promise<void> {
+  const names = await readdir(stateDir).catch((): string[] => [])
+  for (const name of names) {
+    const match = /^embedded-(\d+)\.sock$/.exec(name)
+    if (!match) continue
+    const owner = Number(match[1])
+    if (owner === process.pid) continue
+    try {
+      process.kill(owner, 0)
+      continue
+    } catch {
+      await unlink(join(stateDir, name)).catch(() => undefined)
+    }
+  }
+}
+
 async function waitForSocket(path: string, process: ChildProcess) {
   for (let attempt = 0; attempt < 200; attempt += 1) {
     if (process.exitCode !== null) {
@@ -83,6 +104,7 @@ async function start(
   if (!command) return null
   await mkdir(stateDir, { recursive: true, mode: 0o700 })
   await chmod(stateDir, 0o700)
+  await sweepStaleSockets(stateDir)
   const nextSocket = join(stateDir, `embedded-${process.pid}.sock`)
   await unlink(nextSocket).catch(() => undefined)
   stderr = ""

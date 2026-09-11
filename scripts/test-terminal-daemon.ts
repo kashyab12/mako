@@ -14,7 +14,7 @@ const root = await mkdtemp(join(tmpdir(), "mako-terminal-"))
 const stateDir = join(root, "state")
 const entry = resolve("dist-electron/terminal-daemon.js")
 const endpoint = terminalEndpoint(stateDir)
-const child = spawn(process.execPath, [entry, "--endpoint", endpoint, "--state-dir", stateDir], {
+const child = spawn(process.execPath, [entry, "--endpoint", endpoint, "--state-dir", stateDir, "--build", "fixture-a"], {
   stdio: "ignore",
 })
 
@@ -150,10 +150,35 @@ await new Promise((resolveWait) => setTimeout(resolveWait, 100))
 assert.throws(() => process.kill(childPid, 0))
 
 await second.kill(session.id)
+assert.equal(second.daemonPid(), child.pid, "a client without a build accepts any daemon of its protocol")
+const survivor = await second.create({ cwd: root, cols: 80, rows: 24, title: "Survivor" })
 second.dispose()
 
-child.kill("SIGTERM")
-await new Promise<void>((resolveExit) => child.once("exit", () => resolveExit()))
+// A host from another build retires the daemon in one connect: the daemon
+// persists its sessions and leaves, a fresh one starts from this executable,
+// and the same call completes against it. Scrollback survives; live shells
+// are reported interrupted, never silently dropped.
+const childExited = new Promise<void>((resolveExit) => child.once("exit", () => resolveExit()))
+const third = new TerminalDaemonClient(entry, stateDir, () => {}, "fixture-b")
+const afterReplacement = await third.list()
+await childExited
+assert.ok(third.daemonPid() && third.daemonPid() !== child.pid, "the outdated daemon was replaced")
+assert.equal(afterReplacement.find((entrySession) => entrySession.id === survivor.id)?.status, "interrupted")
+const sameBuild = new TerminalDaemonClient(entry, stateDir, () => {}, "fixture-b")
+await sameBuild.list()
+assert.equal(sameBuild.daemonPid(), third.daemonPid(), "a host of the same build keeps the daemon")
+const replacementPid = third.daemonPid()
+third.dispose()
+sameBuild.dispose()
+if (replacementPid) process.kill(replacementPid, "SIGTERM")
+for (let attempt = 0; attempt < 100 && replacementPid; attempt += 1) {
+  try {
+    process.kill(replacementPid, 0)
+  } catch {
+    break
+  }
+  await new Promise((resolveWait) => setTimeout(resolveWait, 20))
+}
 await rm(root, { recursive: true, force: true })
 
 console.log("terminal daemon integration passed")

@@ -44,19 +44,34 @@ export class TerminalDaemonClient {
   #nextId = 1
   #disposed = false
   #attachedSessionId?: string
+  #daemonPid: number | null = null
   readonly #daemonEntry: string
   readonly #stateDir: string
   readonly #emit: (event: TerminalEvent) => void
+  readonly #build: string | undefined
 
+  /**
+   * `build` names the host's own build. A daemon answering with another build
+   * (or none) is retired and respawned from this host's executable, so an
+   * update never keeps serving terminals from the bundle it replaced. A
+   * client without a build accepts any daemon of the same protocol.
+   */
   constructor(
     daemonEntry: string,
     stateDir: string,
-    emit: (event: TerminalEvent) => void
+    emit: (event: TerminalEvent) => void,
+    build?: string
   ) {
     this.#daemonEntry = daemonEntry
     this.#stateDir = stateDir
     this.#emit = emit
+    this.#build = build
     this.#endpoint = terminalEndpoint(stateDir)
+  }
+
+  /** The pid the connected daemon reported, for tests and diagnostics. */
+  daemonPid(): number | null {
+    return this.#daemonPid
   }
 
   async list(): Promise<TerminalSession[]> {
@@ -166,39 +181,30 @@ export class TerminalDaemonClient {
     this.#emit({ type: "connection", state: "connecting" })
     await mkdir(this.#stateDir, { recursive: true, mode: 0o700 })
     if (process.platform !== "win32") await chmod(this.#stateDir, 0o700)
-    let socket = await this.#tryOpen()
-    if (!socket) {
-      this.#spawnDaemon()
-      for (let attempt = 0; attempt < 30 && !socket; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 100))
-        socket = await this.#tryOpen()
-      }
-    }
-    if (!socket) {
-      const error = new Error("The local terminal daemon could not be started")
-      this.#emit({ type: "connection", state: "disconnected", error: error.message })
-      this.#scheduleReconnect()
-      throw error
-    }
+    // One replacement per connection attempt: an outdated daemon is asked to
+    // persist and leave, a fresh one is spawned from this executable, and the
+    // same call then completes against it instead of failing the caller.
+    let socket = await this.#open()
     this.#adopt(socket)
     try {
-      const hello = await this.#requestConnected({
-        protocol: TERMINAL_PROTOCOL_VERSION,
-        id: this.#id(),
-        type: "hello",
-        clientVersion: TERMINAL_DAEMON_VERSION,
-      })
-      if (hello.kind !== "hello") throw new Error("Terminal daemon handshake failed")
-      if (hello.daemonVersion !== TERMINAL_DAEMON_VERSION) {
+      let hello = await this.#hello()
+      if (this.#outdated(hello)) {
         await this.#expectOk({
           protocol: TERMINAL_PROTOCOL_VERSION,
           id: this.#id(),
           type: "replace",
         })
+        // Detach before destroying so the close handler does not treat the
+        // planned handover as an outage and schedule a competing reconnect.
+        this.#socket = null
         socket.destroy()
-        this.#spawnDaemon()
-        throw new Error("Replacing an outdated terminal daemon")
+        await this.#waitForExit(hello.pid)
+        socket = await this.#open()
+        this.#adopt(socket)
+        hello = await this.#hello()
+        if (this.#outdated(hello)) throw new Error("The terminal daemon could not be replaced")
       }
+      this.#daemonPid = hello.pid
       this.#emit({ type: "connection", state: "ready" })
       if (this.#attachedSessionId) {
         const result = await this.#requestConnected({
@@ -215,6 +221,52 @@ export class TerminalDaemonClient {
     }
   }
 
+  async #open(): Promise<Socket> {
+    let socket = await this.#tryOpen()
+    if (!socket) {
+      this.#spawnDaemon()
+      for (let attempt = 0; attempt < 30 && !socket; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        socket = await this.#tryOpen()
+      }
+    }
+    if (!socket) {
+      const error = new Error("The local terminal daemon could not be started")
+      this.#emit({ type: "connection", state: "disconnected", error: error.message })
+      this.#scheduleReconnect()
+      throw error
+    }
+    return socket
+  }
+
+  async #hello() {
+    const hello = await this.#requestConnected({
+      protocol: TERMINAL_PROTOCOL_VERSION,
+      id: this.#id(),
+      type: "hello",
+      clientVersion: TERMINAL_DAEMON_VERSION,
+    })
+    if (hello.kind !== "hello") throw new Error("Terminal daemon handshake failed")
+    return hello
+  }
+
+  #outdated(hello: { daemonVersion: string; daemonBuild?: string }): boolean {
+    if (hello.daemonVersion !== TERMINAL_DAEMON_VERSION) return true
+    return this.#build !== undefined && hello.daemonBuild !== this.#build
+  }
+
+  /** The retiring daemon unlinks its socket on exit; wait for that before reopening. */
+  async #waitForExit(pid: number): Promise<void> {
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      try {
+        process.kill(pid, 0)
+      } catch {
+        return
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+  }
+
   #tryOpen() {
     return new Promise<Socket | null>((resolve) => {
       const socket = createConnection(this.#endpoint)
@@ -227,9 +279,11 @@ export class TerminalDaemonClient {
   }
 
   #spawnDaemon() {
+    const arguments_ = [this.#daemonEntry, "--endpoint", this.#endpoint, "--state-dir", this.#stateDir]
+    if (this.#build !== undefined) arguments_.push("--build", this.#build)
     const child = spawn(
       process.execPath,
-      [this.#daemonEntry, "--endpoint", this.#endpoint, "--state-dir", this.#stateDir],
+      arguments_,
       {
         detached: true,
         stdio: "ignore",
