@@ -1,5 +1,7 @@
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
+import { once } from "node:events"
+import { installerControls } from "../electron/local-update-install.js"
 import { basename } from "node:path"
 import {
   mkdir,
@@ -191,6 +193,17 @@ try {
     ),
     [12, 13, 14]
   )
+  const controlled = spawn(process.execPath, ["-e", "let count=0;process.send('ready');process.on('message',m=>{count++;process.send({message:m,count})});setTimeout(()=>{},10000)"], { stdio: ["ignore", "ignore", "ignore", "ipc"] })
+  try {
+    await once(controlled, "message")
+    const controls = installerControls(controlled)
+    const received = once(controlled, "message")
+    controls.install()
+    controls.install()
+    controls.cancel()
+    assert.deepEqual((await received)[0], { message: "install", count: 1 })
+    assert.equal(controlled.killed, false, "Cancellation must not interrupt a dispatched install transaction")
+  } finally { controlled.kill() }
   const renamed = spawn(
     process.execPath,
     ["-e", "process.title='renamed-test-process';setTimeout(()=>{},10000)"],
