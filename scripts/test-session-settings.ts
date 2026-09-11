@@ -108,6 +108,81 @@ await assert.rejects(
   }),
   /provider rejected/
 )
+const { accessModeId } = await import("../electron/contracts/access.ts")
+const mode: SessionConfigOption = {
+  id: "mode",
+  name: "Mode",
+  category: "mode",
+  type: "select",
+  currentValue: "agent",
+  options: [
+    { value: "agent", name: "Agent" },
+    { value: "plan", name: "Plan" },
+    { value: "ask", name: "Ask" },
+  ],
+}
+const hostModeCalls: string[] = []
+const hostMode = await applyAcpSettings({
+  settings: { options: { mode: accessModeId("full") } },
+  observed: { options: { mode: "agent" } },
+  options: [mode],
+  async setOption(option, value) {
+    hostModeCalls.push(`${option.id}:${value}`)
+    return [{ ...mode, currentValue: String(value) }]
+  },
+  async setModel() {
+    assert.fail("host access is not a native model")
+  },
+})
+assert.deepEqual(hostModeCalls, [])
+assert.equal(hostMode.settings.options?.mode, "agent")
+const nativeModeCalls: string[] = []
+const nativeMode = await applyAcpSettings({
+  settings: { options: { mode: "plan" } },
+  observed: { options: { mode: "agent" } },
+  options: [mode],
+  async setOption(option, value) {
+    nativeModeCalls.push(`${option.id}:${value}`)
+    return [{ ...mode, currentValue: String(value) }]
+  },
+  async setModel() {
+    assert.fail()
+  },
+})
+assert.deepEqual(nativeModeCalls, ["mode:plan"])
+assert.equal(nativeMode.settings.options?.mode, "plan")
+await applyAcpSettings({
+  settings: { options: { mode: accessModeId("full") } },
+  observed: {},
+  options: [],
+  async setOption() {
+    assert.fail("host access is not a missing config option")
+  },
+  async setModel() {
+    assert.fail()
+  },
+})
+const mixedCalls: string[] = []
+const mixed = await applyAcpSettings({
+  settings: { options: { mode: accessModeId("full"), effort: "high" } },
+  observed: { options: { mode: "agent", effort: "low" } },
+  options: [mode, effort],
+  async setOption(option, value) {
+    mixedCalls.push(`${option.id}:${value}`)
+    return [
+      option.id === "mode" ? { ...mode, currentValue: String(value) } : mode,
+      option.id === effort.id
+        ? { ...effort, currentValue: String(value) }
+        : effort,
+    ]
+  },
+  async setModel() {
+    assert.fail()
+  },
+})
+assert.deepEqual(mixedCalls, ["reasoning_effort:high"])
+assert.equal(mixed.settings.options?.mode, "agent")
+assert.equal(mixed.settings.options?.effort, "high")
 assert.deepEqual(
   codexWireSettings({ options: { serviceTier: "default", effort: "high" } }),
   { model: undefined, effort: "high", serviceTier: "default" }

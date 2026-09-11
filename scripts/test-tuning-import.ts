@@ -21,7 +21,7 @@ storage.set(
     providerTuningImported: ["codex"],
   })
 )
-const { prefsStore } = await import("../src/state/prefs.ts")
+const { prefsStore, setPref } = await import("../src/state/prefs.ts")
 const { providerStore, providerProfileKey, providers } =
   await import("../src/state/providers.ts")
 const { threadsStore } = await import("../src/state/thread-store.ts")
@@ -215,6 +215,79 @@ assert.equal(
 assert.deepEqual(
   await settingsForSend(restoredTarget),
   resolveComposerSettings(restoredTarget).settings
+)
+
+const { accessModeId } = await import("../electron/contracts/access.ts")
+const cursorMode = {
+  kind: "select" as const,
+  id: "mode",
+  label: "Mode",
+  current: "agent",
+  values: [
+    { value: "agent", label: "Agent" },
+    { value: "plan", label: "Plan" },
+    { value: "ask", label: "Ask" },
+  ],
+}
+providerStore.set({
+  contexts: {
+    [providerProfileKey("cursor", "/workspace")]: {
+      id: "cursor",
+      label: "Cursor",
+      available: true,
+      transport: "acp" as const,
+      capabilities: [],
+      models: [{ id: "composer", label: "Composer", options: [cursorMode] }],
+      settings: { model: "composer", options: { mode: "agent" } },
+    },
+  },
+})
+setPref("providerModes", { cursor: accessModeId("full") })
+const cursorLive = {
+  ...observed,
+  key: "cursor-live",
+  draftKey: "cursor-live",
+  harness: "cursor",
+  threadPath: undefined,
+  session: {
+    ...observed.session,
+    id: "cursor-live",
+    harness: "cursor",
+    modes: [
+      {
+        id: "agent",
+        name: "Agent",
+        access: "ask" as const,
+        enforcement: "provider" as const,
+      },
+      {
+        id: accessModeId("full"),
+        name: "Full access",
+        access: "full" as const,
+        enforcement: "host" as const,
+      },
+    ],
+    currentMode: accessModeId("full"),
+    configOptions: [cursorMode],
+    settings: { model: "composer", options: { mode: "agent" } },
+  },
+}
+replaceAcpConversation("cursor-live", cursorLive)
+const cursorTarget = {
+  kind: "live" as const,
+  id: "cursor-live",
+  harness: "cursor",
+  cwd: "/workspace",
+}
+const cursorSend = await settingsForSend(cursorTarget)
+assert.equal(cursorSend.options?.mode, "agent")
+assert.equal(
+  await settingsForSend({
+    kind: "new",
+    harness: "cursor",
+    cwd: "/workspace",
+  }).then((settings) => settings.options?.mode),
+  "agent"
 )
 acpStore.set({ conversations: {}, activeKey: null })
 console.log(

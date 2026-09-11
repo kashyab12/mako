@@ -1,10 +1,12 @@
 import assert from "node:assert/strict"
-import { mkdtemp, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
+import { z } from "zod"
 import { createComputerToolsServer } from "../electron/computer-tools-main.js"
+import { canonicalDriverPath } from "../electron/computer-paths.js"
 
 const source = `
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -60,9 +62,61 @@ try {
       await server.close()
     }
   }
+  // The driver refuses an output path whose deepest existing ancestor is a
+  // symbolic link (macOS `/tmp`), so the wrapper forwards the real ancestor.
+  const real = join(fixtureRoot, "real")
+  const link = join(fixtureRoot, "link")
+  await mkdir(real)
+  await symlink(real, link)
+  const realRoot = await realpath(real)
+  assert.equal(
+    await canonicalDriverPath(join(link, "nested", "shot.png")),
+    join(realRoot, "nested", "shot.png")
+  )
+  assert.equal(
+    await canonicalDriverPath("captures/shot.png", link),
+    join(realRoot, "captures", "shot.png")
+  )
+  assert.equal(
+    await canonicalDriverPath("~/mako-missing-dir/shot.png"),
+    join(await realpath(homedir()), "mako-missing-dir", "shot.png")
+  )
+  const server = createComputerToolsServer(
+    {
+      command: process.execPath,
+      args: ["--input-type=module", "--eval", source],
+    },
+    "paths"
+  )
+  const client = new Client({ name: "computer-test", version: "1" })
+  const [ct, st] = InMemoryTransport.createLinkedPair()
+  try {
+    await server.connect(st)
+    await client.connect(ct)
+    const result = await client.callTool({
+      name: "mako_computer_get_window_state",
+      arguments: {
+        pid: 42,
+        screenshot_out_file: join(link, "nested", "shot.png"),
+        files: [join(link, "upload.txt"), "~"],
+      },
+    })
+    const echoed = z
+      .array(z.object({ type: z.string(), text: z.string().optional() }))
+      .parse(result.content)
+    assert.deepEqual(JSON.parse(echoed[1]?.text ?? "{}"), {
+      pid: 42,
+      screenshot_out_file: join(realRoot, "nested", "shot.png"),
+      files: [join(realRoot, "upload.txt"), await realpath(homedir())],
+      session: "mako-paths",
+    })
+  } finally {
+    await client.close()
+    await server.close()
+  }
 } finally {
   await rm(fixtureRoot, { recursive: true, force: true })
 }
 console.log(
-  "Computer MCP: native schema and annotations preserved, caller cannot override task session, image blocks and coordinate metadata forwarded intact"
+  "Computer MCP: native schema and annotations preserved, caller cannot override task session, image blocks and coordinate metadata forwarded intact, symlinked output ancestors resolved"
 )

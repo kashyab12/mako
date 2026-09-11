@@ -4,8 +4,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { startWebHost } from "../electron/web-host.ts"
-import { invokeRuntime, runtimeInfo, subscribeRuntime } from "../electron/runtime-connection.ts"
+import { invokeRuntime, runtimeInfo, subscribeRuntime, RuntimeDisconnectedError } from "../electron/runtime-connection.ts"
 import { hostCallInputs } from "../electron/contracts/host-call-inputs.ts"
+import { HOST_CALL_UNCONFIRMED_MESSAGE, HOST_RECONNECTING_MESSAGE } from "../electron/contracts/host-connection.ts"
 
 const root = await mkdtemp(join(tmpdir(), "mako-wire-"))
 const socket = join(root, "host.sock")
@@ -19,6 +20,10 @@ const host = await startWebHost(socket, async (channel, args, client) => {
   received.push(args)
   return JSON.stringify({ok:true,value:{args,client}})
 }, async () => new Response("fixture"), undefined, {protocol:1,instanceId:randomUUID(),pid:process.pid,version:"fixture",methods:["mako:echo", "mako:live-start"]})
+async function rejection<T>(promise: Promise<T>): Promise<Error> {
+  try { await promise } catch (error) { if (error instanceof Error) return error; throw new Error("Rejected with something other than an Error") }
+  throw new Error("Expected a rejection")
+}
 const wait = async (predicate:()=>boolean) => { const end=Date.now()+2000;while(!predicate()){if(Date.now()>end)throw Error("Transport did not settle");await new Promise(resolve=>setTimeout(resolve,5))} }
 const closeA = subscribeRuntime(socket,a,(frame)=>framesA.push(frame),()=>{})
 const closeB = subscribeRuntime(socket,b,(frame)=>framesB.push(frame),()=>{})
@@ -68,3 +73,30 @@ try {
   assert.deepEqual(framesB.at(-1),{channel:"event",payload:{type:"notice",level:"info",message:"global"}})
   console.log("Runtime transport: shared health, exact arguments, distinct clients, global events and targeted workspace delivery verified")
 } finally {closeA();closeB();host.close();await rm(root,{recursive:true,force:true})}
+
+// A host that closes with a call in flight answers it instead of resetting the
+// socket: the client sees a typed disconnect with the host's own wording, and a
+// call made after the close is refused with the plain wording.
+{
+  const dir = await mkdtemp(join(tmpdir(), "mako-wire-close-"))
+  const path = join(dir, "host.sock")
+  let finish: (() => void) | undefined
+  const closing = await startWebHost(path, () => new Promise((resolve) => { finish = () => resolve(JSON.stringify({ ok: true, value: null })) }), async () => new Response(""), undefined, { protocol: 1, instanceId: randomUUID(), pid: process.pid, version: "fixture", methods: ["mako:git-status"] })
+  const disconnects: string[] = []
+  const stream = subscribeRuntime(path, a, () => {}, () => disconnects.push("stream"))
+  try {
+    const pending = invokeRuntime(path, a, "mako:git-status", [])
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    closing.close()
+    const dropped = await rejection(pending)
+    assert.ok(dropped instanceof RuntimeDisconnectedError && dropped.unconfirmed)
+    assert.equal(dropped.message, HOST_CALL_UNCONFIRMED_MESSAGE)
+    finish?.()
+    await wait(() => disconnects.length === 1)
+    const refused = await rejection(invokeRuntime(path, a, "mako:git-status", []))
+    assert.equal(`${refused.name}: ${refused.message}`, `RuntimeDisconnectedError: ${HOST_RECONNECTING_MESSAGE}`)
+    assert.ok(refused instanceof RuntimeDisconnectedError && !refused.unconfirmed)
+    assert.equal(await runtimeInfo(path), null, "a closed host no longer reports as healthy")
+    console.log("Runtime transport: a closing host answers pending calls explicitly and later calls are refused, never reset")
+  } finally { stream(); await rm(dir, { recursive: true, force: true }) }
+}

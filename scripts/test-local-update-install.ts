@@ -20,7 +20,11 @@ import {
   completeLocalInstall,
   daemonProcessIds,
   desktopLaunchEnvironment,
+  GRANTS_RESET_MESSAGE,
+  MAKO_BUNDLE_ID,
+  parseDesignatedRequirement,
   pruneRetainedApplications,
+  reconcileGrantIdentity,
   replacePreparedApplication,
   runningBundleProcesses,
   type LocalInstallReceipt,
@@ -300,8 +304,72 @@ try {
     PATH: "/bin",
   })
   assert.equal(polluted.MAKO_HOST_ONLY, "1")
+
+  // A TCC row follows the designated requirement it was written under. When
+  // the installed app's requirement changes, the rows must be dropped so the
+  // next Grant prompts; when it is unchanged, the grants must be left alone.
+  const certificate =
+    'identifier "dev.mako.app" and certificate root = H"41ccd4f5f2796876b03ea453c5d2c70a0018dbf8"'
+  assert.equal(
+    parseDesignatedRequirement(
+      `Executable=/Applications/Mako.app/Contents/MacOS/Mako\ndesignated => ${certificate}\n`
+    ),
+    certificate
+  )
+  assert.equal(parseDesignatedRequirement("Executable=/x\n"), null)
+  const requirements = new Map<string, string | null>()
+  const calls: string[][] = []
+  const run = async (command: string, args: string[]) => {
+    calls.push([command, ...args])
+    if (command === "codesign") {
+      const requirement = requirements.get(args[2]!)
+      if (requirement === undefined) throw new Error("code object is not signed at all")
+      return { stdout: `designated => ${requirement}\n`, stderr: "" }
+    }
+    return { stdout: "", stderr: "" }
+  }
+  requirements.set("/target", certificate)
+  requirements.set("/same", certificate)
+  requirements.set("/adhoc", 'cdhash H"28298992fdab82a3c3964ffe7148d59dbc708d7a"')
+  assert.equal(await reconcileGrantIdentity("/target", null, run), false)
+  assert.equal(await reconcileGrantIdentity("/target", "/same", run), false)
+  assert.ok(!calls.some(([command]) => command === "tccutil"))
+  assert.equal(await reconcileGrantIdentity("/target", "/adhoc", run), true)
+  assert.deepEqual(
+    calls.filter(([command]) => command === "tccutil"),
+    [
+      ["tccutil", "reset", "Accessibility", MAKO_BUNDLE_ID],
+      ["tccutil", "reset", "ScreenCapture", MAKO_BUNDLE_ID],
+    ]
+  )
+  calls.length = 0
+  assert.equal(await reconcileGrantIdentity("/target", "/unsigned", run), true)
+  assert.equal(calls.filter(([command]) => command === "tccutil").length, 2)
+  const grantReceipts: LocalInstallReceipt[] = []
+  await completeLocalInstall({
+    replace: async () => "/adhoc",
+    save: async (receipt) => {
+      grantReceipts.push(receipt)
+    },
+    grants: async () => true,
+    launch: async () => {},
+  })
+  assert.deepEqual(grantReceipts, [
+    { ok: true, backup: "/adhoc", message: GRANTS_RESET_MESSAGE },
+  ])
+  grantReceipts.length = 0
+  await completeLocalInstall({
+    replace: async () => "/same",
+    save: async (receipt) => {
+      grantReceipts.push(receipt)
+    },
+    grants: async () => false,
+    launch: async () => {},
+  })
+  assert.deepEqual(grantReceipts, [{ ok: true, backup: "/same" }])
+
   console.log(
-    "Local installation: rollback, retained failures, changed-target refusal, exclusive install lock, final running-process check, daemon exclusion, retained-copy pruning, fresh install and clean desktop environment passed"
+    "Local installation: rollback, retained failures, changed-target refusal, exclusive install lock, final running-process check, daemon exclusion, retained-copy pruning, fresh install, clean desktop environment and grant identity reconciliation passed"
   )
 } finally {
   await rm(root, { recursive: true, force: true })
