@@ -64,6 +64,10 @@ export async function prepareLocalInstall(
       reject(new Error("The installer exited before it was ready."))
     })
   })
+  return installerControls(child)
+}
+
+export function installerControls(child: ChildProcess) {
   let dispatched = false
   return {
     install() {
