@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/mako-hero.png" alt="Mako with a Claude Code thread open, the project rail on the left, and the changed files and commit box on the right" width="1120" />
+  <img src="docs/images/mako-desk.png" alt="Mako with a Claude Code thread open, the project rail on the left, and the changed files and commit box on the right" width="1120" />
 </p>
 
 Mako is a macOS workspace for AI coding agents. It finds the sessions your
