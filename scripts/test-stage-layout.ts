@@ -40,8 +40,11 @@ import {
 } from "../src/state/thread-queue.ts"
 import {
   groupThreadFolders,
+  stableThreadRanks,
   threadBelongsToWorkspace,
   threadFolderKey,
+  visibleThreadFolders,
+  type RailRanks,
 } from "../src/lib/thread-folders.ts"
 import { acpBlocksToMessages } from "../src/lib/acp-blocks.ts"
 import { contextAccounting } from "../src/lib/context-accounting.ts"
@@ -960,6 +963,94 @@ const activeFolders = groupThreadFolders({
 assert.equal(activeFolders[0]?.cwd, "/live")
 assert.equal(activeFolders[0]?.running, 1)
 assert.equal(activeFolders[0]?.priority, 2)
+const stableFolders = groupThreadFolders({
+  refs: Array.from({ length: 8 }, (_, index) => ({
+    harness: "codex" as const,
+    nativeId: `stable-${index}`,
+    path: `/stable-${index}`,
+    cwd: `/project-${index}`,
+    updatedAt: `2026-09-${String(9 - index).padStart(2, "0")}T12:00:00Z`,
+  })),
+  currentCwd: "/project-3",
+  pinnedThreads: [],
+  pinnedFolders: [],
+  sortBy: "recent",
+})
+assert.deepEqual(
+  stableFolders.map((folder) => folder.cwd),
+  Array.from({ length: 8 }, (_, index) => `/project-${index}`),
+  "Selecting a visible project must not move its row"
+)
+assert.deepEqual(
+  visibleThreadFolders(stableFolders, 6).map((folder) => folder.cwd),
+  Array.from({ length: 6 }, (_, index) => `/project-${index}`)
+)
+const offPageCurrent = stableFolders.map((folder) => ({
+  ...folder,
+  current: folder.cwd === "/project-7",
+}))
+assert.deepEqual(
+  visibleThreadFolders(offPageCurrent, 6).map((folder) => folder.cwd),
+  [
+    ...Array.from({ length: 6 }, (_, index) => `/project-${index}`),
+    "/project-7",
+  ],
+  "An off-page current project must remain visible without displacing rows"
+)
+
+// Recency holds still while agents work: a busy thread keeps its rank on
+// every appended byte, climbs once when it starts, and settles once when it
+// finishes. Two busy projects therefore never swap on each other's tokens.
+const busyRef = (path: string, cwd: string, updatedAt: string): ThreadRef => ({
+  harness: "codex",
+  nativeId: path,
+  path,
+  cwd,
+  workspace: cwd,
+  updatedAt,
+})
+const firstSeen = stableThreadRanks(
+  [busyRef("/a", "/one", "2026-09-11T10:00:00Z"), busyRef("/b", "/two", "2026-09-11T10:01:00Z")],
+  { "/a": { running: true }, "/b": { running: true } },
+  {}
+)
+assert.deepEqual(firstSeen, {
+  "/a": { at: "2026-09-11T10:00:00Z", active: true },
+  "/b": { at: "2026-09-11T10:01:00Z", active: true },
+})
+const stillBusy = stableThreadRanks(
+  [busyRef("/a", "/one", "2026-09-11T10:05:00Z"), busyRef("/b", "/two", "2026-09-11T10:01:00Z")],
+  { "/a": { running: true }, "/b": { running: true } },
+  firstSeen
+)
+assert.equal(stillBusy["/a"]?.at, "2026-09-11T10:00:00Z", "a working thread keeps its rank while its file grows")
+const ordered = (ranks: RailRanks, refs: ThreadRef[]) =>
+  groupThreadFolders({ refs, pinnedThreads: [], pinnedFolders: [], priorities: { "/a": 2, "/b": 2 }, activity: { "/a": { running: true }, "/b": { running: true } }, ranks, sortBy: "recent" }).map((folder) => folder.cwd)
+assert.deepEqual(ordered(stillBusy, [busyRef("/a", "/one", "2026-09-11T10:05:00Z"), busyRef("/b", "/two", "2026-09-11T10:01:00Z")]), ["/two", "/one"], "the newer file does not move its project above the other busy project")
+const woke = stableThreadRanks(
+  [busyRef("/a", "/one", "2026-09-11T10:00:00Z"), busyRef("/b", "/two", "2026-09-11T10:06:00Z")],
+  { "/a": { running: true }, "/b": { running: true } },
+  { "/a": { at: "2026-09-11T10:00:00Z", active: true }, "/b": { at: "2026-09-11T10:01:00Z", active: false } }
+)
+assert.equal(woke["/b"]?.at, "2026-09-11T10:06:00Z", "a thread that starts working climbs once")
+const settled = stableThreadRanks(
+  [busyRef("/a", "/one", "2026-09-11T10:09:00Z")],
+  { "/a": { running: false } },
+  { "/a": { at: "2026-09-11T10:00:00Z", active: true } }
+)
+assert.deepEqual(settled["/a"], { at: "2026-09-11T10:09:00Z", active: false }, "a finished thread settles at its real time")
+const observedHolds = stableThreadRanks(
+  [busyRef("/a", "/one", "2026-09-11T10:12:00Z")],
+  { "/a": { observed: true } },
+  { "/a": { at: "2026-09-11T10:09:00Z", active: true } }
+)
+assert.equal(observedHolds["/a"]?.at, "2026-09-11T10:09:00Z", "a thread another app keeps writing holds its rank too")
+const idleFollows = stableThreadRanks(
+  [busyRef("/a", "/one", "2026-09-11T10:20:00Z")],
+  {},
+  { "/a": { at: "2026-09-11T10:09:00Z", active: false } }
+)
+assert.equal(idleFollows["/a"]?.at, "2026-09-11T10:20:00Z", "an idle thread still follows outside activity")
 assert.ok(
   threadStatusPriority({ kind: "needs-permission", since: 1 }) >
     threadStatusPriority({ kind: "working", since: 1 })
