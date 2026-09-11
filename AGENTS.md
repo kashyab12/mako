@@ -192,6 +192,60 @@ state read-only, destructive, idempotent, and open-world behavior. Provider
 OAuth remains provider-owned. Never send secret values over IPC, logs, tests,
 or registry snapshots.
 
+## Browser and computer control
+
+`computer-tools-main.ts` wraps the native driver (`cua-driver`, an external
+install under `/Applications/CuaDriver.app`) and repairs what the driver gets
+wrong for agents. The driver refuses an output path whose deepest existing
+parent is a symlink (`/tmp` on macOS), so `computer-paths.ts` realpaths that
+ancestor first. A driver session dies with the MCP transport that created it
+and cannot be revived from another, so the wrapper mints a per-connection id
+(`mako-<task>-<nonce>`); never reuse a fixed id across reconnects. The wrapper
+remembers which pid and window produced each snapshot so an `element_token`
+alone is enough, defaults `max_elements` to 300 and drops `tree_markdown`
+because Electron trees otherwise exceed a provider's tool-result limit, and
+reads a `screenshot_out_file` capture back for the preview. Rust schemas carry
+`uint32`/`double` formats that every MCP client warns about; `driver-schema.ts`
+rewrites them into ranges before compiling and before republishing.
+`VERIFIED_CUA_DRIVER_VERSION` in `cua-driver-version.ts` is the release whose
+embedded contract was checked end to end; Settings offers the driver's own
+`update --apply`, which stops running daemons, so the host restarts the embedded
+driver afterwards and tasks get a new session on their next call. The driver
+cannot scroll Electron windows in the background and foreground input contends
+with the user, so the desk itself is reached through the browser tools instead.
+
+Browser tools publish input-mode JSON Schemas (defaults optional, every field
+described, `$defs` kept) and bound every text result to 200 KB. Input is real:
+click moves, presses with a buttons mask and releases on its own budget; type
+checks editability and can clear and submit; press covers the keys insertText
+cannot. Observations carry element states, viewport scroll context, paging
+(`offset`/`nextOffset`) and short per-observation refs. The navigation waiter
+marks its event boundary before dispatching `Page.navigate`: the reply and the
+new document's lifecycle events can share one frame. Wheel scrolls settle on the
+compositor, so the scroll position is read after it stops moving. A malformed
+frame is dropped, never allowed to close the shared socket. An open JavaScript
+dialog blocks every action on its tab except `dialog`, `events`, `release` and
+`close`; a per-tab `auto` policy answers dialogs as they open and records the
+answer as a `mako.dialogAutoHandled` event through the connection's cursor
+sequence. Downloads use `Page.setDownloadBehavior` so they work over the
+extension transport, which has no `Browser` domain; the desk browser maps
+`Page.printToPDF` onto Electron's own printer because its debugger lacks it.
+Cookie listings omit values unless `includeValues` is set. `wait` polls inside
+the page in slices shorter than the request timeout, and `networkIdle` counts
+requests from `Network` events, so only network events the tab really emits
+belong in a fixture that tests it.
+
+The browser with id `mako` (`desk-browser.ts`) is Mako itself: hidden 1600×1000
+windows of the desk exposed as page targets over a private loopback bridge,
+capped at four, reaped after thirty idle minutes, never counted as a client that
+keeps a profile host alive, and navigating only to the exact desk document
+(`desk-browser-policy.ts`). It exists so an agent can inspect or capture Mako
+without touching the window the user is in. Scripts run there inside the
+trusted renderer with its host bridge; it is a convenience for the user's own
+agents, not an isolation boundary, which is why the URL policy is exact. `test-desk-browser.ts`
+covers the bridge with in-memory pages and `test:desk-browser-electron` drives a
+real hidden window.
+
 ## Remote control plane
 
 `@mako/relay` is the pure provider-neutral protocol and headless worker core.
