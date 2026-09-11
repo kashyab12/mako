@@ -49,6 +49,14 @@ await assert.rejects(
   /changed/
 )
 assert.equal(stops, 0)
+work = [{ ...first, status: "queued" }]
+const queuedRevision = lifecycle.snapshot().revision
+work = [first]
+await assert.rejects(
+  lifecycle.command({ kind: "stop", action: "quit", revision: queuedRevision }),
+  /changed/
+)
+assert.equal(stops, 0)
 work = [{ ...first, stoppable: false, status: "finishing" }]
 await assert.rejects(
   lifecycle.command({

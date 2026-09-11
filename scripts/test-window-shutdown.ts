@@ -25,6 +25,7 @@ assert.equal(shutdown.acknowledge(id, "window-two"), true)
 await first
 assert.equal(finished, true)
 assert.equal(shutdown.acknowledge(id, "window-two"), true)
+assert.equal(shutdown.acknowledge(id, "late-window"), false)
 const blocked = new WindowShutdown(10)
 await assert.rejects(
   blocked.request(["unsaved-window"], () => {}),

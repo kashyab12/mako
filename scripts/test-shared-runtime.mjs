@@ -96,6 +96,15 @@ try {
   const a=await client("client-a")
   const b=await client("client-b", true)
   assert.notEqual(a.child.pid,b.child.pid)
+  for (const page of [a, b]) {
+    const failure = await page.evaluate(`window.mako.liveStart('transport-fixture',${JSON.stringify(workspace)},{conversationId:${JSON.stringify(randomUUID())},threadPath:undefined,displayPrompt:undefined,modeId:undefined,tuning:{model:undefined,options:undefined},initialRequest:undefined}).then(()=>null,error=>error.message)`)
+    assert.match(failure, /transport-fixture has no available interactive transport/, "Valid optional fields must reach the shared host from each Electron client")
+  }
+  if (process.argv.includes("--transport-only")) {
+    await a.close()
+    await b.close()
+    console.log("PASS: development and production-renderer Electron clients forward live-start options with undefined fields to the shared host; no provider was started")
+  } else {
   const cwdB=join(root,"other-workspace")
   await mkdir(cwdB)
   await a.evaluate(`window.mako.setCwd(${JSON.stringify(workspace)})`)
@@ -106,7 +115,7 @@ try {
   const requestId=randomUUID()
   const marker=`SHARED_${randomUUID()}`
   const prompt=`Use ask_user_question to ask me to choose Continue or Wait. After I choose Continue, reply with exactly ${marker}. Do not read or change files.`
-  await a.evaluate(`window.mako.liveStart('devin',${JSON.stringify(workspace)},${JSON.stringify({conversationId:conversation,title:"Shared runtime verification",modeId:"ask",tuning:{model:"gpt-6-astra-high"},initialRequest:{id:requestId,text:prompt,attachments:[]}})})`)
+  await a.evaluate(`window.mako.liveStart('devin',${JSON.stringify(workspace)},{...${JSON.stringify({conversationId:conversation,title:"Shared runtime verification",modeId:"ask",tuning:{model:"gpt-6-astra-high"},initialRequest:{id:requestId,text:prompt,attachments:[]}})},threadPath:undefined,displayPrompt:undefined,resume:undefined})`)
   const snapshot=()=>call("mako:live-snapshot",conversation)
   const waiting=await until(snapshot,state=>state.permissions.some(p=>p.questions?.length),"provider question")
   const providerPid=Number((await readFile(join(homedir(),".local/share/devin/cli/session_locks",`${waiting.session.nativeId}.lock`),"utf8")).trim())
@@ -182,6 +191,7 @@ try {
   await reopened.close()
   await mirror.close()
   console.log("PASS: independent desktop clients share one daemon; drafts and workspaces stay separate; reload and closing every client preserve the same provider process; reopening catches up; archive syncs both ways; sidebar Stop pauses the queue")
+  }
 } catch (error) {
   console.error(error)
   process.exitCode = 1

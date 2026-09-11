@@ -159,6 +159,15 @@ async function checkRuntime() {
       "held"
     )
     assert.deepEqual(sent, ["first"])
+    const late = randomUUID()
+    const disconnectLate = subscribeRuntime(
+      socket,
+      late,
+      () => {},
+      () => {}
+    )
+    unsubscribers.push(disconnectLate)
+    await wait(() => host.clients().length === 3)
     await invokeRuntime(socket, one, "mako:shutdown-ack", [
       notifications.get(one),
     ])
@@ -166,7 +175,23 @@ async function checkRuntime() {
     await invokeRuntime(socket, two, "mako:shutdown-ack", [
       notifications.get(two),
     ])
-    await closing
+    const refused = LifecycleStateSchema.parse(await closing)
+    assert.equal(refused.operation.kind, "error")
+    assert.deepEqual(completed, [])
+    disconnectLate()
+    await wait(() => host.clients().length === 2)
+    notifications.clear()
+    const retry = invokeRuntime(socket, one, "mako:lifecycle-command", [
+      { kind: "wait", action: "quit" },
+    ])
+    await wait(() => notifications.size === 2)
+    await invokeRuntime(socket, one, "mako:shutdown-ack", [
+      notifications.get(one),
+    ])
+    await invokeRuntime(socket, two, "mako:shutdown-ack", [
+      notifications.get(two),
+    ])
+    await retry
     assert.deepEqual(completed, ["quit"])
     console.log(
       "Real Electron host and private-socket clients: shared deferred operation, cross-window cancellation, exact-run stop, held queue, blocked new sends, and all-window shutdown acknowledgements passed"

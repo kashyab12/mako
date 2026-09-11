@@ -189,6 +189,7 @@ try {
   }
   const imports = assertPackagedImports(app)
   const signature = localIdentity ? await verifyLocalSignature(app, localIdentity) : null
+  execFileSync(process.execPath, [join(project, "scripts/test-packaged-startup.mjs"), app], { cwd: project, stdio: "inherit", timeout: 180_000 })
   await writeFile(
     join(output, "package-inputs.json"),
     JSON.stringify({ app, imports, signature, files: verified }, null, 2)

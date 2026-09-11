@@ -15,6 +15,7 @@ import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+if (process.argv.includes("--launch-only") && process.argv.slice(2).some((arg) => arg.startsWith("--") && arg !== "--launch-only")) throw new Error("Launch-only checks cannot be combined with prompt or mutation scenarios")
 if (!process.versions.electron) {
   const root = await mkdtemp(join(tmpdir(), "mako-provider-e2e-"))
   await writeFile(
@@ -249,10 +250,15 @@ async function runElectron() {
               "Installed provider returned an empty model catalog"
             )
         }
+        const launchOnly = process.argv.includes("--launch-only")
+        const launchBegan = performance.now()
         await owner.start(driver.provider, cwd, {
           conversationId: id,
           title: "Mako disposable E2E fixture",
           tuning,
+          modeId: undefined,
+          threadPath: undefined,
+          displayPrompt: undefined,
         })
         await waitFor(
           id,
@@ -265,6 +271,17 @@ async function runElectron() {
           const ids = session.configOptions.map((option) => option.id)
           if (new Set(ids).size !== ids.length)
             throw new Error("Duplicate setting IDs in live provider options")
+        }
+        if (launchOnly) {
+          const state = owner.snapshot(id).session
+          result.status = "passed"
+          result.launchMs = performance.now() - launchBegan
+          result.nativeIdentityReported = Boolean(state.nativeId)
+          result.currentMode = state.currentMode
+          result.availableModeIds = state.modes.map((mode) => mode.id)
+          console.log(JSON.stringify(result))
+          await writeFile(join(root, "results.json"), JSON.stringify(results, null, 2))
+          continue
         }
         const requestId = randomUUID()
         owner.submit(
@@ -994,6 +1011,7 @@ async function runElectron() {
         JSON.stringify(results, null, 2)
       )
     }
+    await writeFile(join(root, "results.json"), JSON.stringify(results, null, 2))
     console.log(`Evidence: ${root}`)
     process.exitCode = results.some((result) => result.status === "failed")
       ? 1
