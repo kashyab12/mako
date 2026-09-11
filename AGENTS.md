@@ -415,6 +415,13 @@ A private, user-owned socket identifies each data profile. Only the host takes t
 profile's single-instance lock. Clients own separate Chromium storage and workspace
 contexts. Workspace events are targeted; conversation events fan out. On reconnect,
 clients reload authoritative state and never resend uncertain commands automatically.
+Desktop RPC arguments must undergo JSON serialization before `RuntimeCallSchema`
+validation: channel schemas can retain explicitly undefined optional object fields.
+Keep positional undefined arguments tagged as `absent`; do not turn optional object
+properties into null or loosen the wire schema. `test-runtime-transport.ts` covers
+new-thread options, nested attachments/settings and invalid requests over a real
+socket. After building, `node scripts/test-shared-runtime.mjs --transport-only`
+checks both Electron client modes without starting a provider.
 Older installed binaries must finish their work before a one-time upgrade; do not
 merge their active journals or run a new host against an occupied profile.
 
@@ -498,11 +505,26 @@ discovery and managed diagnostics overlap without omitting either result.
 `MAKO_STARTUP_TRACE=1 MAKO_STARTUP_BUDGET_MS=5000 npm run test:packaged-lifecycle --
 /path/to/Mako.app claude --ui-start --warm` checks the real composer, warm startup,
 and full host restart/recall. `--model=<native-id>` checks a cold explicit model.
+`npm run test:packaged-startup -- /path/to/Mako.app` separately exercises the
+normal packaged desktop client cold-starting its own shared host, then client
+Quit/reopen and draft persistence. Every macOS package runs this check before
+being reported ready. Never use `app.getAppPath()` as a subprocess cwd: packaged
+apps return an `app.asar` file, not an OS directory. Preserve the real process cwd.
+
 The lifecycle test always uses a temporary `MAKO_DATA_ROOT` and standalone host;
 closing a shared-host client alone would not test host restart. Keep acknowledgement,
 provider dispatch, first content, and completion measurements distinct. Archive checks
 reject missing local named/default exports as well as missing import paths; frozen
 files can still contain an incomplete concurrent compiler emission.
+
+For the normal terminal workflow, run `npm run update:local`. It resolves the
+verified installed signer, or an unambiguous signer from existing local release
+artifacts during the first transition; builds to a unique output; asks before
+installation; waits for safe shutdown; installs and reopens Mako. It never
+force-stops agents. Older standalone apps must be quit manually after their work
+finishes. `npm run update:local -- --check` is read-only, and
+`npm run test:update-local` exercises orchestration and signer selection without
+building or replacing the user's app.
 
 Local installed builds use `npm run package:mac:local`, with
 `MAKO_LOCAL_SIGNING_IDENTITY=<certificate SHA-1>` for the first build. Later
@@ -576,6 +598,17 @@ actual packaged inputs with a build ID, timestamp and source revision.
 The local installer prepares outside the running bundle, waits for its processes
 to exit, retains the previous app, and rolls back failed replacement verification.
 Never install over a running app or turn Stop into an automatic prompt replay.
+CLI and in-app replacement share `replacePreparedApplication`: it takes an
+exclusive per-target install lock, rechecks target identity and live processes,
+and restores the previous app when post-replacement verification fails. A lock
+left by a crashed installer requires an operator to verify the owner stopped;
+never delete it automatically. Process checks include the OS executable name,
+not just the mutable process title. Desktop relaunch strips host/profile/Node
+launch flags. Installation success and relaunch failure are distinct receipts.
+The CLI verifies the new host's build ID before reporting startup success.
+Packaged tests must check full host shutdown as well as client Quit/reopen;
+`BrowserWindow.close()` is asynchronous, so final client exit belongs to the
+last window's `closed` event.
 
 `npm run test:application` covers the lifecycle state machine, draft-close
 acknowledgements, source-copy isolation, replacement rollback, real Electron

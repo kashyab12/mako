@@ -48,6 +48,7 @@
     "verify:mac-release": "tsx scripts/verify-macos-release.ts",
     "test:plugins": "tsx scripts/test-plugins.ts",
     "test:providers": "tsx scripts/test-providers.ts && tsx scripts/test-codex-activity.ts && tsx scripts/test-opencode-activity.ts && tsx scripts/test-opencode-plugin.ts",
+    "test:provider-launch-options": "tsx --tsconfig tsconfig.app.json scripts/test-provider-launch-options.ts",
     "test:skills": "tsx scripts/test-skills.ts",
     "test:stage": "tsx scripts/test-stage-layout.ts && tsx scripts/test-thread-opening.ts && tsx scripts/test-session-identity.ts && tsx scripts/test-ui-preferences.ts",
     "test:renderer-assets": "node scripts/test-renderer-assets.mjs && node --max-old-space-size=256 scripts/test-packaged-import-guards.mjs",
@@ -65,6 +66,8 @@
     "test:application": "tsx scripts/test-application-lifecycle.ts && tsx scripts/test-window-shutdown.ts && tsx scripts/test-local-build-source.ts && tsx scripts/test-local-update-install.ts && node scripts/test-application-runtime.mjs && node scripts/test-application-ui.mjs",
     "test:application-ui": "node scripts/test-application-ui.mjs",
     "install:mac:local": "node scripts/install-local-mac.mjs",
+    "update:local": "node scripts/update-local.mjs",
+    "test:update-local": "node scripts/test-update-local.mjs",
     "release": "npm run package:mac",
     "test:live": "tsx scripts/test-live-conversations.ts && npm run test:acp-registry && tsx scripts/test-draft-persistence.ts && tsx scripts/test-attachment-references.ts && tsx scripts/test-prompt-clipboard.ts && npm run test:transcript && npm run test:conversation-control",
     "verify:sessions": "npm run typecheck && npm test --workspace @mako/sessions && npm run test:live && npm run test:codex-protocol && npm run test:providers && npm run test:host && npm run test:stage && npm run test:performance && npm run lint && npm run build",
@@ -89,6 +92,7 @@
     "test:proposed-plans": "tsx scripts/test-proposed-plans.ts",
     "test:prompt-delivery": "esbuild scripts/test-prompt-delivery.tsx --bundle --platform=node --format=esm --packages=external --jsx=automatic --tsconfig=tsconfig.app.json --outfile=node_modules/.tmp/test-prompt-delivery.mjs && node --max-old-space-size=256 node_modules/.tmp/test-prompt-delivery.mjs",
     "test:message-queue": "tsx scripts/test-message-queue.ts && tsx scripts/test-send-discovery.ts && tsx scripts/test-claude-discovery.ts && tsx scripts/test-profile-transport.ts && tsx scripts/test-send-recovery.ts && npm run test:prompt-delivery",
+    "test:packaged-startup": "node scripts/test-packaged-startup.mjs",
     "test:packaged-lifecycle": "node --max-old-space-size=256 scripts/test-packaged-lifecycle.mjs"
   },
   "dependencies": {
