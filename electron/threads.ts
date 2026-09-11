@@ -39,7 +39,33 @@ import {
 } from "@mako/sessions"
 import { WorkspaceGit } from "./host-git.js"
 import { WorkspaceFiles } from "./host-workspace.js"
-import { annotate, loadLineage } from "./lineage.js"
+import { annotate as annotateLineage, loadLineage } from "./lineage.js"
+import { tmpdir } from "node:os"
+
+const TEMPORARY_ROOTS = [tmpdir(), "/tmp", "/private/tmp", "/var/folders", "/private/var/folders"]
+const workspacePresence = new Map<string, { at: number; missing: boolean }>()
+const WORKSPACE_PRESENCE_TTL_MS = 60_000
+
+/**
+ * A session that ran in a temporary directory which is gone (a test fixture,
+ * a scratch run) is marked so the desk can keep it out of Recent. Only
+ * temporary paths are stat-ed, and each answer is held for a minute.
+ */
+function withWorkspacePresence(ref: ThreadRef): ThreadRef {
+  const cwd = ref.cwd
+  if (!cwd || !TEMPORARY_ROOTS.some((root) => cwd.startsWith(`${root}/`))) return ref
+  const now = Date.now()
+  let held = workspacePresence.get(cwd)
+  if (!held || now - held.at > WORKSPACE_PRESENCE_TTL_MS) {
+    held = { at: now, missing: !existsSync(cwd) }
+    workspacePresence.set(cwd, held)
+  }
+  return held.missing ? { ...ref, workspaceMissing: true } : ref
+}
+
+function annotate(ref: ThreadRef): ThreadRef {
+  return withWorkspacePresence(annotateLineage(ref))
+}
 import { ProviderActivityEngine } from "./provider-activity-engine.js"
 import { providerHost } from "./providers/index.js"
 import type { ProviderActivitySession } from "./providers/process-probe.js"

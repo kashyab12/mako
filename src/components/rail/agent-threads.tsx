@@ -11,6 +11,7 @@ import { HARNESS_LABEL, harnessLabel } from "@/components/rail/harness-meta"
 import { formatRelative } from "@/lib/format"
 import {
   groupThreadFolders,
+  showsInRecent,
   stableThreadRanks,
   threadBelongsToWorkspace,
   threadFolderKey,
@@ -269,9 +270,9 @@ export function AgentThreads() {
     [cwd, matched, unboundLiveAgents, pinned, pinnedProjects, priorities, ranks, sortBy, threadActivity]
   )
   const recent = useMemo(() => [
-    ...matched.map((ref) => ({ kind: "native" as const, key: ref.path, at: ranks[ref.path]?.at ?? ref.updatedAt ?? "", ref })),
+    ...matched.filter((ref) => showsInRecent(ref, threadActivity[ref.path])).map((ref) => ({ kind: "native" as const, key: ref.path, at: ranks[ref.path]?.at ?? ref.updatedAt ?? "", ref })),
     ...unboundLiveAgents.map((presence) => ({ kind: "live" as const, key: presence.key, at: new Date(presence.createdAt).toISOString(), presence })),
-  ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 80), [matched, ranks, unboundLiveAgents])
+  ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 80), [matched, ranks, threadActivity, unboundLiveAgents])
 
   const searchActive = Boolean(deferred.trim())
   const quietPinned = held

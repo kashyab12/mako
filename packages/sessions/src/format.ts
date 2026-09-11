@@ -103,6 +103,8 @@ export interface ThreadRef {
   archived?: boolean
   /** Native history is readable, but its owning control transport cannot resume it. */
   resumeUnavailable?: string
+  /** The session ran in a temporary directory that no longer exists. */
+  workspaceMissing?: boolean
 }
 
 /** A full conversation: the identity plus every entry, in order. */

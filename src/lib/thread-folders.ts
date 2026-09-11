@@ -83,6 +83,20 @@ export function threadFolderKey(ref: Pick<ThreadRef, "cwd" | "workspace">): stri
   return folderPath(ref.workspace ?? ref.cwd)
 }
 
+/**
+ * Whether a thread belongs in the Recent list. A session that ran in a
+ * temporary directory which no longer exists (a test fixture, a scratch run)
+ * is noise there unless it is still doing something; it stays reachable
+ * under Projects and in search.
+ */
+export function showsInRecent(
+  ref: Pick<ThreadRef, "workspaceMissing">,
+  activity: ThreadFolderActivity | undefined
+): boolean {
+  if (!ref.workspaceMissing) return true
+  return Boolean(activity?.running || activity?.needsInput || activity?.active)
+}
+
 /** Where a thread sits in "latest activity" order, and why it sits there. */
 export interface RailRank {
   at: string

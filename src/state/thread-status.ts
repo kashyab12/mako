@@ -11,12 +11,11 @@ export type ThreadStatus =
   | { kind: "failed"; at: number; detail?: string }
   | { kind: "review"; at: number; unread: boolean }
   | { kind: "observed" }
-  | { kind: "external-open" }
+  | { kind: "external-open"; app: string }
   | { kind: "external-active" }
 
 const IDLE_STATUS: ThreadStatus = { kind: "idle" }
 const OBSERVED_STATUS: ThreadStatus = { kind: "observed" }
-const EXTERNAL_OPEN_STATUS: ThreadStatus = { kind: "external-open" }
 const EXTERNAL_ACTIVE_STATUS: ThreadStatus = { kind: "external-active" }
 
 export function threadStatusPriority(status: ThreadStatus): number {
@@ -66,8 +65,8 @@ export function threadStatus(
   if (external?.status === "active") return EXTERNAL_ACTIVE_STATUS
   if (ref.active === true && !external) return EXTERNAL_ACTIVE_STATUS
   if (attention) return attention
-  if (external?.status === "open") return EXTERNAL_OPEN_STATUS
-  if (ref.locked) return EXTERNAL_OPEN_STATUS
+  if (external?.status === "open") return { kind: "external-open", app: external.provider }
+  if (ref.locked) return { kind: "external-open", app: ref.harness }
   if (ref.active === false) return IDLE_STATUS
   return state.observed[ref.path] ? OBSERVED_STATUS : IDLE_STATUS
 }

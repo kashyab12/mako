@@ -1,4 +1,5 @@
 import { formatRelative } from "@/lib/format"
+import { harnessLabel } from "@/components/rail/harness-meta"
 import type { ThreadStatus } from "@/state/threads"
 import { ActivityMark, type ActivityState } from "@/components/ui/activity-mark"
 
@@ -15,17 +16,29 @@ export function ThreadStatusMark({
         {formatRelative(updatedAt)}
       </span>
     ) : null
-  if (status.kind === "external-open" || status.kind === "observed")
+  // Open elsewhere: the time stays, and a hollow ring says a window is on it.
+  // The app is named where a label would not fit.
+  if (status.kind === "external-open") {
+    const label = `Open in ${harnessLabel(status.app)}; no running turn reported`
     return (
       <span
-        title={
-          status.kind === "external-open"
-            ? "Open in another app; no running turn reported"
-            : "The session changed; running state is unconfirmed"
-        }
+        role="status"
+        aria-label={label}
+        title={label}
+        className="flex shrink-0 items-center gap-1.5 text-label text-faint"
+      >
+        <span aria-hidden className="size-1.5 rounded-full ring-1 ring-current" />
+        {updatedAt ? <span className="tabular">{formatRelative(updatedAt)}</span> : null}
+      </span>
+    )
+  }
+  if (status.kind === "observed")
+    return (
+      <span
+        title="The session changed; running state is unconfirmed"
         className="shrink-0 text-label text-faint"
       >
-        {status.kind === "external-open" ? "Open" : "Updated"}
+        Updated
       </span>
     )
   const state: ActivityState =
