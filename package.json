@@ -75,6 +75,7 @@
     "verify:sessions": "npm run typecheck && npm test --workspace @mako/sessions && npm run test:live && npm run test:codex-protocol && npm run test:providers && npm run test:host && npm run test:stage && npm run test:performance && npm run lint && npm run build",
     "test:conversation-control": "tsx scripts/test-conversation-transfers.ts && tsx scripts/test-native-requests.ts && tsx scripts/test-child-workspace.ts && tsx scripts/test-native-continuation.ts && tsx scripts/test-native-history.ts && tsx scripts/test-relay-conversations.ts",
     "test:provider-e2e": "npm run build:electron && node scripts/test-provider-e2e.mjs",
+    "clean:fixture-sessions": "tsx scripts/clean-fixture-sessions.ts",
     "test:local-control-e2e": "npm run build:electron && node scripts/test-local-control-e2e.mjs",
     "test:browser-use-e2e": "npm run build:electron && node scripts/test-browser-use-e2e.mjs",
     "web": "npm run build:electron && node electron/start.mjs --web",

@@ -440,6 +440,23 @@ export class SessionCatalog {
     }
   }
 
+  /**
+   * Delete a native session through its provider and drop it from the
+   * catalog. Refuses a path no provider owns or one it cannot remove.
+   */
+  async remove(path: string): Promise<boolean> {
+    const provider = this.ownerOf(path)
+    if (!provider?.remove) return false
+    if (!(await provider.remove(path))) return false
+    if (this.threadCache?.path === path) this.threadCache = null
+    this.follows.delete(path)
+    if (this.forget(path)) {
+      this.scheduleSave()
+      this.emit({ type: "removed", path })
+    }
+    return true
+  }
+
   async stop(): Promise<void> {
     for (const watcher of this.watchers) watcher.close()
     this.watchers = []

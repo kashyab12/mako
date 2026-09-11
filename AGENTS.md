@@ -401,6 +401,15 @@ mid-turn delivery, idle replies, queueing, native identity, and retained context
 The installed OpenCode v2 ACP server rejects concurrent prompts. Its free
 `opencode/muse-spark-1.3-contributor-free` model passes normal replies and queueing;
 verify it with `--continuation`, not by advertising unsupported steering.
+Provider checks run against the user's real provider stores, so every session
+they create is a real entry in Codex, Cursor, Claude, or Grok history. The e2e
+deletes the sessions it created through `SessionCatalog.remove` before it ends
+(`--keep-native` retains them); each `SessionProvider.remove` deletes only its
+own session under its own roots and never a Cursor Desktop chat.
+`npm run clean:fixture-sessions` lists sessions left in fixture-named temporary
+directories by earlier runs and removes them with `--delete`. A probe that
+opens a real provider session must run it in a directory with one of those
+fixture prefixes so it can be cleaned up.
 
 Normal desktop Quit closes the client, leaving the shared host and provider
 processes running. Standalone compatibility hosts still background on Quit while

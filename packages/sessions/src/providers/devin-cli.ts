@@ -21,6 +21,7 @@ import { attachmentFromUrl, type AttachmentContent } from "../content.js"
 
 import { createHash } from "node:crypto"
 import { readFile, readdir, stat } from "node:fs/promises"
+import { removeSessionRows } from "../sqlite-removal.js"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import type { DatabaseSync, SQLOutputValue } from "node:sqlite"
@@ -205,6 +206,14 @@ export class DevinCliProvider implements SessionProvider {
       this.resetConnection()
       return []
     }
+  }
+
+  /** Remove a session and every row that names it; the read connection is reset so it cannot serve the ghost. */
+  async remove(path: string): Promise<boolean> {
+    const id = idOf(path)
+    if (!id || path.slice(0, path.lastIndexOf("#")) !== this.dbPath()) return false
+    this.resetConnection()
+    return removeSessionRows(this.dbPath(), id, ["sessions"])
   }
 
   async peek(file: NativeFile): Promise<ThreadRef | null> {

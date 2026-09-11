@@ -1045,6 +1045,23 @@ async function runElectron() {
     stopCodexApps()
     mcp.close()
     control.close()
+    // A fixture ran in the user's real provider store, so the session it
+    // created is deleted through that provider before the run ends. Pass
+    // --keep-native to inspect a session in its own app afterwards.
+    if (!process.argv.includes("--keep-native")) {
+      const refs = await catalog.scan()
+      for (const result of results) {
+        if (!result.nativeId) continue
+        const owned = refs.filter((ref) => ref.harness === result.provider && ref.nativeId === result.nativeId)
+        for (const ref of owned) {
+          const removed = await catalog.remove(ref.path).catch((error) => { console.error(`Fixture cleanup failed for ${ref.path}: ${error instanceof Error ? error.message : String(error)}`); return false })
+          result.nativeCleanup = removed ? "removed" : "left in place: the provider store keeps no removable form"
+          console.log(JSON.stringify({ provider: result.provider, nativeId: result.nativeId, nativeCleanup: result.nativeCleanup }))
+        }
+        if (!owned.length) result.nativeCleanup = "not found in the catalog"
+      }
+      await writeFile(join(root, "results.json"), JSON.stringify(results, null, 2))
+    }
     await catalog.stop()
     app.exit(process.exitCode ?? 0)
   }

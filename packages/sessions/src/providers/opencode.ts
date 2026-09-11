@@ -1,5 +1,6 @@
 import { attachmentFromUrl, type AttachmentContent } from "../content.js"
 import { stat } from "node:fs/promises"
+import { removeSessionRows } from "../sqlite-removal.js"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import type { DatabaseSync, SQLOutputValue } from "node:sqlite"
@@ -285,6 +286,13 @@ export class OpenCodeProvider implements SessionProvider {
 
   private databasePaths(): string[] {
     return [join(this.root, "opencode.db"), join(this.root, "opencode-next.db")]
+  }
+
+  /** Remove a session and its messages, parts, and child sessions from the store it lives in. */
+  async remove(path: string): Promise<boolean> {
+    const target = parseSessionPath(path, this.databasePaths())
+    if (!target) return false
+    return removeSessionRows(target.database, target.id, ["session", "session_v2"])
   }
 
   private async revision(path: string): Promise<number | null> {

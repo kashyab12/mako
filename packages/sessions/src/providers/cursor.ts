@@ -24,9 +24,9 @@ import { attachmentFromUrl, type AttachmentContent } from "../content.js"
  * the catalog.
  */
 
-import { readdir, readFile, stat } from "node:fs/promises"
+import { readdir, readFile, stat, rm } from "node:fs/promises"
 import { homedir } from "node:os"
-import { dirname, join } from "node:path"
+import { dirname, join, basename } from "node:path"
 import type { DatabaseSync, SQLOutputValue, StatementSync } from "node:sqlite"
 import {
   clip,
@@ -350,6 +350,14 @@ export class CursorProvider implements SessionProvider {
     for (const session of acpSessions)
       paths.push(join(this.acpRoot, session, "store.db"))
     return [...(await nativeFiles(paths)), ...(await this.desktop.discover())]
+  }
+
+  /** Remove an ACP session directory. Cursor Desktop's own chats are not ours to delete. */
+  async remove(path: string): Promise<boolean> {
+    const directory = dirname(path)
+    if (dirname(directory) !== this.acpRoot || basename(path) !== "store.db") return false
+    await rm(directory, { recursive: true, force: true })
+    return true
   }
 
   async peek(file: NativeFile): Promise<ThreadRef | null> {

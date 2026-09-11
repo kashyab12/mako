@@ -14,7 +14,7 @@ import type { AttachmentContent, ToolDetail } from "../content.js"
 
 import { homedir } from "node:os"
 import { basename, dirname, join } from "node:path"
-import { readdir, readFile, stat } from "node:fs/promises"
+import { readdir, readFile, stat, rm } from "node:fs/promises"
 import {
   clip,
   titleFrom,
@@ -492,6 +492,14 @@ export class GrokProvider implements SessionProvider {
       })
     )
     return files
+  }
+
+  /** Remove a session directory (`<root>/<workspace>/<session>/`). */
+  async remove(path: string): Promise<boolean> {
+    const directory = dirname(path)
+    if (dirname(dirname(directory)) !== this.root) return false
+    await rm(directory, { recursive: true, force: true })
+    return true
   }
 
   async peek(file: NativeFile): Promise<ThreadRef | null> {

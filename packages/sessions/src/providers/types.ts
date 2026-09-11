@@ -74,6 +74,15 @@ export interface SessionProvider {
   refine?(ref: ThreadRef, fromByte: number): Promise<ThreadRef>
 
   /**
+   * Delete one native session this provider discovered: the file or directory
+   * behind `path` and any index rows that name it, nothing else. Only a path
+   * under this provider's roots is touched. Returns false when the store has
+   * no removable form for it. Used to clean up sessions a test created in a
+   * real store, and by any future delete action the desk offers.
+   */
+  remove?(path: string): Promise<boolean>
+
+  /**
    * Incremental read for live sync: entries appended since `fromByte`, and
    * where to tail from next time. Providers whose store is not append-only
    * (Cursor's SQLite) fall back to a full re-read by omitting this.

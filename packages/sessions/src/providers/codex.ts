@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs"
 import {
   codexPrompt,
   codexPromptImages,
@@ -29,7 +30,7 @@ import { attachmentFromUrl, type AttachmentContent } from "../content.js"
 
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
-import { stat } from "node:fs/promises"
+import { stat, rm } from "node:fs/promises"
 import type { SQLOutputValue } from "node:sqlite"
 import {
   clip,
@@ -626,6 +627,35 @@ export class CodexProvider implements SessionProvider {
               : ref.updatedAt,
         }
       : ref
+  }
+
+  /**
+   * Remove a thread: its rollout file, any resumed rollout for the same id,
+   * and its row in the state database. Subagent rollouts named after it go
+   * too; they have no life without their parent.
+   */
+  async remove(path: string): Promise<boolean> {
+    if (!path.startsWith(`${this.root}/`)) return false
+    const id = basename(path).match(
+      /[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}/i
+    )?.[0]
+    if (!id) return false
+    const files = (await walkFiles(this.root, (name) => name.endsWith(".jsonl"))).filter(
+      (candidate) => basename(candidate).includes(id)
+    )
+    for (const file of files) await rm(file, { force: true })
+    const sqlite = await import("node:sqlite").catch(() => null)
+    if (sqlite && existsSync(this.metadataPath)) {
+      const database = new sqlite.DatabaseSync(this.metadataPath)
+      try {
+        database.prepare("DELETE FROM threads WHERE id = ?").run(id)
+      } finally {
+        database.close()
+      }
+    }
+    this.metadata.delete(id)
+    this.metadataKnown.delete(id)
+    return true
   }
 
   /** Codex names a thread in its state database after the first turn; pick that up without rereading the rollout. */

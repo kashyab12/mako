@@ -16,7 +16,7 @@ import { attachmentFromUrl, type AttachmentContent } from "../content.js"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs"
-import { stat } from "node:fs/promises"
+import { stat, rm } from "node:fs/promises"
 import {
   clip,
   titleFrom,
@@ -408,6 +408,14 @@ export class ClaudeProvider implements SessionProvider {
     })
     // A session file with no session id yet is a placeholder, not a session.
     return ref.nativeId ? ref : null
+  }
+
+  /** Remove a session file; Claude Code keeps no index that names it. */
+  async remove(path: string): Promise<boolean> {
+    if (!this.roots().some((root) => path.startsWith(`${root}/`)) || !path.endsWith(".jsonl"))
+      return false
+    await rm(path, { force: true })
+    return true
   }
 
   /**
