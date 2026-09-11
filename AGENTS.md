@@ -445,6 +445,12 @@ through async request context. Provider conversations remain shared. A preview
 must never change another window's cwd, file target, or active workspace tab.
 The rail's Projects view keeps active sessions under their project; Recent is a
 bounded chronological list. Never gate provider names or the rail on model discovery.
+Rail order holds still while agents work: `stableThreadRanks` in
+`src/lib/thread-folders.ts` gives a busy thread its rank when it starts, keeps
+it while the thread is working, observed, or externally active, and settles it
+once when it finishes, so a file that changes on every token moves nothing.
+Every folder shows the same number of lead rows; selecting a project never
+resizes one. `test-stage-layout.ts` covers the ranks and the stable order.
 
 Native session ownership is provider plus native session ID, not a catalog path.
 Account roots can expose one Claude session through multiple paths. Capture and
