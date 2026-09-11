@@ -14,7 +14,10 @@ export async function browserFixture() {
   const { port } = z.object({ port: z.number() }).parse(server.address())
   let connections = 0
   let sequence = 0
-  const targets = new Map<string, { title: string; url: string }>()
+  const targets = new Map<
+    string,
+    { title: string; url: string; type?: string }
+  >()
   const sessions = new Map<string, string>()
   const calls: z.infer<typeof commandSchema>[] = []
   const sockets = new Set<WebSocket>()
@@ -27,6 +30,38 @@ export async function browserFixture() {
       name: { value: "Proof" },
     },
   ]
+  /** Page state the fixture reports to element scripts. */
+  interface FixturePage {
+    editable: boolean
+    focusTakes: boolean
+    activeEditable: boolean
+    hidden: boolean
+    scroll: { x: number; y: number }
+    downloadOnClick: boolean
+    downloadBehavior: JsonObject | null
+    dialogAnswers: JsonObject[]
+    cookies: JsonObject[]
+    historyIndex: number
+    history: string[]
+    selectorPresent: boolean
+    inflight: number
+  }
+  const page: FixturePage = {
+    editable: true,
+    focusTakes: true,
+    activeEditable: true,
+    hidden: false,
+    scroll: { x: 0, y: 0 },
+    /** Whether the next click starts a download. */
+    downloadOnClick: false,
+    downloadBehavior: null,
+    dialogAnswers: [],
+    cookies: [],
+    historyIndex: 1,
+    history: ["https://example.test/one", "https://example.test/two"],
+    selectorPresent: false,
+    inflight: 0,
+  }
   let delayed: (() => void) | undefined
   server.on("connection", (socket) => {
     connections++
@@ -48,6 +83,10 @@ export async function browserFixture() {
         fail("Session with given id not found")
         return
       }
+      const emit = (method: string, params: JsonObject) =>
+        socket.send(
+          JSON.stringify({ method, sessionId: command.sessionId, params })
+        )
       switch (command.method) {
         case "Target.createTarget": {
           const targetId = `tab-${++sequence}`
@@ -59,8 +98,9 @@ export async function browserFixture() {
           reply({
             targetInfos: Array.from(targets, ([targetId, info]) => ({
               targetId,
-              type: "page",
-              ...info,
+              type: info.type ?? "page",
+              title: info.title,
+              url: info.url,
             })),
           })
           break
@@ -68,7 +108,15 @@ export async function browserFixture() {
           const id = z.string().parse(command.params.targetId)
           const info = targets.get(id)
           if (!info) fail("No target with given id")
-          else reply({ targetInfo: { targetId: id, type: "page", ...info } })
+          else
+            reply({
+              targetInfo: {
+                targetId: id,
+                type: info.type ?? "page",
+                title: info.title,
+                url: info.url,
+              },
+            })
           break
         }
         case "Target.attachToTarget": {
@@ -85,16 +133,91 @@ export async function browserFixture() {
           targets.delete(z.string().parse(command.params.targetId))
           reply({ success: true })
           break
-        case "Runtime.evaluate":
+        case "Runtime.evaluate": {
+          const expression = z.string().parse(command.params.expression)
+          if (expression === "window.devicePixelRatio")
+            reply({ result: { value: 2 } })
+          else if (expression.includes("window.scrollX"))
+            reply({ result: { value: { x: page.scroll.x, y: page.scroll.y } } })
+          else if (expression.includes("wantSelector"))
+            reply({ result: { value: page.selectorPresent } })
+          else if (command.params.contextId !== undefined)
+            reply({
+              result: { value: `frame-context-${command.params.contextId}` },
+            })
+          else if (expression.includes("big-result"))
+            reply({ result: { value: "x".repeat(300_000) } })
+          else if (expression.includes("document.activeElement"))
+            reply({
+              result: {
+                value: page.activeEditable
+                  ? { tag: "input", length: 3 }
+                  : { tag: "div", length: -1 },
+              },
+            })
+          else reply({ result: { value: tab } })
+          break
+        }
+        case "DOM.resolveNode":
           reply({
-            result: {
-              value:
-                command.params.expression === "window.devicePixelRatio"
-                  ? 2
-                  : tab,
-            },
+            object: { objectId: `object-${command.params.backendNodeId}` },
           })
           break
+        case "Runtime.callFunctionOn": {
+          const source = z.string().parse(command.params.functionDeclaration)
+          if (source.includes("this.options")) {
+            if (source.includes('"missing"'))
+              reply({
+                exceptionDetails: {
+                  text: "Uncaught",
+                  exception: {
+                    description:
+                      "Error: No option matches; options are: Red=r, Blue=b",
+                  },
+                },
+              })
+            else reply({ result: { value: { value: "b", label: "Blue" } } })
+          } else if (source.includes("elementFromPoint")) {
+            if (page.hidden)
+              reply({
+                exceptionDetails: {
+                  text: "Uncaught",
+                  exception: {
+                    description:
+                      "Error: Element is hidden or covered at its centre; observe again or use coordinates from a screenshot\n    at <anonymous>",
+                  },
+                },
+              })
+            else reply({ result: { value: { x: 40, y: 20 } } })
+          } else if (source.includes("getBoundingClientRect"))
+            reply({
+              result: { value: { x: 10, y: 10, width: 100, height: 40 } },
+            })
+          else if (source.includes("activeElement")) {
+            if (!page.editable)
+              reply({
+                exceptionDetails: {
+                  text: "Uncaught",
+                  exception: {
+                    description:
+                      "Error: Element <div> is not editable; choose a text field, textarea, select or contenteditable ref",
+                  },
+                },
+              })
+            else if (!page.focusTakes)
+              reply({
+                exceptionDetails: {
+                  text: "Uncaught",
+                  exception: {
+                    description:
+                      "Error: Element <input> did not take focus; click it first or use coordinates",
+                  },
+                },
+              })
+            else reply({ result: { value: { tag: "input", length: 3 } } })
+          } else reply({ result: { value: null } })
+          break
+        }
         case "Accessibility.getFullAXTree":
           reply({ nodes: axNodes })
           break
@@ -103,26 +226,151 @@ export async function browserFixture() {
             cssContentSize: { x: 0, y: 0, width: 800, height: 2000 },
             cssVisualViewport: {
               pageX: 0,
-              pageY: 0,
+              pageY: page.scroll.y,
               clientWidth: 800,
               clientHeight: 600,
             },
           })
           break
-        case "Page.navigate":
-          reply({ frameId: "frame", loaderId: "loader" })
-          socket.send(
-            JSON.stringify({
-              method: "Page.lifecycleEvent",
-              sessionId: command.sessionId,
-              params: { frameId: "frame", loaderId: "loader", name: "load" },
+        case "Page.navigate": {
+          const url = z.string().parse(command.params.url)
+          if (url.includes("hang")) {
+            reply({ frameId: "frame", loaderId: "loader-hang" })
+            break
+          }
+          const loaderId = url.includes("redirect") ? "loader-a" : "loader"
+          reply({ frameId: "frame", loaderId })
+          const finalLoader = url.includes("redirect") ? "loader-b" : loaderId
+          emit("Page.lifecycleEvent", {
+            frameId: "frame",
+            loaderId: finalLoader,
+            name: "DOMContentLoaded",
+          })
+          if (!url.includes("slow"))
+            emit("Page.lifecycleEvent", {
+              frameId: "frame",
+              loaderId: finalLoader,
+              name: "load",
             })
-          )
           break
+        }
         case "Page.captureScreenshot":
           reply({
             data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOioAAAAASUVORK5CYII=",
           })
+          break
+        case "Page.handleJavaScriptDialog":
+          page.dialogAnswers.push(command.params)
+          reply({})
+          emit("Page.javascriptDialogClosed", {
+            result: command.params.accept === true,
+          })
+          break
+        case "Page.setDownloadBehavior":
+          page.downloadBehavior = command.params
+          reply({})
+          break
+        case "Page.printToPDF":
+          reply({ data: Buffer.from("%PDF-1.4 fixture").toString("base64") })
+          break
+        case "Network.getCookies":
+          reply({ cookies: page.cookies })
+          break
+        case "Network.setCookies":
+          page.cookies.push(
+            ...z
+              .array(z.record(z.string(), z.json()))
+              .parse(command.params.cookies)
+              .map((cookie) => ({
+                domain: "example.test",
+                path: "/",
+                ...cookie,
+              }))
+          )
+          reply({})
+          break
+        case "Network.deleteCookies":
+          page.cookies = page.cookies.filter(
+            (cookie) => cookie.name !== command.params.name
+          )
+          reply({})
+          break
+        case "Network.clearBrowserCookies":
+          page.cookies = []
+          reply({})
+          break
+        case "Network.enable":
+          reply({})
+          break
+        case "Page.getFrameTree":
+          reply({
+            frameTree: {
+              frame: {
+                id: "frame",
+                url: "https://example.test/",
+                securityOrigin: "https://example.test",
+              },
+              childFrames: [
+                {
+                  frame: {
+                    id: "child",
+                    parentId: "frame",
+                    url: "https://example.test/embed",
+                    name: "embed",
+                  },
+                },
+              ],
+            },
+          })
+          break
+        case "Page.createIsolatedWorld":
+          reply({ executionContextId: 77 })
+          break
+        case "Page.getNavigationHistory":
+          reply({
+            currentIndex: page.historyIndex,
+            entries: page.history.map((url, index) => ({ id: index + 1, url })),
+          })
+          break
+        case "Page.navigateToHistoryEntry":
+          page.historyIndex = z.number().parse(command.params.entryId) - 1
+          reply({})
+          emit("Page.lifecycleEvent", {
+            frameId: "frame",
+            loaderId: "history",
+            name: "load",
+          })
+          break
+        case "Page.reload":
+          reply({})
+          emit("Page.lifecycleEvent", {
+            frameId: "frame",
+            loaderId: "reload",
+            name: "load",
+          })
+          break
+        case "Input.dispatchMouseEvent":
+          if (command.params.type === "mouseReleased" && page.downloadOnClick) {
+            page.downloadOnClick = false
+            emit("Page.downloadWillBegin", {
+              frameId: "frame",
+              guid: "dl-1",
+              url: "https://example.test/report.csv",
+              suggestedFilename: "report.csv",
+            })
+            emit("Page.downloadProgress", {
+              guid: "dl-1",
+              totalBytes: 12,
+              receivedBytes: 12,
+              state: "completed",
+            })
+          }
+          if (command.params.type === "mouseWheel")
+            page.scroll = {
+              x: page.scroll.x + z.number().parse(command.params.deltaX),
+              y: page.scroll.y + z.number().parse(command.params.deltaY),
+            }
+          reply({})
           break
         case "Input.insertText":
           if (command.params.text === "delay") delayed = () => reply({})
@@ -143,9 +391,22 @@ export async function browserFixture() {
     calls,
     axNodes,
     targets,
+    page,
     completeDelayed: () => {
       delayed?.()
       delayed = undefined
+    },
+    /** Push a raw frame to every client, e.g. a malformed one. */
+    broadcast(frame: string) {
+      for (const socket of sockets) socket.send(frame)
+    },
+    /** Emit a protocol event on a session, e.g. a subframe navigation. */
+    emit(sessionId: string, method: string, params: JsonObject) {
+      for (const socket of sockets)
+        socket.send(JSON.stringify({ method, sessionId, params }))
+    },
+    sessionFor(tab: string) {
+      return [...sessions.entries()].find(([, target]) => target === tab)?.[0]
     },
     disconnect: () => {
       for (const socket of sockets) socket.terminate()

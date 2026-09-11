@@ -202,9 +202,11 @@ try {
     run("task-a", { action: "type", target: a, text: "closed" }),
     /No command was retried/
   )
+  // The closed session is detected while checking the focused field, so no
+  // text is ever dispatched to it.
   assert.equal(
     fixture.calls.filter((call) => call.params.text === "closed").length,
-    1
+    0
   )
   assert.ok(!fixture.calls.some((call) => call.params.text === "wrong"))
   await run("task-b", { action: "type", target: b, text: "b-still-works" })
@@ -263,8 +265,770 @@ try {
     /earlier Chrome connection/
   )
   assert.equal(fixture.connections(), 2)
+
+  // Input fidelity, observation quality, navigation waits and transport
+  // tolerance, all against the fixture's recorded protocol traffic.
+  const c = BrowserTargetSchema.parse(
+    await run("task-c", { action: "open", browser: "fixture" })
+  )
+  const sessionC = fixture.sessionFor(c.tab)
+  assert.ok(sessionC)
+  fixture.axNodes.splice(
+    0,
+    fixture.axNodes.length,
+    {
+      nodeId: "1",
+      ignored: false,
+      role: { value: "RootWebArea" },
+      name: { value: "Fixture" },
+    },
+    { nodeId: "2", parentId: "1", ignored: false, role: { value: "generic" } },
+    {
+      nodeId: "3",
+      parentId: "2",
+      ignored: false,
+      backendDOMNodeId: 3,
+      role: { value: "checkbox" },
+      name: { value: "Agree" },
+      properties: [
+        { name: "checked", value: { value: "true" } },
+        { name: "focusable", value: { value: "true" } },
+      ],
+    },
+    {
+      nodeId: "4",
+      parentId: "2",
+      ignored: false,
+      backendDOMNodeId: 4,
+      role: { value: "button" },
+      name: { value: "Submit" },
+      properties: [{ name: "disabled", value: { value: "true" } }],
+    },
+    {
+      nodeId: "5",
+      parentId: "2",
+      ignored: false,
+      backendDOMNodeId: 5,
+      role: { value: "StaticText" },
+      name: { value: "Terms apply" },
+    },
+    {
+      nodeId: "6",
+      parentId: "5",
+      ignored: false,
+      backendDOMNodeId: 6,
+      role: { value: "InlineTextBox" },
+      name: { value: "Terms apply" },
+    },
+    {
+      nodeId: "7",
+      parentId: "2",
+      ignored: false,
+      backendDOMNodeId: 7,
+      role: { value: "link" },
+      name: { value: "Help" },
+      properties: [
+        { name: "url", value: { value: "https://example.test/help" } },
+      ],
+    },
+    {
+      nodeId: "8",
+      parentId: "2",
+      ignored: false,
+      backendDOMNodeId: 8,
+      role: { value: "heading" },
+      name: { value: "Section" },
+      properties: [{ name: "level", value: { value: "2" } }],
+    }
+  )
+  const observed = z
+    .object({
+      nodes: z.array(z.record(z.string(), z.json())),
+      viewport: z.object({
+        width: z.number(),
+        height: z.number(),
+        scrollY: z.number(),
+        pagesBelow: z.number(),
+      }),
+      matched: z.number(),
+      offset: z.number(),
+      nextOffset: z.number().nullable(),
+    })
+    .parse(await run("task-c", { action: "observe", target: c }))
+  assert.equal(observed.viewport.width, 800)
+  assert.equal(observed.viewport.pagesBelow, 2.3)
+  const roles = observed.nodes.map((node) => node.role)
+  assert.ok(
+    !roles.includes("InlineTextBox"),
+    "text runs are folded into their StaticText"
+  )
+  assert.ok(!roles.includes("generic"), "unnamed wrappers are dropped")
+  const checkbox = observed.nodes.find((node) => node.role === "checkbox")
+  assert.equal(checkbox?.checked, "true")
+  assert.equal(
+    observed.nodes.find((node) => node.role === "button")?.disabled,
+    "true"
+  )
+  assert.equal(
+    observed.nodes.find((node) => node.role === "link")?.url,
+    "https://example.test/help"
+  )
+  assert.equal(observed.nodes.find((node) => node.role === "heading")?.level, 2)
+  assert.equal(
+    observed.nodes.find((node) => node.role === "StaticText")?.depth,
+    2
+  )
+  assert.match(String(checkbox?.ref), /^[0-9a-f]{6}:\d+$/)
+  const interactive = z
+    .object({
+      nodes: z.array(z.object({ role: z.string() })),
+      matched: z.number(),
+    })
+    .parse(
+      await run("task-c", {
+        action: "observe",
+        target: c,
+        interactiveOnly: true,
+      })
+    )
+  assert.deepEqual(interactive.nodes.map((node) => node.role).sort(), [
+    "button",
+    "checkbox",
+    "link",
+  ])
+  const paged = z
+    .object({
+      nodes: z.array(z.object({ role: z.string() })),
+      nextOffset: z.number().nullable(),
+      offset: z.number(),
+      omitted: z.number(),
+    })
+    .parse(
+      await run("task-c", {
+        action: "observe",
+        target: c,
+        maxNodes: 2,
+        offset: 1,
+      })
+    )
+  assert.equal(paged.offset, 1)
+  assert.equal(paged.nodes.length, 2)
+  assert.equal(paged.nextOffset, 3)
+  assert.equal(paged.omitted, 3)
+  const queried = z
+    .object({
+      nodes: z.array(z.object({ role: z.string(), name: z.string() })),
+    })
+    .parse(await run("task-c", { action: "observe", target: c, query: "help" }))
+  assert.deepEqual(
+    queried.nodes.map((node) => node.name),
+    ["Help"]
+  )
+
+  // Click: pointer move, press with a buttons mask, then release.
+  const fresh = z
+    .object({
+      nodes: z.array(
+        z.object({ ref: z.string().optional(), role: z.string() })
+      ),
+    })
+    .parse(await run("task-c", { action: "observe", target: c }))
+  const checkboxRef = fresh.nodes.find((node) => node.role === "checkbox")?.ref
+  assert.ok(checkboxRef)
+  const before = fixture.calls.length
+  await run("task-c", {
+    action: "click",
+    target: c,
+    at: { ref: checkboxRef },
+    modifiers: ["Shift"],
+  })
+  const mouse = fixture.calls
+    .slice(before)
+    .filter((call) => call.method === "Input.dispatchMouseEvent")
+  assert.deepEqual(
+    mouse.map((call) => call.params.type),
+    ["mouseMoved", "mousePressed", "mouseReleased"]
+  )
+  assert.equal(mouse[1].params.buttons, 1)
+  assert.equal(mouse[1].params.modifiers, 8)
+  assert.equal(mouse[2].params.buttons, 0)
+  assert.deepEqual([mouse[1].params.x, mouse[1].params.y], [40, 20])
+  const scrolled = fixture.calls
+    .slice(before)
+    .find((call) => call.method === "Runtime.callFunctionOn")
+  assert.match(
+    String(scrolled?.params.functionDeclaration),
+    /behavior:'instant'/
+  )
+  fixture.page.hidden = true
+  await assert.rejects(
+    run("task-c", { action: "click", target: c, at: { ref: checkboxRef } }),
+    /hidden or covered/
+  )
+  fixture.page.hidden = false
+
+  // Hover and scroll are real pointer events; scroll reports the new position.
+  const hovered = fixture.calls.length
+  await run("task-c", { action: "hover", target: c, at: { x: 5, y: 6 } })
+  assert.deepEqual(
+    fixture.calls
+      .slice(hovered)
+      .filter((call) => call.method === "Input.dispatchMouseEvent")
+      .map((call) => [call.params.type, call.params.x]),
+    [["mouseMoved", 5]]
+  )
+  const scroll = z
+    .object({ x: z.number(), y: z.number(), scrollY: z.number() })
+    .parse(await run("task-c", { action: "scroll", target: c, deltaY: 300 }))
+  assert.deepEqual([scroll.x, scroll.y, scroll.scrollY], [400, 300, 300])
+  const wheel = fixture.calls.findLast(
+    (call) => call.method === "Input.dispatchMouseEvent"
+  )
+  assert.equal(wheel?.params.type, "mouseWheel")
+  assert.equal(wheel?.params.deltaY, 300)
+
+  // Type: refuses a non-editable target, clears with select-all + Backspace, submits with Enter.
+  fixture.page.editable = false
+  await assert.rejects(
+    run("task-c", { action: "type", target: c, ref: checkboxRef, text: "x" }),
+    /not editable/
+  )
+  fixture.page.editable = true
+  const typing = fixture.calls.length
+  const typed = z
+    .object({
+      field: z.string(),
+      cleared: z.number(),
+      inserted: z.number(),
+      submitted: z.boolean(),
+    })
+    .parse(
+      await run("task-c", {
+        action: "type",
+        target: c,
+        ref: checkboxRef,
+        text: "hello",
+        clear: true,
+        submit: true,
+      })
+    )
+  assert.deepEqual(typed, {
+    field: "input",
+    cleared: 3,
+    inserted: 5,
+    submitted: true,
+  })
+  const keys = fixture.calls
+    .slice(typing)
+    .filter((call) => call.method === "Input.dispatchKeyEvent")
+    .map(
+      (call) =>
+        `${call.params.type}:${call.params.key}${call.params.commands ? ":" + JSON.stringify(call.params.commands) : ""}`
+    )
+  assert.deepEqual(keys, [
+    'rawKeyDown:a:["selectAll"]',
+    "keyUp:a",
+    "rawKeyDown:Backspace",
+    "keyUp:Backspace",
+    "keyDown:Enter",
+    "keyUp:Enter",
+  ])
+  assert.ok(
+    fixture.calls
+      .slice(typing)
+      .some(
+        (call) =>
+          call.method === "Input.insertText" && call.params.text === "hello"
+      )
+  )
+  fixture.page.activeEditable = false
+  await assert.rejects(
+    run("task-c", { action: "type", target: c, text: "nowhere" }),
+    /not editable|No element has focus/
+  )
+  fixture.page.activeEditable = true
+
+  // Press: named keys, printable keys and modifier masks.
+  const pressing = fixture.calls.length
+  await run("task-c", { action: "press", target: c, key: "Enter" })
+  await run("task-c", {
+    action: "press",
+    target: c,
+    key: "l",
+    modifiers: ["Meta"],
+  })
+  await run("task-c", { action: "press", target: c, key: "ArrowDown" })
+  const pressed = fixture.calls
+    .slice(pressing)
+    .filter((call) => call.method === "Input.dispatchKeyEvent")
+  assert.deepEqual(
+    pressed.map((call) => [
+      call.params.type,
+      call.params.windowsVirtualKeyCode,
+      call.params.modifiers,
+    ]),
+    [
+      ["keyDown", 13, 0],
+      ["keyUp", 13, 0],
+      ["keyDown", 76, 4],
+      ["keyUp", 76, 4],
+      ["rawKeyDown", 40, 0],
+      ["keyUp", 40, 0],
+    ]
+  )
+  assert.equal(pressed[0].params.text, "\r")
+  await assert.rejects(
+    run("task-c", { action: "press", target: c, key: "Bogus" }),
+    /Unknown key/
+  )
+
+  // Events are bounded by limit and report continuation.
+  for (let index = 0; index < 40; index++)
+    fixture.emit(sessionC, "Runtime.consoleAPICalled", {
+      args: [String(index)],
+    })
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  const firstPage = z
+    .object({
+      events: z.array(z.object({ cursor: z.number() })),
+      cursor: z.number(),
+      more: z.boolean(),
+    })
+    .parse(await run("task-c", { action: "events", target: c, limit: 10 }))
+  assert.equal(firstPage.events.length, 10)
+  assert.equal(firstPage.more, true)
+  const secondPage = z
+    .object({
+      events: z.array(z.object({ cursor: z.number() })),
+      more: z.boolean(),
+    })
+    .parse(
+      await run("task-c", {
+        action: "events",
+        target: c,
+        after: firstPage.cursor,
+        limit: 128,
+      })
+    )
+  assert.ok(secondPage.events.length >= 30)
+  assert.ok(secondPage.events[0].cursor > firstPage.cursor)
+
+  // A subframe navigation keeps refs; a main-frame navigation drops them.
+  fixture.emit(sessionC, "Page.frameNavigated", {
+    frame: { id: "child", parentId: "frame", url: "https://ads.test" },
+  })
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await run("task-c", { action: "hover", target: c, at: { ref: checkboxRef } })
+  fixture.emit(sessionC, "Page.frameNavigated", {
+    frame: { id: "frame", url: "https://example.test/next" },
+  })
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await assert.rejects(
+    run("task-c", { action: "hover", target: c, at: { ref: checkboxRef } }),
+    /latest observation/
+  )
+
+  // Navigation waits: redirects count, domcontentloaded returns early, a hang reports timeout.
+  const redirected = z.object({ completion: z.string() }).parse(
+    await run("task-c", {
+      action: "navigate",
+      target: c,
+      url: "https://example.test/redirect",
+    })
+  )
+  assert.equal(redirected.completion, "load")
+  const early = z.object({ completion: z.string() }).parse(
+    await run("task-c", {
+      action: "navigate",
+      target: c,
+      url: "https://example.test/slow",
+      waitUntil: "domcontentloaded",
+    })
+  )
+  assert.equal(early.completion, "domcontentloaded")
+  const hung = z.object({ completion: z.string(), note: z.string() }).parse(
+    await run("task-c", {
+      action: "navigate",
+      target: c,
+      url: "https://example.test/hang",
+      timeoutMs: 1000,
+    })
+  )
+  assert.equal(hung.completion, "timeout")
+  await run("task-c", { action: "observe", target: c })
+  await assert.rejects(
+    run("task-c", {
+      action: "navigate",
+      target: c,
+      url: "javascript:alert(1)",
+    }),
+    /http, https, about and data/
+  )
+  await assert.rejects(
+    run("task-c", {
+      action: "cdp",
+      target: c,
+      method: "Page.navigate",
+      params: { url: "file:///etc/passwd" },
+    }),
+    /http, https, about and data/
+  )
+
+  // A malformed frame is dropped without tearing down the shared connection.
+  fixture.broadcast("not json")
+  fixture.broadcast(
+    JSON.stringify({ method: "Odd.event", sessionId: sessionC, params: [1, 2] })
+  )
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  assert.equal(service.status()[0].connection.status, "connected")
+  await run("task-c", { action: "observe", target: c })
+  assert.equal(fixture.connections(), 2)
+
+  // Worker targets are listed but cannot be selected as pages.
+  fixture.targets.set("worker-1", {
+    title: "worker",
+    url: "https://example.test/sw.js",
+    type: "service_worker",
+  })
+  const listed = z
+    .array(z.object({ targetId: z.string(), selectable: z.boolean() }))
+    .parse(await run("task-c", { action: "tabs", browser: "fixture" }))
+  assert.equal(
+    listed.find((tab) => tab.targetId === "worker-1")?.selectable,
+    false
+  )
+  await assert.rejects(
+    run("task-c", { action: "select", browser: "fixture", tab: "worker-1" }),
+    /not a page/
+  )
+
+  // Dialogs: an open dialog blocks actions until answered; auto policy answers later ones.
+  fixture.emit(sessionC, "Page.javascriptDialogOpening", {
+    type: "confirm",
+    message: "Leave page?",
+    url: "https://example.test",
+  })
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await assert.rejects(
+    run("task-c", { action: "observe", target: c }),
+    /confirm dialog is open/
+  )
+  const pendingDialog = z
+    .object({
+      pending: z.object({ type: z.string(), message: z.string() }).nullable(),
+      auto: z.string(),
+    })
+    .parse(await run("task-c", { action: "dialog", target: c }))
+  assert.equal(pendingDialog.pending?.message, "Leave page?")
+  const answered = z
+    .object({ pending: z.null(), answered: z.object({ respond: z.string() }) })
+    .parse(
+      await run("task-c", {
+        action: "dialog",
+        target: c,
+        respond: "accept",
+        promptText: "yes",
+      })
+    )
+  assert.equal(answered.answered.respond, "accept")
+  assert.deepEqual(fixture.page.dialogAnswers.at(-1), {
+    accept: true,
+    promptText: "yes",
+  })
+  await run("task-c", { action: "observe", target: c })
+  await run("task-c", { action: "dialog", target: c, auto: "dismiss" })
+  fixture.emit(sessionC, "Page.javascriptDialogOpening", {
+    type: "alert",
+    message: "Auto",
+  })
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  assert.deepEqual(fixture.page.dialogAnswers.at(-1), { accept: false })
+  await run("task-c", { action: "observe", target: c })
+  const autoEvents = z
+    .object({
+      events: z.array(
+        z.object({ method: z.string(), params: z.record(z.string(), z.json()) })
+      ),
+    })
+    .parse(await run("task-c", { action: "events", target: c, limit: 128 }))
+  assert.ok(
+    autoEvents.events.some(
+      (event) =>
+        event.method === "mako.dialogAutoHandled" &&
+        event.params.message === "Auto"
+    )
+  )
+  await assert.rejects(
+    run("task-c", { action: "dialog", target: c, respond: "accept" }),
+    /No dialog is open/
+  )
+
+  // Downloads: behaviour set to the directory, the click starts it, completion is awaited.
+  const { mkdtemp, rm, writeFile } = await import("node:fs/promises")
+  const { tmpdir } = await import("node:os")
+  const { join } = await import("node:path")
+  const downloads = await mkdtemp(join(tmpdir(), "mako-browser-download-"))
+  try {
+    fixture.page.downloadOnClick = true
+    await writeFile(join(downloads, "report.csv"), "a,b,c\n1,2,3\n")
+    const saved = z
+      .object({
+        state: z.string(),
+        suggestedFilename: z.string(),
+        path: z.string(),
+        bytes: z.number(),
+      })
+      .parse(
+        await run("task-c", {
+          action: "download",
+          target: c,
+          directory: downloads,
+          at: { x: 5, y: 5 },
+          timeoutMs: 2000,
+        })
+      )
+    assert.equal(saved.state, "completed")
+    assert.equal(saved.path, join(downloads, "report.csv"))
+    assert.equal(saved.bytes, 12)
+    assert.deepEqual(fixture.page.downloadBehavior, {
+      behavior: "allow",
+      downloadPath: downloads,
+    })
+    await assert.rejects(
+      run("task-c", {
+        action: "download",
+        target: c,
+        directory: join(downloads, "missing"),
+        at: { x: 1, y: 1 },
+      }),
+      /not an existing directory/
+    )
+    await assert.rejects(
+      run("task-c", {
+        action: "download",
+        target: c,
+        directory: downloads,
+        at: { x: 1, y: 1 },
+        timeoutMs: 1000,
+      }),
+      /No download started/
+    )
+    await run("task-c", { action: "observe", target: c })
+    // PDF lands at the requested path.
+    const pdf = z.object({ path: z.string(), bytes: z.number() }).parse(
+      await run("task-c", {
+        action: "pdf",
+        target: c,
+        path: join(downloads, "page.pdf"),
+        landscape: true,
+      })
+    )
+    assert.equal(pdf.bytes, Buffer.byteLength("%PDF-1.4 fixture"))
+    const printed = fixture.calls.findLast(
+      (call) => call.method === "Page.printToPDF"
+    )
+    assert.equal(printed?.params.landscape, true)
+    assert.equal(printed?.params.paperWidth, undefined)
+    await assert.rejects(
+      run("task-c", { action: "pdf", target: c, path: "relative.pdf" }),
+      /absolute/
+    )
+  } finally {
+    await rm(downloads, { recursive: true, force: true })
+  }
+
+  // Cookies: values stay out of a listing unless asked for.
+  await run("task-c", {
+    action: "cookies",
+    target: c,
+    operation: "set",
+    cookies: [
+      { name: "session", value: "secret-value", domain: "example.test" },
+    ],
+  })
+  const listing = z
+    .object({ cookies: z.array(z.record(z.string(), z.json())) })
+    .parse(
+      await run("task-c", { action: "cookies", target: c, operation: "list" })
+    )
+  assert.equal(listing.cookies[0].name, "session")
+  assert.equal(listing.cookies[0].value, undefined)
+  assert.equal(listing.cookies[0].valueLength, "secret-value".length)
+  const withValues = z
+    .object({ cookies: z.array(z.object({ value: z.string() })) })
+    .parse(
+      await run("task-c", {
+        action: "cookies",
+        target: c,
+        operation: "list",
+        includeValues: true,
+      })
+    )
+  assert.equal(withValues.cookies[0].value, "secret-value")
+  await assert.rejects(
+    run("task-c", {
+      action: "cookies",
+      target: c,
+      operation: "set",
+      cookies: [{ name: "x", value: "y" }],
+    }),
+    /needs url or domain/
+  )
+  await run("task-c", {
+    action: "cookies",
+    target: c,
+    operation: "delete",
+    name: "session",
+  })
+  assert.deepEqual(fixture.page.cookies, [])
+
+  // Frames and frame-scoped observation and evaluation.
+  const frames = z
+    .object({
+      frames: z.array(
+        z.object({
+          id: z.string(),
+          parentId: z.string().nullable(),
+          depth: z.number(),
+        })
+      ),
+    })
+    .parse(await run("task-c", { action: "frames", target: c }))
+  assert.deepEqual(
+    frames.frames.map((frame) => [frame.id, frame.depth]),
+    [
+      ["frame", 0],
+      ["child", 1],
+    ]
+  )
+  await run("task-c", { action: "observe", target: c, frameId: "child" })
+  assert.equal(
+    fixture.calls.findLast(
+      (call) => call.method === "Accessibility.getFullAXTree"
+    )?.params.frameId,
+    "child"
+  )
+  const inFrame = z.object({ result: z.object({ value: z.string() }) }).parse(
+    await run("task-c", {
+      action: "evaluate",
+      target: c,
+      expression: "document.title",
+      frameId: "child",
+    })
+  )
+  assert.equal(inFrame.result.value, "frame-context-77")
+
+  // wait: selector polling, network idle, and a false result at timeout.
+  fixture.page.selectorPresent = false
+  const missed = z
+    .object({ satisfied: z.boolean(), elapsedMs: z.number() })
+    .parse(
+      await run("task-c", {
+        action: "wait",
+        target: c,
+        for: { selector: "#late" },
+        timeoutMs: 300,
+      })
+    )
+  assert.equal(missed.satisfied, false)
+  fixture.page.selectorPresent = true
+  const found = z.object({ satisfied: z.boolean() }).parse(
+    await run("task-c", {
+      action: "wait",
+      target: c,
+      for: { selector: "#late", url: "about" },
+      timeoutMs: 2000,
+    })
+  )
+  assert.equal(found.satisfied, true)
+  fixture.emit(sessionC, "Network.requestWillBeSent", { requestId: "r1" })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const busy = z.object({ satisfied: z.boolean() }).parse(
+    await run("task-c", {
+      action: "wait",
+      target: c,
+      for: { networkIdle: true },
+      timeoutMs: 400,
+    })
+  )
+  assert.equal(busy.satisfied, false)
+  fixture.emit(sessionC, "Network.loadingFinished", { requestId: "r1" })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const quiet = z.object({ satisfied: z.boolean() }).parse(
+    await run("task-c", {
+      action: "wait",
+      target: c,
+      for: { networkIdle: true },
+      timeoutMs: 2000,
+    })
+  )
+  assert.equal(quiet.satisfied, true)
+  assert.ok(fixture.calls.some((call) => call.method === "Network.enable"))
+
+  // History: back, forward past the end, reload.
+  const back = z
+    .object({ moved: z.boolean(), completion: z.string(), url: z.string() })
+    .parse(await run("task-c", { action: "history", target: c, go: "back" }))
+  assert.deepEqual(
+    [back.moved, back.completion, back.url],
+    [true, "load", "https://example.test/one"]
+  )
+  const forward = z
+    .object({ moved: z.boolean(), url: z.string() })
+    .parse(await run("task-c", { action: "history", target: c, go: "forward" }))
+  assert.equal(forward.url, "https://example.test/two")
+  const past = z
+    .object({ moved: z.boolean() })
+    .parse(await run("task-c", { action: "history", target: c, go: "forward" }))
+  assert.equal(past.moved, false)
+  const reloaded = z
+    .object({ moved: z.boolean(), completion: z.string() })
+    .parse(await run("task-c", { action: "history", target: c, go: "reload" }))
+  assert.equal(reloaded.completion, "load")
+
+  // selectOption picks by value or label and explains a miss (fresh ref: the
+  // main-frame navigation above replaced the earlier observation).
+  const selectRef = z
+    .object({ nodes: z.array(z.object({ ref: z.string().optional() })) })
+    .parse(await run("task-c", { action: "observe", target: c }))
+    .nodes.find((node) => node.ref)?.ref
+  assert.ok(selectRef)
+  const picked = z.object({ value: z.string(), label: z.string() }).parse(
+    await run("task-c", {
+      action: "selectOption",
+      target: c,
+      ref: selectRef,
+      label: "Blue",
+    })
+  )
+  assert.deepEqual(picked, { value: "b", label: "Blue" })
+  await assert.rejects(
+    run("task-c", {
+      action: "selectOption",
+      target: c,
+      ref: selectRef,
+      value: "missing",
+    }),
+    /options are: Red=r, Blue=b/
+  )
+  await assert.rejects(
+    run("task-c", { action: "selectOption", target: c, ref: selectRef }),
+    /Pass value or label/
+  )
+
+  // With no browser discovered the message says what to install.
+  const empty = new BrowserService([])
+  await assert.rejects(
+    empty.execute(
+      "task-z",
+      BrowserCommandSchema.parse({ action: "connect", browser: "chrome" }),
+      new AbortController().signal
+    ),
+    /Mako Browser extension/
+  )
+  empty.close()
   console.log(
-    "Browser service: one connection for ten tasks; exact targets, serialized claims, stale leases, cancellation uncertainty, no retarget/replay, restart generations and binding authorization verified"
+    "Browser service: one connection for ten tasks; exact targets, serialized claims, stale leases, cancellation uncertainty, no retarget/replay, restart generations, binding authorization, real pointer/key input, bounded observations and events, navigation waits, dialogs, downloads, PDF, cookies, frames, waits, history, select options and malformed-frame tolerance verified"
   )
 } finally {
   control.close()
