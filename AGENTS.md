@@ -607,7 +607,15 @@ acknowledgement as consent.
 
 Settings > Updates and the command palette share the same state actions.
 Local builds use an explicitly selected trusted checkout and a private copy with
-internal workspace links. They preserve npm security configuration, run build,
+internal workspace links. Physical copies and cleanup must use Electron's
+`original-fs`, not its ASAR-aware filesystem: dependency archives must remain
+ordinary files. Exclude nested generated caches and local environment files;
+do not relax dependency-link isolation to make copying pass.
+`npm run test:checkout-copy` exercises the real Electron filesystem with an ASAR
+fixture; pass the checkout path to verify real dependencies, or `-- --app <app>`
+to check signed-bundle staging. `npm run test:settings-build -- <checkout>` runs
+the complete Settings build service against a private profile without installing.
+They preserve npm security configuration, run build,
 lint and regression checks, and verify the existing signing identity. Public
 release updates remain separate from local builds. `package-mac.mjs` stamps the
 actual packaged inputs with a build ID, timestamp and source revision.

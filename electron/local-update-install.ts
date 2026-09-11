@@ -1,5 +1,6 @@
 import { fork, type ChildProcess } from "node:child_process"
-import { cp, lstat, mkdir, mkdtemp } from "node:fs/promises"
+import { lstat, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
+import { physicalFiles } from "./physical-files.js"
 import { constants } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -22,17 +23,14 @@ export async function prepareLocalInstall(
   await mkdir(dirname(receipt), { recursive: true, mode: 0o700 })
   const staging = await mkdtemp("/Applications/.mako-update-")
   const app = join(staging, "Mako.app")
-  await cp(candidate.app, app, {
+  await (await physicalFiles()).cp(candidate.app, app, {
     recursive: true,
     verbatimSymlinks: true,
     mode: constants.COPYFILE_FICLONE,
   })
   await verifyLocalCandidate(app, candidate.identity)
   const script = join(staging, "installer.mjs")
-  await cp(
-    join(dirname(fileURLToPath(import.meta.url)), "local-update-installer.js"),
-    script
-  )
+  await writeFile(script, await readFile(join(dirname(fileURLToPath(import.meta.url)), "local-update-installer.js")), { mode: 0o600 })
   const child = fork(
     script,
     [staging, candidate.identity, String(process.pid), receipt],

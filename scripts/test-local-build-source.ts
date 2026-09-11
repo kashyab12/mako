@@ -10,7 +10,7 @@ import {
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { copyBuildSource } from "../electron/local-updates.js"
+import { copyBuildSource, LocalUpdates } from "../electron/local-updates.js"
 
 const root = await mkdtemp(join(tmpdir(), "mako-source-copy-"))
 try {
@@ -54,9 +54,19 @@ try {
   const second = join(root, "second")
   await mkdir(second)
   await assert.rejects(copyBuildSource(source, second), /leaves the private/)
-  console.log(
-    "Local build copies preserve workspace links and security configuration, isolate writes, omit excluded roots, and reject escaping dependency links"
-  )
+  const updatesRoot = join(root, "updates")
+  await mkdir(updatesRoot)
+  await writeFile(join(updatesRoot, "source.json"), JSON.stringify(join(root, "missing-checkout")))
+  let complete = () => {}
+  const completed = new Promise<void>((resolve) => { complete = resolve })
+  const updates = new LocalUpdates(updatesRoot, "A".repeat(40), () => { if (!updates.building && updates.snapshot().local.kind === "error") complete() })
+  await updates.load()
+  updates.start()
+  await completed
+  const failed = updates.snapshot().local
+  assert.equal(failed.kind, "error")
+  if (failed.kind === "error") assert.match(failed.message, /missing-checkout|Node.js and npm/)
+  console.log("Local build copies preserve workspace links and security configuration, isolate writes, exclude generated data, reject escaping links and report the real preparation error")
 } finally {
   await rm(root, { recursive: true, force: true })
 }

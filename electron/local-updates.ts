@@ -1,15 +1,13 @@
 import { constants } from "node:fs"
+import { physicalFiles } from "./physical-files.js"
 import {
-  cp,
   mkdir,
   mkdtemp,
   readFile,
-  readdir,
   realpath,
-  rm,
   writeFile,
 } from "node:fs/promises"
-import { join } from "node:path"
+import { basename, join, relative } from "node:path"
 import { spawn, execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { z } from "zod"
@@ -163,12 +161,13 @@ export class LocalUpdates {
     this.state = { kind: "building", phase: "copying" }
     this.candidate = null
     this.job = this.build(source)
-      .catch(() => {
+      .catch((error) => {
         const phase =
           this.state.kind === "building" ? this.state.phase : "verification"
+        const reason = error instanceof Error ? error.message.slice(0, 1500) : "Unexpected build failure"
         this.state = {
           kind: "error",
-          message: `The update failed during ${phase}. Your installed app and agents were not changed. Check the selected checkout's build and lint, then try again.`,
+          message: `The update failed during ${phase}: ${reason} Your installed app and agents were not changed.`,
         }
       })
       .finally(() => {
@@ -259,12 +258,12 @@ export class LocalUpdates {
       const candidate = join(output, "mac-arm64/Mako.app")
       const build = await verifyLocalCandidate(candidate, this.identity)
       if (this.preparedRoot)
-        await rm(this.preparedRoot, { recursive: true, force: true })
+        await (await physicalFiles()).rm(this.preparedRoot, { recursive: true, force: true })
       this.preparedRoot = job
       this.candidate = candidate
       this.state = { kind: "ready", build }
     } finally {
-      await rm(this.preparedRoot === job ? checkout : job, {
+      await (await physicalFiles()).rm(this.preparedRoot === job ? checkout : job, {
         recursive: true,
         force: true,
       })
@@ -272,39 +271,48 @@ export class LocalUpdates {
   }
 }
 
+const buildCaches = new Set([".git", ".next", ".eve", ".output", ".vercel", ".cache", ".turbo", ".DS_Store"])
+
 export async function copyBuildSource(
   source: string,
   checkout: string
 ): Promise<void> {
-  const entries = await readdir(source, { withFileTypes: true })
+  const files = await physicalFiles()
+  const filter = (path: string) => {
+    const name = basename(path)
+    return !name.startsWith(".env") && !buildCaches.has(name) && !name.endsWith(".tsbuildinfo")
+  }
+  const entries = await files.readdir(source, { withFileTypes: true })
   for (const entry of entries) {
     const config = entry.name === ".npmrc" || entry.name.startsWith(".prettier")
     if ((!config && entry.name.startsWith(".")) || excluded.has(entry.name))
       continue
     if (entry.isSymbolicLink())
       throw new Error("Build source entries must not be symbolic links.")
-    await cp(join(source, entry.name), join(checkout, entry.name), {
+    await files.cp(join(source, entry.name), join(checkout, entry.name), {
       recursive: true,
       verbatimSymlinks: true,
       mode: constants.COPYFILE_FICLONE,
+      filter,
     })
   }
-  await cp(join(source, "node_modules"), join(checkout, "node_modules"), {
+  await files.cp(join(source, "node_modules"), join(checkout, "node_modules"), {
     recursive: true,
     verbatimSymlinks: true,
     mode: constants.COPYFILE_FICLONE,
+    filter,
   })
-  const root = await realpath(checkout)
+  const root = await files.realpath(checkout)
   const pending = [root]
   while (pending.length) {
     const directory = pending.pop()!
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
+    for (const entry of await files.readdir(directory, { withFileTypes: true })) {
       const path = join(directory, entry.name)
       if (entry.isSymbolicLink()) {
-        const resolved = await realpath(path)
+        const resolved = await files.realpath(path)
         if (!resolved.startsWith(`${root}/`))
           throw new Error(
-            "A dependency link leaves the private build copy. Reinstall dependencies in the source checkout before building."
+            `The dependency link ${relative(root, path)} leaves the private build copy. Reinstall dependencies in the source checkout before building.`
           )
       } else if (entry.isDirectory()) pending.push(path)
     }
@@ -358,7 +366,7 @@ async function runBuild(
           new Error(
             timedOut
               ? "The build step exceeded its time limit."
-              : `Build step exited with ${code ?? "a signal"}`
+              : `${basename(command)} ${args.join(" ")} exited with ${code ?? "a signal"}. Run this step in the selected checkout to inspect its output.`
           )
         )
     })
